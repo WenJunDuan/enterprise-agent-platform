@@ -1,0 +1,33 @@
+{
+  "travel": {
+    "allowance_per_day": 200,
+    "flight_min_distance_km_for_non_president": 600,
+    "lodging_limit_by_city_tier": {
+      "non_president": {
+        "tier_1": 500,
+        "tier_2": 400,
+        "tier_3": 300
+      },
+      "president": {
+        "tier_1": 700,
+        "tier_2": 600,
+        "tier_3": 500
+      }
+    }
+  },
+  "entertainment": {
+    "pre_approval_amount": 1000,
+    "requires_company_attendee": true
+  },
+  "invoice": {
+    "submit_within_days": 90,
+    "partial_reimbursement_until_days": 180,
+    "partial_reimbursement_ratio": 0.5
+  },
+  "general": {
+    "next_month_submit_day": 10,
+    "next_month_original_invoice_day": 15,
+    "public_payment_required_over_amount": 2000,
+    "contract_required_over_amount": 20000
+  }
+}

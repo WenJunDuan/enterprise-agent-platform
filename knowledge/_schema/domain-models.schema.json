@@ -1,0 +1,177 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "employee_context": {
+      "type": "object",
+      "properties": {
+        "employee_id": { "type": "string" },
+        "employee_name": { "type": "string" },
+        "department": { "type": "string" },
+        "position": { "type": "string" },
+        "job_level": { "type": "string" },
+        "base_city": { "type": "string" },
+        "company_entity": { "type": "string" },
+        "employment_type": { "type": "string" },
+        "attendance_type": { "type": "string" }
+      }
+    },
+    "approval_record": {
+      "type": "object",
+      "properties": {
+        "approval_id": { "type": "string" },
+        "document_type": { "type": "string" },
+        "document_id": { "type": "string" },
+        "approver_role": { "type": "string" },
+        "approver_name": { "type": "string" },
+        "approval_node": { "type": "string" },
+        "approval_result": { "type": "string" },
+        "approval_time": { "type": "string", "format": "date-time" },
+        "approval_comment": { "type": "string" }
+      }
+    },
+    "travel_request": {
+      "type": "object",
+      "properties": {
+        "travel_id": { "type": "string" },
+        "applicant_id": { "type": "string" },
+        "department": { "type": "string" },
+        "project": { "type": "string" },
+        "customer": { "type": "string" },
+        "purpose": { "type": "string" },
+        "confidential_flag": { "type": "boolean" },
+        "origin_city": { "type": "string" },
+        "destination_city": { "type": "string" },
+        "start_date": { "type": "string", "format": "date" },
+        "end_date": { "type": "string", "format": "date" },
+        "estimated_days": { "type": "number" },
+        "estimated_amount": { "type": "number" },
+        "transport_plan": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "lodging_plan": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "allowance_days": { "type": "number" },
+        "status": { "type": "string" },
+        "approval_chain": {
+          "type": "array",
+          "items": { "$ref": "#/properties/approval_record" }
+        },
+        "change_required": { "type": "boolean" }
+      }
+    },
+    "leave_request": {
+      "type": "object",
+      "properties": {
+        "leave_id": { "type": "string" },
+        "applicant_id": { "type": "string" },
+        "leave_type": { "type": "string" },
+        "start_datetime": { "type": "string", "format": "date-time" },
+        "end_datetime": { "type": "string", "format": "date-time" },
+        "leave_days": { "type": "number" },
+        "reason": { "type": "string" },
+        "medical_docs": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "urgent_flag": { "type": "boolean" },
+        "salary_impact": { "type": "string" },
+        "hr_required": { "type": "boolean" },
+        "status": { "type": "string" },
+        "approval_chain": {
+          "type": "array",
+          "items": { "$ref": "#/properties/approval_record" }
+        }
+      }
+    },
+    "expense_claim": {
+      "type": "object",
+      "properties": {
+        "claim_id": { "type": "string" },
+        "claim_type": { "type": "string" },
+        "applicant_id": { "type": "string" },
+        "benefit_department": { "type": "string" },
+        "benefit_project": { "type": "string" },
+        "budget_owner": { "type": "string" },
+        "related_travel_id": { "type": "string" },
+        "related_entertainment_id": { "type": "string" },
+        "related_loan_id": { "type": "string" },
+        "expense_date": { "type": "string", "format": "date" },
+        "submit_date": { "type": "string", "format": "date" },
+        "amount": { "type": "number" },
+        "line_items": {
+          "type": "array",
+          "items": { "type": "object" }
+        },
+        "invoice_list": {
+          "type": "array",
+          "items": { "$ref": "#/properties/evidence_invoice" }
+        },
+        "paper_docs_submitted": { "type": "boolean" },
+        "budget_status": { "type": "string" },
+        "over_standard_flag": { "type": "boolean" },
+        "over_budget_flag": { "type": "boolean" },
+        "status": { "type": "string" }
+      }
+    },
+    "evidence_invoice": {
+      "type": "object",
+      "properties": {
+        "invoice_id": { "type": "string" },
+        "invoice_type": { "type": "string" },
+        "invoice_date": { "type": "string", "format": "date" },
+        "invoice_amount": { "type": "number" },
+        "invoice_entity": { "type": "string" },
+        "invoice_title": { "type": "string" },
+        "original_available": { "type": "boolean" },
+        "is_e_invoice": { "type": "boolean" },
+        "is_duplicate_risk": { "type": "boolean" },
+        "receipt_type": { "type": "string" },
+        "trip_statement": { "type": "string" },
+        "attachment_type": { "type": "string" }
+      }
+    },
+    "loan_request": {
+      "type": "object",
+      "properties": {
+        "loan_id": { "type": "string" },
+        "department": { "type": "string" },
+        "applicant_role": { "type": "string" },
+        "amount": { "type": "number" },
+        "purpose": { "type": "string" },
+        "promised_repayment_date": { "type": "string", "format": "date" },
+        "related_business_id": { "type": "string" },
+        "repayment_status": { "type": "string" },
+        "outstanding_amount": { "type": "number" },
+        "status": { "type": "string" }
+      }
+    },
+    "policy_rule": {
+      "type": "object",
+      "properties": {
+        "rule_id": { "type": "string" },
+        "domain": { "type": "string" },
+        "category": { "type": "string" },
+        "sub_category": { "type": "string" },
+        "rule_name": { "type": "string" },
+        "trigger_condition": { "type": "string" },
+        "required_precondition": { "type": "string" },
+        "threshold_operator": { "type": "string" },
+        "threshold_value": {},
+        "required_attachments": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "approval_requirement": { "type": "string" },
+        "calculation_formula": { "type": "string" },
+        "exception_condition": { "type": "string" },
+        "violation_action": { "type": "string" },
+        "source_chapter": { "type": "string" },
+        "source_page_range": { "type": "string" }
+      }
+    }
+  }
+}

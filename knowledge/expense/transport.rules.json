@@ -1,0 +1,70 @@
+{
+  "domain": "expense",
+  "category": "transport",
+  "version": "2026.03-handbook-v1",
+  "effective_date": "2026-03-20",
+  "rules": [
+    {
+      "rule_id": "expense.transport.001",
+      "description": "市内交通费适用于因公外出、出差往返机场车站以及加班晚归场景",
+      "conditions": {
+        "allowed_transport_scenarios": [
+          "business_trip_airport_station_transfer",
+          "business_city_trip",
+          "overtime_late_return"
+        ]
+      },
+      "action": "reject",
+      "priority": 2,
+      "confidence": "high",
+      "original_text": "市内交通费适用于因公出差往返机场车站、常驻地市内外出、加班晚归交通不便所产生的交通费。"
+    },
+    {
+      "rule_id": "expense.transport.002",
+      "description": "原则上应优先乘坐公共交通，出租车报销需要预算分管领导批准",
+      "conditions": {
+        "public_transport_preferred": true,
+        "taxi_requires_budget_owner_approval": true
+      },
+      "action": "escalate",
+      "priority": 1,
+      "confidence": "high",
+      "original_text": "员工应从预算、成本控制角度尽量乘坐公共交通，公司原则上不鼓励乘坐出租车，但特殊情况经预算分管领导批准后可乘坐出租车。"
+    },
+    {
+      "rule_id": "expense.transport.003",
+      "description": "网约车报销需提供对应行程单，并注明起止地点、时间和外出原因",
+      "conditions": {
+        "required_docs": ["网约车行程单"],
+        "required_fields": ["origin", "destination", "occurred_at", "business_reason"]
+      },
+      "action": "reject",
+      "priority": 1,
+      "confidence": "high",
+      "original_text": "员工乘坐网约打车软件报销时需要提供对应行程单，并在流程上注明起止地点、时间及因何外出等情况说明。"
+    },
+    {
+      "rule_id": "expense.transport.004",
+      "description": "自驾相关费用一律不予报销，包括油费、过路费和停车费",
+      "conditions": {
+        "disallowed_expense_types": ["fuel", "toll", "parking", "self_drive"]
+      },
+      "action": "reject",
+      "priority": 1,
+      "confidence": "high",
+      "original_text": "公司禁止一切自驾费用报销，包含油费、过路费、停车费等。"
+    },
+    {
+      "rule_id": "expense.transport.005",
+      "description": "工作日加班到22点30分以后可以据实报销打车费用",
+      "conditions": {
+        "overtime_taxi_reimbursement_after": "22:30",
+        "reimburse_actual_amount": true
+      },
+      "action": "approve",
+      "priority": 3,
+      "confidence": "high",
+      "original_text": "工作日加班至22:30以后报销打车费用。"
+    }
+  ]
+}

@@ -1,0 +1,93 @@
+{
+  "domain": "expense",
+  "category": "invoice",
+  "version": "2026.03-handbook-v1",
+  "effective_date": "2026-03-20",
+  "rules": [
+    {
+      "rule_id": "expense.invoice.001",
+      "description": "所有报销原则上都应取得原始发票进行报销",
+      "conditions": {
+        "invoice_required": true,
+        "required_docs": ["原始发票"]
+      },
+      "action": "reject",
+      "priority": 1,
+      "confidence": "high",
+      "original_text": "所有报销应取得原始发票进行报销。"
+    },
+    {
+      "rule_id": "expense.invoice.002",
+      "description": "应有发票但未提供发票时，需提供真实费用凭据和同额同类发票，通常仅报销50%",
+      "conditions": {
+        "supporting_proof_required_when_missing_invoice": true,
+        "same_amount_invoice_required": true,
+        "reimbursement_ratio_without_original_invoice": 0.5
+      },
+      "action": "escalate",
+      "priority": 1,
+      "confidence": "high",
+      "original_text": "对于应有发票而没有提供发票的，需提供真实费用发生记录凭据，并提供同等金额相同费用属性的发票，报销费用的50%。"
+    },
+    {
+      "rule_id": "expense.invoice.003",
+      "description": "发票取得后三个月内办理报销，三到六个月需说明原因且通常只报销50%，超过六个月不报销",
+      "conditions": {
+        "invoice_reimbursement_within_days": 90,
+        "partial_reimbursement_window_days": 180,
+        "partial_reimbursement_ratio": 0.5
+      },
+      "action": "reject",
+      "priority": 1,
+      "confidence": "high",
+      "original_text": "员工应在取得发票三个月内办理报销手续，如超过三个月但未超过六个月需说明合理原因报销50%，超过六个月不能报销。"
+    },
+    {
+      "rule_id": "expense.invoice.004",
+      "description": "严禁电子发票重复打印报销",
+      "conditions": {
+        "duplicate_e_invoice_allowed": false,
+        "is_e_invoice": true
+      },
+      "action": "reject",
+      "priority": 1,
+      "confidence": "high",
+      "original_text": "严禁电子发票重复打印报销。"
+    },
+    {
+      "rule_id": "expense.invoice.005",
+      "description": "收款收据一般视为白条不可报销，行政事业型收费收据除外",
+      "conditions": {
+        "disallowed_receipt_types": ["ordinary_receipt"],
+        "allowed_receipt_types": ["administrative_fee_receipt"]
+      },
+      "action": "reject",
+      "priority": 1,
+      "confidence": "high",
+      "original_text": "收款收据视为白条，财务部有权拒收，并不得作为发票报销，国家行政事业型收费收据除外。"
+    },
+    {
+      "rule_id": "expense.invoice.006",
+      "description": "公共交通以外的定额发票不作为报销附件",
+      "conditions": {
+        "fixed_amount_invoice_allowed_only_for": ["public_transport"]
+      },
+      "action": "reject",
+      "priority": 2,
+      "confidence": "high",
+      "original_text": "公司拒收公共交通以外的定额发票作为财务报销附件。"
+    },
+    {
+      "rule_id": "expense.invoice.007",
+      "description": "报销申请选择的付款公司应与发票抬头公司主体一致",
+      "conditions": {
+        "company_entity_match_required": true,
+        "invoice_title_match_required": true
+      },
+      "action": "reject",
+      "priority": 1,
+      "confidence": "high",
+      "original_text": "员工应根据费用归属公司实体选择对应公司付款，开具发票时使用对应公司的开票抬头。"
+    }
+  ]
+}

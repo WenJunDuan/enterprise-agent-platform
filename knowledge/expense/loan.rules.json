@@ -1,0 +1,64 @@
+{
+  "domain": "expense",
+  "category": "loan",
+  "version": "2026.03-handbook-v1",
+  "effective_date": "2026-03-20",
+  "rules": [
+    {
+      "rule_id": "expense.loan.001",
+      "description": "借款应由部门一级主管在线上发起并承诺还款时间",
+      "conditions": {
+        "applicable_roles": ["department_head"],
+        "repayment_date_required": true
+      },
+      "action": "reject",
+      "priority": 1,
+      "confidence": "high",
+      "original_text": "借款部门一级主管S3线上申请借款流程，并承诺具体还款时间。"
+    },
+    {
+      "rule_id": "expense.loan.002",
+      "description": "经济业务完成后应主动及时办理报销并结清借款",
+      "conditions": {
+        "settlement_required_after_business_complete": true
+      },
+      "action": "escalate",
+      "priority": 1,
+      "confidence": "high",
+      "original_text": "借款部门应当在经济业务完成后，一级主管主动并及时办理报销手续结清借款。"
+    },
+    {
+      "rule_id": "expense.loan.003",
+      "description": "借款执行前账不清后账不借",
+      "conditions": {
+        "new_loan_allowed_with_outstanding_balance": false
+      },
+      "action": "reject",
+      "priority": 1,
+      "confidence": "high",
+      "original_text": "借款行为执行前账不清，后账不借的原则。"
+    },
+    {
+      "rule_id": "expense.loan.004",
+      "description": "借款必须专款专用，不得挪作他用",
+      "conditions": {
+        "dedicated_use_required": true
+      },
+      "action": "reject",
+      "priority": 1,
+      "confidence": "high",
+      "original_text": "借款人应按借款用途使用借款，严禁将款项挪为他用。"
+    },
+    {
+      "rule_id": "expense.loan.005",
+      "description": "超过承诺还款时间未还且没有正当理由时，财务可暂停其名下所有报销付款进度",
+      "conditions": {
+        "freeze_reimbursement_when_overdue": true
+      },
+      "action": "escalate",
+      "priority": 1,
+      "confidence": "high",
+      "original_text": "借款部门一级主管超过承诺还款时间未还且没有正当理由的，财务部有权暂停其名下所有报销付款进度。"
+    }
+  ]
+}

@@ -1,0 +1,81 @@
+{
+  "domain": "expense",
+  "category": "entertainment",
+  "version": "2026.03-handbook-v1",
+  "effective_date": "2026-03-20",
+  "rules": [
+    {
+      "rule_id": "expense.entertainment.001",
+      "description": "业务招待必须与公司收入或业务开展直接相关，且必须有公司员工出席",
+      "conditions": {
+        "business_related_required": true,
+        "company_attendee_required": true
+      },
+      "action": "reject",
+      "priority": 1,
+      "confidence": "high",
+      "original_text": "公司的业务有直接关系或相关联的外部业务招待应对公司的收入或业务开展有益，并且必须有公司员工出席。"
+    },
+    {
+      "rule_id": "expense.entertainment.002",
+      "description": "招待费用预计达到或超过1000元时必须在事前提交招待申请并完成审批",
+      "conditions": {
+        "max_amount": 1000,
+        "pre_approval_required_above_amount": 1000,
+        "required_docs": ["招待申请单"]
+      },
+      "action": "reject",
+      "priority": 1,
+      "confidence": "high",
+      "original_text": "招待费用预计≥1000元的，申请人应于业务招待发生前在线上提交招待申请，申请通过后方可进行招待事宜。"
+    },
+    {
+      "rule_id": "expense.entertainment.003",
+      "description": "事后补提招待申请不予报销，招待时间超过预计时间时必须重新提交招待申请",
+      "conditions": {
+        "post_event_application_allowed": false,
+        "resubmit_when_duration_extended": true
+      },
+      "action": "reject",
+      "priority": 1,
+      "confidence": "high",
+      "original_text": "员工应于业务招待前提交招待申请，事后补提申请的不予报销；员工招待时间超过招待申请时预计时间的，需再次提交招待申请。"
+    },
+    {
+      "rule_id": "expense.entertainment.004",
+      "description": "报销招待费时必须说明事由、地点、出席者和商务内容，并附招待申请单",
+      "conditions": {
+        "required_docs": ["招待申请单", "消费明细", "参与人员名单"],
+        "required_fields": ["reason", "location", "participants", "business_summary"]
+      },
+      "action": "reject",
+      "priority": 1,
+      "confidence": "high",
+      "original_text": "报销申请摘要中需填列交际活动的因由和地点、可能的出席者信息、简单描述所进行的商务内容，并提供招待申请单打印件。"
+    },
+    {
+      "rule_id": "expense.entertainment.005",
+      "description": "礼品和购物卡原则上应由行政部统一采购，其他员工不得擅自采购报销",
+      "conditions": {
+        "gift_procurement_department": "administration",
+        "non_admin_purchase_reimbursable": false
+      },
+      "action": "reject",
+      "priority": 2,
+      "confidence": "high",
+      "original_text": "对外合作单位或个人赠送的各类礼品、购物卡等相关支出，原则上由行政部统一采购，其他员工不得擅自采购报销。"
+    },
+    {
+      "rule_id": "expense.entertainment.006",
+      "description": "招待中的住宿和差旅费用原则上按照公司员工差旅费用标准执行",
+      "conditions": {
+        "follow_travel_standard": true,
+        "applies_to": ["lodging", "travel", "local_transport"]
+      },
+      "action": "escalate",
+      "priority": 2,
+      "confidence": "high",
+      "original_text": "对住宿、差旅等招待费用，原则上按照我司员工住宿、差旅费用标准执行。"
+    }
+  ]
+}

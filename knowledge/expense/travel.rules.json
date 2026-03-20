@@ -1,0 +1,119 @@
+{
+  "domain": "expense",
+  "category": "travel",
+  "version": "2026.03-handbook-v1",
+  "effective_date": "2026-03-20",
+  "rules": [
+    {
+      "rule_id": "expense.travel.001",
+      "description": "出差前必须线上提交出差申请并经部门主管审批通过后方可出差",
+      "conditions": {
+        "approval_level": "department_manager",
+        "required_docs": ["出差申请单"],
+        "pre_approval_required": true
+      },
+      "action": "reject",
+      "priority": 1,
+      "confidence": "high",
+      "original_text": "出差申请经部门主管线上审批通过后方可进行差旅事宜。"
+    },
+    {
+      "rule_id": "expense.travel.002",
+      "description": "出差申请应填写出差目的、客户、项目和具体事由，涉密情况可不详细描述内容",
+      "conditions": {
+        "required_fields": ["purpose", "customer", "project", "travel_reason"],
+        "confidential_flag_supported": true
+      },
+      "action": "escalate",
+      "priority": 1,
+      "confidence": "high",
+      "original_text": "出差申请中应填列客户、项目及具体的出差事由，但如果出差涉及公司机密，可不详细描述出差内容。"
+    },
+    {
+      "rule_id": "expense.travel.003",
+      "description": "非总裁级员工只有机票价格低于高铁二等座或出差里程超过600公里时才可选择飞机",
+      "conditions": {
+        "applicable_roles": ["non_president"],
+        "min_distance_km_for_flight": 600,
+        "requires_price_comparison": true,
+        "allowed_flight_class": "economy"
+      },
+      "action": "reject",
+      "priority": 1,
+      "confidence": "high",
+      "original_text": "非总裁级员工出差在机票综合价格低于高铁二等座价格，或者出差行程超过600公里以上，方可选择飞机出行。"
+    },
+    {
+      "rule_id": "expense.travel.004",
+      "description": "非总裁级员工住宿标准按城市等级控制，一类城市每晚不超过500元",
+      "conditions": {
+        "max_amount": 500,
+        "applicable_roles": ["non_president"],
+        "city_tier_limits": {
+          "tier_1": 500,
+          "tier_2": 400,
+          "tier_3": 300
+        },
+        "required_docs": ["住宿发票"]
+      },
+      "action": "reject",
+      "priority": 1,
+      "confidence": "high",
+      "original_text": "非总裁级员工一类地区500元、二类地区400元、三类地区300元每间每人。"
+    },
+    {
+      "rule_id": "expense.travel.005",
+      "description": "总裁级员工住宿标准按城市等级控制，一类城市每晚不超过700元",
+      "conditions": {
+        "applicable_roles": ["president"],
+        "city_tier_limits": {
+          "tier_1": 700,
+          "tier_2": 600,
+          "tier_3": 500
+        },
+        "required_docs": ["住宿发票"]
+      },
+      "action": "reject",
+      "priority": 2,
+      "confidence": "high",
+      "original_text": "总裁级员工一类地区700元、二类地区600元、三类地区500元每间每人。"
+    },
+    {
+      "rule_id": "expense.travel.006",
+      "description": "出差补助标准为200元每天，默认不包含周末和法定节假日",
+      "conditions": {
+        "allowance_per_day": 200,
+        "exclude_weekends_and_holidays": true,
+        "claim_with_trip_only": true
+      },
+      "action": "reject",
+      "priority": 2,
+      "confidence": "high",
+      "original_text": "出差补助标准200元/天/人，周末及节假日不计算补助天数，且出差补助需要和其他差旅费同步报销。"
+    },
+    {
+      "rule_id": "expense.travel.007",
+      "description": "出差中途回程或时间超出原申请预计时间时必须重新提交出差申请",
+      "conditions": {
+        "resubmit_when_trip_shortened": true,
+        "resubmit_when_trip_extended": true
+      },
+      "action": "escalate",
+      "priority": 1,
+      "confidence": "high",
+      "original_text": "员工出差期间中途回程的，视为该出差行为提前结束，再行出差的需重新提交出差申请；出差时间超过出差申请时预计时间的，需再次提交出差申请。"
+    },
+    {
+      "rule_id": "expense.travel.008",
+      "description": "差旅报销需附出差费用报销明细表和出差申请单，并且一次完整行程不得拆分多次报销",
+      "conditions": {
+        "required_docs": ["出差费用报销明细表", "出差申请单", "原始发票"],
+        "single_trip_single_claim": true
+      },
+      "action": "reject",
+      "priority": 1,
+      "confidence": "high",
+      "original_text": "报销差旅费需提供出差费用报销明细表、出差申请单，一次差旅行程不得拆分项目分次报销。"
+    }
+  ]
+}

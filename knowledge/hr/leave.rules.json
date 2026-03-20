@@ -1,0 +1,126 @@
+{
+  "domain": "hr",
+  "category": "leave",
+  "version": "2026.03-handbook-v1",
+  "effective_date": "2026-03-20",
+  "rules": [
+    {
+      "rule_id": "hr.leave.001",
+      "description": "年假最小申请单位为0.5天且不可预支，员工申请休假时应优先休年假",
+      "conditions": {
+        "leave_type": "annual_leave",
+        "min_unit_days": 0.5,
+        "allow_advance_leave": false,
+        "annual_leave_priority": true
+      },
+      "action": "reject",
+      "priority": 1,
+      "confidence": "high",
+      "original_text": "年休假最小申请单位为0.5天且不可预支，员工如申请休假应优先休年休假。"
+    },
+    {
+      "rule_id": "hr.leave.002",
+      "description": "连续工作满12个月的员工才享有年假，年假按累计工龄分为5天、10天和15天",
+      "conditions": {
+        "leave_type": "annual_leave",
+        "minimum_service_months": 12,
+        "annual_leave_by_service_years": {
+          "1_to_10": 5,
+          "10_to_20": 10,
+          "20_plus": 15
+        }
+      },
+      "action": "reject",
+      "priority": 1,
+      "confidence": "high",
+      "original_text": "连续工作满12个月的员工享有年假，累计工龄1到10年5天、10到20年10天、20年以上15天。"
+    },
+    {
+      "rule_id": "hr.leave.003",
+      "description": "当年未休完年假可顺延至次年4月30日，逾期清零",
+      "conditions": {
+        "leave_type": "annual_leave",
+        "carry_over_deadline": "next_year_04_30"
+      },
+      "action": "reject",
+      "priority": 2,
+      "confidence": "high",
+      "original_text": "当年度未休完年假，可延迟有效期至次年4月30日，逾期未休完年假将清零。"
+    },
+    {
+      "rule_id": "hr.leave.004",
+      "description": "病假2天及以内需社区医院证明，超过2天需三甲医院诊断书、病历和收费发票",
+      "conditions": {
+        "leave_type": "sick_leave",
+        "required_docs_by_duration": [
+          {
+            "max_days": 2,
+            "required_docs": ["社区医院诊断书或休假证明"]
+          },
+          {
+            "min_days_exclusive": 2,
+            "required_docs": ["三甲医院诊断书", "病历", "收费发票"]
+          }
+        ],
+        "required_docs": ["三甲医院诊断书"]
+      },
+      "action": "reject",
+      "priority": 1,
+      "confidence": "high",
+      "original_text": "员工病假2天及以内须出具社区医院证明，2天以上必须出具三级甲等医院证明，同时需出具病历和收费发票。"
+    },
+    {
+      "rule_id": "hr.leave.005",
+      "description": "员工在外地或出差期间病假，应及时提交县级以上医院证明和收费单据电子版",
+      "conditions": {
+        "leave_type": "sick_leave",
+        "applies_when": ["out_of_town", "during_business_trip"],
+        "required_docs": ["县级以上医院诊断证明电子版", "收费单据电子版"]
+      },
+      "action": "escalate",
+      "priority": 2,
+      "confidence": "high",
+      "original_text": "员工在探亲或在外地出差时因病请假的，应及时将县级以上医院的诊断证明及收费单据电子版提供至人力资源部。"
+    },
+    {
+      "rule_id": "hr.leave.006",
+      "description": "事假至少提前1天线上申请，特殊原因可事后补交申请",
+      "conditions": {
+        "leave_type": "personal_leave",
+        "advance_notice_days": 1,
+        "allow_post_submit_for_special_reason": true
+      },
+      "action": "escalate",
+      "priority": 2,
+      "confidence": "high",
+      "original_text": "员工申请事假的，应至少提前一天提出线上申请，特殊原因可在事后说明理由补交申请。"
+    },
+    {
+      "rule_id": "hr.leave.007",
+      "description": "事假单次不超过3天，全年累计不超过30天，超限需HR意见和第一负责人审批",
+      "conditions": {
+        "leave_type": "personal_leave",
+        "max_days_per_request": 3,
+        "max_days_per_year": 30,
+        "approval_level_over_limit": "first_responsible_person",
+        "hr_review_required_over_limit": true
+      },
+      "action": "reject",
+      "priority": 1,
+      "confidence": "high",
+      "original_text": "事假一次不超过三天，全年累计不超过30天，超过规定天数必须由人力资源部出具处理意见并报第一负责人审批。"
+    },
+    {
+      "rule_id": "hr.leave.008",
+      "description": "事假属于无薪假期，不支付工资等各项待遇",
+      "conditions": {
+        "leave_type": "personal_leave",
+        "salary_impact": "unpaid"
+      },
+      "action": "approve",
+      "priority": 3,
+      "confidence": "high",
+      "original_text": "事假属于无薪假期，不支付工资等各项待遇。"
+    }
+  ]
+}

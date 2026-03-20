@@ -1,0 +1,99 @@
+{
+  "domain": "expense",
+  "category": "general",
+  "version": "2026.03-handbook-v1",
+  "effective_date": "2026-03-20",
+  "rules": [
+    {
+      "rule_id": "expense.general.001",
+      "description": "报销必须走线上提交、直接领导审批、预算分管领导审批、纸质单据递交、财务稽核和出纳付款的完整流程",
+      "conditions": {
+        "required_workflow_steps": [
+          "employee_submit",
+          "direct_manager_approve",
+          "budget_owner_approve",
+          "paper_documents_submit",
+          "finance_review",
+          "cashier_payment"
+        ]
+      },
+      "action": "reject",
+      "priority": 1,
+      "confidence": "high",
+      "original_text": "报销流程为线上提交、直接领导审批、预算分管领导审批、纸质报销单递交、财务稽核和出纳付款。"
+    },
+    {
+      "rule_id": "expense.general.002",
+      "description": "报销遵循谁受益谁报销，填报时必须选择正确的受益部门或项目预算分管领导",
+      "conditions": {
+        "beneficiary_match_required": true,
+        "budget_owner_required": true
+      },
+      "action": "reject",
+      "priority": 1,
+      "confidence": "high",
+      "original_text": "公司的费用归属遵循谁受益谁报销的原则，员工报销时应根据费用归属正确选择受益部门或项目预算分管领导。"
+    },
+    {
+      "rule_id": "expense.general.003",
+      "description": "未经审批、无预算或超预算费用一律不予报销",
+      "conditions": {
+        "budget_required": true,
+        "allow_over_budget": false,
+        "allow_unapproved_expense": false
+      },
+      "action": "reject",
+      "priority": 1,
+      "confidence": "high",
+      "original_text": "各类未经审批的无预算、超预算费用，一律不予报销。"
+    },
+    {
+      "rule_id": "expense.general.004",
+      "description": "当月费用原则上应在次月10日前完成报销申请，并在次月15日前提交发票原件",
+      "conditions": {
+        "claim_submit_deadline_day_of_next_month": 10,
+        "paper_invoice_deadline_day_of_next_month": 15
+      },
+      "action": "reject",
+      "priority": 1,
+      "confidence": "high",
+      "original_text": "当月发生的费用应在次月10日前完成报销申请，并于次月15日前将发票原件提交至财务部门。"
+    },
+    {
+      "rule_id": "expense.general.005",
+      "description": "12月费用必须在当年内申请，跨年费用不予报销",
+      "conditions": {
+        "december_claim_submit_deadline": "same_year_12_31",
+        "cross_year_reimbursement_allowed": false
+      },
+      "action": "reject",
+      "priority": 1,
+      "confidence": "high",
+      "original_text": "当年12月份发生的费用应在当年12月31日前完成报销申请，跨年的费用不予报销。"
+    },
+    {
+      "rule_id": "expense.general.006",
+      "description": "除差旅、业务招待、市内交通、团建等个人事务类费用外，单次超过2000元应申请对公付款流程",
+      "conditions": {
+        "public_payment_required_over_amount": 2000,
+        "exempt_categories": ["travel", "entertainment", "transport", "team_building"]
+      },
+      "action": "escalate",
+      "priority": 2,
+      "confidence": "high",
+      "original_text": "除差旅费、业务招待费、市内交通费、团建费等员工个人事务相关以外的其他费用，单次金额超过2000元应申请对公付款流程。"
+    },
+    {
+      "rule_id": "expense.general.007",
+      "description": "超过20000元的个人垫付报销必须事先签订合同并附双签版合同复印件",
+      "conditions": {
+        "contract_required_over_amount": 20000,
+        "required_docs": ["双签版合同复印件"]
+      },
+      "action": "reject",
+      "priority": 2,
+      "confidence": "high",
+      "original_text": "超过20000元以上的个人垫付申请报销必须事先签订合同，报销时需附双签版合同复印件。"
+    }
+  ]
+}
