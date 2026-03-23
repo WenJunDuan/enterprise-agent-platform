@@ -23,17 +23,18 @@
 5. [doc-maintenance.md](doc-maintenance.md)
 6. 如需完整背景，再回看本文档
 
-### 0.1 当前实现状态（截至 2026-03-20）
+### 0.1 当前实现状态（截至 2026-03-23）
 
 当前仓库已经具备一个可运行的最小底座，但还没有进入“真实业务可审核闭环”阶段。
 
-- 入口层：`server/api.py` 已提供 `/health` 和 `/chat`，`server/cli.py` 已提供 CLI-only 的 `init` 命令。
+- 入口层：`server/api.py` 已提供 `/health` 和 `/chat`，`server/cli.py` 已提供 CLI `init` 和 `audit` 命令。
 - 配置层：`server/config.py` 已统一从 `.env` / 环境变量读取模型、日志、memory 等运行配置，不在代码中写死供应商或资源名。
-- 执行层：`server/core.py` 已作为统一执行包络，后续结构化审核入口应继续收敛到这一层。
+- 执行层：`server/core.py` 已作为统一执行包络，并封装了 Claude Agent SDK 的 `build_options()`、`run_agent()` 和 `run_agent_full()`。
 - 模型接入层：`server/model_client.py` 已通过 OpenAI 兼容协议访问上游网关，当前已切换到 `httpx` 实现，实际联通验证通过。
 - 规则初始化层：`server/rule_init.py` 已能扫描 `knowledge/external/`、读取业务运行记忆并生成规则初始化骨架；`/init` 只允许本地 CLI 运行，不通过 HTTP 暴露。
 - 业务记忆层：`knowledge/memory/` 与 `server/memory_writer.py` 已明确用于沉淀未来业务运行中的案例、判断、人工确认和例外处理，而不是开发日志。
 - 可观测性层：`server/logging_config.py` 与 `logs/service.log` 已支持本地启动、正常调用、慢请求和异常排查。
+- Claude 编排层：`.claude/CLAUDE.md` 已收敛为项目级调度路由，`/audit` 命令会把请求委派给 `expense-router`，再由 `expense-extractor`、领域 auditor、`expense-reviewer`、workflow 和 skills 协同完成分析。
 
 当前还缺少的不是“底座是否能跑”，而是“业务审核主链是否完整”。
 
@@ -42,10 +43,10 @@
 要从“最小可运行”进入“最小可审核”，当前最关键的缺口有：
 
 - 缺少真实可复用的 `knowledge/expense/*.rules.json` 样例规则；现在更多还是初始化骨架与占位内容。
-- 缺少 `data/pre-approvals/`、`data/invoices/` 等最小联调样例数据，无法完整验证费控闭环。
-- 缺少正式的结构化审核入口；目前 HTTP 仍主要是通用 `/chat`，还没有 `/audit` 一类的业务主链入口。
-- 缺少统一的结构化审核输出格式，例如结论、命中规则、证据链、人工复核建议和原始字段摘要。
-- `.claude/agents`、`.claude/skills` 仍未落成真实业务编排，当前更多是设计留档。
+- 缺少更贴近真实上传场景的文件清单、票据、水单和申请单联调样例；当前主要依赖 `tests/fixtures/audit_inputs/` 中的 mock 数据。
+- HTTP 仍主要是通用 `/chat`；CLI `/audit` 已存在，但还不是生产级接入方案。
+- 缺少生产级请求日志、链路追踪与审计留痕；当前结构化输出仍以本地联调为主。
+- `.claude/agents`、`.claude/workflows` 和 `.claude/skills` 已有费控最小编排，但能力还偏薄，更多是第一版可运行骨架。
 - OCR / 向量化制度解析能力仍处于待确认状态，接入前需要使用者确认。
 
 ### 0.3 下一阶段关注点
@@ -55,9 +56,9 @@
 #### P0：先把费控闭环的最小业务样板补齐
 
 - 先补 `knowledge/expense/` 下可直接使用的真实样例规则，至少覆盖差旅、招待、发票和审批阈值。
-- 同步补 `data/pre-approvals/`、`data/invoices/`、必要的报销单样例，让规则命中、票据校验和事前事后匹配能联调。
-- 在 `server/core.py` 之上补一个正式的结构化审核入口，替代当前仅用于联通验证的通用 `/chat`。
-- 定义统一的审核输出协议，最少包含：`status`、命中规则列表、证据链、风险说明、是否需要人工复核。
+- 同步补更贴近真实上传场景的文件清单、申请单、票据和水单样例，让 extractor 能从“只有文件”的输入完成结构化。
+- 在现有 `server/core.py` + CLI `/audit` 之上补齐请求日志、链路追踪和审计留痕，而不是先扩 HTTP `/audit`。
+- 继续收紧统一审核输出协议，确保结论、命中规则、证据链、风险说明和人工复核建议都能稳定落盘。
 
 #### P1：再把业务运行沉淀和编排真正接起来
 

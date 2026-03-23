@@ -1,6 +1,6 @@
 {
   "permissions": {
-    "allow": ["Read", "Glob", "Grep", "Task", "Skill"],
+    "allow": ["Read", "Glob", "Grep", "Task", "Skill", "Write"],
     "deny": ["Bash"]
   },
   "hooks": {}

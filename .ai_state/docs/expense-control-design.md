@@ -12,11 +12,11 @@
 
 当前报销域不再只看“报销单本身”，而是按“事前审批 + 事中票据 + 事后报销”的完整费控链路审查。
 
-| 阶段 | 动作 | 核心判定 |
-| --- | --- | --- |
-| 事前 | 出差申请、招待申请 | 是否符合申请条件、预算额度、审批层级 |
-| 事中票据 | 发票上传、行程变更 | 发票形式合规、抬头合规、票据类目匹配 |
-| 事后 | 报销提交 | 事前申请与事后报销交叉比对、金额偏差、政策合规 |
+| 阶段     | 动作               | 核心判定                                       |
+| -------- | ------------------ | ---------------------------------------------- |
+| 事前     | 出差申请、招待申请 | 是否符合申请条件、预算额度、审批层级           |
+| 事中票据 | 发票上传、行程变更 | 发票形式合规、抬头合规、票据类目匹配           |
+| 事后     | 报销提交           | 事前申请与事后报销交叉比对、金额偏差、政策合规 |
 
 关键变化是第三阶段不再做“孤立报销审核”，而是必须回查事前申请，判断“申请过的事项”和“实际花费的事项”是否一致。
 
@@ -68,13 +68,13 @@ data/
 
 ## 新增技能职责
 
-| Skill | 职责 | 何时调用 |
-| --- | --- | --- |
-| `invoice-parse` | 发票/收据解析与形式校验 | 所有带票据附件的报销 |
-| `pre-approval-match` | 事前审批与事后报销交叉比对 | 差旅、招待等需预申请场景 |
-| `travel-compliance` | 差旅全链路合规校验 | 差旅报销 |
-| `entertainment-compliance` | 招待费合规校验 | 招待报销 |
-| `budget-check` | 部门/项目/个人预算占用校验 | 事前申请和事后报销 |
+| Skill                      | 职责                       | 何时调用                 |
+| -------------------------- | -------------------------- | ------------------------ |
+| `invoice-parse`            | 发票/收据解析与形式校验    | 所有带票据附件的报销     |
+| `pre-approval-match`       | 事前审批与事后报销交叉比对 | 差旅、招待等需预申请场景 |
+| `travel-compliance`        | 差旅全链路合规校验         | 差旅报销                 |
+| `entertainment-compliance` | 招待费合规校验             | 招待报销                 |
+| `budget-check`             | 部门/项目/个人预算占用校验 | 事前申请和事后报销       |
 
 ## Skill 详细定义
 
@@ -89,6 +89,7 @@ description: 解析上传的发票或收据，提取结构化字段并校验发�
 # 发票解析与校验
 
 ## 触发条件
+
 当收到发票文件（JSON/图片OCR结果）需要提取结构化数据并做基础校验时使用。
 
 ## 执行步骤
@@ -114,18 +115,20 @@ description: 解析上传的发票或收据，提取结构化字段并校验发�
    - 金额各项是否算术一致（amount + tax == total）
 
 ## 输出
+
 {
-  "invoice_no": "",
-  "parsed_data": {},
-  "validations": [
-    {"check": "buyer_match", "pass": true/false, "detail": ""},
-    {"check": "date_valid", "pass": true/false, "detail": ""},
-    {"check": "amount_consistent", "pass": true/false, "detail": ""}
-  ],
-  "overall_valid": true/false
+"invoice_no": "",
+"parsed_data": {},
+"validations": [
+{"check": "buyer_match", "pass": true/false, "detail": ""},
+{"check": "date_valid", "pass": true/false, "detail": ""},
+{"check": "amount_consistent", "pass": true/false, "detail": ""}
+],
+"overall_valid": true/false
 }
 
 ## 注意
+
 本 skill 不判定发票对应的费用是否合规（那是 auditor 的事），只负责发票本身的形式校验。
 ```
 
@@ -140,6 +143,7 @@ description: 将事后报销单与事前审批单（出差申请/招待申请）
 # 事前审批↔事后报销匹配
 
 ## 触发条件
+
 当报销单关联了事前审批单号时，用此 skill 做交叉比对。
 
 ## 执行步骤
@@ -149,13 +153,13 @@ description: 将事后报销单与事前审批单（出差申请/招待申请）
 3. 读取 knowledge/expense/thresholds.json 获取允许偏差范围
 4. 逐维度比对：
 
-   | 维度 | 事前申请字段 | 事后报销字段 | 偏差判定 |
-   | --- | --- | --- | --- |
-   | 金额 | approved_amount | actual_amount | 超支比例是否在阈值内 |
-   | 日期 | planned_dates | actual_dates | 是否有未申请的额外天数 |
-   | 目的地 | planned_destination | actual_destination | 是否一致 |
-   | 同行人 | planned_participants | actual_participants | 人数是否变化 |
-   | 费用类目 | approved_categories | actual_categories | 是否有未审批的类目 |
+   | 维度     | 事前申请字段         | 事后报销字段        | 偏差判定               |
+   | -------- | -------------------- | ------------------- | ---------------------- |
+   | 金额     | approved_amount      | actual_amount       | 超支比例是否在阈值内   |
+   | 日期     | planned_dates        | actual_dates        | 是否有未申请的额外天数 |
+   | 目的地   | planned_destination  | actual_destination  | 是否一致               |
+   | 同行人   | planned_participants | actual_participants | 人数是否变化           |
+   | 费用类目 | approved_categories  | actual_categories   | 是否有未审批的类目     |
 
 5. 对每个偏差项判定：
    - 无偏差 → pass
@@ -164,20 +168,21 @@ description: 将事后报销单与事前审批单（出差申请/招待申请）
    - 无事前申请 → missing_approval
 
 ## 输出
+
 {
-  "pre_approval_id": "",
-  "match_result": "full_match | partial_match | mismatch | no_approval",
-  "deviations": [
-    {
-      "dimension": "amount",
-      "approved": 5000,
-      "actual": 5800,
-      "deviation_pct": 16,
-      "within_threshold": false,
-      "detail": "超支800元(16%)，阈值10%"
-    }
-  ],
-  "requires_explanation": true/false
+"pre_approval_id": "",
+"match_result": "full_match | partial_match | mismatch | no_approval",
+"deviations": [
+{
+"dimension": "amount",
+"approved": 5000,
+"actual": 5800,
+"deviation_pct": 16,
+"within_threshold": false,
+"detail": "超支800元(16%)，阈值10%"
+}
+],
+"requires_explanation": true/false
 }
 ```
 
@@ -192,6 +197,7 @@ description: 综合校验出差报销的全流程合规性：事前申请→行�
 # 出差报销综合合规校验
 
 ## 触发条件
+
 当报销类别为差旅且需要做全链路合规判定时使用。
 
 ## 执行步骤
@@ -200,38 +206,44 @@ description: 综合校验出差报销的全流程合规性：事前申请→行�
 2. 按以下维度逐项校验：
 
 ### 事前申请校验
+
 - 是否存在已审批的出差申请（调用 pre-approval-match skill）
 - 申请是否在出发前提交（不允许事后补申请，除非规则允许）
 
 ### 行程合规
+
 - 出差天数是否与申请一致
 - 目的地是否与申请一致
 - 是否存在绕路（A城出差却报销B城酒店）
 
 ### 住宿标准
+
 - 按申请人职级匹配住宿标准上限
 - 是否超标（读 thresholds.json 中 lodging 部分）
 - 同城是否有住宿（通常不允许）
 
 ### 交通标准
+
 - 交通方式是否符合职级（如普通员工不允许商务舱）
 - 市内交通是否合理（单日交通费上限）
 
 ### 出差补贴
+
 - 补贴天数是否与实际出差天数一致
 - 补贴标准是否按目的地城市等级计算
 
 ## 输出
+
 {
-  "travel_id": "",
-  "checks": [
-    {"category": "pre_approval", "pass": true/false, "detail": ""},
-    {"category": "itinerary", "pass": true/false, "detail": ""},
-    {"category": "lodging", "pass": true/false, "detail": ""},
-    {"category": "transport", "pass": true/false, "detail": ""},
-    {"category": "allowance", "pass": true/false, "detail": ""}
-  ],
-  "overall": "compliant | non_compliant | needs_review"
+"travel_id": "",
+"checks": [
+{"category": "pre_approval", "pass": true/false, "detail": ""},
+{"category": "itinerary", "pass": true/false, "detail": ""},
+{"category": "lodging", "pass": true/false, "detail": ""},
+{"category": "transport", "pass": true/false, "detail": ""},
+{"category": "allowance", "pass": true/false, "detail": ""}
+],
+"overall": "compliant | non_compliant | needs_review"
 }
 ```
 
@@ -246,6 +258,7 @@ description: 校验招待费报销的合规性：事前申请审批、招待标�
 # 招待费合规校验
 
 ## 触发条件
+
 当报销类别为业务招待/宴请且需要合规判定时使用。
 
 ## 执行步骤
@@ -254,34 +267,39 @@ description: 校验招待费报销的合规性：事前申请审批、招待标�
 2. 按以下维度校验：
 
 ### 事前审批
+
 - 是否有已审批的招待申请（调用 pre-approval-match skill）
 - 招待事由是否合理（纯内部聚餐通常不允许走招待费）
 
 ### 标准校验
+
 - 人均金额是否超标（按客户级别区分标准）
 - 酒水占比是否超限
 - 是否包含违禁消费项（如高档会所、KTV 等，从 rules 中读取黑名单）
 
 ### 比例与频次
+
 - 公司陪餐人员 vs 客户人数比例是否合规
 - 同一客户本月招待次数是否超限
 - 同一申请人本月招待总额是否超限
 
 ### 附件完整性
+
 - 是否有招待申请单
 - 是否有消费明细（非笼统“餐费”发票）
 - 是否有参与人员名单
 
 ## 输出
+
 {
-  "entertainment_id": "",
-  "checks": [
-    {"category": "pre_approval", "pass": true/false, "detail": ""},
-    {"category": "standard", "pass": true/false, "detail": ""},
-    {"category": "ratio_frequency", "pass": true/false, "detail": ""},
-    {"category": "attachments", "pass": true/false, "detail": ""}
-  ],
-  "overall": "compliant | non_compliant | needs_review"
+"entertainment_id": "",
+"checks": [
+{"category": "pre_approval", "pass": true/false, "detail": ""},
+{"category": "standard", "pass": true/false, "detail": ""},
+{"category": "ratio_frequency", "pass": true/false, "detail": ""},
+{"category": "attachments", "pass": true/false, "detail": ""}
+],
+"overall": "compliant | non_compliant | needs_review"
 }
 ```
 
@@ -296,6 +314,7 @@ description: 校验本次费用是否会导致部门/项目预算超支，读取
 # 预算额度校验
 
 ## 触发条件
+
 当需要判断本次报销是否会超出预算额度时使用。适用于事前申请审批和事后报销两个阶段。
 
 ## 执行步骤
@@ -309,16 +328,17 @@ description: 校验本次费用是否会导致部门/项目预算超支，读取
 4. 计算本次金额占剩余预算的比例
 
 ## 输出
+
 {
-  "budget_scope": "department | project | personal",
-  "budget_id": "",
-  "total_budget": 100000,
-  "used_budget": 85000,
-  "this_claim": 8000,
-  "remaining_after": 7000,
-  "utilization_pct": 93,
-  "over_budget": false,
-  "warning": "预算使用率将达93%，接近上限"
+"budget_scope": "department | project | personal",
+"budget_id": "",
+"total_budget": 100000,
+"used_budget": 85000,
+"this_claim": 8000,
+"remaining_after": 7000,
+"utilization_pct": 93,
+"over_budget": false,
+"warning": "预算使用率将达93%，接近上限"
 }
 ```
 
@@ -347,34 +367,41 @@ skills:
 ## 审核流程（按报销类别分支）
 
 ### 通用步骤（所有类别都执行）
+
 1. 使用 invoice-parse skill 校验所有发票的形式合规性
 2. 使用 budget-check skill 校验预算额度
 3. 使用 anomaly-detect skill 检查异常模式
 
 ### 差旅报销
+
 4. 使用 pre-approval-match skill 比对出差申请
 5. 使用 travel-compliance skill 做全链路合规校验
 6. 使用 amount-validate skill 逐项金额校验
 
 ### 招待报销
+
 4. 使用 pre-approval-match skill 比对招待申请
 5. 使用 entertainment-compliance skill 做招待合规校验
 
 ### 普通报销（办公用品、交通等）
+
 4. 使用 rule-query skill 获取对应类别规则
 5. 使用 amount-validate skill 金额校验
 
 ### 汇总
+
 6. 使用 evidence-chain skill 组装完整证据链
 7. 使用 result-format skill 输出标准化结果
 
 ## 判定逻辑
+
 - 所有 skill 返回 pass → approved
 - 任一 skill 返回 fail 且理由明确 → rejected
 - 存在 deviation/needs_review/missing_approval → manual_review
 - 多个维度同时异常 → rejected 且标记 high_risk
 
 ## 禁止事项
+
 - 禁止用训练知识判定，一切从 knowledge/ 读取
 - 禁止编造规则
 - 无事前申请时不要自动放行，标记 manual_review

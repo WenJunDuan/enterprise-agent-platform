@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-当前仓库已经不是纯骨架阶段，而是“最小可运行链路 + 规则初始化骨架”阶段：
+当前仓库已经不是纯骨架阶段，而是“最小可运行链路 + Claude 调度审核原型 + 规则初始化骨架”阶段：
 
 - 已有可运行的本地 HTTP 服务：`server/api.py`
 - 已有统一 env 配置入口：`server/config.py`
@@ -12,10 +12,11 @@
 - 已有通用模型上游客户端：`server/model_client.py`
 - 已有业务运行记忆写入器：`server/memory_writer.py`
 - 已有统一日志配置：`server/logging_config.py`
-- 已有 CLI-only `/init` 规则初始化链路：`server/cli.py`、`server/rule_init.py`
+- 已有 CLI `audit` / `init` 入口：`server/cli.py`、`server/rule_init.py`
+- 已有 `.claude/` 费控最小审核编排：项目级 `CLAUDE.md` 调度、`/audit` 命令、`expense-router`、领域 auditor、workflow 与技能骨架
 - 已有 `knowledge/memory/` 业务运行记忆目录，用于沉淀案例、判断、人工确认和例外处理
 
-还没有进入“真实业务闭环可审核”的阶段，原因是规则样例、结构化审核主链路和业务 agents/skills 还未补齐。
+还没有进入“真实业务闭环可审核”的阶段，原因是可复用规则、真实单据输入、结构化提取、链路日志追踪和生产级审核留痕还未补齐。
 
 ## 系统目标
 
@@ -36,10 +37,10 @@
 ### 1. 入口层
 
 - `server/api.py`：提供 `/health` 和 `/chat`，用于最小联通验证
-- `server/cli.py`：提供本地管理命令，当前已支持 `init`
-- `server/core.py`：统一执行包络，避免入口各自直接拼装模型调用
+- `server/cli.py`：提供本地管理命令，当前已支持 `init` 和 `audit`
+- `server/core.py`：统一执行包络，封装 Claude Agent SDK 的共享调用逻辑
 
-这层已经能启动和调用，但还没有结构化审核入口，例如 `/audit` 或统一的审核命令。
+这层已经有 CLI 版结构化审核入口，但 HTTP `/audit` 仍未开放，当前仍以本地联调为主。
 
 ### 2. 规则初始化层
 
@@ -53,6 +54,7 @@
 - `server/model_client.py`：通过 OpenAI 兼容接口访问上游模型网关
 
 这层已经可用，但目前主要服务于通用 `/chat`，还没有和业务审核流程深度绑定。
+这层已经可用，并已被 CLI `audit` 复用来驱动 `.claude/` 审核编排。
 
 ### 4. 可观测性层
 
@@ -73,7 +75,7 @@
 
 ### 6. 协作留档层
 
-- `docs/`：架构、路线、业务设计
+- `.ai_state/docs/`：架构、路线、业务设计
 - `.ai_state/`：当前设计、计划、状态、质量和知识留档
 
 这层已经建立，但文档要持续跟实现同步，不能停留在设计态。
@@ -89,6 +91,7 @@
 
 - 本地通过 HTTP 调用模型，验证联通性
 - 本地通过 CLI 执行 `/init`，生成规则 schema、规则占位文件、初始化报告
+- 本地通过 CLI `audit` 触发 Claude Agent SDK，并执行 `.claude` 费控审核链
 - 针对文本类制度文件进行低置信度规则抽取
 - 针对 PDF / DOCX / 图片类制度文件，在接入 OCR/向量化前给出明确确认提示
 - 通过 `knowledge/memory/` 沉淀并复用业务运行中的可复用判断
@@ -98,14 +101,14 @@
 
 ### P0：离“可审核闭环”还差的核心项
 
-- 还缺结构化审核主链路；虽然已有 `server/core.py`，但 HTTP 和 CLI 还没有收敛到正式审核入口
+- 虽然已有 CLI `audit` 主链路，但还缺面向真实“仅文件输入”场景的结构化提取与附件编目能力
 - 缺少真实可复用的 `knowledge/expense/*.rules.json` 样例规则，目前更多是初始化骨架
-- 缺少 `data/pre-approvals/`、`data/invoices/` 等最小联调样例数据
-- 缺少正式的结构化审核输出，例如结论、命中规则、证据链、人工复核建议
+- 缺少更贴近真实单据上传场景的联调样例；当前主要依赖 `tests/fixtures/audit_inputs/` 中的 mock 数据
+- 缺少生产级请求日志、链路追踪和审计留痕；当前结果输出仍偏本地联调形态
 
 ### P1：影响后续扩展效率的项
 
-- `.claude/agents` 和 `.claude/skills` 仍是空骨架，业务编排尚未真正落地
+- `.claude/agents`、`.claude/workflows` 和 `.claude/skills` 已有费控最小链路，但只覆盖 `expense` 域，skills 还偏薄
 - OCR / 向量化制度解析方案还未确认，也未接入
 - 缺少围绕真实报销样例的端到端集成测试
 
@@ -116,7 +119,7 @@
 
 ## 下一步建议顺序
 
-1. 先补齐 `knowledge/expense/` 的真实样例规则和最小联调数据
-2. 再实现 `server/core.py` 和结构化审核入口，替代仅有的通用 `/chat`
-3. 然后补业务 agents/skills，让审核链路从“可调用”变成“可复用”
-4. 最后确认 OCR / 向量化是否接入，并补足对应的测试与运行说明
+1. 先补齐 `knowledge/expense/` 的真实样例规则，以及更贴近企业场景的文件清单/附件样例
+2. 再补强 `expense-extractor` 与日志链路，让“只有文件、没有完整表单”的审核输入能跑通
+3. 然后继续细化业务 agents/skills/workflow，让审核链路从“可调用”变成“稳定可复用”
+4. 最后确认 OCR / 向量化是否接入，并补足对应的测试、运行说明和审计留痕
