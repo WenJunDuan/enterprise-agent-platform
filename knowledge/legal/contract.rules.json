@@ -1,0 +1,31 @@
+{
+  "domain": "legal",
+  "category": "contract",
+  "version": "2026.03-bootstrap",
+  "effective_date": "2026-03-23",
+  "rules": [
+    {
+      "rule_id": "legal.contract.001",
+      "description": "Contracts must define the counterpart, scope, and effective term",
+      "conditions": {
+        "required_docs": ["contract_draft"]
+      },
+      "action": "reject",
+      "priority": 1,
+      "confidence": "medium",
+      "original_text": "Bootstrap placeholder for minimum contract fields."
+    },
+    {
+      "rule_id": "legal.contract.002",
+      "description": "High-value contracts require legal review before approval",
+      "conditions": {
+        "approval_level": "legal_review"
+      },
+      "action": "escalate",
+      "priority": 1,
+      "confidence": "medium",
+      "original_text": "Bootstrap placeholder for legal escalation."
+    }
+  ]
+}
+

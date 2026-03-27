@@ -1,7 +1,51 @@
 {
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "LANGUAGE": "zh-Hans",
+  "LC_ALL": "zh-Hans",
+  "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+  "API_TIMEOUT_MS": "3000000",
+  "cleanupPeriodDays": 180,
+  "includeGitInstructions": false,
   "permissions": {
-    "allow": ["Read", "Glob", "Grep", "Task", "Skill", "Write"],
-    "deny": ["Bash"]
+    "allow": [
+      "Read",
+      "Glob",
+      "Grep",
+      "Task",
+      "Skill",
+      "Write"
+    ],
+    "deny": [
+      "Bash",
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./.claude/settings.local.json)",
+      "Read(./token.json)",
+      "Read(./**/token.json)"
+    ]
   },
-  "hooks": {}
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/check-before-write.py"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/review-output.py"
+          }
+        ]
+      }
+    ]
+  }
 }

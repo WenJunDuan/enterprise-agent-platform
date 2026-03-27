@@ -8,4 +8,12 @@ __pycache__/
 *.pyc
 .cunzhi-memory/
 logs/*.log
-tests/
+logs/runtime/
+logs/results/by-request/
+logs/results/index/
+logs/service/requests/
+logs/sessions/events/
+logs/sessions/index/
+logs/results/*.json
+logs/sessions/*.jsonl
+.ace-tool/

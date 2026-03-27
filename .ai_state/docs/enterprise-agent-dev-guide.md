@@ -4,88 +4,18 @@
 
 ---
 
-## 0. 文档状态说明
-
-本文作为当前仓库的基础留档与背景设计文档保留，覆盖目标架构、配置样例、代码骨架与部署思路。
-
-- 当前仓库已经进入“最小可运行链路 + 规则初始化骨架”阶段，而不是纯目录骨架阶段。已经落地的最小能力包括：`server/api.py`、`server/config.py`、`server/core.py`、`server/model_client.py`、`server/logging_config.py`、`server/memory_writer.py`、`server/cli.py`、`server/rule_init.py`、`knowledge/memory/`。
-- 当前可验证的运行基线是：本地 HTTP 服务可用，`/health` 与 `/chat` 已能通过 `.env` 中配置的上游模型网关完成联通验证；日志默认写入 `logs/service.log`，并支持 `DEBUG / INFO / WARNING / ERROR` 级别。
-- 第 2 节之后的大量目录树、agent/skill 示例、规则文件样例和代码片段，仍主要用于保留目标结构与历史统一草案，不能直接视为“仓库已全部实现”。
-- 报销域的最新费控闭环设计已经拆到 [expense-control-design.md](expense-control-design.md)；本文中第 3 节、第 5 节、第 6 节和第 8 节里的报销域示例应视为较早版本的统一草案。
-- 后续阅读优先看拆分后的文档：仓库入口见 [README.md](../README.md)，架构摘要见 [architecture-summary.md](architecture-summary.md)，费控闭环设计见 [expense-control-design.md](expense-control-design.md)，实施路线见 [bootstrap-roadmap.md](bootstrap-roadmap.md)，文档维护规则见 [doc-maintenance.md](doc-maintenance.md)。
-
-### 阅读顺序
-
-1. [README.md](../README.md)
-2. [architecture-summary.md](architecture-summary.md)
-3. [expense-control-design.md](expense-control-design.md)
-4. [bootstrap-roadmap.md](bootstrap-roadmap.md)
-5. [doc-maintenance.md](doc-maintenance.md)
-6. 如需完整背景，再回看本文档
-
-### 0.1 当前实现状态（截至 2026-03-23）
-
-当前仓库已经具备一个可运行的最小底座，但还没有进入“真实业务可审核闭环”阶段。
-
-- 入口层：`server/api.py` 已提供 `/health` 和 `/chat`，`server/cli.py` 已提供 CLI `init` 和 `audit` 命令。
-- 配置层：`server/config.py` 已统一从 `.env` / 环境变量读取模型、日志、memory 等运行配置，不在代码中写死供应商或资源名。
-- 执行层：`server/core.py` 已作为统一执行包络，并封装了 Claude Agent SDK 的 `build_options()`、`run_agent()` 和 `run_agent_full()`。
-- 模型接入层：`server/model_client.py` 已通过 OpenAI 兼容协议访问上游网关，当前已切换到 `httpx` 实现，实际联通验证通过。
-- 规则初始化层：`server/rule_init.py` 已能扫描 `knowledge/external/`、读取业务运行记忆并生成规则初始化骨架；`/init` 只允许本地 CLI 运行，不通过 HTTP 暴露。
-- 业务记忆层：`knowledge/memory/` 与 `server/memory_writer.py` 已明确用于沉淀未来业务运行中的案例、判断、人工确认和例外处理，而不是开发日志。
-- 可观测性层：`server/logging_config.py` 与 `logs/service.log` 已支持本地启动、正常调用、慢请求和异常排查。
-- Claude 编排层：`.claude/CLAUDE.md` 已收敛为项目级调度路由，`/audit` 命令会把请求委派给 `expense-router`，再由 `expense-extractor`、领域 auditor、`expense-reviewer`、workflow 和 skills 协同完成分析。
-
-当前还缺少的不是“底座是否能跑”，而是“业务审核主链是否完整”。
-
-### 0.2 当前主要缺口
-
-要从“最小可运行”进入“最小可审核”，当前最关键的缺口有：
-
-- 缺少真实可复用的 `knowledge/expense/*.rules.json` 样例规则；现在更多还是初始化骨架与占位内容。
-- 缺少更贴近真实上传场景的文件清单、票据、水单和申请单联调样例；当前主要依赖 `tests/fixtures/audit_inputs/` 中的 mock 数据。
-- HTTP 仍主要是通用 `/chat`；CLI `/audit` 已存在，但还不是生产级接入方案。
-- 缺少生产级请求日志、链路追踪与审计留痕；当前结构化输出仍以本地联调为主。
-- `.claude/agents`、`.claude/workflows` 和 `.claude/skills` 已有费控最小编排，但能力还偏薄，更多是第一版可运行骨架。
-- OCR / 向量化制度解析能力仍处于待确认状态，接入前需要使用者确认。
-
-### 0.3 下一阶段关注点
-
-本节只说明“接下来建议优先补什么”；正式的阶段顺序、完成判定与范围边界仍以 [bootstrap-roadmap.md](bootstrap-roadmap.md) 为准。
-
-#### P0：先把费控闭环的最小业务样板补齐
-
-- 先补 `knowledge/expense/` 下可直接使用的真实样例规则，至少覆盖差旅、招待、发票和审批阈值。
-- 同步补更贴近真实上传场景的文件清单、申请单、票据和水单样例，让 extractor 能从“只有文件”的输入完成结构化。
-- 在现有 `server/core.py` + CLI `/audit` 之上补齐请求日志、链路追踪和审计留痕，而不是先扩 HTTP `/audit`。
-- 继续收紧统一审核输出协议，确保结论、命中规则、证据链、风险说明和人工复核建议都能稳定落盘。
-
-#### P1：再把业务运行沉淀和编排真正接起来
-
-- 让业务运行记忆写入发生在真实业务工作流里，而不是停留在独立能力层。
-- 将 `.claude/agents` 与 `.claude/skills` 从设计草案推进到真实可执行编排，优先只覆盖费控域，不并行铺开 HR 和 legal。
-- 把规则命中、人工确认、例外放行等结果沉淀为可复用 memory，形成“运行一段时间后规则越来越稳”的闭环。
-
-#### P2：最后再做能力增强和工程化收尾
-
-- 是否接入 OCR / 向量化制度解析，需要在真实制度文件处理需求明确后再确认，不建议现在默认接入。
-- 在最小审核链稳定后，再补端到端集成测试、CI 回归、部署方式和运维说明。
-- 多业务域扩展、性能优化、多租户等能力，应放在费控样板闭环跑通之后再进入实现。
-
----
-
 ## 1. 设计原则
 
 ### 1.1 核心分离：规则与流程解耦
 
 整个系统遵循一条铁律——**"知道做什么"和"知道怎么做"必须彻底分离**。
 
-| 层            | 职责         | 存什么              | 不存什么             |
-| ------------- | ------------ | ------------------- | -------------------- |
-| **CLAUDE.md** | 调度路由     | 意图→agent 的映射表 | 任何业务规则         |
-| **Agents**    | 业务流程编排 | 做事的步骤和顺序    | 具体的政策/阈值/条款 |
-| **Skills**    | 原子操作能力 | 怎么执行某个动作    | 判定标准             |
-| **Knowledge** | 规则和知识   | JSON 结构化规则     | 流程逻辑             |
+| 层 | 职责 | 存什么 | 不存什么 |
+|---|---|---|---|
+| **CLAUDE.md** | 调度路由 | 意图→agent 的映射表 | 任何业务规则 |
+| **Agents** | 业务流程编排 | 做事的步骤和顺序 | 具体的政策/阈值/条款 |
+| **Skills** | 原子操作能力 | 怎么执行某个动作 | 判定标准 |
+| **Knowledge** | 规则和知识 | JSON 结构化规则 | 流程逻辑 |
 
 这样做的好处：换一家公司的报销政策，只改 `knowledge/` 下的 JSON，agent 和 skill 一行不动；换一个业务域（比如加 HR），只加 agent + 对应 knowledge，skill 层大部分复用。
 
@@ -93,12 +23,12 @@
 
 Claude Code 的四大原生构件有本质区别，架构设计必须尊重这个区别：
 
-| 构件          | 位置                        | 性质                                           | 含义             |
-| ------------- | --------------------------- | ---------------------------------------------- | ---------------- |
-| **CLAUDE.md** | `.claude/CLAUDE.md`         | 确定性（每次都加载）                           | 全局指令和记忆   |
-| **Agents**    | `.claude/agents/*.md`       | 概率性（Claude 根据 description 判断是否调用） | 独立上下文子代理 |
-| **Skills**    | `.claude/skills/*/SKILL.md` | 概率性（Claude 自主判断是否触发）              | 可复用能力模块   |
-| **Hooks**     | `.claude/settings.json`     | **确定性（每次都执行，零例外）**               | 拦截与审计       |
+| 构件 | 位置 | 性质 | 含义 |
+|---|---|---|---|
+| **CLAUDE.md** | `.claude/CLAUDE.md` | 确定性（每次都加载） | 全局指令和记忆 |
+| **Agents** | `.claude/agents/*.md` | 概率性（Claude 根据 description 判断是否调用） | 独立上下文子代理 |
+| **Skills** | `.claude/skills/*/SKILL.md` | 概率性（Claude 自主判断是否触发） | 可复用能力模块 |
+| **Hooks** | `.claude/settings.json` | **确定性（每次都执行，零例外）** | 拦截与审计 |
 
 **关键推论：审核拦截必须用 hook，不能用 skill。** Skill 有可能被 Claude 跳过，但 hook 中 exit code 2 是硬阻断，100% 执行。
 
@@ -187,7 +117,7 @@ enterprise-agent/
 │   ├── settings.json                     # hooks + 权限配置
 │   │
 │   ├── commands/                         # slash commands（运维/管理用）
-│   │   ├── init.md                       # /init  初始化规则文件→结构化JSON
+│   │   ├── init-rules.md                 # /init-rules  初始化规则文件→结构化JSON
 │   │   ├── audit.md                      # /audit       提交审核
 │   │   ├── batch-audit.md                # /batch-audit 批量审核
 │   │   └── list-domains.md               # /list-domains 查看已注册业务域
@@ -231,7 +161,7 @@ enterprise-agent/
 │   └── legal/
 │       └── contract.rules.json
 │
-├── knowledge/external/                   # 外部原始制度文件（/init 的输入）
+├── raw_policies/                         # 原始制度文件（init-rules 的输入）
 │   ├── 公司差旅管理办法v3.pdf
 │   └── 员工考勤制度2024.docx
 │
@@ -275,13 +205,13 @@ enterprise-agent/
 
 ## 调度路由表
 
-| 意图关键词                       | 业务域  | 入口 agent                     | 触发条件       |
-| -------------------------------- | ------- | ------------------------------ | -------------- |
+| 意图关键词 | 业务域 | 入口 agent | 触发条件 |
+|---|---|---|---|
 | 报销、费用、发票、差旅报销、餐费 | expense | extractor → auditor → reviewer | 默认走三步流程 |
-| 考勤、打卡、迟到、早退、缺勤     | hr      | attendance-checker             | 直接执行       |
-| 请假、年假、病假、调休           | hr      | leave-auditor                  | 直接执行       |
-| 合同、条款、协议、法务           | legal   | contract-reviewer              | 直接执行       |
-| 初始化规则、导入制度、更新政策   | system  | 使用 rule-init skill           | 管理员操作     |
+| 考勤、打卡、迟到、早退、缺勤 | hr | attendance-checker | 直接执行 |
+| 请假、年假、病假、调休 | hr | leave-auditor | 直接执行 |
+| 合同、条款、协议、法务 | legal | contract-reviewer | 直接执行 |
+| 初始化规则、导入制度、更新政策 | system | 使用 rule-init skill | 管理员操作 |
 
 ## 调度规则
 
@@ -293,7 +223,6 @@ enterprise-agent/
 ## 多意图调度
 
 当用户输入涉及多个业务域时：
-
 1. 拆分意图列表，按依赖关系排序
 2. 依次 Task 调度各域 agent，前一个输出作为后一个输入
 3. 最后统一调用 evidence-chain skill 合并所有证据链
@@ -352,7 +281,6 @@ model: haiku
 你是报销单数据提取专员。
 
 读取 data/claims/ 下的报销单文件，提取以下字段：
-
 - claim_id: 报销单号
 - applicant: 申请人
 - amount: 金额（统一为人民币）
@@ -417,7 +345,6 @@ skills:
 你是高级审核复核员，独立于初审 auditor。
 
 你会收到 auditor 的审核结果和原始数据。你的任务：
-
 1. 不要看 auditor 的结论，自己独立审核一遍
 2. 对比你的结论和 auditor 的结论
 3. 如果一致，确认结果
@@ -425,10 +352,10 @@ skills:
 
 输出格式：
 {
-"reviewer_verdict": "",
-"agrees_with_auditor": true/false,
-"discrepancies": [],
-"final_recommendation": ""
+  "reviewer_verdict": "",
+  "agrees_with_auditor": true/false,
+  "discrepancies": [],
+  "final_recommendation": ""
 }
 ```
 
@@ -472,13 +399,12 @@ description: 解析企业原始制度文件（PDF/DOCX/TXT），提取结构化�
 # 规则初始化技能
 
 ## 触发条件
-
 当需要将原始制度文件转换为结构化 JSON 规则时使用。
 
 ## 执行步骤
 
 1. 读取原始制度文件内容
-2. 读取 knowledge/\_schema/rule.schema.json 获取目标格式
+2. 读取 knowledge/_schema/rule.schema.json 获取目标格式
 3. 从文件中提取每一条可执行的规则，转换为 schema 定义的 JSON 结构
 4. 对模糊表述标记 confidence 字段为 "low"，并在 notes 中说明歧义点
 
@@ -492,8 +418,7 @@ description: 解析企业原始制度文件（PDF/DOCX/TXT），提取结构化�
 - 模糊表述如"合理范围内"→ confidence: "low"，保留原文在 original_text 字段
 
 ## 输出要求
-
-严格遵循 knowledge/\_schema/rule.schema.json，不要自行发明字段。
+严格遵循 knowledge/_schema/rule.schema.json，不要自行发明字段。
 ```
 
 ### 6.2 rule-query — 规则查询
@@ -507,7 +432,6 @@ description: 根据业务域和类别从knowledge/目录读取适用的JSON规�
 # 规则查询技能
 
 ## 触发条件
-
 当任何 agent 需要获取业务规则进行判定时使用。
 
 ## 使用方法
@@ -521,12 +445,10 @@ description: 根据业务域和类别从knowledge/目录读取适用的JSON规�
 4. 返回所有匹配的规则，包含 rule_id 用于审计证据链
 
 ## 规则冲突处理
-
 - 多条规则匹配时，priority 数字最小的优先
 - 同优先级时，action 为 reject 的优先于 approve（安全优先）
 
 ## 输出
-
 返回匹配的规则列表，每条包含 rule_id + description + 匹配结论
 ```
 
@@ -541,7 +463,6 @@ description: 校验报销金额是否在政策允许范围内，读取knowledge�
 # 金额合理性校验
 
 ## 触发条件
-
 当需要验证某笔金额是否符合政策上限/下限时使用。
 
 ## 执行步骤
@@ -551,7 +472,6 @@ description: 校验报销金额是否在政策允许范围内，读取knowledge�
 3. 超出阈值时返回需要的审批级别
 
 ## 输出
-
 - within_limit: true/false
 - threshold: 适用的阈值金额
 - required_approval: 需要的审批级别（如有）
@@ -568,7 +488,6 @@ description: 识别业务数据中的异常模式，包括频率异常、时间�
 # 异常模式识别
 
 ## 触发条件
-
 当需要检测数据中的非正常模式时使用，适用于报销、考勤等多个业务域。
 
 ## 检测维度
@@ -579,7 +498,6 @@ description: 识别业务数据中的异常模式，包括频率异常、时间�
 - 模式异常：连续多日相同金额，整数金额过多
 
 ## 输出
-
 - anomalies: 发现的异常列表，每条包含 type + detail + severity(low/medium/high)
 ```
 
@@ -594,19 +512,16 @@ description: 将审核过程中产生的所有判定依据组装为完整的审�
 # 审计证据链构建
 
 ## 触发条件
-
 当审核流程结束需要组装最终证据链时使用。
 
 ## 证据链结构
 
 每条证据包含：
-
 - source: 证据来源（rule_id / 数据字段 / 异常检测）
 - finding: 发现内容
 - conclusion: 该条证据支持的结论（comply / violate / inconclusive）
 
 ## 输出
-
 有序的证据数组，按逻辑推理顺序排列，形成完整的判定链路。
 ```
 
@@ -621,22 +536,21 @@ description: 将审核结果标准化为统一JSON格式输出到output/results/
 # 结果标准化输出
 
 ## 触发条件
-
 当审核完成需要输出最终结果时使用。
 
 ## 输出格式
 
-写入 output/results/{claim_id}\_result.json：
+写入 output/results/{claim_id}_result.json：
 {
-"claim_id": "",
-"verdict": "approved | rejected | manual_review",
-"reasons": [],
-"policy_refs": [],
-"risk_score": 0-100,
-"extracted_data": {},
-"evidence_chain": [],
-"reviewed_by": "auditor | reviewer",
-"timestamp": ""
+  "claim_id": "",
+  "verdict": "approved | rejected | manual_review",
+  "reasons": [],
+  "policy_refs": [],
+  "risk_score": 0-100,
+  "extracted_data": {},
+  "evidence_chain": [],
+  "reviewed_by": "auditor | reviewer",
+  "timestamp": ""
 }
 ```
 
@@ -644,7 +558,7 @@ description: 将审核结果标准化为统一JSON格式输出到output/results/
 
 ## 7. Slash Commands
 
-### 7.1 `/init` — 规则初始化
+### 7.1 `/init-rules` — 规则初始化
 
 ```markdown
 ---
@@ -652,17 +566,16 @@ description: 将原始制度文件解析为结构化 JSON 规则，存入 knowle
 allowed-tools: Read, Write, Glob, Skill
 ---
 
-用户提供原始制度文件路径（PDF/DOCX/TXT，位于 knowledge/external/ 下）和目标业务域。
+用户提供原始制度文件路径（PDF/DOCX/TXT，位于 raw_policies/ 下）和目标业务域。
 
 执行步骤：
-
 1. 使用 rule-init skill 读取并解析原始文件
-2. 按 knowledge/\_schema/rule.schema.json 定义的格式输出结构化规则
+2. 按 knowledge/_schema/rule.schema.json 定义的格式输出结构化规则
 3. 写入 knowledge/{domain}/ 目录下对应的 .rules.json 文件
 4. 输出解析报告：提取了多少条规则，有哪些需要人工确认的模糊条款
 
 参数: $ARGUMENTS
-用法示例: /init knowledge/external/公司差旅管理办法v3.pdf expense
+用法示例: /init-rules raw_policies/公司差旅管理办法v3.pdf expense
 ```
 
 ---
@@ -705,27 +618,15 @@ allowed-tools: Read, Write, Glob, Skill
                 "type": "object",
                 "properties": {
                   "count": { "type": "integer" },
-                  "period": {
-                    "type": "string",
-                    "enum": ["daily", "weekly", "monthly", "yearly"]
-                  }
+                  "period": { "type": "string", "enum": ["daily","weekly","monthly","yearly"] }
                 }
               },
-              "required_docs": {
-                "type": "array",
-                "items": { "type": "string" }
-              },
+              "required_docs": { "type": "array", "items": { "type": "string" } },
               "approval_level": { "type": "string" },
-              "applicable_roles": {
-                "type": "array",
-                "items": { "type": "string" }
-              }
+              "applicable_roles": { "type": "array", "items": { "type": "string" } }
             }
           },
-          "action": {
-            "type": "string",
-            "enum": ["approve", "reject", "escalate"]
-          },
+          "action": { "type": "string", "enum": ["approve", "reject", "escalate"] },
           "priority": { "type": "integer" },
           "confidence": { "type": "string", "enum": ["high", "medium", "low"] },
           "original_text": { "type": "string" },
@@ -943,7 +844,7 @@ def init_rules(
     domain: str = typer.Argument(..., help="目标业务域"),
 ):
     """初始化规则：解析制度文件为结构化 JSON。"""
-    prompt = f"/init {source} {domain}"
+    prompt = f"/init-rules {source} {domain}"
     result = asyncio.run(run_agent_full(prompt))
     typer.echo(result)
 
@@ -1003,20 +904,16 @@ dependencies = [
 ]
 
 [project.scripts]
-agent-cli = "server.cli:main"
+agent-cli = "server.cli:app"
 ```
 
 ### 11.2 `.env`
 
 ```bash
-MODEL_BASE_URL=http://localhost:8000     # 可选，自建兼容网关时填写
-# MODEL_API_KEY=sk-example               # 有鉴权时填写；无鉴权本地网关请整行省略
-MODEL_NAME=your-model-name              # 模型别名从配置注入，不写死在代码里
-MAX_BUDGET_USD=1.0                      # 单次 agent 调用预算上限
+ANTHROPIC_API_KEY=sk-ant-xxx          # 必须，SDK 和审核脚本都依赖
+MAX_BUDGET_USD=1.0                     # 单次 agent 调用预算上限
 TENANT_KEYS={"tenant_a":"sk-a","tenant_b":"sk-b"}
 ```
-
-如果你的兼容网关不需要鉴权，不要把 `MODEL_API_KEY` 设成空字符串。按上面的注释方式整行省略即可，这样客户端不会发送空的鉴权请求头。
 
 ### 11.3 Dockerfile
 
@@ -1042,7 +939,7 @@ CMD ["uvicorn", "server.api:app", "--host", "0.0.0.0", "--port", "8000"]
 ### 11.4 docker-compose.yml
 
 ```yaml
-version: "3.8"
+version: '3.8'
 services:
   agent-server:
     build: .
@@ -1051,10 +948,10 @@ services:
     env_file:
       - .env
     volumes:
-      - ./.claude:/app/.claude # 热更新 agent 定义
-      - ./knowledge:/app/knowledge # 热更新规则
-      - ./output:/app/output # 持久化结果
-      - ./logs:/app/logs # 持久化日志
+      - ./.claude:/app/.claude            # 热更新 agent 定义
+      - ./knowledge:/app/knowledge        # 热更新规则
+      - ./output:/app/output              # 持久化结果
+      - ./logs:/app/logs                  # 持久化日志
 ```
 
 ### 11.5 三种启动方式
@@ -1062,7 +959,7 @@ services:
 ```bash
 # CLI 模式（运维）
 agent-cli audit data/claims/EXP-001.json
-agent-cli init expense --source knowledge/external/差旅制度.pdf
+agent-cli init-rules raw_policies/差旅制度.pdf expense
 agent-cli chat
 
 # HTTP API 模式（外部系统对接）

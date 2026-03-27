@@ -11,7 +11,7 @@
 | 组件         | 选型                                   | 版本要求         |
 | ------------ | -------------------------------------- | ---------------- |
 | Agent 运行时 | Claude Agent SDK（Python）             | >= 0.1.48        |
-| Python       | uv 管理                                | >= 3.12          |
+| Python       | uv 管理                                | >= 3.14          |
 | Node.js      | 系统安装（Agent SDK CLI 运行时依赖）   | >= 18            |
 | HTTP API     | FastAPI + Uvicorn                      | FastAPI >= 0.115 |
 | CLI          | Typer                                  | >= 0.12          |
@@ -30,12 +30,12 @@
 
 ### 0.3 架构分层原则
 
-| 层          | 目录              | 职责                     | 谁维护   |
-| ----------- | ----------------- | ------------------------ | -------- |
-| Claude 生态 | `.claude/`        | 调度、流程、能力、拦截   | 开发者   |
-| 业务规则    | `knowledge/`      | 政策条款、阈值、审批标准 | 业务人员 |
-| 接入壳      | `server/`         | HTTP/CLI/Chat + 日志     | 开发者   |
-| 业务数据    | `data/` `output/` | 输入报销单、输出审核结果 | 系统自动 |
+| 层          | 目录            | 职责                     | 谁维护   |
+| ----------- | --------------- | ------------------------ | -------- |
+| Claude 生态 | `.claude/`      | 调度、流程、能力、拦截   | 开发者   |
+| 业务规则    | `knowledge/`    | 政策条款、阈值、审批标准 | 业务人员 |
+| 接入壳      | `server/`       | HTTP/CLI/Chat + 日志     | 开发者   |
+| 业务数据    | `data/` `logs/` | 输入报销单、归档审核结果 | 系统自动 |
 
 ### 0.4 确定性 vs 概率性
 
@@ -120,7 +120,7 @@ enterprise-agent/
 │   ├── invoices/                         # 发票
 │   └── pre-approvals/                    # 事前申请单
 │
-├── output/results/                       # ===== 审核结果输出 =====
+├── logs/results/                         # ===== 审核结果归档 =====
 │
 ├── logs/sessions/                        # ===== 会话日志(JSONL) =====
 │
@@ -149,7 +149,7 @@ enterprise-agent/
 mkdir enterprise-agent && cd enterprise-agent
 
 uv init --no-readme
-uv python pin 3.12
+uv python pin 3.14
 
 uv add claude-agent-sdk anthropic fastapi uvicorn typer
 uv add --dev pytest ruff
@@ -165,7 +165,7 @@ node --version  # 必须 >= 18
 mkdir -p .claude/{commands,agents/expense,agents/hr,agents/legal,skills/{rule-init,rule-query,invoice-parse,pre-approval-match,travel-compliance,entertainment-compliance,budget-check,amount-validate,anomaly-detect,evidence-chain,result-format},hooks}
 mkdir -p knowledge/{_schema,expense,hr,legal}
 mkdir -p data/{claims,invoices,pre-approvals}
-mkdir -p output/results
+mkdir -p logs/results
 mkdir -p logs/sessions
 mkdir -p server
 touch server/__init__.py
@@ -186,7 +186,7 @@ TENANT_KEYS={"default":"sk-default"}
 .venv/
 __pycache__/
 logs/
-output/results/
+logs/results/
 *.pyc
 ```
 
@@ -1091,7 +1091,7 @@ description: 校验本次费用是否超出部门/项目/个人预算额度
 
 1. 读取 knowledge/expense/budget-limits.json
 2. 确定预算维度（部门/项目/个人）
-3. 计算已使用预算（读取 output/results/ 中已审批记录）
+3. 计算已使用预算（读取 logs/results/ 中已归档记录）
 4. 计算本次金额占剩余预算比例
 
 ## 输出
@@ -1173,14 +1173,14 @@ description: 将审核过程中所有判定依据组装为完整审计证据链
 ```markdown
 ---
 name: result-format
-description: 将审核结果标准化为统一JSON格式输出到output/results/
+description: 将审核结果标准化为统一JSON格式输出到logs/results/
 ---
 
 # 标准化输出
 
 ## 输出格式
 
-写入 output/results/{claim_id}\_result.json：
+写入 logs/results/{claim_id}\_result.json：
 {
 "claim_id": "",
 "verdict": "approved | rejected | manual_review",
@@ -1272,7 +1272,7 @@ skills:
 ### 汇总
 
 6. 使用 evidence-chain skill 组装完整证据链
-7. 使用 result-format skill 输出标准化结果写入 output/results/
+7. 使用 result-format skill 输出标准化结果写入 logs/results/
 
 ## 判定逻辑
 
@@ -1371,7 +1371,7 @@ import sys
 hook_input = json.load(sys.stdin)
 
 file_path = hook_input.get("tool_input", {}).get("file_path", "")
-if "output/results/" not in file_path:
+if "logs/results/" not in file_path:
     sys.exit(0)
 
 content = hook_input.get("tool_input", {}).get("content", "")
@@ -1415,7 +1415,7 @@ from anthropic import Anthropic
 hook_input = json.load(sys.stdin)
 
 file_path = hook_input.get("tool_input", {}).get("file_path", "")
-if "output/results/" not in file_path:
+if "logs/results/" not in file_path:
     sys.exit(0)
 
 content = hook_input.get("tool_input", {}).get("content", "")
@@ -1475,7 +1475,7 @@ allowed-tools: Read, Write, Glob, Skill, Task
 ---
 
 读取指定报销单文件，调度 extractor → auditor 流程，高风险自动触发 reviewer。
-结果写入 output/results/。
+结果写入 logs/results/。
 
 参数: $ARGUMENTS
 用法: /audit data/claims/EXP-2024-0312.json
@@ -1579,10 +1579,10 @@ uv run python -m server.cli audit data/claims/EXP-2024-0312.json
 # - 最终判定 manual_review，理由：行程天数偏差
 # - PreToolUse hook 检查结果完整性
 # - PostToolUse hook 用 Haiku 审核输出
-# - 结果写入 output/results/EXP-2024-0312_result.json
+# - 结果写入 logs/results/EXP-2024-0312_result.json
 
 # 2. 检查结果文件
-cat output/results/EXP-2024-0312_result.json
+cat logs/results/EXP-2024-0312_result.json
 
 # 3. 检查日志
 cat logs/sessions/*.jsonl | head -20
@@ -1602,7 +1602,7 @@ curl -X POST http://127.0.0.1:8000/chat \
 ### 3.1 Dockerfile
 
 ```dockerfile
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 # Agent SDK CLI 依赖 Node.js
 RUN apt-get update && apt-get install -y curl \

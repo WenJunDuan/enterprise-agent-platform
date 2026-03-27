@@ -1,0 +1,34 @@
+{
+  "domain": "hr",
+  "category": "attendance",
+  "version": "2026.03-bootstrap",
+  "effective_date": "2026-03-23",
+  "rules": [
+    {
+      "rule_id": "hr.attendance.001",
+      "description": "A monthly late-arrival count of 3 or more requires manual review",
+      "conditions": {
+        "frequency_limit": {
+          "count": 3,
+          "period": "monthly"
+        }
+      },
+      "action": "escalate",
+      "priority": 1,
+      "confidence": "medium",
+      "original_text": "Bootstrap placeholder for late-arrival review."
+    },
+    {
+      "rule_id": "hr.attendance.002",
+      "description": "Missing punch records must include a correction note",
+      "conditions": {
+        "required_docs": ["correction_note"]
+      },
+      "action": "reject",
+      "priority": 1,
+      "confidence": "medium",
+      "original_text": "Bootstrap placeholder for missing record handling."
+    }
+  ]
+}
+

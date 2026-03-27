@@ -1,0 +1,31 @@
+{
+  "domain": "hr",
+  "category": "leave",
+  "version": "2026.03-bootstrap",
+  "effective_date": "2026-03-23",
+  "rules": [
+    {
+      "rule_id": "hr.leave.001",
+      "description": "Leave requests must include a start date, end date, and reason",
+      "conditions": {
+        "required_docs": ["leave_request_form"]
+      },
+      "action": "reject",
+      "priority": 1,
+      "confidence": "medium",
+      "original_text": "Bootstrap placeholder for request completeness."
+    },
+    {
+      "rule_id": "hr.leave.002",
+      "description": "Extended leave requests require manager approval",
+      "conditions": {
+        "approval_level": "manager"
+      },
+      "action": "escalate",
+      "priority": 2,
+      "confidence": "medium",
+      "original_text": "Bootstrap placeholder for leave escalation."
+    }
+  ]
+}
+

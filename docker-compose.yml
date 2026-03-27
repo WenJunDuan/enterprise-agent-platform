@@ -1,0 +1,15 @@
+version: "3.8"
+
+services:
+  agent-server:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./.claude:/app/.claude
+      - ./knowledge:/app/knowledge
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./raw_policies:/app/raw_policies

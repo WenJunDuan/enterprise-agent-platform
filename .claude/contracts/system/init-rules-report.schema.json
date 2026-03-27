@@ -1,0 +1,67 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "init_rules_report",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["initialized", "manual_review"]
+    },
+    "domain": {
+      "type": "string",
+      "enum": ["expense", "hr", "legal"]
+    },
+    "source_path": {
+      "type": "string"
+    },
+    "written_files": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "categories": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "extracted_rule_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "manual_review_items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "item": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": ["item", "reason"]
+      }
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "status",
+    "domain",
+    "source_path",
+    "written_files",
+    "categories",
+    "extracted_rule_count",
+    "manual_review_items",
+    "notes"
+  ]
+}
