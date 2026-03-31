@@ -4,16 +4,23 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
+from typing import Any
 
 import typer
 import uvicorn
 
+from server.command_adapter import run_command_full, run_command_json
 from server.core import (
     AgentRunMeta,
+    ClaudeRuntimeError,
     INIT_RULES_REPORT_SCHEMA_NAME,
+    JSONContractError,
+    DEFAULT_OUTPUT_SCHEMA_NAME,
     run_agent_full,
-    run_agent_json,
 )
+from server.platform.config import get_claude_runtime_report
+from server.platform.source_proxy import prepare_text_proxy
 from server.stores.request_store import get_request_audit_by_request_id, list_request_audits
 from server.stores.result_store import (
     get_result_payload_by_request_id,
@@ -28,6 +35,64 @@ from server.stores.session_store import (
 )
 
 app = typer.Typer(help="Enterprise agent platform CLI.")
+INIT_RULES_PROXY_DIR = Path("logs/service/init-rules")
+
+
+def _ensure_cli_runtime() -> None:
+    report = get_claude_runtime_report()
+    if report["status"] == "ok":
+        return
+    _echo_json(report)
+    raise typer.Exit(code=1)
+
+
+def _run_cli(coro: Any) -> Any:
+    try:
+        return asyncio.run(coro)
+    except ClaudeRuntimeError as exc:
+        typer.echo(str(exc))
+        raise typer.Exit(code=1) from exc
+    except JSONContractError as exc:
+        typer.echo(str(exc))
+        raise typer.Exit(code=1) from exc
+
+
+def _echo_json(payload: Any) -> None:
+    typer.echo(json.dumps(payload, ensure_ascii=False, indent=2))
+
+
+def _emit_cli_json_result(meta: AgentRunMeta, payload: dict | list) -> None:
+    _echo_json(
+        {
+            "request_id": meta.request_id,
+            "conversation_id": meta.conversation_id,
+            "claude_session_id": meta.claude_session_id,
+            "schema_name": meta.schema_name,
+            "result_file": meta.result_file,
+            "cost": meta.cost_usd,
+            "response": payload,
+        }
+    )
+
+
+def _invoke_text_command(coro: Any) -> None:
+    typer.echo(_run_cli(coro))
+
+
+def _invoke_json_command(coro: Any) -> None:
+    payload, meta = _run_cli(coro)
+    _emit_cli_json_result(meta, payload)
+
+
+@app.command()
+def runtime(
+    strict: bool = typer.Option(False, help="Exit non-zero when runtime config is degraded."),
+) -> None:
+    """Print the current redacted Claude runtime configuration."""
+    report = get_claude_runtime_report()
+    _echo_json(report)
+    if strict and report["status"] != "ok":
+        raise typer.Exit(code=1)
 
 
 @app.command()
@@ -38,14 +103,13 @@ def ask(
     fork_from_session_id: str = typer.Option("", help="Fork from a previous Claude session."),
 ) -> None:
     """Run one prompt and print the final output."""
-    typer.echo(
-        asyncio.run(
-            run_agent_full(
-                prompt,
-                conversation_id=conversation_id or new_conversation_id(),
-                resume_session_id=resume_session_id or None,
-                fork_from_session_id=fork_from_session_id or None,
-            )
+    _ensure_cli_runtime()
+    _invoke_text_command(
+        run_agent_full(
+            prompt,
+            conversation_id=conversation_id or new_conversation_id(),
+            resume_session_id=resume_session_id or None,
+            fork_from_session_id=fork_from_session_id or None,
         )
     )
 
@@ -58,14 +122,14 @@ def audit(
     fork_from_session_id: str = typer.Option("", help="Fork from a previous Claude session."),
 ) -> None:
     """Trigger the built-in single item workflow."""
-    typer.echo(
-        asyncio.run(
-            run_agent_full(
-                f"/audit {path}",
-                conversation_id=conversation_id or new_conversation_id(),
-                resume_session_id=resume_session_id or None,
-                fork_from_session_id=fork_from_session_id or None,
-            )
+    _ensure_cli_runtime()
+    _invoke_text_command(
+        run_command_full(
+            "audit",
+            path,
+            conversation_id=conversation_id or new_conversation_id(),
+            resume_session_id=resume_session_id or None,
+            fork_from_session_id=fork_from_session_id or None,
         )
     )
 
@@ -78,31 +142,19 @@ def audit_json(
     fork_from_session_id: str = typer.Option("", help="Fork from a previous Claude session."),
 ) -> None:
     """Run audit with structured output and print metadata."""
+    _ensure_cli_runtime()
 
     async def _run() -> tuple[dict | list, AgentRunMeta]:
-        return await run_agent_json(
-            f"/audit {path}",
+        return await run_command_json(
+            "audit",
+            path,
             conversation_id=conversation_id or new_conversation_id(),
             resume_session_id=resume_session_id or None,
             fork_from_session_id=fork_from_session_id or None,
+            schema_name=DEFAULT_OUTPUT_SCHEMA_NAME,
         )
 
-    payload, meta = asyncio.run(_run())
-    typer.echo(
-        json.dumps(
-            {
-                "request_id": meta.request_id,
-                "conversation_id": meta.conversation_id,
-                "claude_session_id": meta.claude_session_id,
-                "schema_name": meta.schema_name,
-                "result_file": meta.result_file,
-                "cost": meta.cost_usd,
-                "response": payload,
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
-    )
+    _invoke_json_command(_run())
 
 
 @app.command("init-rules")
@@ -111,38 +163,22 @@ def init_rules(
     domain: str = typer.Argument(..., help="Target domain name."),
 ) -> None:
     """Initialize structured rules from a source document."""
+    _ensure_cli_runtime()
+    try:
+        canonical_source, _ = prepare_text_proxy(source, INIT_RULES_PROXY_DIR)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc), param_hint="source") from exc
 
     async def _run() -> tuple[dict | list, AgentRunMeta]:
-        return await run_agent_json(
-            f"/init-rules {source} {domain}",
+        return await run_command_json(
+            "init-rules",
+            canonical_source,
+            domain,
             conversation_id=new_conversation_id(),
             schema_name=INIT_RULES_REPORT_SCHEMA_NAME,
         )
 
-    payload, meta = asyncio.run(_run())
-    typer.echo(
-        json.dumps(
-            {
-                "request_id": meta.request_id,
-                "conversation_id": meta.conversation_id,
-                "claude_session_id": meta.claude_session_id,
-                "schema_name": meta.schema_name,
-                "result_file": meta.result_file,
-                "cost": meta.cost_usd,
-                "response": payload,
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
-    )
-
-
-@app.command()
-def chat() -> None:
-    """Start an interactive chat session."""
-    from server.chat import interactive_chat
-
-    asyncio.run(interactive_chat())
+    _invoke_json_command(_run())
 
 
 @app.command()
@@ -152,15 +188,11 @@ def sessions(
     offset: int = typer.Option(0, help="Starting offset."),
 ) -> None:
     """List logged application sessions."""
-    typer.echo(
-        json.dumps(
-            list_logged_sessions(
-                conversation_id=conversation_id or None,
-                limit=limit,
-                offset=offset,
-            ),
-            ensure_ascii=False,
-            indent=2,
+    _echo_json(
+        list_logged_sessions(
+            conversation_id=conversation_id or None,
+            limit=limit,
+            offset=offset,
         )
     )
 
@@ -172,12 +204,8 @@ def transcript(
     offset: int = typer.Option(0, help="Message offset."),
 ) -> None:
     """Show Claude transcript messages for a saved session."""
-    typer.echo(
-        json.dumps(
-            get_sdk_session_transcript(session_id=session_id, limit=limit, offset=offset),
-            ensure_ascii=False,
-            indent=2,
-        )
+    _echo_json(
+        get_sdk_session_transcript(session_id=session_id, limit=limit, offset=offset)
     )
 
 
@@ -187,13 +215,7 @@ def conversations(
     offset: int = typer.Option(0, help="Starting offset."),
 ) -> None:
     """List conversation summaries."""
-    typer.echo(
-        json.dumps(
-            list_conversation_summaries(limit=limit, offset=offset),
-            ensure_ascii=False,
-            indent=2,
-        )
-    )
+    _echo_json(list_conversation_summaries(limit=limit, offset=offset))
 
 
 @app.command()
@@ -204,16 +226,12 @@ def requests(
     offset: int = typer.Option(0, help="Starting offset."),
 ) -> None:
     """List serve-level request audits."""
-    typer.echo(
-        json.dumps(
-            list_request_audits(
-                conversation_id=conversation_id or None,
-                claude_session_id=claude_session_id or None,
-                limit=limit,
-                offset=offset,
-            ),
-            ensure_ascii=False,
-            indent=2,
+    _echo_json(
+        list_request_audits(
+            conversation_id=conversation_id or None,
+            claude_session_id=claude_session_id or None,
+            limit=limit,
+            offset=offset,
         )
     )
 
@@ -225,7 +243,7 @@ def request_detail(request_id: str = typer.Argument(..., help="Request id.")) ->
     if record is None:
         typer.echo("Request not found.")
         raise typer.Exit(code=1)
-    typer.echo(json.dumps(record, ensure_ascii=False, indent=2))
+    _echo_json(record)
 
 
 @app.command()
@@ -236,16 +254,12 @@ def results(
     offset: int = typer.Option(0, help="Starting offset."),
 ) -> None:
     """List archived structured results."""
-    typer.echo(
-        json.dumps(
-            list_result_records(
-                conversation_id=conversation_id or None,
-                claim_id=claim_id or None,
-                limit=limit,
-                offset=offset,
-            ),
-            ensure_ascii=False,
-            indent=2,
+    _echo_json(
+        list_result_records(
+            conversation_id=conversation_id or None,
+            claim_id=claim_id or None,
+            limit=limit,
+            offset=offset,
         )
     )
 
@@ -257,15 +271,11 @@ def result_detail(request_id: str = typer.Argument(..., help="Request id.")) -> 
     if record is None:
         typer.echo("Result not found.")
         raise typer.Exit(code=1)
-    typer.echo(
-        json.dumps(
-            {
-                "record": record,
-                "payload": get_result_payload_by_request_id(request_id=request_id),
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
+    _echo_json(
+        {
+            "record": record,
+            "payload": get_result_payload_by_request_id(request_id=request_id),
+        }
     )
 
 

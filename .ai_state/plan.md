@@ -39,3 +39,31 @@
 - [ ] T-008: 整理部署与运行约束说明 + 对齐单 worker、非 serverless、长运行实例、Docker 挂载与 app-server 启动方式 + 验收标准是 README 与 `.ai_state` 能直接指导部署
       文件: `README.md`、`Dockerfile`、`docker-compose.yml`、`.ai_state/quality.md`
       依赖: T-007
+
+- [x] T-009: 重写 `.claude/skills/expense-audit` 与相关 `common/system` skills，并为 `knowledge/expense/*.json` 补齐真实制度来源元数据；验收标准是 skill 文本引用真实本地路径、expense 规则带 `source`、`thresholds.json` 带来源映射且所有 JSON 可解析
+      文件: `.claude/skills/expense-audit/`、`.claude/skills/common/`、`.claude/skills/system/`、`knowledge/expense/`、`docs/superpowers/`
+      依赖: T-002
+
+- [x] T-010: 收口 CLI 的 `.env -> Claude SDK` 运行面，确保 `server.cli ask` 在进入模型调用前完成 runtime 映射、缺失校验和脱敏诊断输出；验收标准是 CLI 有 `runtime` 入口、`ask` 失败前置可读、README 和 `.env.example` 对齐
+      文件: `server/platform/config.py`、`server/core.py`、`server/cli.py`、`server/platform/diagnostics.py`、`.env.example`、`README.md`
+      依赖: B-001, B-002
+
+- [x] T-011: 稳定 `server.cli init-rules` 的 expense 路径，避免空成功、PDF 读权限失败和单次 prompt 过长；验收标准是 expense 域按类别拆分执行、结果聚合归档、错误写偏文件被清理、最终返回有意义的 `initialized/manual_review`
+      文件: `server/cli.py`、`server/core.py`、`.claude/commands/init-rules.md`、`.claude/skills/system/rule-init/SKILL.md`、`tests/test_bootstrap.py`、`knowledge/expense/`
+      依赖: T-010
+
+- [x] T-012: 移除 `chat` 模式，收紧 CLI 与服务边界；验收标准是 `server.cli` 不再暴露 `chat` 子命令，`server/chat.py` 删除，README 同步说明 CLI 仅保留本地终端直连用途
+      文件: `server/cli.py`、`server/chat.py`、`README.md`、`tests/test_bootstrap.py`
+      依赖: T-010
+
+- [x] T-013: 建立统一 Claude command 调用适配层，让 CLI 与 serve 共用 `init-rules` / `audit` 的 Claude 能力入口，而不是在 Python 两侧重复实现；验收标准是新增共享 adapter、CLI 改为走 adapter、HTTP `/init-rules` 与 `/audit` 可用、测试通过
+      文件: `server/command_adapter.py`、`server/cli.py`、`server/api.py`、`tests/test_bootstrap.py`、`README.md`
+      依赖: T-010, T-011
+
+- [x] T-014: 收口 serve 运行面与 Python 适配层模板重复；验收标准是 `app_server` 提供 HTTP 探测信息、`api.py` 的 JSON endpoint 共享统一执行模板、README 对齐服务调用方式、静态检查和测试通过
+      文件: `server/app_server.py`、`server/api.py`、`server/cli.py`、`README.md`、`tests/test_bootstrap.py`
+      依赖: T-013
+
+- [ ] T-015: 固化审核结果中文展示契约；验收标准是内部继续保留 `approved/rejected/manual_review` 三态，对外统一输出 `result/conclusion/explanation`，其中 `manual_review` 固定显示为“待人工复核”且必须说明无法自动放行的原因
+      文件: `.claude/contracts/common/audit-result.schema.json`、`.claude/skills/common/result-format/SKILL.md`、`.claude/hooks/check-before-write.py`、`tests/test_bootstrap.py`
+      依赖: T-014

@@ -16,3 +16,4 @@ logs/sessions/index/
 logs/results/*.json
 logs/sessions/*.jsonl
 .ace-tool/
+.env

@@ -12,7 +12,8 @@ from dotenv import load_dotenv
 
 from server.platform.paths import PROJECT_ROOT, ensure_local_layout
 
-load_dotenv(PROJECT_ROOT / ".env")
+DOTENV_PATH = PROJECT_ROOT / ".env"
+DOTENV_LOADED = load_dotenv(DOTENV_PATH)
 ensure_local_layout()
 
 KNOWN_CLAUDE_MODEL_ALIASES = {"default", "sonnet", "opus", "haiku", "opusplan"}
@@ -97,6 +98,88 @@ def configure_claude_runtime_env(
 configure_claude_runtime_env()
 
 
+def get_claude_runtime_snapshot(environ: MutableMapping[str, str] | None = None) -> dict[str, Any]:
+    """Return a redacted snapshot of the active Claude runtime configuration."""
+    env = environ if environ is not None else os.environ
+    original_env = dict(env)
+    mapped = configure_claude_runtime_env(env)
+
+    credential_source = None
+    if original_env.get("ANTHROPIC_AUTH_TOKEN"):
+        credential_source = "ANTHROPIC_AUTH_TOKEN"
+    elif original_env.get("MODEL_AUTH_TOKEN"):
+        credential_source = "MODEL_AUTH_TOKEN"
+    elif original_env.get("ANTHROPIC_API_KEY"):
+        credential_source = "ANTHROPIC_API_KEY"
+    elif original_env.get("MODEL_API_KEY"):
+        credential_source = "MODEL_API_KEY"
+
+    base_url_source = None
+    if original_env.get("ANTHROPIC_BASE_URL"):
+        base_url_source = "ANTHROPIC_BASE_URL"
+    elif original_env.get("MODEL_BASE_URL"):
+        base_url_source = "MODEL_BASE_URL"
+
+    model_source = None
+    if original_env.get("ANTHROPIC_MODEL"):
+        model_source = "ANTHROPIC_MODEL"
+    elif original_env.get("MODEL_NAME"):
+        model_source = "MODEL_NAME"
+
+    return {
+        "dotenv_path": str(DOTENV_PATH),
+        "dotenv_exists": DOTENV_PATH.exists(),
+        "dotenv_loaded": DOTENV_LOADED,
+        "anthropic_base_url": mapped["anthropic_base_url"],
+        "anthropic_api_key_configured": bool(mapped["anthropic_api_key"]),
+        "anthropic_auth_token_configured": bool(mapped["anthropic_auth_token"]),
+        "anthropic_model": mapped["anthropic_model"],
+        "anthropic_default_sonnet_model": mapped["anthropic_default_sonnet_model"],
+        "anthropic_default_opus_model": mapped["anthropic_default_opus_model"],
+        "anthropic_default_haiku_model": mapped["anthropic_default_haiku_model"],
+        "anthropic_custom_headers_configured": mapped["anthropic_custom_headers_configured"] == "1",
+        "second_review_model": resolve_second_review_model(env),
+        "base_url_source": base_url_source,
+        "credential_source": credential_source,
+        "model_source": model_source,
+        "native_auth_configured": bool(
+            original_env.get("ANTHROPIC_API_KEY") or original_env.get("ANTHROPIC_AUTH_TOKEN")
+        ),
+    }
+
+
+def validate_claude_runtime(environ: MutableMapping[str, str] | None = None) -> list[str]:
+    """Validate the minimum runtime config required for Claude SDK CLI usage."""
+    runtime = get_claude_runtime_snapshot(environ)
+    errors: list[str] = []
+
+    if not runtime["anthropic_base_url"] and not runtime["native_auth_configured"]:
+        errors.append("MODEL_BASE_URL or ANTHROPIC_BASE_URL is required")
+
+    if not (
+        runtime["anthropic_api_key_configured"] or runtime["anthropic_auth_token_configured"]
+    ):
+        errors.append(
+            "MODEL_API_KEY / MODEL_AUTH_TOKEN / ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN is required"
+        )
+
+    if not runtime["anthropic_model"]:
+        errors.append("MODEL_NAME or ANTHROPIC_MODEL is required")
+
+    return errors
+
+
+def get_claude_runtime_report(environ: MutableMapping[str, str] | None = None) -> dict[str, Any]:
+    """Build a CLI-friendly status report for Claude runtime configuration."""
+    runtime = get_claude_runtime_snapshot(environ)
+    errors = validate_claude_runtime(environ)
+    return {
+        "status": "ok" if not errors else "degraded",
+        "runtime": runtime,
+        "errors": errors,
+    }
+
+
 def resolve_second_review_model(environ: Mapping[str, str] | None = None) -> str:
     """Pick a safe review model for either native Claude or an external gateway."""
     env = environ if environ is not None else os.environ
@@ -170,6 +253,7 @@ def get_app_settings() -> AppSettings:
 def runtime_setting_snapshot() -> dict[str, Any]:
     """Expose settings in a JSON-serializable shape for diagnostics."""
     settings = get_app_settings()
+    runtime = get_claude_runtime_snapshot()
     return {
         "api_host": settings.api_host,
         "api_port": settings.api_port,
@@ -178,13 +262,19 @@ def runtime_setting_snapshot() -> dict[str, Any]:
         "runtime_log_max_bytes": settings.runtime_log_max_bytes,
         "runtime_log_backups": settings.runtime_log_backups,
         "app_server_name": settings.app_server_name,
-        "anthropic_api_key_configured": bool(os.getenv("ANTHROPIC_API_KEY")),
-        "anthropic_auth_token_configured": bool(os.getenv("ANTHROPIC_AUTH_TOKEN")),
-        "anthropic_base_url": os.getenv("ANTHROPIC_BASE_URL"),
-        "anthropic_model": os.getenv("ANTHROPIC_MODEL"),
-        "anthropic_default_sonnet_model": os.getenv("ANTHROPIC_DEFAULT_SONNET_MODEL"),
-        "anthropic_default_opus_model": os.getenv("ANTHROPIC_DEFAULT_OPUS_MODEL"),
-        "anthropic_default_haiku_model": os.getenv("ANTHROPIC_DEFAULT_HAIKU_MODEL"),
-        "anthropic_custom_headers_configured": bool(os.getenv("ANTHROPIC_CUSTOM_HEADERS")),
-        "second_review_model": resolve_second_review_model(),
+        "dotenv_path": runtime["dotenv_path"],
+        "dotenv_exists": runtime["dotenv_exists"],
+        "dotenv_loaded": runtime["dotenv_loaded"],
+        "anthropic_api_key_configured": runtime["anthropic_api_key_configured"],
+        "anthropic_auth_token_configured": runtime["anthropic_auth_token_configured"],
+        "anthropic_base_url": runtime["anthropic_base_url"],
+        "anthropic_model": runtime["anthropic_model"],
+        "anthropic_default_sonnet_model": runtime["anthropic_default_sonnet_model"],
+        "anthropic_default_opus_model": runtime["anthropic_default_opus_model"],
+        "anthropic_default_haiku_model": runtime["anthropic_default_haiku_model"],
+        "anthropic_custom_headers_configured": runtime["anthropic_custom_headers_configured"],
+        "second_review_model": runtime["second_review_model"],
+        "base_url_source": runtime["base_url_source"],
+        "credential_source": runtime["credential_source"],
+        "model_source": runtime["model_source"],
     }

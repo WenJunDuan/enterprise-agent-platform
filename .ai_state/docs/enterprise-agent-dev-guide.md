@@ -2,6 +2,14 @@
 
 > 基于 Claude Agent SDK + `.claude/` 原生架构，实现报销审核、HR 合规、法律支撑等多业务域的统一 Agent 平台。
 
+> 维护说明：
+> - 当前仓库主线以 `knowledge/external/` 作为制度源材料目录，不再以 `raw_policies/` 为准
+> - 当前推荐示例输入位置是 `tests/fixtures/`，不再以 `data/claims/`、`data/pre-approvals/` 为主线
+> - 当前结果归档统一写入 `logs/results/`
+> - `server/chat.py` 已移除
+> - `batch-audit` 已退出当前主线
+> - Python 只负责 Claude 调用适配与输出外壳，不再实现业务能力编排
+
 ---
 
 ## 1. 设计原则
@@ -93,7 +101,7 @@ Task(auditor) ── 合规审核
 Task(reviewer) ── 交叉复核（独立调 rule-query + amount-validate）
     │
     ▼
-Write(output/results/xxx.json)
+Write(logs/results/xxx.json)
     │
     ▼ [PostToolUse hook 确定性触发]
 scripts/review-output.py ── 第二模型审核
@@ -119,7 +127,6 @@ enterprise-agent/
 │   ├── commands/                         # slash commands（运维/管理用）
 │   │   ├── init-rules.md                 # /init-rules  初始化规则文件→结构化JSON
 │   │   ├── audit.md                      # /audit       提交审核
-│   │   ├── batch-audit.md                # /batch-audit 批量审核
 │   │   └── list-domains.md               # /list-domains 查看已注册业务域
 │   │
 │   ├── agents/                           # 业务域 agents
@@ -161,23 +168,26 @@ enterprise-agent/
 │   └── legal/
 │       └── contract.rules.json
 │
-├── raw_policies/                         # 原始制度文件（init-rules 的输入）
-│   ├── 公司差旅管理办法v3.pdf
-│   └── 员工考勤制度2024.docx
+├── knowledge/external/                   # 原始制度文件（init-rules 的输入）
+│   └── 数睿员工手册.pdf
 │
 ├── scripts/                              # hook 调用的脚本
 │   ├── review-output.py                  # 第二模型审核出口内容
 │   └── log-audit.sh                      # 审计日志记录
 │
-├── data/claims/                          # 待审核输入
-├── output/results/                       # 审核结果输出
+├── tests/fixtures/                       # 推荐的示例输入位置
+│   ├── claims/
+│   └── pre-approvals/
 │
-├── server/                               # ===== 三合一接入层 =====
+├── server/                               # ===== Python 适配层 =====
 │   ├── __init__.py
-│   ├── core.py                           # 共享的 SDK 调用逻辑（唯一核心）
-│   ├── api.py                            # HTTP API（FastAPI + SSE）
-│   ├── cli.py                            # CLI（Typer）
-│   └── chat.py                           # 交互式 Chat REPL
+│   ├── core.py                           # Claude SDK 调用核心
+│   ├── command_adapter.py                # 统一 Claude command 调用适配
+│   ├── api.py                            # HTTP API（FastAPI + JSON/SSE）
+│   ├── cli.py                            # CLI（Typer，本地终端外壳）
+│   ├── app_server.py                     # 后台服务管理
+│   ├── platform/
+│   └── stores/
 │
 ├── .env                                  # API keys, 模型配置
 ├── .env.example
@@ -185,8 +195,10 @@ enterprise-agent/
 ├── Dockerfile
 ├── docker-compose.yml
 ├── logs/
-│   ├── agent/                            # agent 交互日志
-│   └── audit/                            # 审核拦截记录
+│   ├── runtime/
+│   ├── sessions/
+│   ├── results/
+│   └── service/
 └── tests/
 ```
 
@@ -280,7 +292,7 @@ model: haiku
 
 你是报销单数据提取专员。
 
-读取 data/claims/ 下的报销单文件，提取以下字段：
+读取示例报销单文件（当前建议放在 `tests/fixtures/claims/`）并提取以下字段：
 - claim_id: 报销单号
 - applicant: 申请人
 - amount: 金额（统一为人民币）
@@ -530,7 +542,7 @@ description: 将审核过程中产生的所有判定依据组装为完整的审�
 ```markdown
 ---
 name: result-format
-description: 将审核结果标准化为统一JSON格式输出到output/results/目录
+description: 将审核结果标准化为统一JSON格式输出到logs/results/目录
 ---
 
 # 结果标准化输出
@@ -540,7 +552,7 @@ description: 将审核结果标准化为统一JSON格式输出到output/results/
 
 ## 输出格式
 
-写入 output/results/{claim_id}_result.json：
+写入 logs/results/{claim_id}_result.json：
 {
   "claim_id": "",
   "verdict": "approved | rejected | manual_review",
@@ -566,7 +578,7 @@ description: 将原始制度文件解析为结构化 JSON 规则，存入 knowle
 allowed-tools: Read, Write, Glob, Skill
 ---
 
-用户提供原始制度文件路径（PDF/DOCX/TXT，位于 raw_policies/ 下）和目标业务域。
+用户提供原始制度文件路径（PDF/DOCX/TXT，当前主线位于 `knowledge/external/`）和目标业务域。
 
 执行步骤：
 1. 使用 rule-init skill 读取并解析原始文件
@@ -575,7 +587,7 @@ allowed-tools: Read, Write, Glob, Skill
 4. 输出解析报告：提取了多少条规则，有哪些需要人工确认的模糊条款
 
 参数: $ARGUMENTS
-用法示例: /init-rules raw_policies/公司差旅管理办法v3.pdf expense
+用法示例: /init-rules knowledge/external/数睿员工手册.pdf expense
 ```
 
 ---
@@ -672,9 +684,9 @@ from anthropic import Anthropic
 
 hook_input = json.load(sys.stdin)
 
-# 只审核写入 output/results/ 的文件
+# 只审核写入 logs/results/ 的文件
 file_path = hook_input.get("tool_input", {}).get("file_path", "")
-if "output/results/" not in file_path:
+if "logs/results/" not in file_path:
     sys.exit(0)  # 不拦截
 
 content = hook_input.get("tool_input", {}).get("content", "")
@@ -832,11 +844,9 @@ def audit(
     typer.echo(result)
 
 @app.command()
-def batch(directory: str = typer.Argument("data/claims", help="报销单目录")):
-    """批量审核目录下所有报销单。"""
-    prompt = f"批量审核 {directory} 目录下的所有报销单"
-    result = asyncio.run(run_agent_full(prompt))
-    typer.echo(result)
+def batch(directory: str = typer.Argument("tests/fixtures/claims", help="示例输入目录")):
+    """此示例已过时，当前主线不再提供 batch-audit。"""
+    raise NotImplementedError("batch-audit 已退出当前主线")
 
 @app.command()
 def init_rules(
@@ -855,33 +865,9 @@ def chat():
     asyncio.run(interactive_chat())
 ```
 
-### 10.4 `server/chat.py` — 交互式 Chat
+### 10.4 `server/command_adapter.py` — 统一 Claude command 适配
 
-```python
-"""交互式 Chat 模式：支持多轮对话。"""
-from server.core import run_agent
-import uuid
-
-async def interactive_chat():
-    session_id = str(uuid.uuid4())
-    print(f"企业审核 Agent (session: {session_id[:8]}...)")
-    print("输入 /quit 退出\n")
-
-    while True:
-        try:
-            user_input = input("你> ").strip()
-        except (EOFError, KeyboardInterrupt):
-            break
-        if user_input in ("/quit", "/exit", ""):
-            break
-
-        async for event in run_agent(user_input, session_id=session_id):
-            if event["type"] == "text":
-                print(f"Agent> {event['content']}")
-            elif event["type"] == "result":
-                print(f"[结果] {event['content']}")
-        print()
-```
+当前主线已经移除 `server/chat.py`。Python 侧保留统一的 Claude command 调用适配层，CLI 与 HTTP 两端共享同一份能力入口。
 
 ---
 
@@ -958,9 +944,8 @@ services:
 
 ```bash
 # CLI 模式（运维）
-agent-cli audit data/claims/EXP-001.json
-agent-cli init-rules raw_policies/差旅制度.pdf expense
-agent-cli chat
+agent-cli audit tests/fixtures/claims/EXP-001.json
+agent-cli init-rules knowledge/external/数睿员工手册.pdf expense
 
 # HTTP API 模式（外部系统对接）
 uvicorn server.api:app --host 0.0.0.0 --port 8000

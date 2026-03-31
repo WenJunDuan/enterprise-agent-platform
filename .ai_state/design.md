@@ -4,11 +4,12 @@
 
 - `.claude/`: agents、skills、hooks、commands、contracts，承载业务工作流与输出契约
 - `knowledge/`: 结构化制度和规则资产
-- `server/api.py`: HTTP serve 接口、租户鉴权、健康检查、请求/会话/结果查询
+- `server/api.py`: HTTP serve 接口、租户鉴权、健康检查、业务 command JSON API、请求/会话/结果查询
 - `server/core.py`: Claude Agent SDK 桥接、结构化输出约束、会话控制、事件记录
-- `server/cli.py` / `server/chat.py`: 本地 CLI 与交互式调试入口
+- `server/command_adapter.py`: Python 对 Claude slash command 的统一调用适配层
+- `server/cli.py`: 本地 CLI 外壳，负责终端参数解析与终端输出
 - `server/app_server.py`: Python 版后台进程管理、日志查看、doctor、maintain
-- `server/platform/`: 路径、配置、诊断、维护、底层文件存储工具
+- `server/platform/`: 路径、配置、诊断、维护、底层文件存储工具与源文件预处理
 - `server/stores/`: request/session/result/runtime 仓储接口与本地 JSONL/JSON 实现
 - `tests/`: 测试代码与后续测试用例数据承载位置
 - `knowledge/external/`: 当前仓库中保存原始制度文件或外部参考材料的位置
@@ -18,8 +19,10 @@
 
 - 业务规则只留在 `.claude/` 和 `knowledge/`；Python 只负责调用 Claude、执行 JSON 契约、记录审计链路和暴露运行入口。
 - 结构化输出通过 Claude Agent SDK `output_format` + JSON Schema 强制约束，不再依赖 prompt 文本声明。
+- 审核输出继续保留内部 `approved / rejected / manual_review` 三态，但对外统一映射为 `result/conclusion/explanation` 中文展示字段；其中 `manual_review` 固定显示为“待人工复核”，且必须说明无法自动放行的原因。
 - `request_id` 是全链路审计主键；`conversation_id` 表示应用级会话；`claude_session_id` 对应 Claude SDK 的可恢复会话。
-- 前台调试入口是 `python -m server.cli serve`；后台常驻入口是 `uv run app-server start`，两者本质上都启动 Python 服务进程。
+- Python 不拥有业务能力实现；`init-rules`、`audit` 等能力定义在 `.claude/commands` / `.claude/skills`，CLI 与 serve 只通过统一 adapter 调用这些 Claude 能力。
+- 前台调试入口是 `python -m server.cli serve`；后台常驻入口是 `uv run app-server start`，两者本质上都启动同一个 Python 服务进程。
 - 本地 JSONL/JSON 布局先对齐未来数据库字段，再在后续通过仓储层替换为 PostgreSQL。
 - 顶层 `data/` 和 `raw_policies/` 不是当前仓库正式目录；测试数据应收敛到 `tests/`，真实制度源材料当前放在 `knowledge/external/`。
 - 当前业务建设顺序调整为：`/init-rules` 优先，审后业务记忆沉淀次之，单条审核业务闭环随后；`batch-audit` 不进入当前主线。
@@ -38,6 +41,7 @@
 - 结果、请求、会话三层都用 `request_id` 串联，保证可恢复、可追溯。
 - 索引采用按月分片的 JSONL，避免单文件无限增长。
 - 原始事件流和结构化结果分离存储：前者保留过程，后者保留最终归档。
+- CLI 与 serve 共享同一套 Claude command 调用适配层；差异只体现在终端输出与 HTTP JSON/SSE 输出。
 - 后续如果接 PostgreSQL，优先迁移 `request/session/result` 三类仓储实现，不改 Claude 业务侧内容。
 
 ## 记忆分层

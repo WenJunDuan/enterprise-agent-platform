@@ -1,4 +1,38 @@
 {
+  "_meta": {
+    "source_path": "knowledge/external/数睿员工手册.pdf",
+    "source_title": "数睿员工手册 第六章 费用及报销管理制度",
+    "derived_from": {
+      "travel": [
+        "knowledge/expense/travel.rules.json"
+      ],
+      "entertainment": [
+        "knowledge/expense/entertainment.rules.json"
+      ],
+      "invoice": [
+        "knowledge/expense/invoice.rules.json"
+      ],
+      "general": [
+        "knowledge/expense/general.rules.json"
+      ]
+    },
+    "source_sections": {
+      "travel": [
+        "6.6.2.1",
+        "6.6.2.3",
+        "6.6.2.4"
+      ],
+      "entertainment": [
+        "6.5.2"
+      ],
+      "invoice": [
+        "6.3.4"
+      ],
+      "general": [
+        "6.3.4"
+      ]
+    }
+  },
   "travel": {
     "allowance_per_day": 200,
     "flight_min_distance_km_for_non_president": 600,

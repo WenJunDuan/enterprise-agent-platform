@@ -21,7 +21,7 @@ from claude_agent_sdk import (
     ToolUseBlock,
     query,
 )
-from server.platform.config import configure_claude_runtime_env
+from server.platform.config import configure_claude_runtime_env, get_claude_runtime_snapshot
 from server.platform.paths import PROJECT_ROOT, build_session_event_log_path, ensure_local_layout
 from server.platform.storage import append_jsonl_record
 from server.stores.result_store import archive_result_payload
@@ -43,6 +43,10 @@ StructuredJSON = dict[str, Any] | list[Any]
 
 class JSONContractError(ValueError):
     """Raised when a Claude response does not satisfy the JSON contract."""
+
+
+class ClaudeRuntimeError(RuntimeError):
+    """Raised when a Claude request never produces a terminal result."""
 
 
 @dataclass(slots=True)
@@ -89,8 +93,44 @@ def build_output_format(schema_name: str = DEFAULT_OUTPUT_SCHEMA_NAME) -> dict[s
     return {"type": "json_schema", "schema": load_output_schema(schema_name)}
 
 
+def validate_structured_output_semantics(
+    schema_name: str,
+    structured_output: StructuredJSON,
+) -> None:
+    """Apply semantic validation rules that JSON Schema alone cannot express."""
+    if schema_name != INIT_RULES_REPORT_SCHEMA_NAME:
+        return
+
+    if not isinstance(structured_output, dict):
+        raise JSONContractError("init-rules structured output must be a JSON object.")
+
+    source_path = str(structured_output.get("source_path") or "").strip()
+    if not source_path:
+        raise JSONContractError("init-rules result must include a non-empty source_path.")
+
+    status = structured_output.get("status")
+    if status != "initialized":
+        return
+
+    written_files = structured_output.get("written_files")
+    categories = structured_output.get("categories")
+    extracted_rule_count = structured_output.get("extracted_rule_count")
+
+    if not isinstance(written_files, list) or not written_files:
+        raise JSONContractError(
+            "init-rules cannot return status=initialized with empty written_files."
+        )
+    if not isinstance(categories, list) or not categories:
+        raise JSONContractError("init-rules cannot return status=initialized with empty categories.")
+    if not isinstance(extracted_rule_count, int) or extracted_rule_count <= 0:
+        raise JSONContractError(
+            "init-rules cannot return status=initialized with extracted_rule_count <= 0."
+        )
+
+
 def build_options(**overrides: Any) -> ClaudeAgentOptions:
     """Create a shared SDK options object for all entrypoints."""
+    runtime = get_claude_runtime_snapshot()
     defaults: dict[str, Any] = {
         "cwd": str(PROJECT_ROOT),
         "setting_sources": ["project"],
@@ -98,7 +138,7 @@ def build_options(**overrides: Any) -> ClaudeAgentOptions:
         "permission_mode": "bypassPermissions",
         "max_turns": 80,
         "max_budget_usd": float(os.getenv("MAX_BUDGET_USD", "1.0")),
-        "model": os.getenv("ANTHROPIC_MODEL", "sonnet"),
+        "model": runtime["anthropic_model"] or "sonnet",
     }
     defaults.update(overrides)
     return ClaudeAgentOptions(**defaults)
@@ -186,6 +226,8 @@ class SessionLogger:
                 {
                     "event": "session_end",
                     "subtype": getattr(message, "subtype", ""),
+                    "is_error": bool(getattr(message, "is_error", False)),
+                    "result": (message.result or "")[:2000],
                     "duration_sec": round(elapsed, 2),
                     "cost_usd": event["cost"],
                     "structured_output": getattr(message, "structured_output", None),
@@ -247,11 +289,14 @@ async def run_agent(
     final_subtype = ""
     final_cost = 0.0
     final_status = "success"
+    saw_terminal_result = False
+    saw_assistant_text = False
 
     try:
         async for message in query(prompt=prompt, options=options):
             event = logger.log_message(message)
             if isinstance(message, ResultMessage):
+                saw_terminal_result = True
                 final_claude_session_id = getattr(message, "session_id", None) or final_claude_session_id
                 final_subtype = getattr(message, "subtype", "")
                 final_cost = float(getattr(message, "total_cost_usd", 0.0) or 0.0)
@@ -261,7 +306,16 @@ async def run_agent(
                 final_claude_session_id = getattr(message, "session_id", None) or final_claude_session_id
 
             if event:
+                if event["type"] == "text":
+                    saw_assistant_text = True
                 yield event
+
+        if not saw_terminal_result and not saw_assistant_text:
+            final_status = "error"
+            raise ClaudeRuntimeError(
+                "Claude request ended without any assistant result. "
+                "Recent session logs show only API retries; check gateway base URL, auth, or model id."
+            )
     except Exception as exc:
         final_status = "error"
         logger.log_error(exc)
@@ -337,6 +391,7 @@ async def run_agent_json(
     final_status = "success"
     result_file: str | None = None
     finished_at: str | None = None
+    final_structured_output: StructuredJSON | None = None
 
     try:
         async for message in query(prompt=prompt, options=options):
@@ -354,40 +409,14 @@ async def run_agent_json(
             final_cost = float(getattr(message, "total_cost_usd", 0.0) or 0.0)
             structured_output = getattr(message, "structured_output", None)
 
-            if structured_output is not None:
+            if structured_output is not None and final_structured_output is None:
                 if not isinstance(structured_output, (dict, list)):
                     final_status = "error"
                     raise JSONContractError("Claude returned a non-object structured output.")
+                validate_structured_output_semantics(schema_name, structured_output)
+                final_structured_output = structured_output
                 finished_at = utc_now()
-                result_record = archive_result_payload(
-                    request_id=request_id,
-                    tenant=tenant,
-                    conversation_id=conversation_id,
-                    claude_session_id=final_claude_session_id,
-                    resume_session_id=resolved_resume_session_id,
-                    fork_from_session_id=fork_from_session_id,
-                    schema_name=schema_name,
-                    request_mode="structured",
-                    result_subtype=final_subtype or None,
-                    cost_usd=final_cost,
-                    prompt_preview=prompt[:200],
-                    response=structured_output,
-                    created_at=finished_at,
-                )
-                result_file = result_record.result_file
-                return structured_output, AgentRunMeta(
-                    request_id=request_id,
-                    conversation_id=conversation_id,
-                    claude_session_id=final_claude_session_id,
-                    resume_session_id=resolved_resume_session_id,
-                    fork_from_session_id=fork_from_session_id,
-                    schema_name=schema_name,
-                    log_file=str(logger.log_file),
-                    result_file=result_file,
-                    result_subtype=final_subtype or None,
-                    cost_usd=final_cost,
-                    finished_at=finished_at,
-                )
+                continue
 
             if final_subtype == "error_max_structured_output_retries":
                 final_status = "error"
@@ -399,8 +428,39 @@ async def run_agent_json(
                 final_status = "error"
                 raise JSONContractError(message.result or "Claude returned an error result.")
 
-        final_status = "error"
-        raise JSONContractError("Claude returned no structured output.")
+        if final_structured_output is None:
+            final_status = "error"
+            raise JSONContractError("Claude returned no structured output.")
+
+        result_record = archive_result_payload(
+            request_id=request_id,
+            tenant=tenant,
+            conversation_id=conversation_id,
+            claude_session_id=final_claude_session_id,
+            resume_session_id=resolved_resume_session_id,
+            fork_from_session_id=fork_from_session_id,
+            schema_name=schema_name,
+            request_mode="structured",
+            result_subtype=final_subtype or None,
+            cost_usd=final_cost,
+            prompt_preview=prompt[:200],
+            response=final_structured_output,
+            created_at=finished_at or utc_now(),
+        )
+        result_file = result_record.result_file
+        return final_structured_output, AgentRunMeta(
+            request_id=request_id,
+            conversation_id=conversation_id,
+            claude_session_id=final_claude_session_id,
+            resume_session_id=resolved_resume_session_id,
+            fork_from_session_id=fork_from_session_id,
+            schema_name=schema_name,
+            log_file=str(logger.log_file),
+            result_file=result_file,
+            result_subtype=final_subtype or None,
+            cost_usd=final_cost,
+            finished_at=finished_at,
+        )
     except Exception as exc:
         final_status = "error"
         logger.log_error(exc)

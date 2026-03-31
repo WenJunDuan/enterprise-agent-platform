@@ -58,8 +58,11 @@ def collect_runtime_diagnostics() -> dict[str, Any]:
     }
 
     advisories: list[str] = []
-    if not runtime_settings["anthropic_api_key_configured"]:
-        advisories.append("ANTHROPIC_API_KEY is not configured.")
+    if not (
+        runtime_settings["anthropic_api_key_configured"]
+        or runtime_settings["anthropic_auth_token_configured"]
+    ):
+        advisories.append("Neither ANTHROPIC_API_KEY nor ANTHROPIC_AUTH_TOKEN is configured.")
     if not runtime_status["running"]:
         advisories.append("app-server process is not running.")
 

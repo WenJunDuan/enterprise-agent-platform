@@ -6,6 +6,8 @@ import json
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 import typer
@@ -47,6 +49,87 @@ def _build_server_command(host: str, port: int) -> list[str]:
         str(port),
         "--no-server-header",
     ]
+
+
+def _build_service_urls(host: str, port: int) -> dict[str, str]:
+    base_url = f"http://{host}:{port}"
+    return {
+        "base_url": base_url,
+        "health": f"{base_url}/health",
+        "ready": f"{base_url}/ready",
+        "chat": f"{base_url}/chat",
+        "chat_stream": f"{base_url}/chat/stream",
+        "audit": f"{base_url}/audit",
+        "init_rules": f"{base_url}/init-rules",
+        "sessions": f"{base_url}/sessions",
+        "results": f"{base_url}/results",
+    }
+
+
+def _probe_json_endpoint(url: str, timeout_seconds: float = 1.5) -> dict[str, object]:
+    try:
+        with urllib.request.urlopen(url, timeout=timeout_seconds) as response:
+            body = response.read().decode("utf-8")
+            try:
+                payload = json.loads(body)
+            except json.JSONDecodeError:
+                payload = {"raw": body}
+            return {
+                "ok": 200 <= response.status < 300,
+                "status_code": response.status,
+                "payload": payload,
+                "error": None,
+            }
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="ignore")
+        try:
+            payload = json.loads(body)
+        except json.JSONDecodeError:
+            payload = {"raw": body} if body else None
+        return {
+            "ok": False,
+            "status_code": exc.code,
+            "payload": payload,
+            "error": str(exc),
+        }
+    except Exception as exc:  # pragma: no cover - network failure details vary
+        return {
+            "ok": False,
+            "status_code": None,
+            "payload": None,
+            "error": str(exc),
+        }
+
+
+def _service_http_snapshot(runtime_snapshot: dict[str, object]) -> dict[str, object]:
+    record = runtime_snapshot.get("record") or {}
+    settings = get_app_settings()
+    host = str((record or {}).get("host") or settings.api_host)
+    port = int((record or {}).get("port") or settings.api_port)
+    urls = _build_service_urls(host, port)
+    running = bool(runtime_snapshot.get("running"))
+    if not running:
+        return {
+            "running": False,
+            "urls": urls,
+            "health": {"ok": False, "status_code": None, "payload": None, "error": "app-server is not running"},
+            "ready": {"ok": False, "status_code": None, "payload": None, "error": "app-server is not running"},
+        }
+    return {
+        "running": True,
+        "urls": urls,
+        "health": _probe_json_endpoint(urls["health"]),
+        "ready": _probe_json_endpoint(urls["ready"]),
+    }
+
+
+def _status_payload() -> dict[str, object]:
+    runtime = runtime_status_snapshot()
+    service_http = _service_http_snapshot(runtime)
+    return {
+        "runtime": runtime,
+        "service_http": service_http,
+    }
 
 
 def _write_running_record(*, pid: int, host: str, port: int, command: list[str], started_at: str) -> None:
@@ -178,8 +261,7 @@ def restart(
 @app.command()
 def status() -> None:
     """Show current app-server runtime state."""
-    snapshot = runtime_status_snapshot()
-    typer.echo(json.dumps(snapshot, ensure_ascii=False, indent=2))
+    typer.echo(json.dumps(_status_payload(), ensure_ascii=False, indent=2))
 
 
 @app.command()
@@ -222,22 +304,29 @@ def maintain() -> None:
 @app.command()
 def inspect() -> None:
     """Print a full local diagnostics snapshot without applying exit rules."""
-    typer.echo(json.dumps(collect_runtime_diagnostics(), ensure_ascii=False, indent=2))
+    payload = collect_runtime_diagnostics()
+    payload["service_http"] = _service_http_snapshot(runtime_status_snapshot())
+    typer.echo(json.dumps(payload, ensure_ascii=False, indent=2))
 
 
 @app.command()
 def doctor(
     strict: bool = typer.Option(False, help="Exit non-zero when diagnostics are degraded."),
     require_running: bool = typer.Option(False, help="Also fail when app-server is not running."),
+    require_ready: bool = typer.Option(False, help="Also fail when /ready does not return healthy."),
 ) -> None:
     """Run shared runtime diagnostics for local operations."""
     report = collect_runtime_diagnostics()
+    service_http = _service_http_snapshot(runtime_status_snapshot())
+    report["service_http"] = service_http
     typer.echo(json.dumps(report, ensure_ascii=False, indent=2))
 
     should_fail = False
     if strict and report["status"] != "ok":
         should_fail = True
     if require_running and not bool(report["checks"]["app_server"]["running"]):
+        should_fail = True
+    if require_ready and not bool(service_http["ready"]["ok"]):
         should_fail = True
 
     if should_fail:

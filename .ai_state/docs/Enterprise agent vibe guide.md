@@ -2,6 +2,14 @@
 
 > 本文档是完整的实施规范。AI 编码助手应按照本文档从 Step 0 开始逐步执行，每步验证通过后再进入下一步。
 
+> 维护说明：
+> - 当前仓库主线以 `knowledge/external/` 作为制度源材料目录，不再以 `raw_policies/` 为准
+> - 当前推荐示例输入位置是 `tests/fixtures/`，不再以 `data/claims/`、`data/pre-approvals/` 为主线
+> - 当前结果归档统一写入 `logs/results/`
+> - `server/chat.py` 已移除
+> - `batch-audit` 已退出当前主线
+> - Python 只负责 Claude 调用适配与输出外壳，不再实现业务能力编排
+
 ---
 
 ## 0. 技术栈与约束
@@ -68,7 +76,7 @@ enterprise-agent/
 │   ├── commands/                         # slash commands（运维用）
 │   │   ├── init-rules.md                 # /init-rules 原始制度→结构化JSON
 │   │   ├── audit.md                      # /audit 提交审核
-│   │   └── batch-audit.md                # /batch-audit 批量审核
+│   │   └── list-domains.md               # /list-domains 查看业务域
 │   │
 │   ├── agents/                           # 业务域 agents
 │   │   ├── expense/
@@ -115,21 +123,23 @@ enterprise-agent/
 │   └── legal/
 │       └── contract.rules.json
 │
-├── data/                                 # ===== 业务数据输入 =====
-│   ├── claims/                           # 报销单
-│   ├── invoices/                         # 发票
-│   └── pre-approvals/                    # 事前申请单
+├── tests/fixtures/                       # ===== 示例输入（推荐） =====
+│   ├── claims/
+│   └── pre-approvals/
 │
 ├── logs/results/                         # ===== 审核结果归档 =====
 │
 ├── logs/sessions/                        # ===== 会话日志(JSONL) =====
 │
-├── server/                               # ===== 接入壳 =====
+├── server/                               # ===== Python 适配层 =====
 │   ├── __init__.py
 │   ├── core.py                           # SDK 调用 + 日志（唯一核心）
-│   ├── api.py                            # HTTP API（FastAPI + SSE）
-│   ├── cli.py                            # CLI（Typer）
-│   └── chat.py                           # 交互式 Chat REPL
+│   ├── command_adapter.py                # 统一 Claude command 调用适配
+│   ├── api.py                            # HTTP API（FastAPI + JSON/SSE）
+│   ├── cli.py                            # CLI（Typer，本地终端外壳）
+│   ├── app_server.py                     # 后台服务管理
+│   ├── platform/
+│   └── stores/
 │
 ├── .env
 ├── .env.example
@@ -164,7 +174,7 @@ node --version  # 必须 >= 18
 ```bash
 mkdir -p .claude/{commands,agents/expense,agents/hr,agents/legal,skills/{rule-init,rule-query,invoice-parse,pre-approval-match,travel-compliance,entertainment-compliance,budget-check,amount-validate,anomaly-detect,evidence-chain,result-format},hooks}
 mkdir -p knowledge/{_schema,expense,hr,legal}
-mkdir -p data/{claims,invoices,pre-approvals}
+mkdir -p tests/fixtures/{claims,pre-approvals}
 mkdir -p logs/results
 mkdir -p logs/sessions
 mkdir -p server
@@ -457,35 +467,9 @@ if __name__ == "__main__":
 
 ---
 
-### Step 5：server/chat.py
+### Step 5：`server/command_adapter.py`
 
-```python
-"""交互式 Chat REPL。禁止业务术语。"""
-import uuid
-
-from server.core import run_agent
-
-
-async def interactive_chat():
-    session_id = str(uuid.uuid4())
-    print(f"Agent 交互模式 (session: {session_id[:8]}...)")
-    print("输入 /quit 退出\n")
-
-    while True:
-        try:
-            user_input = input("你> ").strip()
-        except (EOFError, KeyboardInterrupt):
-            break
-        if user_input in ("/quit", "/exit", ""):
-            break
-
-        async for event in run_agent(user_input, session_id=session_id):
-            if event["type"] == "text":
-                print(f"Agent> {event['content']}")
-            elif event["type"] == "result":
-                print(f"[完成] {event['content']}")
-        print()
-```
+当前主线已经移除 `server/chat.py`，Python 侧保留统一的 Claude command 调用适配层，CLI 与 HTTP 两端共享同一份能力入口。
 
 ---
 
@@ -981,7 +965,7 @@ description: 将事后报销单与事前审批单（出差/招待申请）进行
 ## 执行步骤
 
 1. 从报销单提取 pre_approval_id
-2. 读取 data/pre-approvals/{pre_approval_id}.json
+2. 读取 `tests/fixtures/pre-approvals/{pre_approval_id}.json`
 3. 读取 knowledge/expense/thresholds.json 获取偏差容忍范围
 4. 逐维度比对：金额、日期、目的地、同行人、费用类目
 5. 判定：无偏差→pass，偏差在范围内→pass_with_note，超出→deviation
@@ -1216,7 +1200,7 @@ model: haiku
 
 你是报销单数据提取专员。
 
-读取 data/claims/ 下的报销单文件，提取字段：
+读取 `tests/fixtures/claims/` 下的报销单示例文件，提取字段：
 
 - claim_id, applicant, amount, category, date, invoice_no, description, attachments, pre_approval_id
 
@@ -1463,7 +1447,7 @@ allowed-tools: Read, Write, Glob, Skill
 输出解析报告：提取规则数量、需人工确认的模糊条款。
 
 参数: $ARGUMENTS
-用法: /init-rules raw_policies/差旅管理办法.pdf expense
+用法: /init-rules knowledge/external/数睿员工手册.pdf expense
 ```
 
 #### 11.2 `.claude/commands/audit.md`
@@ -1478,14 +1462,14 @@ allowed-tools: Read, Write, Glob, Skill, Task
 结果写入 logs/results/。
 
 参数: $ARGUMENTS
-用法: /audit data/claims/EXP-2024-0312.json
+用法: /audit tests/fixtures/claims/EXP-2024-0312.json
 ```
 
 ---
 
 ### Step 12：测试数据
 
-#### 12.1 `data/pre-approvals/PA-2024-0157.json`
+#### 12.1 `tests/fixtures/pre-approvals/PA-2024-0157.json`
 
 ```json
 {
@@ -1512,7 +1496,7 @@ allowed-tools: Read, Write, Glob, Skill, Task
 }
 ```
 
-#### 12.2 `data/claims/EXP-2024-0312.json`
+#### 12.2 `tests/fixtures/claims/EXP-2024-0312.json`
 
 ```json
 {
@@ -1568,7 +1552,7 @@ allowed-tools: Read, Write, Glob, Skill, Task
 
 ```bash
 # 1. 审核测试报销单
-uv run python -m server.cli audit data/claims/EXP-2024-0312.json
+uv run python -m server.cli audit tests/fixtures/claims/EXP-2024-0312.json
 
 # 期望行为：
 # - Claude 调度 extractor 提取数据
@@ -1592,7 +1576,7 @@ uv run uvicorn server.api:app --port 8000 &
 curl -X POST http://127.0.0.1:8000/chat \
   -H "Authorization: Bearer sk-default" \
   -H "Content-Type: application/json" \
-  -d '{"message":"审核报销单 data/claims/EXP-2024-0312.json"}'
+  -d '{"message":"审核报销单 tests/fixtures/claims/EXP-2024-0312.json"}'
 ```
 
 ---
@@ -1644,9 +1628,8 @@ services:
 
 ```bash
 # CLI
-uv run python -m server.cli audit data/claims/EXP-001.json
-uv run python -m server.cli chat
-uv run python -m server.cli init-rules raw_policies/差旅制度.pdf expense
+uv run python -m server.cli audit tests/fixtures/claims/EXP-001.json
+uv run python -m server.cli init-rules knowledge/external/数睿员工手册.pdf expense
 
 # HTTP API
 uv run uvicorn server.api:app --host 0.0.0.0 --port 8000

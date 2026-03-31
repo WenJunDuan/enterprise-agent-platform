@@ -10,13 +10,18 @@ from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, model_validator
 
+from server.command_adapter import run_command_json
+from server.core import AgentRunMeta
 from server.platform.config import get_app_settings, load_tenant_keys
+from server.platform.paths import PROJECT_ROOT
 from server.core import (
     DEFAULT_OUTPUT_SCHEMA_NAME,
+    INIT_RULES_REPORT_SCHEMA_NAME,
     JSONContractError,
     run_agent_json,
 )
 from server.platform.diagnostics import collect_runtime_diagnostics
+from server.platform.source_proxy import prepare_text_proxy
 from server.stores.request_store import (
     RequestAuditRecord,
     append_request_audit,
@@ -48,16 +53,14 @@ def _load_tenant_keys() -> dict[str, str]:
     return load_tenant_keys()
 
 
-class ChatRequest(BaseModel):
-    message: str
+class SessionControlRequest(BaseModel):
     conversation_id: str | None = None
     resume_session_id: str | None = None
     fork_from_session_id: str | None = None
     continue_recent: bool = False
-    schema_name: str | None = None
 
     @model_validator(mode="after")
-    def validate_session_controls(self) -> "ChatRequest":
+    def validate_session_controls(self) -> "SessionControlRequest":
         enabled = sum(
             bool(value)
             for value in [self.resume_session_id, self.fork_from_session_id, self.continue_recent]
@@ -71,6 +74,24 @@ class ChatRequest(BaseModel):
                 "continue_recent is disabled for HTTP serve mode. Use conversation_id or resume_session_id."
             )
         return self
+
+
+class ChatRequest(SessionControlRequest):
+    message: str
+    schema_name: str | None = None
+
+
+class CommandRequest(SessionControlRequest):
+    schema_name: str | None = None
+
+
+class AuditRequest(CommandRequest):
+    path: str
+
+
+class InitRulesRequest(CommandRequest):
+    source_path: str
+    domain: str
 
 
 class ChatResponse(BaseModel):
@@ -98,7 +119,7 @@ def _build_request_audit_record(
     route: str,
     method: str,
     tenant: str | None,
-    request: ChatRequest,
+    request: BaseModel,
     status_code: int,
     status: str,
     started: float,
@@ -112,12 +133,12 @@ def _build_request_audit_record(
         route=route,
         method=method,
         tenant=tenant,
-        conversation_id=request.conversation_id,
+        conversation_id=getattr(request, "conversation_id", None),
         claude_session_id=claude_session_id,
-        resume_session_id=request.resume_session_id,
-        fork_from_session_id=request.fork_from_session_id,
-        schema_name=request.schema_name or DEFAULT_OUTPUT_SCHEMA_NAME,
-        prompt_preview=request.message[:200],
+        resume_session_id=getattr(request, "resume_session_id", None),
+        fork_from_session_id=getattr(request, "fork_from_session_id", None),
+        schema_name=getattr(request, "schema_name", None) or DEFAULT_OUTPUT_SCHEMA_NAME,
+        prompt_preview=(getattr(request, "message", "") or "")[:200],
         request_payload=request.model_dump(),
         session_log_file=session_log_file,
         result_file=result_file,
@@ -138,58 +159,38 @@ def _runtime_status() -> dict[str, Any]:
     return collect_runtime_diagnostics()
 
 
-@app.post("/chat", response_model=ChatResponse)
-async def chat(req: ChatRequest, authorization: str = Header(...)) -> ChatResponse:
-    """Return a full JSON response for a single prompt."""
-    started = time.perf_counter()
-    request_id = new_request_id()
-    tenant = verify_tenant(authorization)
-    try:
-        payload, meta = await run_agent_json(
-            req.message,
-            conversation_id=req.conversation_id,
-            resume_session_id=req.resume_session_id,
-            fork_from_session_id=req.fork_from_session_id,
-            continue_recent=req.continue_recent,
-            schema_name=req.schema_name or DEFAULT_OUTPUT_SCHEMA_NAME,
-            request_id=request_id,
-            tenant=tenant,
-        )
-    except JSONContractError as exc:
-        append_request_audit(
-            _build_request_audit_record(
-                request_id=request_id,
-                route="/chat",
-                method="POST",
-                tenant=tenant,
-                request=req,
-                status_code=502,
-                status="error",
-                started=started,
-                error_detail=str(exc),
-            )
-        )
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-    except Exception as exc:
-        append_request_audit(
-            _build_request_audit_record(
-                request_id=request_id,
-                route="/chat",
-                method="POST",
-                tenant=tenant,
-                request=req,
-                status_code=500,
-                status="error",
-                started=started,
-                error_detail=str(exc),
-            )
-        )
-        raise HTTPException(status_code=500, detail="Internal server error") from exc
+def _build_chat_response(
+    *,
+    tenant: str,
+    meta: AgentRunMeta,
+    payload: dict[str, Any] | list[Any],
+    default_schema_name: str,
+) -> ChatResponse:
+    return ChatResponse(
+        request_id=meta.request_id,
+        tenant=tenant,
+        conversation_id=meta.conversation_id,
+        claude_session_id=meta.claude_session_id,
+        schema_name=meta.schema_name or default_schema_name,
+        result_file=meta.result_file,
+        response=payload,
+        cost=meta.cost_usd,
+    )
 
+
+def _append_success_request_audit(
+    *,
+    route: str,
+    tenant: str,
+    request: BaseModel,
+    meta: AgentRunMeta,
+    started: float,
+    prompt_preview: str,
+) -> None:
     append_request_audit(
         RequestAuditRecord(
             request_id=meta.request_id,
-            route="/chat",
+            route=route,
             method="POST",
             tenant=tenant,
             conversation_id=meta.conversation_id,
@@ -197,8 +198,8 @@ async def chat(req: ChatRequest, authorization: str = Header(...)) -> ChatRespon
             resume_session_id=meta.resume_session_id,
             fork_from_session_id=meta.fork_from_session_id,
             schema_name=meta.schema_name,
-            prompt_preview=req.message[:200],
-            request_payload=req.model_dump(),
+            prompt_preview=prompt_preview[:200],
+            request_payload=request.model_dump(),
             session_log_file=meta.log_file,
             result_file=meta.result_file,
             status_code=200,
@@ -208,15 +209,194 @@ async def chat(req: ChatRequest, authorization: str = Header(...)) -> ChatRespon
         )
     )
 
-    return ChatResponse(
-        request_id=meta.request_id,
+
+def _raise_endpoint_error(
+    *,
+    request_id: str,
+    route: str,
+    tenant: str,
+    request: BaseModel,
+    started: float,
+    status_code: int,
+    detail: str,
+    exc: Exception | None = None,
+) -> None:
+    append_request_audit(
+        _build_request_audit_record(
+            request_id=request_id,
+            route=route,
+            method="POST",
+            tenant=tenant,
+            request=request,
+            status_code=status_code,
+            status="error",
+            started=started,
+            error_detail=detail,
+        )
+    )
+    raise HTTPException(status_code=status_code, detail=detail) from exc
+
+
+async def _execute_json_endpoint(
+    *,
+    route: str,
+    tenant: str,
+    request: BaseModel,
+    started: float,
+    request_id: str,
+    prompt_preview: str,
+    default_schema_name: str,
+    runner: Any,
+) -> ChatResponse:
+    try:
+        payload, meta = await runner
+    except JSONContractError as exc:
+        _raise_endpoint_error(
+            request_id=request_id,
+            route=route,
+            tenant=tenant,
+            request=request,
+            started=started,
+            status_code=502,
+            detail=str(exc),
+            exc=exc,
+        )
+    except Exception as exc:
+        _raise_endpoint_error(
+            request_id=request_id,
+            route=route,
+            tenant=tenant,
+            request=request,
+            started=started,
+            status_code=500,
+            detail="Internal server error",
+            exc=exc,
+        )
+
+    _append_success_request_audit(
+        route=route,
         tenant=tenant,
-        conversation_id=meta.conversation_id,
-        claude_session_id=meta.claude_session_id,
-        schema_name=meta.schema_name or DEFAULT_OUTPUT_SCHEMA_NAME,
-        result_file=meta.result_file,
-        response=payload,
-        cost=meta.cost_usd,
+        request=request,
+        meta=meta,
+        started=started,
+        prompt_preview=prompt_preview,
+    )
+    return _build_chat_response(
+        tenant=tenant,
+        meta=meta,
+        payload=payload,
+        default_schema_name=default_schema_name,
+    )
+
+
+@app.post("/chat", response_model=ChatResponse)
+async def chat(req: ChatRequest, authorization: str = Header(...)) -> ChatResponse:
+    """Return a full JSON response for a single prompt."""
+    started = time.perf_counter()
+    request_id = new_request_id()
+    tenant = verify_tenant(authorization)
+    return await _execute_json_endpoint(
+        route="/chat",
+        tenant=tenant,
+        request=req,
+        started=started,
+        request_id=request_id,
+        prompt_preview=req.message,
+        default_schema_name=DEFAULT_OUTPUT_SCHEMA_NAME,
+        runner=run_agent_json(
+            req.message,
+            conversation_id=req.conversation_id,
+            resume_session_id=req.resume_session_id,
+            fork_from_session_id=req.fork_from_session_id,
+            continue_recent=req.continue_recent,
+            schema_name=req.schema_name or DEFAULT_OUTPUT_SCHEMA_NAME,
+            request_id=request_id,
+            tenant=tenant,
+        )
+    )
+
+
+async def _run_command_json_endpoint(
+    *,
+    command_name: str,
+    command_args: list[str],
+    schema_name: str,
+    tenant: str,
+    request_id: str,
+    request: BaseModel,
+) -> tuple[dict | list, AgentRunMeta]:
+    return await run_command_json(
+        command_name,
+        *command_args,
+        conversation_id=getattr(request, "conversation_id", None),
+        resume_session_id=getattr(request, "resume_session_id", None),
+        fork_from_session_id=getattr(request, "fork_from_session_id", None),
+        continue_recent=getattr(request, "continue_recent", False),
+        schema_name=schema_name,
+        request_id=request_id,
+        tenant=tenant,
+    )
+
+
+@app.post("/audit", response_model=ChatResponse)
+async def audit(req: AuditRequest, authorization: str = Header(...)) -> ChatResponse:
+    started = time.perf_counter()
+    request_id = new_request_id()
+    tenant = verify_tenant(authorization)
+    return await _execute_json_endpoint(
+        route="/audit",
+        tenant=tenant,
+        request=req,
+        started=started,
+        request_id=request_id,
+        prompt_preview=f"/audit {req.path}",
+        default_schema_name=DEFAULT_OUTPUT_SCHEMA_NAME,
+        runner=_run_command_json_endpoint(
+            command_name="audit",
+            command_args=[req.path],
+            schema_name=DEFAULT_OUTPUT_SCHEMA_NAME,
+            tenant=tenant,
+            request_id=request_id,
+            request=req,
+        )
+    )
+
+
+@app.post("/init-rules", response_model=ChatResponse)
+async def init_rules(req: InitRulesRequest, authorization: str = Header(...)) -> ChatResponse:
+    started = time.perf_counter()
+    request_id = new_request_id()
+    tenant = verify_tenant(authorization)
+    try:
+        canonical_source, _ = prepare_text_proxy(req.source_path, PROJECT_ROOT / "logs" / "service" / "init-rules")
+    except ValueError as exc:
+        _raise_endpoint_error(
+            request_id=request_id,
+            route="/init-rules",
+            tenant=tenant,
+            request=req,
+            started=started,
+            status_code=400,
+            detail=str(exc),
+            exc=exc,
+        )
+
+    return await _execute_json_endpoint(
+        route="/init-rules",
+        tenant=tenant,
+        request=req,
+        started=started,
+        request_id=request_id,
+        prompt_preview=f"/init-rules {req.source_path} {req.domain}",
+        default_schema_name=INIT_RULES_REPORT_SCHEMA_NAME,
+        runner=_run_command_json_endpoint(
+            command_name="init-rules",
+            command_args=[canonical_source, req.domain],
+            schema_name=INIT_RULES_REPORT_SCHEMA_NAME,
+            tenant=tenant,
+            request_id=request_id,
+            request=req,
+        )
     )
 
 
