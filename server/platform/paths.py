@@ -10,6 +10,8 @@ LOGS_ROOT = PROJECT_ROOT / "logs"
 
 SERVICE_LOG_DIR = LOGS_ROOT / "service"
 SERVICE_REQUEST_SHARD_DIR = SERVICE_LOG_DIR / "requests"
+AUDIT_TASK_DIR = SERVICE_LOG_DIR / "audit-tasks"
+AUDIT_TASK_FILE = AUDIT_TASK_DIR / "tasks.json"
 
 SESSION_LOG_DIR = LOGS_ROOT / "sessions"
 SESSION_INDEX_SHARD_DIR = SESSION_LOG_DIR / "index"
@@ -26,6 +28,8 @@ APP_SERVER_STATUS_FILE = APP_SERVER_DIR / "server.status.json"
 APP_SERVER_STDOUT_LOG = APP_SERVER_DIR / "stdout.log"
 APP_SERVER_STDERR_LOG = APP_SERVER_DIR / "stderr.log"
 
+SUBMISSION_ROOT_DIR = PROJECT_ROOT / "data" / "submissions"
+
 
 def ensure_local_layout() -> None:
     """Create all local storage directories required by the serve layer."""
@@ -33,6 +37,7 @@ def ensure_local_layout() -> None:
         LOGS_ROOT,
         SERVICE_LOG_DIR,
         SERVICE_REQUEST_SHARD_DIR,
+        AUDIT_TASK_DIR,
         SESSION_LOG_DIR,
         SESSION_INDEX_SHARD_DIR,
         SESSION_EVENT_DIR,
@@ -41,6 +46,7 @@ def ensure_local_layout() -> None:
         RESULT_BY_REQUEST_DIR,
         RUNTIME_LOG_DIR,
         APP_SERVER_DIR,
+        SUBMISSION_ROOT_DIR,
     ]:
         path.mkdir(parents=True, exist_ok=True)
 

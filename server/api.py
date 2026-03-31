@@ -2,18 +2,20 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
-from typing import Any
+from pathlib import Path
+from typing import Any, Literal
 
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, model_validator
 
 from server.command_adapter import run_command_json
 from server.core import AgentRunMeta
 from server.platform.config import get_app_settings, load_tenant_keys
-from server.platform.paths import PROJECT_ROOT
+from server.platform.paths import PROJECT_ROOT, SUBMISSION_ROOT_DIR
 from server.core import (
     DEFAULT_OUTPUT_SCHEMA_NAME,
     INIT_RULES_REPORT_SCHEMA_NAME,
@@ -22,6 +24,8 @@ from server.core import (
 )
 from server.platform.diagnostics import collect_runtime_diagnostics
 from server.platform.source_proxy import prepare_text_proxy
+from server.platform.storage import append_json_file
+from server.stores.audit_task_store import get_audit_task, upsert_audit_task
 from server.stores.request_store import (
     RequestAuditRecord,
     append_request_audit,
@@ -94,6 +98,11 @@ class InitRulesRequest(CommandRequest):
     domain: str
 
 
+class DirectoryAuditSubmitRequest(BaseModel):
+    mode: Literal["directory"]
+    directory_path: str
+
+
 class ChatResponse(BaseModel):
     request_id: str
     tenant: str
@@ -103,6 +112,14 @@ class ChatResponse(BaseModel):
     result_file: str | None = None
     response: dict[str, Any] | list[Any]
     cost: float
+
+
+class AuditSubmitAcceptedResponse(BaseModel):
+    request_id: str
+    status: str
+    mode: str
+    task_status_url: str
+    result_url: str
 
 
 def verify_tenant(api_key: str) -> str:
@@ -338,8 +355,144 @@ async def _run_command_json_endpoint(
     )
 
 
+async def _submit_audit_directory(*, request_id: str, directory_path: str) -> dict[str, Any]:
+    return {
+        "request_id": request_id,
+        "status": "accepted",
+        "mode": "directory",
+        "task_status_url": f"/audit/tasks/{request_id}",
+        "result_url": f"/results/{request_id}",
+        "directory_path": directory_path,
+    }
+
+
+def _schedule_directory_audit_task(*, request_id: str, tenant: str, directory_path: str) -> None:
+    asyncio.create_task(
+        _execute_directory_audit_task(
+            request_id=request_id,
+            tenant=tenant,
+            directory_path=directory_path,
+        )
+    )
+
+
+def _sanitize_upload_name(name: str, index: int) -> str:
+    sanitized = Path(name).name or f"upload-{index}"
+    return sanitized
+
+
+def _serialize_case_path(path: Path) -> str:
+    try:
+        return str(path.relative_to(PROJECT_ROOT))
+    except ValueError:
+        return str(path)
+
+
+async def _materialize_upload_submission(
+    *,
+    request_id: str,
+    form_json: str,
+    form_data: Any,
+) -> str:
+    try:
+        parsed_form = json.loads(form_json)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="Invalid form_json") from exc
+
+    if not isinstance(parsed_form, dict):
+        raise HTTPException(status_code=400, detail="form_json must decode to a JSON object")
+
+    files = form_data.getlist("files")
+    if not files:
+        raise HTTPException(status_code=400, detail="At least one file is required for upload mode")
+
+    case_dir = SUBMISSION_ROOT_DIR / request_id
+    case_dir.mkdir(parents=True, exist_ok=True)
+
+    attachments: list[dict[str, Any]] = []
+    for index, upload in enumerate(files, start=1):
+        safe_name = _sanitize_upload_name(getattr(upload, "filename", "") or "", index)
+        target_path = case_dir / safe_name
+        content = await upload.read()
+        target_path.write_bytes(content)
+        attachments.append(
+            {
+                "type": "uploaded",
+                "name": safe_name,
+                "path": _serialize_case_path(target_path),
+            }
+        )
+
+    append_json_file(
+        case_dir / "audit-request.json",
+        {
+            "form": parsed_form,
+            "attachments": attachments,
+        },
+    )
+
+    return _serialize_case_path(case_dir)
+
+
+async def _run_directory_audit(*, request_id: str, tenant: str, directory_path: str):
+    return await run_command_json(
+        "audit",
+        directory_path,
+        schema_name=DEFAULT_OUTPUT_SCHEMA_NAME,
+        request_id=request_id,
+        tenant=tenant,
+    )
+
+
+async def _execute_directory_audit_task(*, request_id: str, tenant: str, directory_path: str) -> None:
+    upsert_audit_task(
+        {
+            "request_id": request_id,
+            "status": "running",
+            "mode": "directory",
+            "case_path": directory_path,
+            "claim_id": None,
+            "result_file": None,
+            "error_detail": None,
+            "updated_at": utc_now(),
+        }
+    )
+    try:
+        payload, meta = await _run_directory_audit(
+            request_id=request_id,
+            tenant=tenant,
+            directory_path=directory_path,
+        )
+        upsert_audit_task(
+            {
+                "request_id": request_id,
+                "status": "completed",
+                "mode": "directory",
+                "case_path": directory_path,
+                "claim_id": payload.get("claim_id") if isinstance(payload, dict) else None,
+                "result_file": meta.result_file,
+                "error_detail": None,
+                "updated_at": utc_now(),
+            }
+        )
+    except Exception as exc:
+        upsert_audit_task(
+            {
+                "request_id": request_id,
+                "status": "failed",
+                "mode": "directory",
+                "case_path": directory_path,
+                "claim_id": None,
+                "result_file": None,
+                "error_detail": str(exc),
+                "updated_at": utc_now(),
+            }
+        )
+
+
 @app.post("/audit", response_model=ChatResponse)
 async def audit(req: AuditRequest, authorization: str = Header(...)) -> ChatResponse:
+    """Run audit for a source file path or a directory path."""
     started = time.perf_counter()
     request_id = new_request_id()
     tenant = verify_tenant(authorization)
@@ -360,6 +513,71 @@ async def audit(req: AuditRequest, authorization: str = Header(...)) -> ChatResp
             request=req,
         )
     )
+
+
+@app.post("/audit/submit", response_model=AuditSubmitAcceptedResponse)
+async def audit_submit(
+    request: Request,
+    authorization: str = Header(...),
+) -> AuditSubmitAcceptedResponse:
+    tenant = verify_tenant(authorization)
+    request_id = new_request_id()
+
+    content_type = request.headers.get("content-type", "")
+    if content_type.startswith("application/json"):
+        payload = DirectoryAuditSubmitRequest.model_validate(await request.json())
+        mode = payload.mode
+        case_path = payload.directory_path
+    elif content_type.startswith("multipart/form-data"):
+        form_data = await request.form()
+        mode = str(form_data.get("mode") or "").strip()
+        if mode != "upload":
+            raise HTTPException(status_code=400, detail="multipart requests must use mode=upload")
+        form_json = str(form_data.get("form_json") or "").strip()
+        if not form_json:
+            raise HTTPException(status_code=400, detail="form_json is required for upload mode")
+        case_path = await _materialize_upload_submission(
+            request_id=request_id,
+            form_json=form_json,
+            form_data=form_data,
+        )
+    else:
+        raise HTTPException(status_code=415, detail="Unsupported Content-Type")
+
+    upsert_audit_task(
+        {
+            "request_id": request_id,
+            "status": "accepted",
+            "mode": mode,
+            "case_path": case_path,
+            "claim_id": None,
+            "result_file": None,
+            "error_detail": None,
+            "updated_at": utc_now(),
+        }
+    )
+    response = await _submit_audit_directory(request_id=request_id, directory_path=case_path)
+    _schedule_directory_audit_task(
+        request_id=request_id,
+        tenant=tenant,
+        directory_path=case_path,
+    )
+    return AuditSubmitAcceptedResponse(
+        request_id=response["request_id"],
+        status=response["status"],
+        mode=mode,
+        task_status_url=response["task_status_url"],
+        result_url=response["result_url"],
+    )
+
+
+@app.get("/audit/tasks/{request_id}")
+async def audit_task_status(request_id: str, authorization: str = Header(...)) -> dict[str, Any]:
+    verify_tenant(authorization)
+    record = get_audit_task(request_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Audit task not found")
+    return record
 
 
 @app.post("/init-rules", response_model=ChatResponse)

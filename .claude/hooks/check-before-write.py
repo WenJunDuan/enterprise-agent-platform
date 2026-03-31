@@ -7,6 +7,78 @@ import json
 import sys
 
 
+REQUIRED_FIELDS = [
+    "claim_id",
+    "verdict",
+    "result",
+    "conclusion",
+    "explanation",
+    "reasons",
+    "policy_refs",
+    "risk_score",
+    "extracted_data",
+    "evidence_chain",
+    "reviewed_by",
+    "timestamp",
+]
+
+
+def _is_non_empty_string(value: object) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _resolve_audit_result(payload: dict[str, object]) -> dict[str, object]:
+    response = payload.get("response")
+    envelope_keys = {"request_id", "tenant", "conversation_id", "schema_name"}
+    if isinstance(response, dict) and any(key in payload for key in envelope_keys):
+        return response
+    return payload
+
+
+def _collect_missing_fields(result: dict[str, object]) -> list[str]:
+    missing: list[str] = []
+    for field in REQUIRED_FIELDS:
+        if field not in result:
+            missing.append(field)
+            continue
+
+        value = result.get(field)
+        if field in {"claim_id", "verdict", "reviewed_by", "timestamp"}:
+            if not _is_non_empty_string(value):
+                missing.append(field)
+            continue
+
+        if field == "result":
+            if not isinstance(value, bool):
+                missing.append(field)
+            continue
+
+        if field in {"conclusion", "explanation"}:
+            if not _is_non_empty_string(value):
+                missing.append(field)
+            continue
+
+        if field == "risk_score":
+            if isinstance(value, bool) or not isinstance(value, int):
+                missing.append(field)
+            continue
+
+        if field == "extracted_data":
+            if not isinstance(value, dict):
+                missing.append(field)
+            continue
+
+        if field in {"reasons", "policy_refs", "evidence_chain"}:
+            if not isinstance(value, list) or not value:
+                missing.append(field)
+            continue
+
+        if not value:
+            missing.append(field)
+
+    return missing
+
+
 def main() -> int:
     hook_input = json.load(sys.stdin)
     tool_input = hook_input.get("tool_input", {})
@@ -21,9 +93,12 @@ def main() -> int:
     except (TypeError, json.JSONDecodeError):
         print(json.dumps({"error": "Structured result must be valid JSON."}))
         return 2
+    if not isinstance(result, dict):
+        print(json.dumps({"error": "Structured result must be a JSON object."}))
+        return 2
 
-    required_fields = ["claim_id", "verdict", "reasons", "policy_refs", "evidence_chain"]
-    missing = [field for field in required_fields if not result.get(field)]
+    audit_result = _resolve_audit_result(result)
+    missing = _collect_missing_fields(audit_result)
 
     if missing:
         print(
@@ -38,7 +113,25 @@ def main() -> int:
         )
         return 2
 
-    if result.get("verdict") == "approved" and not result.get("policy_refs"):
+    expected = {
+        "approved": (True, "合规"),
+        "rejected": (False, "不合规"),
+        "manual_review": (False, "待人工复核"),
+    }
+    verdict = audit_result.get("verdict")
+    if verdict not in expected:
+        print(json.dumps({"error": "Structured result returned an unknown verdict."}))
+        return 2
+
+    expected_result, expected_conclusion = expected[verdict]
+    if (
+        audit_result.get("result") is not expected_result
+        or audit_result.get("conclusion") != expected_conclusion
+    ):
+        print(json.dumps({"error": "Audit opinion fields do not match verdict mapping."}))
+        return 2
+
+    if verdict == "approved" and not audit_result.get("policy_refs"):
         print(json.dumps({"error": "Approved results must include policy references from common-rule-query."}))
         return 2
 

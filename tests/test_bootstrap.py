@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import json
+import subprocess
+import sys
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -13,7 +17,7 @@ from server import api as api_module
 from server import app_server as app_server_module
 from server import cli as cli_module
 from server.api import _load_tenant_keys, verify_tenant
-from server.command_adapter import build_command_prompt
+from server.command_adapter import build_audit_prompt, build_command_prompt, run_command_json
 from server.core import (
     AgentRunMeta,
     DEFAULT_OUTPUT_SCHEMA_NAME,
@@ -40,11 +44,92 @@ def _clear_settings_cache() -> None:
     get_app_settings.cache_clear()
 
 
+def _run_check_before_write_hook(
+    payload: dict[str, Any], file_path: str
+) -> subprocess.CompletedProcess[str]:
+    hook_input = {
+        "tool_input": {
+            "file_path": file_path,
+            "content": json.dumps(payload, ensure_ascii=False),
+        }
+    }
+    return subprocess.run(
+        [sys.executable, str(PROJECT_ROOT / ".claude/hooks/check-before-write.py")],
+        input=json.dumps(hook_input, ensure_ascii=False),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
 def test_build_command_prompt_renders_slash_command() -> None:
     assert (
         build_command_prompt("init-rules", "knowledge/external/数睿员工手册.pdf", "expense")
         == "/init-rules knowledge/external/数睿员工手册.pdf expense"
     )
+
+
+def test_build_command_prompt_allows_directory_path() -> None:
+    assert build_command_prompt("audit", "data/case1") == "/audit data/case1"
+
+
+def test_build_audit_prompt_mentions_directory_and_chinese_audit_fields() -> None:
+    prompt = build_audit_prompt("data/case1")
+    assert "data/case1" in prompt
+    assert "如果输入是目录，先枚举目录下文件" in prompt
+    assert "`.claude/contracts/common/audit-result.schema.json`" in prompt
+    assert "`result`、`conclusion`、`explanation`" in prompt
+    assert "待人工复核" in prompt
+    assert "只返回一个 JSON 对象" in prompt
+    assert "不要输出 Markdown" in prompt
+
+
+def test_run_command_json_uses_direct_audit_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+
+    async def fake_run_agent_json(prompt: str, **kwargs: Any) -> tuple[dict[str, Any], str]:
+        captured["prompt"] = prompt
+        captured["kwargs"] = kwargs
+        return {"ok": True}, "meta"
+
+    monkeypatch.setattr("server.command_adapter.run_agent_json", fake_run_agent_json)
+
+    payload, meta = asyncio.run(run_command_json("audit", "data/case1", schema_name=DEFAULT_OUTPUT_SCHEMA_NAME))
+
+    assert payload == {"ok": True}
+    assert meta == "meta"
+    assert captured["prompt"] != "/audit data/case1"
+    assert "data/case1" in captured["prompt"]
+    assert "如果输入是目录" in captured["prompt"]
+    assert captured["kwargs"]["schema_name"] == DEFAULT_OUTPUT_SCHEMA_NAME
+
+
+def test_run_command_json_keeps_slash_prompt_for_non_audit(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+
+    async def fake_run_agent_json(prompt: str, **kwargs: Any) -> tuple[dict[str, Any], str]:
+        captured["prompt"] = prompt
+        captured["kwargs"] = kwargs
+        return {"ok": True}, "meta"
+
+    monkeypatch.setattr("server.command_adapter.run_agent_json", fake_run_agent_json)
+
+    payload, meta = asyncio.run(
+        run_command_json(
+            "init-rules",
+            "knowledge/external/数睿员工手册.pdf",
+            "expense",
+            schema_name=INIT_RULES_REPORT_SCHEMA_NAME,
+        )
+    )
+
+    assert payload == {"ok": True}
+    assert meta == "meta"
+    assert (
+        captured["prompt"]
+        == "/init-rules knowledge/external/数睿员工手册.pdf expense"
+    )
+    assert captured["kwargs"]["schema_name"] == INIT_RULES_REPORT_SCHEMA_NAME
 
 
 def test_build_options_uses_project_settings() -> None:
@@ -193,6 +278,138 @@ def test_validate_init_rules_semantics_accepts_written_initialized_payload() -> 
         "notes": [],
     }
     validate_structured_output_semantics(INIT_RULES_REPORT_SCHEMA_NAME, payload)
+
+
+def test_validate_audit_semantics_accepts_manual_review_mapping() -> None:
+    payload = {
+        "verdict": "manual_review",
+        "result": False,
+        "conclusion": "待人工复核",
+        "explanation": "缺少关键附件，需人工复核。",
+    }
+    validate_structured_output_semantics(DEFAULT_OUTPUT_SCHEMA_NAME, payload)
+
+
+def test_check_before_write_hook_accepts_top_level_manual_review_result() -> None:
+    payload = {
+        "claim_id": "CLAIM-001",
+        "verdict": "manual_review",
+        "result": False,
+        "conclusion": "待人工复核",
+        "explanation": "根据现有材料无法完成自动审核，缺少关键附件。",
+        "reasons": ["缺少关键附件"],
+        "policy_refs": ["expense.travel.001"],
+        "risk_score": 70,
+        "extracted_data": {"claim_amount": 1200},
+        "evidence_chain": ["OCR extracted amount 1200"],
+        "reviewed_by": "expense-auditor",
+        "timestamp": "2026-03-31T00:00:00+00:00",
+    }
+
+    result = _run_check_before_write_hook(payload, "logs/results/by-request/req-top-level.json")
+
+    assert result.returncode == 0
+    assert result.stdout == ""
+
+
+def test_check_before_write_hook_accepts_envelope_response_manual_review_result() -> None:
+    payload = {
+        "request_id": "req-envelope-1",
+        "tenant": "demo",
+        "conversation_id": "conv-envelope-1",
+        "schema_name": DEFAULT_OUTPUT_SCHEMA_NAME,
+        "response": {
+            "claim_id": "CLAIM-001",
+            "verdict": "manual_review",
+            "result": False,
+            "conclusion": "待人工复核",
+            "explanation": "根据现有材料无法完成自动审核，缺少关键附件。",
+            "reasons": ["缺少关键附件"],
+            "policy_refs": ["expense.travel.001"],
+            "risk_score": 70,
+            "extracted_data": {"claim_amount": 1200},
+            "evidence_chain": ["OCR extracted amount 1200"],
+            "reviewed_by": "expense-auditor",
+            "timestamp": "2026-03-31T00:00:00+00:00",
+        },
+    }
+
+    result = _run_check_before_write_hook(payload, "logs/results/by-request/req-envelope.json")
+
+    assert result.returncode == 0
+    assert result.stdout == ""
+
+
+def test_check_before_write_hook_rejects_envelope_response_missing_timestamp() -> None:
+    payload = {
+        "request_id": "req-envelope-2",
+        "tenant": "demo",
+        "conversation_id": "conv-envelope-2",
+        "schema_name": DEFAULT_OUTPUT_SCHEMA_NAME,
+        "response": {
+            "claim_id": "CLAIM-001",
+            "verdict": "manual_review",
+            "result": False,
+            "conclusion": "待人工复核",
+            "explanation": "根据现有材料无法完成自动审核，缺少关键附件。",
+            "reasons": ["缺少关键附件"],
+            "policy_refs": ["expense.travel.001"],
+            "risk_score": 70,
+            "extracted_data": {"claim_amount": 1200},
+            "evidence_chain": ["OCR extracted amount 1200"],
+            "reviewed_by": "expense-auditor",
+        },
+    }
+
+    result = _run_check_before_write_hook(
+        payload,
+        "logs/results/by-request/req-envelope-missing-timestamp.json",
+    )
+
+    assert result.returncode == 2
+    assert "timestamp" in result.stdout
+
+
+def test_validate_audit_semantics_rejects_manual_review_noncompliant_conclusion() -> None:
+    payload = {
+        "verdict": "manual_review",
+        "result": False,
+        "conclusion": "不合规",
+        "explanation": "缺少关键附件，需人工复核。",
+    }
+    with pytest.raises(JSONContractError):
+        validate_structured_output_semantics(DEFAULT_OUTPUT_SCHEMA_NAME, payload)
+
+
+def test_validate_audit_semantics_accepts_approved_mapping() -> None:
+    payload = {
+        "verdict": "approved",
+        "result": True,
+        "conclusion": "合规",
+        "explanation": "已满足自动审核条件。",
+    }
+    validate_structured_output_semantics(DEFAULT_OUTPUT_SCHEMA_NAME, payload)
+
+
+def test_validate_audit_semantics_rejects_blank_explanation() -> None:
+    payload = {
+        "verdict": "rejected",
+        "result": False,
+        "conclusion": "不合规",
+        "explanation": "   ",
+    }
+    with pytest.raises(JSONContractError):
+        validate_structured_output_semantics(DEFAULT_OUTPUT_SCHEMA_NAME, payload)
+
+
+def test_audit_semantics_schema_requires_result_fields() -> None:
+    schema = load_output_schema(DEFAULT_OUTPUT_SCHEMA_NAME)
+    assert schema["properties"]["result"]["type"] == "boolean"
+    assert schema["properties"]["conclusion"]["enum"] == ["合规", "不合规", "待人工复核"]
+    assert schema["properties"]["explanation"]["minLength"] == 1
+    assert "result" in schema["required"]
+    assert "conclusion" in schema["required"]
+    assert "explanation" in schema["required"]
 
 
 def test_init_rules_assets_reflect_current_layout() -> None:
@@ -369,6 +586,9 @@ def test_audit_endpoint_returns_structured_json(monkeypatch: pytest.MonkeyPatch)
         return {
             "claim_id": "CLAIM-001",
             "verdict": "manual_review",
+            "result": False,
+            "conclusion": "待人工复核",
+            "explanation": "根据现有材料无法完成自动审核，缺少关键附件。",
             "reasons": ["缺少附件"],
             "policy_refs": ["expense.travel.001"],
             "risk_score": 70,
@@ -403,10 +623,67 @@ def test_audit_endpoint_returns_structured_json(monkeypatch: pytest.MonkeyPatch)
     payload = response.json()
     assert payload["request_id"] == "req-audit-1"
     assert payload["response"]["claim_id"] == "CLAIM-001"
+    assert payload["response"]["result"] is False
+    assert payload["response"]["conclusion"] == "待人工复核"
+    assert payload["response"]["explanation"] == "根据现有材料无法完成自动审核，缺少关键附件。"
     assert captured["command_name"] == "audit"
     assert captured["args"] == ("tests/fixtures/claim.json",)
     assert captured["schema_name"] == DEFAULT_OUTPUT_SCHEMA_NAME
     assert captured["tenant"] == "demo"
+
+
+def test_audit_endpoint_accepts_directory_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+
+    async def fake_run_command_json(
+        command_name: str, *args: Any, **kwargs: Any
+    ) -> tuple[dict[str, Any], AgentRunMeta]:
+        captured["command_name"] = command_name
+        captured["args"] = args
+        return {
+            "claim_id": "CASE-001",
+            "verdict": "manual_review",
+            "result": False,
+            "conclusion": "待人工复核",
+            "explanation": "根据《费用报销管理制度》相关条款，现有目录材料不足以自动判断，缺少关键行程凭证。",
+            "reasons": ["缺少关键行程凭证"],
+            "policy_refs": ["expense.travel.001"],
+            "risk_score": 70,
+            "extracted_data": {},
+            "evidence_chain": [],
+            "reviewed_by": "expense-auditor",
+            "timestamp": "2026-03-31T00:00:00+00:00",
+        }, AgentRunMeta(
+            request_id="req-audit-dir-1",
+            conversation_id="conv-audit-dir-1",
+            claude_session_id="sess-audit-dir-1",
+            resume_session_id=None,
+            fork_from_session_id=None,
+            schema_name=DEFAULT_OUTPUT_SCHEMA_NAME,
+            log_file="logs/sessions/events/audit-dir.jsonl",
+            result_file="results/by-request/req-audit-dir-1.json",
+            result_subtype="success",
+            cost_usd=0.3,
+            finished_at="2026-03-31T00:00:00+00:00",
+        )
+
+    monkeypatch.setenv("TENANT_KEYS", '{"demo":"sk-demo"}')
+    api_module.TENANT_KEYS = _load_tenant_keys()
+    monkeypatch.setattr(api_module, "run_command_json", fake_run_command_json)
+    client = TestClient(api_module.app)
+    response = client.post(
+        "/audit",
+        headers={"Authorization": "Bearer sk-demo"},
+        json={"path": "data/case1"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["request_id"] == "req-audit-dir-1"
+    assert payload["response"]["claim_id"] == "CASE-001"
+    assert payload["response"]["result"] is False
+    assert payload["response"]["conclusion"] == "待人工复核"
+    assert captured["command_name"] == "audit"
+    assert captured["args"] == ("data/case1",)
 
 
 def test_init_rules_endpoint_returns_structured_json(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -557,3 +834,162 @@ def test_service_http_snapshot_reports_not_running() -> None:
     assert payload["running"] is False
     assert payload["health"]["ok"] is False
     assert payload["ready"]["ok"] is False
+
+
+def test_audit_task_store_round_trip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from server.stores import audit_task_store as audit_task_store_module
+
+    monkeypatch.setattr(audit_task_store_module, "AUDIT_TASK_FILE", tmp_path / "audit-tasks.json")
+
+    audit_task_store_module.upsert_audit_task(
+        {
+            "request_id": "req-1",
+            "status": "accepted",
+            "mode": "directory",
+            "case_path": "data/case1",
+            "claim_id": None,
+            "result_file": None,
+            "error_detail": None,
+            "updated_at": "2026-03-31T00:00:00+00:00",
+        }
+    )
+
+    record = audit_task_store_module.get_audit_task("req-1")
+    assert record is not None
+    assert record["status"] == "accepted"
+    assert record["case_path"] == "data/case1"
+
+
+def test_audit_submit_directory_returns_accepted(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TENANT_KEYS", '{"demo":"sk-demo"}')
+    api_module.TENANT_KEYS = _load_tenant_keys()
+
+    async def fake_submit(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        return {
+            "request_id": "req-submit-1",
+            "status": "accepted",
+            "mode": "directory",
+            "task_status_url": "/audit/tasks/req-submit-1",
+            "result_url": "/results/req-submit-1",
+        }
+
+    monkeypatch.setattr(api_module, "_submit_audit_directory", fake_submit, raising=False)
+    client = TestClient(api_module.app)
+    response = client.post(
+        "/audit/submit",
+        headers={"Authorization": "Bearer sk-demo"},
+        json={"mode": "directory", "directory_path": "data/case1"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "accepted"
+    assert payload["mode"] == "directory"
+    assert payload["request_id"] == "req-submit-1"
+
+
+def test_audit_task_status_endpoint_returns_record(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TENANT_KEYS", '{"demo":"sk-demo"}')
+    api_module.TENANT_KEYS = _load_tenant_keys()
+    monkeypatch.setattr(
+        api_module,
+        "get_audit_task",
+        lambda request_id: {
+            "request_id": request_id,
+            "status": "running",
+            "mode": "directory",
+            "case_path": "data/case1",
+            "claim_id": None,
+            "result_file": None,
+            "error_detail": None,
+            "updated_at": "2026-03-31T00:00:00+00:00",
+        },
+        raising=False,
+    )
+    client = TestClient(api_module.app)
+    response = client.get("/audit/tasks/req-submit-1", headers={"Authorization": "Bearer sk-demo"})
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["request_id"] == "req-submit-1"
+    assert payload["status"] == "running"
+    assert payload["mode"] == "directory"
+
+
+def test_audit_submit_directory_marks_task_running_then_completed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    updates: list[dict[str, Any]] = []
+
+    monkeypatch.setattr(api_module, "upsert_audit_task", lambda record: updates.append(record.copy()), raising=False)
+
+    async def fake_run_directory_audit(*args: Any, **kwargs: Any):
+        return (
+            {
+                "claim_id": "CASE-001",
+                "verdict": "manual_review",
+                "result": False,
+                "conclusion": "待人工复核",
+                "explanation": "根据《费用报销管理制度》相关条款，现有材料不足以自动判断。",
+                "reasons": ["缺少关键材料"],
+                "policy_refs": ["expense.travel.001"],
+                "risk_score": 70,
+                "extracted_data": {},
+                "evidence_chain": [],
+                "reviewed_by": "expense-auditor",
+                "timestamp": "2026-03-31T00:00:00+00:00",
+            },
+            AgentRunMeta(
+                request_id="req-submit-1",
+                conversation_id="conv-1",
+                claude_session_id="sess-1",
+                resume_session_id=None,
+                fork_from_session_id=None,
+                schema_name=DEFAULT_OUTPUT_SCHEMA_NAME,
+                log_file="logs/sessions/events/audit.jsonl",
+                result_file="results/by-request/req-submit-1.json",
+                result_subtype="success",
+                cost_usd=0.2,
+                finished_at="2026-03-31T00:00:00+00:00",
+            ),
+        )
+
+    monkeypatch.setattr(api_module, "_run_directory_audit", fake_run_directory_audit, raising=False)
+
+    asyncio.run(
+        api_module._execute_directory_audit_task(
+            request_id="req-submit-1",
+            tenant="demo",
+            directory_path="data/case1",
+        )
+    )
+
+    assert updates[0]["status"] == "running"
+    assert updates[-1]["status"] == "completed"
+    assert updates[-1]["claim_id"] == "CASE-001"
+
+
+def test_audit_submit_upload_writes_submission_case(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("TENANT_KEYS", '{"demo":"sk-demo"}')
+    api_module.TENANT_KEYS = _load_tenant_keys()
+    monkeypatch.setattr(api_module, "SUBMISSION_ROOT_DIR", tmp_path, raising=False)
+    monkeypatch.setattr(api_module, "_schedule_directory_audit_task", lambda **kwargs: None, raising=False)
+
+    client = TestClient(api_module.app)
+    response = client.post(
+        "/audit/submit",
+        headers={"Authorization": "Bearer sk-demo"},
+        files=[("files", ("invoice.pdf", b"pdf-bytes", "application/pdf"))],
+        data={
+            "mode": "upload",
+            "form_json": json.dumps({"case_id": "case1", "expense_type": "业务招待"}, ensure_ascii=False),
+        },
+    )
+
+    assert response.status_code == 200
+    request_id = response.json()["request_id"]
+    case_dir = tmp_path / request_id
+    assert (case_dir / "audit-request.json").is_file()
+    assert (case_dir / "invoice.pdf").is_file()
