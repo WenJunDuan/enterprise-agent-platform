@@ -2,10 +2,11 @@
 
 ## Goal
 
-把审核结果输出契约升级为“内部三态 + 对外中文结论”双层模型：
+把审核结果输出契约升级为“结构化数据 + 审核意见”双层模型：
 
 - 内部仍保留 `approved / rejected / manual_review`
-- 对外强制输出 `result`、`conclusion`、`explanation`
+- 对外继续保留完整结构化数据，供页面和后续流程对接
+- 对外强制新增 `result`、`conclusion`、`explanation`
 - 所有审核意见必须使用中文表达，不能再出现英文结论或英文理由
 
 ## Scope
@@ -34,8 +35,9 @@
 当前输出结果存在三个问题：
 
 1. `verdict` 使用英文三态，适合内部流转，但不适合直接展示给财务或业务用户。
-2. `reasons` 与 `evidence_chain` 没有被强制要求为中文，Claude 可能输出英文意见。
-3. `manual_review` 虽然语义上不是“不合规”，但当前没有固定中文展示口径，也没有强制解释“为什么系统不能自动放行”。
+2. 当前结果里虽然已经有 `extracted_data`、`reasons`、`policy_refs`、`evidence_chain`，但没有单独、稳定的前端展示字段来表达“审核意见”。
+3. `reasons` 与 `evidence_chain` 没有被强制要求为中文，Claude 可能输出英文意见。
+4. `manual_review` 虽然语义上不是“不合规”，但当前没有固定中文展示口径，也没有强制解释“为什么系统不能自动放行”。
 
 ## Design
 
@@ -53,13 +55,32 @@
 - `manual_review` 与 `rejected` 的语义不同，不能在内部直接压扁为二态。
 - 对外展示再映射成 `true/false`，可以兼顾机器处理和人工阅读。
 
-### 2. 新增对外展示字段
+### 2. 保留结构化数据，同时新增审核意见字段
 
-统一结果 schema 增加以下字段：
+现有结构化字段必须继续保留，至少包括：
+
+- `claim_id`
+- `verdict`
+- `reasons`
+- `policy_refs`
+- `risk_score`
+- `extracted_data`
+- `evidence_chain`
+- `reviewed_by`
+- `timestamp`
+
+在此基础上，统一结果 schema 再新增以下审核意见字段：
 
 - `result`: `true | false`
 - `conclusion`: `合规 | 不合规 | 待人工复核`
 - `explanation`: 中文长句说明
+
+这意味着页面对接时可以同时拿到：
+
+- 机器可消费的结构化字段
+- 人可直接阅读的中文审核结论
+
+skill 不允许在两者之间二选一；必须同时产出。
 
 映射规则固定为：
 
@@ -112,6 +133,7 @@
 
 `check-before-write.py` 应在写结果文件前做最小校验：
 
+- 现有结构化字段仍然必须存在，不能因为新增审核意见而删掉原始结构化输出
 - 新字段 `result`、`conclusion`、`explanation` 必须存在
 - `conclusion` 必须与 `verdict` 一致
 - `manual_review` 时，`conclusion` 必须是 `待人工复核`
@@ -140,16 +162,23 @@
 }
 ```
 
+其中：
+
+- `extracted_data`、`reasons`、`policy_refs`、`evidence_chain` 继续服务于页面结构化展示、筛选、详情展开和二次处理
+- `result`、`conclusion`、`explanation` 服务于首页摘要、卡片结论和人工复核提示
+
 ## Acceptance
 
-1. Claude 输出的审核意见默认是中文，不再只返回英文 `manual_review` 或英文 `reasons`。
-2. 对外总是先给 `result=true/false`，再给中文 `conclusion` 和 `explanation`。
-3. `manual_review` 固定展示为 `待人工复核`，并明确写出不能自动放行的原因。
-4. 内部仍保留 `approved / rejected / manual_review`，不破坏现有三态流转。
-5. hook 会拦截缺失中文展示字段或映射不一致的结果。
+1. Claude 返回结果时，结构化数据和审核意见字段同时存在，不能缺任一侧。
+2. Claude 输出的审核意见默认是中文，不再只返回英文 `manual_review` 或英文 `reasons`。
+3. 对外总是给出 `result=true/false`、中文 `conclusion` 和 `explanation`。
+4. `manual_review` 固定展示为 `待人工复核`，并明确写出不能自动放行的原因。
+5. 内部仍保留 `approved / rejected / manual_review`，不破坏现有三态流转。
+6. hook 会拦截缺失中文展示字段、缺失结构化字段或映射不一致的结果。
 
 ## Risks
 
 1. 现有 API/CLI 消费方如果假设结果只包含旧字段，需要同步兼容新增字段。
-2. 仅靠 skill 约束仍可能出现个别英文短语，因此 hook 和测试需要一起收口。
-3. `policy_refs` 是规则 ID，不是自然语言条款文本；`explanation` 的制度依据表述仍依赖 Claude 按 skill 提示正确组织。
+2. 页面如果直接绑定旧字段名，需要确认是继续使用 `extracted_data` 还是额外映射成前端 view model。
+3. 仅靠 skill 约束仍可能出现个别英文短语，因此 hook 和测试需要一起收口。
+4. `policy_refs` 是规则 ID，不是自然语言条款文本；`explanation` 的制度依据表述仍依赖 Claude 按 skill 提示正确组织。

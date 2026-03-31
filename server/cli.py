@@ -116,12 +116,12 @@ def ask(
 
 @app.command()
 def audit(
-    path: str = typer.Argument(..., help="Path to a source payload."),
+    path: str = typer.Argument(..., help="Path to a source file or directory."),
     conversation_id: str = typer.Option("", help="Application conversation id."),
     resume_session_id: str = typer.Option("", help="Resume a specific Claude session id."),
     fork_from_session_id: str = typer.Option("", help="Fork from a previous Claude session."),
 ) -> None:
-    """Trigger the built-in single item workflow."""
+    """Trigger the built-in audit workflow for a file or directory path."""
     _ensure_cli_runtime()
     _invoke_text_command(
         run_command_full(
@@ -136,12 +136,12 @@ def audit(
 
 @app.command("audit-json")
 def audit_json(
-    path: str = typer.Argument(..., help="Path to a source payload."),
+    path: str = typer.Argument(..., help="Path to a source file or directory."),
     conversation_id: str = typer.Option("", help="Application conversation id."),
     resume_session_id: str = typer.Option("", help="Resume a specific Claude session id."),
     fork_from_session_id: str = typer.Option("", help="Fork from a previous Claude session."),
 ) -> None:
-    """Run audit with structured output and print metadata."""
+    """Run audit for a file or directory path with structured output and print metadata."""
     _ensure_cli_runtime()
 
     async def _run() -> tuple[dict | list, AgentRunMeta]:

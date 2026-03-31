@@ -98,6 +98,32 @@ def validate_structured_output_semantics(
     structured_output: StructuredJSON,
 ) -> None:
     """Apply semantic validation rules that JSON Schema alone cannot express."""
+    if schema_name == DEFAULT_OUTPUT_SCHEMA_NAME:
+        if not isinstance(structured_output, dict):
+            raise JSONContractError("audit result structured output must be a JSON object.")
+
+        verdict = structured_output.get("verdict")
+        verdict_map = {
+            "approved": (True, "合规"),
+            "rejected": (False, "不合规"),
+            "manual_review": (False, "待人工复核"),
+        }
+        if verdict not in verdict_map:
+            raise JSONContractError("audit result returned an unknown verdict.")
+
+        expected_result, expected_conclusion = verdict_map[verdict]
+        result = structured_output.get("result")
+        conclusion = structured_output.get("conclusion")
+        explanation = str(structured_output.get("explanation") or "").strip()
+
+        if not isinstance(result, bool) or result is not expected_result:
+            raise JSONContractError("audit result field `result` does not match verdict.")
+        if conclusion != expected_conclusion:
+            raise JSONContractError("audit result field `conclusion` does not match verdict.")
+        if not explanation:
+            raise JSONContractError("audit result field `explanation` must be non-empty.")
+        return
+
     if schema_name != INIT_RULES_REPORT_SCHEMA_NAME:
         return
 

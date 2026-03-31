@@ -33,3 +33,12 @@ skills:
 - 不要使用训练记忆中的规则。
 - 不要编造缺失规则。
 - 未找到适用规则时输出 `manual_review`。
+
+## 输出要求
+
+- 最终结果必须通过 `common-result-format`。
+- 最终结果必须同时保留完整结构化字段与审核意见字段，供页面直接消费。
+- 必须同时输出 `result`、`conclusion`、`explanation`。
+- `result` 必须按契约输出布尔映射；`conclusion`、`explanation` 必须使用中文。
+- `manual_review` 时，`conclusion` 必须固定为 `待人工复核`。
+- `manual_review` 时，`explanation` 必须说明为什么不能自动放行、缺少什么材料，或哪条规则无法闭合。
