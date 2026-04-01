@@ -231,6 +231,9 @@ class AppSettings:
     api_port: int
     allow_unscoped_continue_recent: bool
     session_archive_after_days: int
+    audit_task_running_timeout_seconds: int
+    submission_retention_days: int
+    max_upload_file_bytes: int
     runtime_log_max_bytes: int
     runtime_log_backups: int
     app_server_name: str
@@ -244,6 +247,9 @@ def get_app_settings() -> AppSettings:
         api_port=_env_int("APP_SERVER_PORT", 8000),
         allow_unscoped_continue_recent=_env_bool("ALLOW_UNSCOPED_CONTINUE_RECENT", default=False),
         session_archive_after_days=_env_int("SESSION_ARCHIVE_AFTER_DAYS", 7),
+        audit_task_running_timeout_seconds=_env_int("AUDIT_TASK_RUNNING_TIMEOUT_SECONDS", 600),
+        submission_retention_days=_env_int("SUBMISSION_RETENTION_DAYS", 7),
+        max_upload_file_bytes=_env_int("MAX_UPLOAD_FILE_BYTES", 10 * 1024 * 1024),
         runtime_log_max_bytes=_env_int("APP_SERVER_LOG_MAX_BYTES", 5 * 1024 * 1024),
         runtime_log_backups=_env_int("APP_SERVER_LOG_BACKUPS", 5),
         app_server_name=os.getenv("APP_SERVER_NAME", "enterprise-agent-api"),
@@ -259,6 +265,9 @@ def runtime_setting_snapshot() -> dict[str, Any]:
         "api_port": settings.api_port,
         "allow_unscoped_continue_recent": settings.allow_unscoped_continue_recent,
         "session_archive_after_days": settings.session_archive_after_days,
+        "audit_task_running_timeout_seconds": settings.audit_task_running_timeout_seconds,
+        "submission_retention_days": settings.submission_retention_days,
+        "max_upload_file_bytes": settings.max_upload_file_bytes,
         "runtime_log_max_bytes": settings.runtime_log_max_bytes,
         "runtime_log_backups": settings.runtime_log_backups,
         "app_server_name": settings.app_server_name,

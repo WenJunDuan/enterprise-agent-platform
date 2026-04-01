@@ -408,6 +408,6 @@ Expected:
 - [ ] **Step 3: Commit the implementation**
 
 ```bash
-git add .claude/contracts/common/audit-result.schema.json .claude/skills/common/result-format/SKILL.md .claude/agents/expense/auditor.md .claude/hooks/check-before-write.py .claude/commands/audit.md server/core.py server/cli.py server/api.py tests/test_bootstrap.py .ai_state/docs/superpowers/specs/2026-03-31-audit-result-chinese-display-design.md .ai_state/docs/superpowers/plans/2026-03-31-audit-result-and-directory-input-plan.md
+git add .claude/contracts/common/audit-result.schema.json .claude/skills/common/result-format/SKILL.md .claude/agents/expense/auditor.md .claude/hooks/check-before-write.py .claude/commands/audit.md server/core.py server/cli.py server/api.py tests/test_bootstrap.py .ai_state/superpowers/specs/2026-03-31-audit-result-chinese-display-design.md .ai_state/superpowers/plans/2026-03-31-audit-result-and-directory-input-plan.md
 git commit -m "feat: add chinese audit opinions and directory audit input"
 ```

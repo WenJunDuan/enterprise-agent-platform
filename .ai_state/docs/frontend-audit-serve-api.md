@@ -29,7 +29,8 @@ Authorization: Bearer sk-default
 
 1. `POST /audit/submit`
 2. `GET /audit/tasks/{request_id}`
-3. `GET /results/{request_id}`
+3. `GET /audit/tasks/{request_id}/result`
+4. `GET /results/{request_id}`
 
 ---
 
@@ -143,10 +144,15 @@ Authorization: Bearer sk-default
   "request_id": "faf62e3a-fa35-4d47-acd6-93b74190fe46",
   "status": "running",
   "mode": "directory",
+  "source_mode": "directory",
   "case_path": "data/case1",
   "claim_id": null,
   "result_file": null,
   "error_detail": null,
+  "progress_message": "正在调用 Claude 审核",
+  "submitted_at": "2026-03-31T09:27:31.691389+00:00",
+  "started_at": "2026-03-31T09:27:32.100000+00:00",
+  "finished_at": null,
   "updated_at": "2026-03-31T09:27:31.691389+00:00"
 }
 ```
@@ -164,9 +170,47 @@ Authorization: Bearer sk-default
 - `completed`：跳转读取结果详情
 - `failed`：展示 `error_detail`
 
+补充说明：
+
+- `source_mode`：任务真实来源类型，当前为 `directory` 或 `upload`
+- `progress_message`：当前阶段的人类可读说明
+- `submitted_at` / `started_at` / `finished_at`：任务时间线
+
 ---
 
-## 6. 获取最终审核结果
+## 6. 获取轻量最终审核结果
+
+请求：
+
+```http
+GET /audit/tasks/{request_id}/result
+Authorization: Bearer sk-default
+```
+
+返回结构：
+
+```json
+{
+  "claim_id": "case1",
+  "verdict": "manual_review",
+  "result": false,
+  "conclusion": "待人工复核",
+  "explanation": "根据……规定，……",
+  "reasons": [],
+  "policy_refs": [],
+  "risk_score": 65,
+  "extracted_data": {},
+  "evidence_chain": [],
+  "reviewed_by": "...",
+  "timestamp": "..."
+}
+```
+
+这个接口是前端推荐使用的结果读取口径。
+
+---
+
+## 7. 获取完整归档结果
 
 请求：
 
@@ -213,7 +257,7 @@ const audit = result.payload.response;
 
 ---
 
-## 7. 前端重点字段
+## 8. 前端重点字段
 
 ### 7.1 页面摘要区
 
@@ -249,15 +293,15 @@ const audit = result.payload.response;
 
 ---
 
-## 8. 推荐前端调用流程
+## 9. 推荐前端调用流程
 
 ### 8.1 目录模式
 
 1. 调用 `POST /audit/submit`
 2. 拿到 `request_id`
 3. 每 2 秒轮询 `GET /audit/tasks/{request_id}`
-4. 当 `status === "completed"` 时，调用 `GET /results/{request_id}`
-5. 读取 `payload.response`
+4. 当 `status === "completed"` 时，调用 `GET /audit/tasks/{request_id}/result`
+5. 需要归档外壳时，再调用 `GET /results/{request_id}`
 
 ### 8.2 上传模式
 
@@ -269,7 +313,38 @@ const audit = result.payload.response;
 
 ---
 
-## 9. TypeScript 类型建议
+目录模式提交额外限制：
+
+- `directory_path` 必须是已存在目录
+- `directory_path` 必须位于项目 `data/` 根目录下
+
+上传模式额外校验：
+
+- `form_json` 必须为合法 JSON 对象
+- 必填字段：
+  - `case_id`
+  - `applicant_name`
+  - `expense_type`
+- 文件白名单：
+  - `.pdf`
+  - `.png`
+  - `.jpg`
+  - `.jpeg`
+  - `.webp`
+- 空文件会被拒绝
+- 单文件大小受 `MAX_UPLOAD_FILE_BYTES` 限制
+
+常见错误：
+
+- 非法 `directory_path`
+- 非法 `form_json`
+- 缺必填字段
+- 空文件
+- 不支持的文件类型
+
+---
+
+## 10. TypeScript 类型建议
 
 ```ts
 export type AuditTaskStatus = "accepted" | "running" | "completed" | "failed";
@@ -286,10 +361,15 @@ export interface AuditTaskResponse {
   request_id: string;
   status: AuditTaskStatus;
   mode: "directory" | "upload";
+  source_mode: "directory" | "upload";
   case_path: string;
   claim_id: string | null;
   result_file: string | null;
   error_detail: string | null;
+  progress_message: string | null;
+  submitted_at: string | null;
+  started_at: string | null;
+  finished_at: string | null;
   updated_at: string;
 }
 
@@ -323,7 +403,7 @@ export interface ResultDetailResponse {
 
 ---
 
-## 10. fetch 示例
+## 11. fetch 示例
 
 ### 10.1 目录模式提交
 
@@ -365,7 +445,19 @@ async function pollAuditTask(requestId: string) {
 }
 ```
 
-### 10.3 获取结果
+### 10.3 获取轻量结果
+
+```ts
+const resultRes = await fetch(`/audit/tasks/${requestId}/result`, {
+  headers: {
+    Authorization: "Bearer sk-default",
+  },
+});
+
+const audit = await resultRes.json();
+```
+
+### 10.4 获取完整归档结果
 
 ```ts
 const resultRes = await fetch(`/results/${requestId}`, {
@@ -378,7 +470,7 @@ const resultDetail = await resultRes.json();
 const audit = resultDetail.payload.response;
 ```
 
-### 10.4 上传模式提交
+### 10.5 上传模式提交
 
 ```ts
 const fd = new FormData();
@@ -409,7 +501,7 @@ const submitPayload = await res.json();
 
 ---
 
-## 11. 手工联调命令
+## 12. 手工联调命令
 
 ### 11.1 目录模式
 
@@ -427,7 +519,14 @@ curl -H "Authorization: Bearer sk-default" \
   http://127.0.0.1:8000/audit/tasks/<request_id>
 ```
 
-### 11.3 查结果
+### 11.3 查轻量结果
+
+```bash
+curl -H "Authorization: Bearer sk-default" \
+  http://127.0.0.1:8000/audit/tasks/<request_id>/result
+```
+
+### 11.4 查完整归档结果
 
 ```bash
 curl -H "Authorization: Bearer sk-default" \
@@ -436,8 +535,8 @@ curl -H "Authorization: Bearer sk-default" \
 
 ---
 
-## 12. 当前限制
+## 13. 当前限制
 
 1. 当前后台任务是进程内 `asyncio.create_task`，服务重启后，正在执行的任务不会自动恢复。
 2. 当前已经适合单机联调和前端接入阶段，但还不是持久任务队列方案。
-3. 上传文件名虽然会做基础清洗，但后续如果上线，还需要更完整的文件大小、类型和安全校验。
+3. 上传文件名已经做了基础清洗，且已增加类型、空文件和大小校验，但如果继续上线化，仍建议补更强的内容安全检测。

@@ -41,7 +41,7 @@
       依赖: T-007
 
 - [x] T-009: 重写 `.claude/skills/expense-audit` 与相关 `common/system` skills，并为 `knowledge/expense/*.json` 补齐真实制度来源元数据；验收标准是 skill 文本引用真实本地路径、expense 规则带 `source`、`thresholds.json` 带来源映射且所有 JSON 可解析
-      文件: `.claude/skills/expense-audit/`、`.claude/skills/common/`、`.claude/skills/system/`、`knowledge/expense/`、`docs/superpowers/`
+      文件: `.claude/skills/expense-audit/`、`.claude/skills/common/`、`.claude/skills/system/`、`knowledge/expense/`、`.ai_state/superpowers/`
       依赖: T-002
 
 - [x] T-010: 收口 CLI 的 `.env -> Claude SDK` 运行面，确保 `server.cli ask` 在进入模型调用前完成 runtime 映射、缺失校验和脱敏诊断输出；验收标准是 CLI 有 `runtime` 入口、`ask` 失败前置可读、README 和 `.env.example` 对齐
@@ -67,3 +67,11 @@
 - [ ] T-015: 固化审核结果中文展示契约；验收标准是内部继续保留 `approved/rejected/manual_review` 三态，对外统一输出 `result/conclusion/explanation`，其中 `manual_review` 固定显示为“待人工复核”且必须说明无法自动放行的原因
       文件: `.claude/contracts/common/audit-result.schema.json`、`.claude/skills/common/result-format/SKILL.md`、`.claude/hooks/check-before-write.py`、`tests/test_bootstrap.py`
       依赖: T-014
+
+- [x] T-016: 提供 serve 异步审核提交能力；验收标准是 `POST /audit/submit` 支持目录模式和上传模式、`GET /audit/tasks/{request_id}` 可轮询状态、`GET /results/{request_id}` 可读取完整结果、目录和上传模式都能形成统一 case 路径并通过测试
+      文件: `server/api.py`、`server/platform/paths.py`、`server/stores/audit_task_store.py`、`server/command_adapter.py`、`tests/test_bootstrap.py`、`.ai_state/superpowers/`
+      依赖: T-014
+
+- [x] T-017: 强化异步审核服务端；验收标准是任务状态包含时间线字段与进度信息、启动时可恢复超时任务、上传具备基础安全校验、轻量结果接口可用、租户隔离与目录白名单生效、submission 清理机制与 HTTP 集成测试通过
+      文件: `server/api.py`、`server/platform/config.py`、`server/platform/maintenance.py`、`server/stores/audit_task_store.py`、`tests/test_bootstrap.py`、`.env.example`、`.ai_state/superpowers/`
+      依赖: T-016

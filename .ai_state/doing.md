@@ -18,3 +18,5 @@
 - 已完成 Python 适配层第二轮收口：`api.py` 和 `cli.py` 的重复输出/错误处理模板已被压缩，Python 更接近“统一 Claude 调用适配层 + 两个输出外壳”的结构。
 - 已完成 serve 运行面收口：`app_server.py` 已支持本地 HTTP `/health`、`/ready` 探测并暴露 `service_http` 状态；`api.py` 的 `/chat`、`/audit`、`/init-rules` 共享统一 JSON endpoint 模板；README 已补齐服务调用示例。
 - 当前进行中：收口审核结果中文展示契约，要求内部保留三态，对外新增 `result/conclusion/explanation`，并将 `manual_review` 固定为“待人工复核”且必须说明无法自动放行的原因。
+- 已完成 serve 异步审核链路：`POST /audit/submit` 支持目录模式与上传模式，`GET /audit/tasks/{request_id}` 提供任务状态，`GET /audit/tasks/{request_id}/result` 提供轻量结果。
+- 已完成 serve 硬化第一轮：任务状态增加时间线字段与进度文案，`running` 任务在启动时可恢复/超时失败，上传校验、租户隔离、目录白名单、上传失败回滚、submission 清理与 HTTP 集成测试均已补齐。
