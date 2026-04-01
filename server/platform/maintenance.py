@@ -16,10 +16,12 @@ from server.platform.paths import (
     RESULT_BY_REQUEST_DIR,
     RESULT_INDEX_SHARD_DIR,
     SERVICE_REQUEST_SHARD_DIR,
+    SUBMISSION_ROOT_DIR,
     SESSION_EVENT_DIR,
     SESSION_INDEX_SHARD_DIR,
 )
 from server.platform.storage import describe_storage_target
+from server.stores.audit_task_store import list_audit_tasks
 
 
 def rotate_log_file(path: Path, *, max_bytes: int, backups: int) -> bool:
@@ -72,6 +74,43 @@ def storage_report() -> dict[str, Any]:
     }
 
 
+def cleanup_old_submission_directories(days: int, now: str | None = None) -> list[str]:
+    """Remove expired submission directories for finished upload-mode tasks."""
+    cutoff = _coerce_timestamp(now) - timedelta(days=days)
+    removed: list[str] = []
+    submission_root = SUBMISSION_ROOT_DIR.resolve()
+
+    for record in list_audit_tasks():
+        if record.get("source_mode") != "upload":
+            continue
+        if record.get("status") not in {"completed", "failed"}:
+            continue
+
+        timestamp = record.get("finished_at") or record.get("updated_at")
+        if not timestamp:
+            continue
+        if _coerce_timestamp(str(timestamp)) >= cutoff:
+            continue
+
+        case_path = str(record.get("case_path") or "").strip()
+        if not case_path:
+            continue
+
+        path = Path(case_path)
+        resolved = path.resolve()
+        try:
+            resolved.relative_to(submission_root)
+        except ValueError:
+            continue
+        if not resolved.exists():
+            continue
+
+        shutil.rmtree(resolved)
+        removed.append(str(resolved))
+
+    return removed
+
+
 def run_maintenance() -> dict[str, Any]:
     """Run lightweight local maintenance tasks for long-running single-node usage."""
     settings = get_app_settings()
@@ -88,8 +127,18 @@ def run_maintenance() -> dict[str, Any]:
         ),
     }
     archived = archive_old_session_event_logs(days=settings.session_archive_after_days)
+    removed_submission_dirs = cleanup_old_submission_directories(
+        days=settings.submission_retention_days
+    )
     return {
         "rotated_runtime_logs": rotated,
         "archived_session_events": archived,
+        "removed_submission_dirs": removed_submission_dirs,
         "storage_report": storage_report(),
     }
+
+
+def _coerce_timestamp(value: str | None) -> datetime:
+    if value:
+        return datetime.fromisoformat(value)
+    return datetime.now(timezone.utc)

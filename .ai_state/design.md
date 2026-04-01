@@ -22,6 +22,7 @@
 - 审核输出继续保留内部 `approved / rejected / manual_review` 三态，但对外统一映射为 `result/conclusion/explanation` 中文展示字段；其中 `manual_review` 固定显示为“待人工复核”，且必须说明无法自动放行的原因。
 - `request_id` 是全链路审计主键；`conversation_id` 表示应用级会话；`claude_session_id` 对应 Claude SDK 的可恢复会话。
 - Python 不拥有业务能力实现；`init-rules`、`audit` 等能力定义在 `.claude/commands` / `.claude/skills`，CLI 与 serve 只通过统一 adapter 调用这些 Claude 能力。
+- serve 层现已提供异步审核提交能力：`POST /audit/submit` 统一接收目录模式与上传模式，`GET /audit/tasks/{request_id}` 提供状态轮询，`GET /audit/tasks/{request_id}/result` 提供轻量结果读取。
 - 前台调试入口是 `python -m server.cli serve`；后台常驻入口是 `uv run app-server start`，两者本质上都启动同一个 Python 服务进程。
 - 本地 JSONL/JSON 布局先对齐未来数据库字段，再在后续通过仓储层替换为 PostgreSQL。
 - 顶层 `data/` 和 `raw_policies/` 不是当前仓库正式目录；测试数据应收敛到 `tests/`，真实制度源材料当前放在 `knowledge/external/`。
@@ -30,11 +31,13 @@
 ## 本地存储布局
 
 - `logs/service/requests/requests-YYYY-MM.jsonl`: serve 请求审计索引
+- `logs/service/audit-tasks/tasks.json`: 异步审核任务状态
 - `logs/sessions/index/sessions-YYYY-MM.jsonl`: 会话索引
 - `logs/sessions/events/YYYY/MM/DD/*.jsonl`: Claude 原始事件流
 - `logs/results/index/results-YYYY-MM.jsonl`: 结构化结果索引
 - `logs/results/by-request/YYYY/MM/DD/{request_id}.json`: 结构化结果归档
 - `logs/runtime/app-server/`: PID、状态文件、stdout/stderr、维护对象
+- `data/submissions/{request_id}/`: 上传模式生成的 case 目录与附件落盘位置
 
 ## 约束
 

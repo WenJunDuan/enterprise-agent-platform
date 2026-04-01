@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 import json
+import shutil
 import time
 from pathlib import Path
 from typing import Any, Literal
@@ -25,7 +27,7 @@ from server.core import (
 from server.platform.diagnostics import collect_runtime_diagnostics
 from server.platform.source_proxy import prepare_text_proxy
 from server.platform.storage import append_json_file
-from server.stores.audit_task_store import get_audit_task, upsert_audit_task
+from server.stores.audit_task_store import get_audit_task, recover_stale_audit_tasks, upsert_audit_task
 from server.stores.request_store import (
     RequestAuditRecord,
     append_request_audit,
@@ -48,8 +50,18 @@ from server.stores.session_store import (
     list_sdk_session_summaries,
 )
 
-app = FastAPI(title="Enterprise Agent API", version="0.1.0")
+@asynccontextmanager
+async def app_lifespan(_: FastAPI):
+    settings = get_app_settings()
+    recover_stale_audit_tasks(settings.audit_task_running_timeout_seconds)
+    yield
+
+
+app = FastAPI(title="Enterprise Agent API", version="0.1.0", lifespan=app_lifespan)
 TENANT_KEYS = load_tenant_keys()
+REQUIRED_FORM_FIELDS = {"case_id", "applicant_name", "expense_type"}
+ALLOWED_UPLOAD_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".webp"}
+ALLOWED_DIRECTORY_ROOT = (PROJECT_ROOT / "data").resolve()
 
 
 def _load_tenant_keys() -> dict[str, str]:
@@ -366,12 +378,19 @@ async def _submit_audit_directory(*, request_id: str, directory_path: str) -> di
     }
 
 
-def _schedule_directory_audit_task(*, request_id: str, tenant: str, directory_path: str) -> None:
+def _schedule_directory_audit_task(
+    *,
+    request_id: str,
+    tenant: str,
+    directory_path: str,
+    source_mode: str,
+) -> None:
     asyncio.create_task(
         _execute_directory_audit_task(
             request_id=request_id,
             tenant=tenant,
             directory_path=directory_path,
+            source_mode=source_mode,
         )
     )
 
@@ -379,6 +398,40 @@ def _schedule_directory_audit_task(*, request_id: str, tenant: str, directory_pa
 def _sanitize_upload_name(name: str, index: int) -> str:
     sanitized = Path(name).name or f"upload-{index}"
     return sanitized
+
+
+def _validate_form_payload(payload: dict[str, Any]) -> None:
+    missing = [
+        field
+        for field in sorted(REQUIRED_FORM_FIELDS)
+        if not isinstance(payload.get(field), str) or not str(payload.get(field)).strip()
+    ]
+    if missing:
+        raise HTTPException(status_code=400, detail=f"Missing required form fields: {', '.join(missing)}")
+
+
+def _validate_upload_bytes(name: str, content: bytes) -> None:
+    suffix = Path(name).suffix.lower()
+    if suffix not in ALLOWED_UPLOAD_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="Unsupported file type")
+    if not content:
+        raise HTTPException(status_code=400, detail="Uploaded file cannot be empty")
+    if len(content) > get_app_settings().max_upload_file_bytes:
+        raise HTTPException(status_code=400, detail="Uploaded file exceeds size limit")
+
+
+def _validate_directory_case_path(case_path: str) -> str:
+    path = Path(case_path)
+    if not path.exists() or not path.is_dir():
+        raise HTTPException(status_code=400, detail="directory_path must point to an existing directory")
+
+    resolved = path.resolve()
+    try:
+        resolved.relative_to(ALLOWED_DIRECTORY_ROOT)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="directory_path is outside allowed roots") from exc
+
+    return _serialize_case_path(resolved)
 
 
 def _serialize_case_path(path: Path) -> str:
@@ -401,6 +454,7 @@ async def _materialize_upload_submission(
 
     if not isinstance(parsed_form, dict):
         raise HTTPException(status_code=400, detail="form_json must decode to a JSON object")
+    _validate_form_payload(parsed_form)
 
     files = form_data.getlist("files")
     if not files:
@@ -410,26 +464,31 @@ async def _materialize_upload_submission(
     case_dir.mkdir(parents=True, exist_ok=True)
 
     attachments: list[dict[str, Any]] = []
-    for index, upload in enumerate(files, start=1):
-        safe_name = _sanitize_upload_name(getattr(upload, "filename", "") or "", index)
-        target_path = case_dir / safe_name
-        content = await upload.read()
-        target_path.write_bytes(content)
-        attachments.append(
-            {
-                "type": "uploaded",
-                "name": safe_name,
-                "path": _serialize_case_path(target_path),
-            }
-        )
+    try:
+        for index, upload in enumerate(files, start=1):
+            safe_name = _sanitize_upload_name(getattr(upload, "filename", "") or "", index)
+            target_path = case_dir / safe_name
+            content = await upload.read()
+            _validate_upload_bytes(safe_name, content)
+            target_path.write_bytes(content)
+            attachments.append(
+                {
+                    "type": "uploaded",
+                    "name": safe_name,
+                    "path": _serialize_case_path(target_path),
+                }
+            )
 
-    append_json_file(
-        case_dir / "audit-request.json",
-        {
-            "form": parsed_form,
-            "attachments": attachments,
-        },
-    )
+        append_json_file(
+            case_dir / "audit-request.json",
+            {
+                "form": parsed_form,
+                "attachments": attachments,
+            },
+        )
+    except Exception:
+        shutil.rmtree(case_dir, ignore_errors=True)
+        raise
 
     return _serialize_case_path(case_dir)
 
@@ -444,17 +503,28 @@ async def _run_directory_audit(*, request_id: str, tenant: str, directory_path: 
     )
 
 
-async def _execute_directory_audit_task(*, request_id: str, tenant: str, directory_path: str) -> None:
+async def _execute_directory_audit_task(
+    *,
+    request_id: str,
+    tenant: str,
+    directory_path: str,
+    source_mode: str = "directory",
+) -> None:
+    started_at = utc_now()
     upsert_audit_task(
         {
             "request_id": request_id,
+            "tenant": tenant,
             "status": "running",
-            "mode": "directory",
+            "mode": source_mode,
+            "source_mode": source_mode,
             "case_path": directory_path,
             "claim_id": None,
             "result_file": None,
             "error_detail": None,
-            "updated_at": utc_now(),
+            "progress_message": "正在调用 Claude 审核",
+            "started_at": started_at,
+            "updated_at": started_at,
         }
     )
     try:
@@ -463,29 +533,39 @@ async def _execute_directory_audit_task(*, request_id: str, tenant: str, directo
             tenant=tenant,
             directory_path=directory_path,
         )
+        finished_at = utc_now()
         upsert_audit_task(
             {
                 "request_id": request_id,
+                "tenant": tenant,
                 "status": "completed",
-                "mode": "directory",
+                "mode": source_mode,
+                "source_mode": source_mode,
                 "case_path": directory_path,
                 "claim_id": payload.get("claim_id") if isinstance(payload, dict) else None,
                 "result_file": meta.result_file,
                 "error_detail": None,
-                "updated_at": utc_now(),
+                "progress_message": "审核完成",
+                "finished_at": finished_at,
+                "updated_at": finished_at,
             }
         )
     except Exception as exc:
+        finished_at = utc_now()
         upsert_audit_task(
             {
                 "request_id": request_id,
+                "tenant": tenant,
                 "status": "failed",
-                "mode": "directory",
+                "mode": source_mode,
+                "source_mode": source_mode,
                 "case_path": directory_path,
                 "claim_id": None,
                 "result_file": None,
                 "error_detail": str(exc),
-                "updated_at": utc_now(),
+                "progress_message": "审核失败",
+                "finished_at": finished_at,
+                "updated_at": finished_at,
             }
         )
 
@@ -527,7 +607,7 @@ async def audit_submit(
     if content_type.startswith("application/json"):
         payload = DirectoryAuditSubmitRequest.model_validate(await request.json())
         mode = payload.mode
-        case_path = payload.directory_path
+        case_path = _validate_directory_case_path(payload.directory_path)
     elif content_type.startswith("multipart/form-data"):
         form_data = await request.form()
         mode = str(form_data.get("mode") or "").strip()
@@ -544,16 +624,23 @@ async def audit_submit(
     else:
         raise HTTPException(status_code=415, detail="Unsupported Content-Type")
 
+    submitted_at = utc_now()
     upsert_audit_task(
         {
             "request_id": request_id,
+            "tenant": tenant,
             "status": "accepted",
             "mode": mode,
+            "source_mode": mode,
             "case_path": case_path,
             "claim_id": None,
             "result_file": None,
             "error_detail": None,
-            "updated_at": utc_now(),
+            "progress_message": "任务已提交",
+            "submitted_at": submitted_at,
+            "started_at": None,
+            "finished_at": None,
+            "updated_at": submitted_at,
         }
     )
     response = await _submit_audit_directory(request_id=request_id, directory_path=case_path)
@@ -561,6 +648,7 @@ async def audit_submit(
         request_id=request_id,
         tenant=tenant,
         directory_path=case_path,
+        source_mode=mode,
     )
     return AuditSubmitAcceptedResponse(
         request_id=response["request_id"],
@@ -573,11 +661,25 @@ async def audit_submit(
 
 @app.get("/audit/tasks/{request_id}")
 async def audit_task_status(request_id: str, authorization: str = Header(...)) -> dict[str, Any]:
-    verify_tenant(authorization)
-    record = get_audit_task(request_id)
+    tenant = verify_tenant(authorization)
+    record = get_audit_task(request_id, tenant=tenant)
     if record is None:
         raise HTTPException(status_code=404, detail="Audit task not found")
     return record
+
+
+@app.get("/audit/tasks/{request_id}/result")
+async def audit_task_result(request_id: str, authorization: str = Header(...)) -> dict[str, Any]:
+    tenant = verify_tenant(authorization)
+    record = get_audit_task(request_id, tenant=tenant)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Audit task not found")
+    if record.get("status") != "completed":
+        raise HTTPException(status_code=409, detail="Audit task is not completed yet")
+    payload = get_result_payload_by_request_id(request_id=request_id, tenant=tenant)
+    if payload is None or not isinstance(payload.get("response"), dict):
+        raise HTTPException(status_code=404, detail="Audit result not found")
+    return payload["response"]
 
 
 @app.post("/init-rules", response_model=ChatResponse)

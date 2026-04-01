@@ -30,12 +30,18 @@ logs/
     stderr.log
   service/requests/
     requests-YYYY-MM.jsonl
+  service/audit-tasks/
+    tasks.json
   sessions/
     index/sessions-YYYY-MM.jsonl
     events/YYYY/MM/DD/*.jsonl
   results/
     index/results-YYYY-MM.jsonl
     by-request/YYYY/MM/DD/{request_id}.json
+data/
+  submissions/{request_id}/
+    audit-request.json
+    <uploaded files...>
 ```
 
 ## Main Commands
@@ -47,6 +53,7 @@ uv run python -m server.cli runtime
 uv run python -m server.cli ask "你好"
 uv run python -m server.cli init-rules knowledge/external/数睿员工手册.pdf expense
 uv run python -m server.cli audit /path/to/claim.json
+uv run python -m server.cli audit-json data/case1
 ```
 
 Foreground debug server:
@@ -148,6 +155,9 @@ The HTTP service exposes:
 - `POST /chat/stream`
 - `POST /init-rules`
 - `POST /audit`
+- `POST /audit/submit`
+- `GET /audit/tasks/{request_id}`
+- `GET /audit/tasks/{request_id}/result`
 - `GET /health`
 - `GET /ready`
 - `GET /sessions`
@@ -192,4 +202,126 @@ curl -X POST http://127.0.0.1:8000/audit \
   -H "Authorization: Bearer sk-default" \
   -H "Content-Type: application/json" \
   -d '{"path":"tests/fixtures/claims/EXP-2024-0312.json"}'
+
+curl -X POST http://127.0.0.1:8000/audit/submit \
+  -H "Authorization: Bearer sk-default" \
+  -H "Content-Type: application/json" \
+  -d '{"mode":"directory","directory_path":"data/case1"}'
 ```
+
+## Async Audit Flow
+
+Recommended frontend/backend integration flow:
+
+1. Submit an async audit task through `POST /audit/submit`
+2. Poll task status through `GET /audit/tasks/{request_id}`
+3. Read the lightweight final result through `GET /audit/tasks/{request_id}/result`
+4. Use `GET /results/{request_id}` only when you need the full archived envelope (`record + payload`)
+
+### Directory Mode
+
+For local testing and frontend integration against pre-existing fixtures:
+
+```bash
+curl -X POST http://127.0.0.1:8000/audit/submit \
+  -H "Authorization: Bearer sk-default" \
+  -H "Content-Type: application/json" \
+  -d '{"mode":"directory","directory_path":"data/case1"}'
+```
+
+Validation rules:
+
+- `directory_path` must point to an existing directory
+- the directory must live under the project `data/` root
+
+### Upload Mode
+
+For production-style submissions:
+
+```bash
+curl -X POST http://127.0.0.1:8000/audit/submit \
+  -H "Authorization: Bearer sk-default" \
+  -F 'mode=upload' \
+  -F 'form_json={"case_id":"case1","applicant_name":"张三","expense_type":"业务招待"}' \
+  -F 'files=@data/case1/dzfp_INVOICE-NO-A_示例云平台有限公司_20260326133128.pdf'
+```
+
+Upload validation currently enforces:
+
+- `form_json` must decode to a JSON object
+- required form fields:
+  - `case_id`
+  - `applicant_name`
+  - `expense_type`
+- file type whitelist:
+  - `.pdf`
+  - `.png`
+  - `.jpg`
+  - `.jpeg`
+  - `.webp`
+- empty files are rejected
+- file size must not exceed `MAX_UPLOAD_FILE_BYTES`
+
+Successful upload submissions are materialized under:
+
+- `data/submissions/{request_id}/audit-request.json`
+- `data/submissions/{request_id}/<uploaded files>`
+
+### Task Status Response
+
+`GET /audit/tasks/{request_id}` returns a lightweight task record. Current fields include:
+
+- `request_id`
+- `status`
+- `mode`
+- `source_mode`
+- `case_path`
+- `claim_id`
+- `result_file`
+- `error_detail`
+- `progress_message`
+- `submitted_at`
+- `started_at`
+- `finished_at`
+- `updated_at`
+
+Current status values:
+
+- `accepted`
+- `running`
+- `completed`
+- `failed`
+
+### Lightweight Result Endpoint
+
+`GET /audit/tasks/{request_id}/result` returns the final audit payload directly, i.e. the same object found at `payload.response` in the archived result.
+
+This is the recommended endpoint for frontend consumption because it already contains:
+
+- `result`
+- `conclusion`
+- `explanation`
+- `reasons`
+- `policy_refs`
+- `risk_score`
+- `extracted_data`
+- `evidence_chain`
+- `verdict`
+
+### Demo Auth
+
+The service reads request tokens from `TENANT_KEYS` in `.env`.
+
+Example:
+
+```bash
+TENANT_KEYS={"default":"sk-default"}
+```
+
+Then send:
+
+```http
+Authorization: Bearer sk-default
+```
+
+If you change the token in `.env`, restart the service before testing.

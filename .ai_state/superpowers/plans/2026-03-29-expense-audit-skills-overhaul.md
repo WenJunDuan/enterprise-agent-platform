@@ -13,8 +13,8 @@
 ### Task 1: Write Design + Task Trace
 
 **Files:**
-- Create: `.ai_state/docs/superpowers/specs/2026-03-29-expense-audit-skills-design.md`
-- Create: `.ai_state/docs/superpowers/plans/2026-03-29-expense-audit-skills-overhaul.md`
+- Create: `.ai_state/superpowers/specs/2026-03-29-expense-audit-skills-design.md`
+- Create: `.ai_state/superpowers/plans/2026-03-29-expense-audit-skills-overhaul.md`
 - Modify: `.ai_state/plan.md`
 - Modify: `.ai_state/doing.md`
 - Modify: `.ai_state/session.md`
@@ -30,7 +30,7 @@
 
 - [ ] **Step 2: Add the execution plan**
 
-Run: `test -f .ai_state/docs/superpowers/plans/2026-03-29-expense-audit-skills-overhaul.md`
+Run: `test -f .ai_state/superpowers/plans/2026-03-29-expense-audit-skills-overhaul.md`
 Expected: exit code `0`
 
 - [ ] **Step 3: Update `.ai_state` to reflect the active skill-overhaul task**

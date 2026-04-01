@@ -499,6 +499,6 @@ Expected:
 - [ ] **Step 5: Commit the implementation**
 
 ```bash
-git add server/api.py server/platform/paths.py server/stores/audit_task_store.py server/command_adapter.py tests/test_bootstrap.py .ai_state/docs/superpowers/specs/2026-03-31-async-audit-submit-serve-design.md .ai_state/docs/superpowers/plans/2026-03-31-async-audit-submit-serve-plan.md data/case1/audit-request.json
+git add server/api.py server/platform/paths.py server/stores/audit_task_store.py server/command_adapter.py tests/test_bootstrap.py .ai_state/superpowers/specs/2026-03-31-async-audit-submit-serve-design.md .ai_state/superpowers/plans/2026-03-31-async-audit-submit-serve-plan.md data/case1/audit-request.json
 git commit -m "feat: add async audit submit serve flow"
 ```
