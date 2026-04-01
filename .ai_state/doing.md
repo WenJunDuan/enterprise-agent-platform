@@ -20,3 +20,11 @@
 - 当前进行中：收口审核结果中文展示契约，要求内部保留三态，对外新增 `result/conclusion/explanation`，并将 `manual_review` 固定为“待人工复核”且必须说明无法自动放行的原因。
 - 已完成 serve 异步审核链路：`POST /audit/submit` 支持目录模式与上传模式，`GET /audit/tasks/{request_id}` 提供任务状态，`GET /audit/tasks/{request_id}/result` 提供轻量结果。
 - 已完成 serve 硬化第一轮：任务状态增加时间线字段与进度文案，`running` 任务在启动时可恢复/超时失败，上传校验、租户隔离、目录白名单、上传失败回滚、submission 清理与 HTTP 集成测试均已补齐。
+- 已完成本地压测样例生成：`data/case2` 到 `data/case21` 已按混合策略落盘，覆盖合法材料、缺件、越界、缺字段、重复附件、空文件、伪扩展名、日期异常和脏文本等场景，并补充 `data/scenario-index.json` 作为索引。
+- 已完成 README 中文化重写：文档已按“环境填写 → 项目启动 → HTTP API → 审核与压测 → 部署 → 测试 → 目录结构”的顺序重排，并对齐当前 `.env.example`、CLI、`app-server`、Dockerfile、docker-compose 与 `data/case2-case21` 压测样例。
+- 已完成前端审核对接文档重写：`.ai_state/docs/前端审核服务对接文档.md` 已改为顺序化说明，先交代前端主流程只需 4 个接口，再解释 token 来源、真实上传方式、状态轮询、轻量结果读取与常见错误处理。
+- 已完成真实材料目录样例：已将桌面真实 PDF 复制到 `data/real-case-001/`，并补充 `audit-request.json` 与目录模式提交 payload，便于部署后直接用 API 或 CLI 验证真实目录输入。
+- 已完成 Docker Compose 目录结构对齐：`docker-compose.yml` 已移除过时的 `raw_policies` 挂载，保留 `.claude / knowledge / data / logs` 四类持久化卷，并补充容器名与重启策略；README 的部署说明已同步。
+- 已完成前端接入手册收口：`.ai_state/docs/前端审核服务对接文档.md` 已删去冗余背景和运维描述，聚焦前端真实接入所需的请求头、FormData 组装、文件字段、示例数据、状态轮询和结果读取。
+- 已完成 Docker 端口环境化：`Dockerfile` 与 `docker-compose.yml` 现在都使用 `APP_SERVER_PORT` 启动 `uvicorn`，Compose 端口映射也随 `.env` 中的端口变化，README 已补充说明。
+- 已完成 `docker run` 示例收口：README 现在会先从 `.env` 读取 `APP_SERVER_PORT` 再执行端口映射，避免手工把端口写两遍。

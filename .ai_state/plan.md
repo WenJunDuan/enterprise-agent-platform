@@ -75,3 +75,35 @@
 - [x] T-017: 强化异步审核服务端；验收标准是任务状态包含时间线字段与进度信息、启动时可恢复超时任务、上传具备基础安全校验、轻量结果接口可用、租户隔离与目录白名单生效、submission 清理机制与 HTTP 集成测试通过
       文件: `server/api.py`、`server/platform/config.py`、`server/platform/maintenance.py`、`server/stores/audit_task_store.py`、`tests/test_bootstrap.py`、`.env.example`、`.ai_state/superpowers/`
       依赖: T-016
+
+- [x] L-001: 生成 `data/case2` 到 `data/case21` 的混合压测样例，并输出 `data/scenario-index.json` 作为场景索引；验收标准是每个 case 至少包含 `audit-request.json`，同时覆盖合法、缺件、越界、异常和脏数据场景
+      文件: `scripts/generate_stress_cases.py`、`data/`
+      依赖: T-017
+
+- [x] L-002: 将 `README.md` 重写为中文教程版，覆盖环境填写、项目启动、部署和测试四条主线，并对齐当前 CLI、HTTP 服务、Docker 与压测样例的实际入口
+      文件: `README.md`
+      依赖: T-017
+
+- [x] L-003: 重写前端审核服务对接文档，按“接口数量 → token → 提交数据 → 查询状态 → 查询结果”的顺序整理，并对齐当前异步审核接口的实际行为
+      文件: `.ai_state/docs/前端审核服务对接文档.md`
+      依赖: T-017
+
+- [x] L-004: 基于桌面真实 PDF 在 `data/real-case-001` 下生成可直接用于服务端目录审核的真实样例目录，并补充最小提交 payload
+      文件: `data/real-case-001/`
+      依赖: T-017
+
+- [x] L-005: 调整 `docker-compose.yml` 以适配当前仓库目录结构，移除过时卷挂载，并同步 README 中的部署说明
+      文件: `docker-compose.yml`、`README.md`
+      依赖: T-017
+
+- [x] L-006: 将 `.ai_state/docs/前端审核服务对接文档.md` 收口为前端接入手册，只保留请求头、上传格式、文件字段、示例数据、状态轮询和结果读取
+      文件: `.ai_state/docs/前端审核服务对接文档.md`
+      依赖: T-017
+
+- [x] L-007: 让 Docker 与 Compose 的服务端口从 `.env` 读取，消除 `APP_SERVER_PORT` 与容器启动命令、端口映射之间的硬编码不一致
+      文件: `Dockerfile`、`docker-compose.yml`、`README.md`
+      依赖: T-017
+
+- [x] L-008: 收口 `docker run` 文档示例，避免手工重复改端口，改为先从 `.env` 提取 `APP_SERVER_PORT` 再执行映射
+      文件: `README.md`
+      依赖: T-017
