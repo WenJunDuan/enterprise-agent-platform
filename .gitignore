@@ -9,7 +9,7 @@ __pycache__/
 logs/
 data/
 knowledge/
-tests/
 .ace-tool/*
 .env
 .data/*
+.ace-tool/

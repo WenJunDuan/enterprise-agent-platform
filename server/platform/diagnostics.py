@@ -5,7 +5,9 @@ from __future__ import annotations
 from typing import Any
 
 from server.platform.config import load_tenant_keys, runtime_setting_snapshot
+from server.platform.asset_validation import validate_knowledge_assets
 from server.core import DEFAULT_OUTPUT_SCHEMA_NAME, build_output_format
+from server.stores.memory_store import describe_memory_store
 from server.stores.request_store import describe_request_store
 from server.stores.result_store import describe_result_store
 from server.stores.runtime_store import runtime_status_snapshot
@@ -17,7 +19,9 @@ def collect_runtime_diagnostics() -> dict[str, Any]:
     session_store = describe_session_store()
     request_store = describe_request_store()
     result_store = describe_result_store()
+    memory_store = describe_memory_store()
     runtime_status = runtime_status_snapshot()
+    knowledge_assets = validate_knowledge_assets()
 
     tenant_keys, tenant_error = _load_tenant_key_report()
     default_contract, contract_error = _load_schema_report()
@@ -47,6 +51,14 @@ def collect_runtime_diagnostics() -> dict[str, Any]:
             "ok": result_store["parent_exists"] and result_store["writable"],
             **result_store,
         },
+        "memory_store": {
+            "ok": memory_store["parent_exists"] and memory_store["writable"],
+            **memory_store,
+        },
+        "knowledge_assets": {
+            "ok": knowledge_assets["status"] == "ok",
+            **knowledge_assets,
+        },
         "runtime_config": {
             "ok": True,
             **runtime_settings,
@@ -69,7 +81,7 @@ def collect_runtime_diagnostics() -> dict[str, Any]:
     status = "ok" if all(check["ok"] for check in checks.values()) else "degraded"
     return {
         "status": status,
-        "storage_backend": "local-jsonl-and-json",
+        "storage_backend": "sqlite-index+json-archives+jsonl-logs",
         "checks": checks,
         "advisories": advisories,
     }

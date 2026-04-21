@@ -678,9 +678,35 @@ allowed-tools: Read, Write, Glob, Skill
 #!/usr/bin/env python3
 """PostToolUse hook: 第二模型审核 agent 的输出内容
    hook 确定性触发，exit(2) 硬阻断写入操作。"""
+import asyncio
 import sys
 import json
-from anthropic import Anthropic
+from pathlib import Path
+
+from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, query
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+
+async def run_second_review(content: str) -> str:
+    options = ClaudeAgentOptions(
+        allowed_tools=[],
+        hooks={},
+        max_turns=1,
+        cwd=str(PROJECT_ROOT),
+        setting_sources=["project"],
+        permission_mode="bypassPermissions",
+    )
+    prompt = (
+        "Review the structured result below.\n"
+        "Check for sensitive data leakage, missing policy support, and contradictions.\n"
+        "Reply with PASS or BLOCK:reason only.\n\n"
+        f"{content}"
+    )
+    async for message in query(prompt=prompt, options=options):
+        if isinstance(message, ResultMessage):
+            return (message.result or "").strip()
+    return ""
 
 hook_input = json.load(sys.stdin)
 
@@ -690,27 +716,7 @@ if "logs/results/" not in file_path:
     sys.exit(0)  # 不拦截
 
 content = hook_input.get("tool_input", {}).get("content", "")
-
-# 用 Haiku 做低成本审核
-client = Anthropic()
-response = client.messages.create(
-    model="claude-haiku-4-5-20251001",
-    max_tokens=500,
-    messages=[{
-        "role": "user",
-        "content": f"""审核以下报销审核结果的输出质量：
-1. 是否包含敏感个人信息泄露（身份证号、银行卡号等）
-2. 判定理由是否充分引用了政策条款
-3. 是否存在逻辑矛盾
-
-输出内容：
-{content}
-
-只回答 PASS 或 BLOCK:原因"""
-    }]
-)
-
-result = response.content[0].text.strip()
+result = asyncio.run(run_second_review(content))
 if result.startswith("BLOCK"):
     print(json.dumps({"error": f"输出审核未通过: {result}"}))
     sys.exit(2)  # exit code 2 = 硬阻断
@@ -882,8 +888,7 @@ name = "enterprise-agent"
 version = "0.1.0"
 requires-python = ">=3.10"
 dependencies = [
-    "claude-agent-sdk>=0.1.48",
-    "anthropic>=0.52.0",
+    "claude-agent-sdk>=0.1.64",
     "fastapi>=0.115.0",
     "uvicorn>=0.30.0",
     "typer>=0.12.0",

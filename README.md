@@ -2,7 +2,7 @@
 
 一个基于 Claude Agent SDK 的企业智能审核平台脚手架。业务规则和审核工作流放在 `.claude/` 与 `knowledge/`
 
-Python 侧只负责 HTTP 服务、CLI、运行时管理、持久化和诊断。
+Python 侧只负责运行服务、暴露 HTTP/CLI 接口、获取外部输入、做鉴权与持久化，并把输入提交给 Claude。真正的审核判断、规则命中、证据组织和结论生成都由 Claude 完成。
 
 ## 项目概览
 
@@ -69,7 +69,7 @@ MODEL_NAME=gpt-5.4
 # MODEL_CUSTOM_HEADERS={"HTTP-Referer":"https://your-app.example.com","X-Title":"enterprise-agent-platform"}
 
 # HTTP API 鉴权 token，左边是租户名，右边是 Bearer token
-TENANT_KEYS={"default":"sk-default"}
+TENANT_KEYS={"default":"sk-wdsddferfer1243HJGTIOJlL809jjl90dasdn9"}
 
 # 后台服务监听地址与端口
 APP_SERVER_HOST=127.0.0.1
@@ -123,6 +123,7 @@ uv run python -m server.cli audit-json data/case1
 - `init-rules`：把原始制度文件初始化为结构化规则
 - `audit`：调用审核流程，输入可以是文件也可以是目录
 - `audit-json`：直接拿结构化 JSON 结果，适合调试
+- `distill-memory`：当前只保留为 Claude 命令路径，适合通过 `ask "/distill-memory ..."` 触发，不暴露 HTTP API
 
 ### 2. 前台启动 HTTP 服务
 
@@ -186,6 +187,11 @@ uv run app-server maintain
 - `GET /requests/{request_id}`
 - `GET /results`
 - `GET /results/{request_id}`
+- `GET /review-deltas`
+- `GET /review-deltas/{request_id}`
+- `GET /memories`
+- `GET /memories/{memory_id}`
+- `GET /governance/assets`
 - `GET /sessions/{session_id}/messages`
 
 ### 2. 鉴权方式
@@ -195,32 +201,39 @@ uv run app-server maintain
 例如：
 
 ```bash
-TENANT_KEYS={"default":"sk-default"}
+TENANT_KEYS={"default":"sk-wdsddferfer1243HJGTIOJlL809jjl90dasdn9"}
 ```
 
 请求头写法：
 
 ```http
-Authorization: Bearer sk-default
+Authorization: Bearer sk-wdsddferfer1243HJGTIOJlL809jjl90dasdn9
 ```
 
 如果你修改了 `.env` 中的 token，需要重启服务。
 
 ### 3. 基础调用示例
 
+先从 `.env` 读取服务端口，避免示例里的端口和实际配置漂移：
+
 ```bash
-curl -X POST http://127.0.0.1:<APP_SERVER_PORT>/chat \
-  -H "Authorization: Bearer sk-default" \
+APP_SERVER_PORT="$(grep '^APP_SERVER_PORT=' .env | tail -n 1 | cut -d= -f2- | tr -d '\r')"
+APP_SERVER_PORT="${APP_SERVER_PORT:-8000}"
+```
+
+```bash
+curl -X POST "http://127.0.0.1:${APP_SERVER_PORT}/chat" \
+  -H "Authorization: Bearer sk-wdsddferfer1243HJGTIOJlL809jjl90dasdn9" \
   -H "Content-Type: application/json" \
   -d '{"message":"你好"}'
 
-curl -X POST http://127.0.0.1:<APP_SERVER_PORT>/init-rules \
-  -H "Authorization: Bearer sk-default" \
+curl -X POST "http://127.0.0.1:${APP_SERVER_PORT}/init-rules" \
+  -H "Authorization: Bearer sk-wdsddferfer1243HJGTIOJlL809jjl90dasdn9" \
   -H "Content-Type: application/json" \
   -d '{"source_path":"knowledge/external/数睿员工手册.pdf","domain":"expense"}'
 
-curl -X POST http://127.0.0.1:<APP_SERVER_PORT>/audit \
-  -H "Authorization: Bearer sk-default" \
+curl -X POST "http://127.0.0.1:${APP_SERVER_PORT}/audit" \
+  -H "Authorization: Bearer sk-wdsddferfer1243HJGTIOJlL809jjl90dasdn9" \
   -H "Content-Type: application/json" \
   -d '{"path":"data/case1"}'
 ```
@@ -232,8 +245,8 @@ curl -X POST http://127.0.0.1:<APP_SERVER_PORT>/audit \
 目录模式适合本地样例、前端联调和压力测试。
 
 ```bash
-curl -X POST http://127.0.0.1:<APP_SERVER_PORT>/audit/submit \
-  -H "Authorization: Bearer sk-default" \
+curl -X POST "http://127.0.0.1:${APP_SERVER_PORT}/audit/submit" \
+  -H "Authorization: Bearer sk-wdsddferfer1243HJGTIOJlL809jjl90dasdn9" \
   -H "Content-Type: application/json" \
   -d '{"mode":"directory","directory_path":"data/case1"}'
 ```
@@ -254,14 +267,14 @@ curl -X POST http://127.0.0.1:<APP_SERVER_PORT>/audit/submit \
 上传模式更接近真实生产请求：
 
 ```bash
-curl -X POST http://127.0.0.1:<APP_SERVER_PORT>/audit/submit \
-  -H "Authorization: Bearer sk-default" \
+curl -X POST "http://127.0.0.1:${APP_SERVER_PORT}/audit/submit" \
+  -H "Authorization: Bearer sk-wdsddferfer1243HJGTIOJlL809jjl90dasdn9" \
   -F 'mode=upload' \
   -F 'form_json={"case_id":"case1","applicant_name":"张三","expense_type":"业务招待"}' \
   -F 'files=@data/case1/dzfp_26322000002323013701_南通烛照智能云平台有限公司_20260326133128.pdf'
 ```
 
-以上 HTTP 示例里的 `<APP_SERVER_PORT>` 都请替换为 `.env` 中的 `APP_SERVER_PORT`，默认值是 `8000`。
+以上 HTTP 示例统一使用 `.env` 中的 `APP_SERVER_PORT`，默认值是 `8000`。
 
 当前上传校验规则：
 
@@ -327,6 +340,76 @@ curl -X POST http://127.0.0.1:<APP_SERVER_PORT>/audit/submit \
 - `extracted_data`
 - `evidence_chain`
 - `verdict`
+- `manual_review_reason`（`verdict == "manual_review"` 时必填，枚举：`missing_approval` / `rule_gap` / `data_conflict` / `insufficient_evidence` / `budget_exceeded` / `invoice_invalid` / `pre_approval_mismatch`）
+- `risk_dimensions`（可选，各维度打分数组，`name` ∈ `invoice` / `amount` / `approval` / `budget` / `anomaly`，`score` 取整数 0–10）
+
+### 5. 查询与追溯能力
+
+当前查询面已经支持这些常用过滤：
+
+- `GET /requests`
+  - 返回 `items + meta`
+  - `conversation_id`
+  - `claude_session_id`
+  - `route`
+  - `status`
+- `GET /results`
+  - 返回 `items + meta`
+  - `conversation_id`
+  - `claim_id`
+  - `verdict`
+  - `manual_review_reason`
+- `GET /results/{request_id}`
+  - 返回 `record`
+  - 返回 `payload`
+  - 返回 `linked_memories`（由该结果沉淀出的 memory 资产）
+- `GET /review-deltas`
+  - 返回 `items + meta`
+  - `claim_id`
+  - `final_recommendation`
+  - `reviewer_verdict`
+  - `agrees_with_initial`
+- `GET /review-deltas/{request_id}`
+  - 返回 `record`
+  - 返回 `payload`
+- `GET /memories`
+  - 返回 `items + meta`
+  - `domain`
+  - `category`
+  - `recommended_verdict`
+  - `manual_review_reason`
+  - `source_request_id`
+- `GET /governance/assets`
+  - 返回 rules / memory 资产校验结果
+
+说明：
+
+- `distill-memory` 不暴露 HTTP API；memory 资产通过 `GET /memories` / `GET /memories/{memory_id}` 查询。
+- 当前请求日志仍保留在 `logs/service/requests/*.jsonl`，但查询索引已经切到 SQLite。
+- 所有查询类列表接口的 `meta` 当前至少包含：`limit`、`offset`、`returned`，有过滤条件时会额外返回 `filters`。
+
+### 6. 错误返回契约
+
+HTTP 错误现在统一保留兼容字段 `detail`，同时补充结构化 `error` 对象，便于前端稳定处理与日志追踪：
+
+```json
+{
+  "detail": "Result not found",
+  "error": {
+    "code": "not_found",
+    "message": "Result not found",
+    "status_code": 404,
+    "path": "/results/req-missing",
+    "correlation_id": "f7d7d6e6f0a64f72b7d00cbf13f7e3d3"
+  }
+}
+```
+
+说明：
+
+- `detail` 继续保留，兼容旧调用方。
+- `error.code` 适合前端分支判断。
+- `error.correlation_id` 与响应头 `X-Request-ID` 对齐，便于联调和日志排查。
 
 ## 部署教程
 
@@ -360,8 +443,8 @@ docker run --rm \
 
 启动后可以直接访问：
 
-- `http://127.0.0.1:<APP_SERVER_PORT>/health`
-- `http://127.0.0.1:<APP_SERVER_PORT>/ready`
+- `http://127.0.0.1:${APP_SERVER_PORT}/health`
+- `http://127.0.0.1:${APP_SERVER_PORT}/ready`
 
 ### 3. 使用 Docker Compose
 
@@ -421,8 +504,8 @@ uv run ruff check .
 前台或后台服务启动后，可以这样检查：
 
 ```bash
-curl http://127.0.0.1:<APP_SERVER_PORT>/health
-curl http://127.0.0.1:<APP_SERVER_PORT>/ready
+curl "http://127.0.0.1:${APP_SERVER_PORT}/health"
+curl "http://127.0.0.1:${APP_SERVER_PORT}/ready"
 ```
 
 如果你走后台服务，还可以执行：
@@ -444,13 +527,11 @@ uv run python -m server.cli audit-json data/case1
 #### HTTP 冒烟
 
 ```bash
-curl -X POST http://127.0.0.1:<APP_SERVER_PORT>/audit/submit \
-  -H "Authorization: Bearer sk-default" \
+curl -X POST "http://127.0.0.1:${APP_SERVER_PORT}/audit/submit" \
+  -H "Authorization: Bearer sk-wdsddferfer1243HJGTIOJlL809jjl90dasdn9" \
   -H "Content-Type: application/json" \
   -d '{"mode":"directory","directory_path":"data/case2"}'
 ```
-
-其中 `<APP_SERVER_PORT>` 请替换为 `.env` 里的 `APP_SERVER_PORT`，默认值是 `8000`。
 
 ### 6. 压力测试建议
 
@@ -476,13 +557,19 @@ logs/
     stderr.log
   service/requests/
     requests-YYYY-MM.jsonl
+    index.sqlite3
   service/audit-tasks/
     tasks.json
+  knowledge/
+    memory-index.sqlite3
   sessions/
-    index/sessions-YYYY-MM.jsonl
+    index.sqlite3
     events/YYYY/MM/DD/*.jsonl
   results/
-    index/results-YYYY-MM.jsonl
+    index.sqlite3
+    by-request/YYYY/MM/DD/{request_id}.json
+  review-deltas/
+    index.sqlite3
     by-request/YYYY/MM/DD/{request_id}.json
 data/
   case1/
@@ -497,7 +584,13 @@ data/
 ## 补充说明
 
 - 结构化 JSON 输出通过 Claude Agent SDK 的 `output_format` 强制约束，不依赖提示词“约定”
-- 请求审计、会话索引、原始事件流和归档结果都通过 `request_id` 串联
+- 请求审计日志保留在 `logs/service/requests/*.jsonl`
+- 请求查询索引当前使用 SQLite：`logs/service/requests/index.sqlite3`
+- 会话与结果查询索引当前使用 SQLite：`logs/sessions/index.sqlite3`、`logs/results/index.sqlite3`
+- memory 查询索引当前使用 SQLite：`logs/knowledge/memory-index.sqlite3`
+- review_delta 查询索引当前使用 SQLite：`logs/review-deltas/index.sqlite3`
+- 原始事件流和结果归档仍保留在文件系统里，并通过 `request_id` 串联
+- post-write 二审 hook 当前不是全量执行；只对 `rejected`、`risk_score >= 70`、以及部分高风险 `manual_review_reason` 场景触发，避免不必要的二次成本
 - 业务规则放在 `.claude/` 和 `knowledge/`；Python 不直接承载业务判断
 - `MODEL_NAME` 如果是自定义网关模型，例如 `gpt-5.4`，运行时会自动映射 Claude 别名，例如 `sonnet`
 - 如果网关需要额外鉴权头，可以通过 `MODEL_CUSTOM_HEADERS` 传入

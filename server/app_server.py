@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import time
@@ -14,6 +15,7 @@ import typer
 
 from server.platform.config import get_app_settings
 from server.platform.diagnostics import collect_runtime_diagnostics
+from server.platform.logging_setup import configure_logging
 from server.platform.maintenance import run_maintenance
 from server.platform.paths import (
     APP_SERVER_STDERR_LOG,
@@ -33,6 +35,10 @@ from server.stores.runtime_store import (
 )
 
 ensure_local_layout()
+configure_logging(
+    level=os.getenv("LOG_LEVEL", "INFO"),
+    format="kv" if os.getenv("DEV", "").lower() in {"1", "true", "yes", "on"} or os.getenv("LOG_FORMAT") == "kv" else "json",
+)
 
 app = typer.Typer(help="Manage the local Enterprise Agent API process.")
 
@@ -195,6 +201,7 @@ def start(
             stdout=stdout_handle,
             stderr=stderr_handle,
             start_new_session=True,
+            env={**os.environ, "PYTHONUNBUFFERED": "1"},
         )
     finally:
         stdout_handle.close()

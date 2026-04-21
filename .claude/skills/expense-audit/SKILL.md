@@ -26,7 +26,10 @@ description: Use when 审核报销、发票、差旅、招待或借款事项，�
    - 预算/流程/借款/责任链 → `expense-audit-budget-check`
    - 金额、限额、审批阈值 → `expense-audit-amount-validate`
 3. 所有规则命中必须先通过 `common-rule-query` 从本地 JSON 读取；不要在审核现场直接从 PDF 重新提取新规则。
-4. 汇总结论前必须交给 `common-evidence-chain` 与 `common-result-format`，确保 `policy_refs`、`evidence_chain`、`verdict` 一致。
+4. 在规则命中完成后，再通过 `common-memory-query` 查询 `knowledge/memory/expense/` 中的案例/异常/复核记忆；记忆只能作为辅助证据，不能替代结构化规则。
+   - 如果记忆命中且与你的判断一致，把它以 `memory:` 来源写入 evidence chain
+   - 如果记忆命中但你认为当前案件不适用，也要在 `explanation` 里说明不适用原因
+5. 汇总结论前必须交给 `common-evidence-chain` 与 `common-result-format`，确保 `policy_refs`、`evidence_chain`、`verdict` 一致。
 
 ## 降级规则
 

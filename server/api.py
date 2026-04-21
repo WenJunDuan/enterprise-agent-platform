@@ -5,18 +5,26 @@ from __future__ import annotations
 import asyncio
 from contextlib import asynccontextmanager
 import json
+import logging
+import os
 import shutil
 import time
+import uuid
 from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, model_validator
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from server.command_adapter import run_command_json
 from server.core import AgentRunMeta
 from server.platform.config import get_app_settings, load_tenant_keys
+from server.platform.asset_validation import validate_knowledge_assets
+from server.platform.logging_setup import logging_context
 from server.platform.paths import PROJECT_ROOT, SUBMISSION_ROOT_DIR
 from server.core import (
     DEFAULT_OUTPUT_SCHEMA_NAME,
@@ -25,9 +33,20 @@ from server.core import (
     run_agent_json,
 )
 from server.platform.diagnostics import collect_runtime_diagnostics
+from server.platform.logging_setup import configure_logging
 from server.platform.source_proxy import prepare_text_proxy
 from server.platform.storage import append_json_file
-from server.stores.audit_task_store import get_audit_task, recover_stale_audit_tasks, upsert_audit_task
+from server.stores.memory_store import get_memory_record_by_id, list_memory_records, list_memory_records_by_request_id
+from server.stores.review_delta_store import (
+    get_review_delta_payload_by_request_id,
+    get_review_delta_record_by_request_id,
+    list_review_delta_records,
+)
+from server.stores.audit_task_store import (
+    get_audit_task,
+    recover_stale_audit_tasks,
+    upsert_audit_task,
+)
 from server.stores.request_store import (
     RequestAuditRecord,
     append_request_audit,
@@ -49,6 +68,13 @@ from server.stores.session_store import (
     list_logged_sessions,
     list_sdk_session_summaries,
 )
+
+configure_logging(
+    level=os.getenv("LOG_LEVEL", "INFO"),
+    format="kv" if os.getenv("DEV", "").lower() in {"1", "true", "yes", "on"} or os.getenv("LOG_FORMAT") == "kv" else "json",
+)
+logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def app_lifespan(_: FastAPI):
@@ -85,7 +111,11 @@ class SessionControlRequest(BaseModel):
             raise ValueError(
                 "resume_session_id, fork_from_session_id, and continue_recent are mutually exclusive."
             )
-        if self.continue_recent and not get_app_settings().allow_unscoped_continue_recent:
+        if (
+            self.continue_recent
+            and not self.conversation_id
+            and not get_app_settings().allow_unscoped_continue_recent
+        ):
             raise ValueError(
                 "continue_recent is disabled for HTTP serve mode. Use conversation_id or resume_session_id."
             )
@@ -164,6 +194,7 @@ def _build_request_audit_record(
         tenant=tenant,
         conversation_id=getattr(request, "conversation_id", None),
         claude_session_id=claude_session_id,
+        session_id=claude_session_id,
         resume_session_id=getattr(request, "resume_session_id", None),
         fork_from_session_id=getattr(request, "fork_from_session_id", None),
         schema_name=getattr(request, "schema_name", None) or DEFAULT_OUTPUT_SCHEMA_NAME,
@@ -186,6 +217,75 @@ def _require_session_access(session_id: str, tenant: str) -> None:
 
 def _runtime_status() -> dict[str, Any]:
     return collect_runtime_diagnostics()
+
+
+def _http_error_code(status_code: int) -> str:
+    return {
+        400: "bad_request",
+        401: "unauthorized",
+        403: "forbidden",
+        404: "not_found",
+        409: "conflict",
+        415: "unsupported_media_type",
+        422: "validation_error",
+        500: "internal_server_error",
+        502: "bad_gateway",
+        503: "service_unavailable",
+    }.get(status_code, "http_error")
+
+
+def _coerce_error_message(detail: Any, *, fallback: str) -> str:
+    if isinstance(detail, str) and detail.strip():
+        return detail
+    return fallback
+
+
+def _error_response_content(
+    request: Request,
+    *,
+    status_code: int,
+    detail: Any,
+    code: str | None = None,
+    message: str | None = None,
+) -> dict[str, Any]:
+    correlation_id = getattr(request.state, "correlation_id", None)
+    serialized_detail = detail if isinstance(detail, str) else jsonable_encoder(detail)
+    error_message = message or _coerce_error_message(serialized_detail, fallback="Request failed")
+    payload: dict[str, Any] = {
+        "detail": serialized_detail,
+        "error": {
+            "code": code or _http_error_code(status_code),
+            "message": error_message,
+            "status_code": status_code,
+            "path": request.url.path,
+            "correlation_id": correlation_id,
+        },
+    }
+    if not isinstance(serialized_detail, str):
+        payload["error"]["details"] = serialized_detail
+    return payload
+
+
+def _build_collection_meta(
+    *,
+    limit: int,
+    offset: int,
+    returned: int,
+    filters: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    meta: dict[str, Any] = {
+        "limit": limit,
+        "offset": offset,
+        "returned": returned,
+    }
+    normalized_filters = {
+        key: value
+        for key, value in (filters or {}).items()
+        if value is not None and value != ""
+    }
+    if normalized_filters:
+        meta["filters"] = normalized_filters
+    return meta
 
 
 def _build_chat_response(
@@ -224,6 +324,7 @@ def _append_success_request_audit(
             tenant=tenant,
             conversation_id=meta.conversation_id,
             claude_session_id=meta.claude_session_id,
+            session_id=meta.claude_session_id,
             resume_session_id=meta.resume_session_id,
             fork_from_session_id=meta.fork_from_session_id,
             schema_name=meta.schema_name,
@@ -291,6 +392,10 @@ async def _execute_json_endpoint(
             exc=exc,
         )
     except Exception as exc:
+        logger.exception(
+            "api_endpoint_failed",
+            extra={"request_id": request_id, "tenant": tenant, "route": route},
+        )
         _raise_endpoint_error(
             request_id=request_id,
             route=route,
@@ -315,6 +420,64 @@ async def _execute_json_endpoint(
         meta=meta,
         payload=payload,
         default_schema_name=default_schema_name,
+    )
+
+
+@app.middleware("http")
+async def request_context_middleware(request: Request, call_next):
+    correlation_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex
+    request.state.correlation_id = correlation_id
+    with logging_context(correlation_id=correlation_id):
+        response = await call_next(request)
+    response.headers["X-Request-ID"] = correlation_id
+    return response
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException) -> JSONResponse:
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=_error_response_content(
+            request,
+            status_code=exc.status_code,
+            detail=exc.detail,
+        ),
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(
+    request: Request,
+    exc: RequestValidationError,
+) -> JSONResponse:
+    detail = exc.errors()
+    return JSONResponse(
+        status_code=422,
+        content=_error_response_content(
+            request,
+            status_code=422,
+            detail=detail,
+            code="validation_error",
+            message="Request validation failed",
+        ),
+    )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    logger.exception(
+        "unhandled_http_exception",
+        extra={"path": request.url.path, "correlation_id": getattr(request.state, "correlation_id", None)},
+    )
+    return JSONResponse(
+        status_code=500,
+        content=_error_response_content(
+            request,
+            status_code=500,
+            detail="Internal server error",
+            code="internal_server_error",
+            message="Internal server error",
+        ),
     )
 
 
@@ -457,9 +620,6 @@ async def _materialize_upload_submission(
     _validate_form_payload(parsed_form)
 
     files = form_data.getlist("files")
-    if not files:
-        raise HTTPException(status_code=400, detail="At least one file is required for upload mode")
-
     case_dir = SUBMISSION_ROOT_DIR / request_id
     case_dir.mkdir(parents=True, exist_ok=True)
 
@@ -511,63 +671,71 @@ async def _execute_directory_audit_task(
     source_mode: str = "directory",
 ) -> None:
     started_at = utc_now()
-    upsert_audit_task(
-        {
-            "request_id": request_id,
-            "tenant": tenant,
-            "status": "running",
-            "mode": source_mode,
-            "source_mode": source_mode,
-            "case_path": directory_path,
-            "claim_id": None,
-            "result_file": None,
-            "error_detail": None,
-            "progress_message": "正在调用 Claude 审核",
-            "started_at": started_at,
-            "updated_at": started_at,
-        }
-    )
-    try:
-        payload, meta = await _run_directory_audit(
-            request_id=request_id,
-            tenant=tenant,
-            directory_path=directory_path,
-        )
-        finished_at = utc_now()
+    with logging_context(request_id=request_id, tenant=tenant):
         upsert_audit_task(
             {
                 "request_id": request_id,
                 "tenant": tenant,
-                "status": "completed",
-                "mode": source_mode,
-                "source_mode": source_mode,
-                "case_path": directory_path,
-                "claim_id": payload.get("claim_id") if isinstance(payload, dict) else None,
-                "result_file": meta.result_file,
-                "error_detail": None,
-                "progress_message": "审核完成",
-                "finished_at": finished_at,
-                "updated_at": finished_at,
-            }
-        )
-    except Exception as exc:
-        finished_at = utc_now()
-        upsert_audit_task(
-            {
-                "request_id": request_id,
-                "tenant": tenant,
-                "status": "failed",
+                "status": "running",
                 "mode": source_mode,
                 "source_mode": source_mode,
                 "case_path": directory_path,
                 "claim_id": None,
                 "result_file": None,
-                "error_detail": str(exc),
-                "progress_message": "审核失败",
-                "finished_at": finished_at,
-                "updated_at": finished_at,
+                "session_id": None,
+                "error_detail": None,
+                "progress_message": "正在调用 Claude 审核",
+                "started_at": started_at,
+                "updated_at": started_at,
             }
         )
+        try:
+            payload, meta = await _run_directory_audit(
+                request_id=request_id,
+                tenant=tenant,
+                directory_path=directory_path,
+            )
+            finished_at = utc_now()
+            upsert_audit_task(
+                {
+                    "request_id": request_id,
+                    "tenant": tenant,
+                    "status": "completed",
+                    "mode": source_mode,
+                    "source_mode": source_mode,
+                    "case_path": directory_path,
+                    "claim_id": payload.get("claim_id") if isinstance(payload, dict) else None,
+                    "result_file": meta.result_file,
+                    "session_id": meta.claude_session_id,
+                    "error_detail": None,
+                    "progress_message": "审核完成",
+                    "finished_at": finished_at,
+                    "updated_at": finished_at,
+                }
+            )
+        except Exception as exc:
+            logger.exception(
+                "directory_audit_failed",
+                extra={"request_id": request_id, "tenant": tenant, "route": "/audit/submit"},
+            )
+            finished_at = utc_now()
+            upsert_audit_task(
+                {
+                    "request_id": request_id,
+                    "tenant": tenant,
+                    "status": "failed",
+                    "mode": source_mode,
+                    "source_mode": source_mode,
+                    "case_path": directory_path,
+                    "claim_id": None,
+                    "result_file": None,
+                    "session_id": None,
+                    "error_detail": str(exc),
+                    "progress_message": "审核失败",
+                    "finished_at": finished_at,
+                    "updated_at": finished_at,
+                }
+            )
 
 
 @app.post("/audit", response_model=ChatResponse)
@@ -635,6 +803,7 @@ async def audit_submit(
             "case_path": case_path,
             "claim_id": None,
             "result_file": None,
+            "session_id": None,
             "error_detail": None,
             "progress_message": "任务已提交",
             "submitted_at": submitted_at,
@@ -761,6 +930,7 @@ async def chat_stream(req: ChatRequest, authorization: str = Header(...)) -> Str
                     tenant=tenant,
                     conversation_id=meta.conversation_id,
                     claude_session_id=meta.claude_session_id,
+                    session_id=meta.claude_session_id,
                     resume_session_id=meta.resume_session_id,
                     fork_from_session_id=meta.fork_from_session_id,
                     schema_name=meta.schema_name,
@@ -799,6 +969,10 @@ async def chat_stream(req: ChatRequest, authorization: str = Header(...)) -> Str
             )
             yield f"data: {payload}\n\n"
         except Exception as exc:
+            logger.exception(
+                "chat_stream_failed",
+                extra={"request_id": request_id, "tenant": tenant, "route": "/chat/stream"},
+            )
             append_request_audit(
                 _build_request_audit_record(
                     request_id=request_id,
@@ -847,14 +1021,25 @@ async def sessions(
 ) -> dict[str, Any]:
     tenant = verify_tenant(authorization)
     known_session_ids = list_known_session_ids(tenant=tenant)
+    logged_sessions = list_logged_sessions(
+        conversation_id=conversation_id,
+        tenant=tenant,
+        limit=limit,
+        offset=offset,
+    )
+    sdk_sessions = list_sdk_session_summaries(limit=limit, session_ids=known_session_ids)
     return {
-        "logged_sessions": list_logged_sessions(
-            conversation_id=conversation_id,
-            tenant=tenant,
-            limit=limit,
-            offset=offset,
-        ),
-        "sdk_sessions": list_sdk_session_summaries(limit=limit, session_ids=known_session_ids),
+        "logged_sessions": logged_sessions,
+        "sdk_sessions": sdk_sessions,
+        "meta": {
+            **_build_collection_meta(
+                limit=limit,
+                offset=offset,
+                returned=len(logged_sessions),
+                filters={"conversation_id": conversation_id},
+            ),
+            "sdk_returned": len(sdk_sessions),
+        },
     }
 
 
@@ -865,8 +1050,10 @@ async def conversations(
     authorization: str = Header(...),
 ) -> dict[str, Any]:
     tenant = verify_tenant(authorization)
+    items = list_conversation_summaries(tenant=tenant, limit=limit, offset=offset)
     return {
-        "items": list_conversation_summaries(tenant=tenant, limit=limit, offset=offset),
+        "items": items,
+        "meta": _build_collection_meta(limit=limit, offset=offset, returned=len(items)),
     }
 
 
@@ -874,18 +1061,34 @@ async def conversations(
 async def requests(
     conversation_id: str | None = None,
     claude_session_id: str | None = None,
+    route: str | None = None,
+    status: str | None = None,
     limit: int = 20,
     offset: int = 0,
     authorization: str = Header(...),
 ) -> dict[str, Any]:
     tenant = verify_tenant(authorization)
+    items = list_request_audits(
+        tenant=tenant,
+        conversation_id=conversation_id,
+        claude_session_id=claude_session_id,
+        route=route,
+        status=status,
+        limit=limit,
+        offset=offset,
+    )
     return {
-        "items": list_request_audits(
-            tenant=tenant,
-            conversation_id=conversation_id,
-            claude_session_id=claude_session_id,
+        "items": items,
+        "meta": _build_collection_meta(
             limit=limit,
             offset=offset,
+            returned=len(items),
+            filters={
+                "conversation_id": conversation_id,
+                "claude_session_id": claude_session_id,
+                "route": route,
+                "status": status,
+            },
         ),
     }
 
@@ -903,18 +1106,34 @@ async def request_detail(request_id: str, authorization: str = Header(...)) -> d
 async def results(
     conversation_id: str | None = None,
     claim_id: str | None = None,
+    verdict: str | None = None,
+    manual_review_reason: str | None = None,
     limit: int = 20,
     offset: int = 0,
     authorization: str = Header(...),
 ) -> dict[str, Any]:
     tenant = verify_tenant(authorization)
+    items = list_result_records(
+        tenant=tenant,
+        conversation_id=conversation_id,
+        claim_id=claim_id,
+        verdict=verdict,
+        manual_review_reason=manual_review_reason,
+        limit=limit,
+        offset=offset,
+    )
     return {
-        "items": list_result_records(
-            tenant=tenant,
-            conversation_id=conversation_id,
-            claim_id=claim_id,
+        "items": items,
+        "meta": _build_collection_meta(
             limit=limit,
             offset=offset,
+            returned=len(items),
+            filters={
+                "conversation_id": conversation_id,
+                "claim_id": claim_id,
+                "verdict": verdict,
+                "manual_review_reason": manual_review_reason,
+            },
         ),
     }
 
@@ -929,7 +1148,111 @@ async def result_detail(request_id: str, authorization: str = Header(...)) -> di
     return {
         "record": record,
         "payload": payload,
+        "linked_memories": list_memory_records_by_request_id(request_id),
+        "review_delta": get_review_delta_payload_by_request_id(request_id, tenant),
     }
+
+
+@app.get("/memories")
+async def memories(
+    domain: str | None = None,
+    category: str | None = None,
+    recommended_verdict: str | None = None,
+    manual_review_reason: str | None = None,
+    source_request_id: str | None = None,
+    limit: int = 20,
+    offset: int = 0,
+    authorization: str = Header(...),
+) -> dict[str, Any]:
+    verify_tenant(authorization)
+    items = list_memory_records(
+        domain=domain,
+        category=category,
+        recommended_verdict=recommended_verdict,
+        manual_review_reason=manual_review_reason,
+        source_request_id=source_request_id,
+        limit=limit,
+        offset=offset,
+    )
+    return {
+        "items": items,
+        "meta": _build_collection_meta(
+            limit=limit,
+            offset=offset,
+            returned=len(items),
+            filters={
+                "domain": domain,
+                "category": category,
+                "recommended_verdict": recommended_verdict,
+                "manual_review_reason": manual_review_reason,
+                "source_request_id": source_request_id,
+            },
+        ),
+    }
+
+
+@app.get("/memories/{memory_id}")
+async def memory_detail(memory_id: str, authorization: str = Header(...)) -> dict[str, Any]:
+    verify_tenant(authorization)
+    record = get_memory_record_by_id(memory_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Memory not found")
+    return record
+
+
+@app.get("/review-deltas")
+async def review_deltas(
+    claim_id: str | None = None,
+    final_recommendation: str | None = None,
+    reviewer_verdict: str | None = None,
+    agrees_with_initial: bool | None = None,
+    limit: int = 20,
+    offset: int = 0,
+    authorization: str = Header(...),
+) -> dict[str, Any]:
+    tenant = verify_tenant(authorization)
+    items = list_review_delta_records(
+        tenant=tenant,
+        claim_id=claim_id,
+        final_recommendation=final_recommendation,
+        reviewer_verdict=reviewer_verdict,
+        agrees_with_initial=agrees_with_initial,
+        limit=limit,
+        offset=offset,
+    )
+    return {
+        "items": items,
+        "meta": _build_collection_meta(
+            limit=limit,
+            offset=offset,
+            returned=len(items),
+            filters={
+                "claim_id": claim_id,
+                "final_recommendation": final_recommendation,
+                "reviewer_verdict": reviewer_verdict,
+                "agrees_with_initial": agrees_with_initial,
+            },
+        ),
+    }
+
+
+@app.get("/review-deltas/{request_id}")
+async def review_delta_detail(request_id: str, authorization: str = Header(...)) -> dict[str, Any]:
+    tenant = verify_tenant(authorization)
+    record = get_review_delta_record_by_request_id(request_id, tenant)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Review delta not found")
+    payload = get_review_delta_payload_by_request_id(request_id, tenant)
+    return {
+        "record": record,
+        "payload": payload,
+    }
+
+
+@app.get("/governance/assets")
+async def governance_assets(authorization: str = Header(...)) -> dict[str, Any]:
+    verify_tenant(authorization)
+    return validate_knowledge_assets()
 
 
 @app.get("/sessions/{session_id}/messages")
@@ -941,7 +1264,9 @@ async def session_messages(
 ) -> dict[str, Any]:
     tenant = verify_tenant(authorization)
     _require_session_access(session_id=session_id, tenant=tenant)
+    messages = get_sdk_session_transcript(session_id=session_id, limit=limit, offset=offset)
     return {
         "session_id": session_id,
-        "messages": get_sdk_session_transcript(session_id=session_id, limit=limit, offset=offset),
+        "messages": messages,
+        "meta": _build_collection_meta(limit=limit, offset=offset, returned=len(messages)),
     }

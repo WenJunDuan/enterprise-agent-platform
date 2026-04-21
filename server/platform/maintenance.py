@@ -12,16 +12,18 @@ from server.platform.config import get_app_settings
 from server.platform.paths import (
     APP_SERVER_STDERR_LOG,
     APP_SERVER_STDOUT_LOG,
+    MEMORY_INDEX_DB_FILE,
     LOGS_ROOT,
+    RESULT_INDEX_DB_FILE,
     RESULT_BY_REQUEST_DIR,
-    RESULT_INDEX_SHARD_DIR,
+    SERVICE_REQUEST_DB_FILE,
     SERVICE_REQUEST_SHARD_DIR,
     SUBMISSION_ROOT_DIR,
     SESSION_EVENT_DIR,
-    SESSION_INDEX_SHARD_DIR,
+    SESSION_INDEX_DB_FILE,
 )
 from server.platform.storage import describe_storage_target
-from server.stores.audit_task_store import list_audit_tasks
+from server.stores.audit_task_store import list_audit_tasks_admin
 
 
 def rotate_log_file(path: Path, *, max_bytes: int, backups: int) -> bool:
@@ -64,10 +66,12 @@ def storage_report() -> dict[str, Any]:
     """Summarize the local storage layout for diagnostics."""
     return {
         "logs_root": describe_storage_target(LOGS_ROOT),
-        "session_index": describe_storage_target(SESSION_INDEX_SHARD_DIR),
+        "session_index": describe_storage_target(SESSION_INDEX_DB_FILE),
         "session_events": describe_storage_target(SESSION_EVENT_DIR),
         "request_audits": describe_storage_target(SERVICE_REQUEST_SHARD_DIR),
-        "result_index": describe_storage_target(RESULT_INDEX_SHARD_DIR),
+        "request_index": describe_storage_target(SERVICE_REQUEST_DB_FILE),
+        "result_index": describe_storage_target(RESULT_INDEX_DB_FILE),
+        "memory_index": describe_storage_target(MEMORY_INDEX_DB_FILE),
         "result_archives": describe_storage_target(RESULT_BY_REQUEST_DIR),
         "runtime_stdout": describe_storage_target(APP_SERVER_STDOUT_LOG),
         "runtime_stderr": describe_storage_target(APP_SERVER_STDERR_LOG),
@@ -80,7 +84,7 @@ def cleanup_old_submission_directories(days: int, now: str | None = None) -> lis
     removed: list[str] = []
     submission_root = SUBMISSION_ROOT_DIR.resolve()
 
-    for record in list_audit_tasks():
+    for record in list_audit_tasks_admin():
         if record.get("source_mode") != "upload":
             continue
         if record.get("status") not in {"completed", "failed"}:

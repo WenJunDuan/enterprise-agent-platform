@@ -1,7 +1,24 @@
 # Session
 
-- 日期: 2026-04-01
+- 日期: 2026-04-20
 - 仓库: `enterprise-agent-platform`
-- 当前阶段: async audit serve documentation sync
-- 当前里程碑: serve 端已具备异步审核提交、任务状态轮询、轻量结果接口、上传校验、租户隔离、目录白名单与 submission 清理；当前正在补齐 README 与内部文档
-- 当前目标: 在保持 Python 只做调用适配与输出外壳的前提下，让仓库文档与当前 serve 实现完全一致，并清理 `.ai_state/superpowers` 路径迁移后的旧引用
+- 当前阶段: audit 域边界确立 + Python 脚手架职责收口完成
+- 当前里程碑:
+  - Python 平台清理（Tier 1+2）已交付：store 类型注解、默认租户密钥告警、store 容量保护、prompt 外置、统一 logging + correlation id、租户隔离硬化、session lifecycle 集成测试
+  - audit 结果 schema 扩展（P0）已交付：`manual_review_reason` 枚举 + `risk_dimensions` 多维打分，validator / prompt / README 同步
+  - audit P1 曾尝试在 Python 引入"数据搬运层"（server/audit/ 目录 + `/audit/fast` 端点），违反"Python 只做通信/鉴权/服务，是 Claude 脚手架"原则，已全部撤销
+- 当前边界（不可违反）:
+  - Python 从不碰业务语义（发票分类、规则加载、金额比对、签字识别、合规判断、风险评分）
+  - 所有审核通过现有 `/audit` 和 `/audit/submit` 的 Claude agentic 路径
+  - IPC 契约（audit-result schema）和服务层守门（form/MIME 白名单）是允许的
+- 当前目标: 按“命令事实源收口 → agent 中间契约 → 业务记忆沉淀 → 单条审核闭环 → 查询与多域协同”顺序逐步实施
+- 当前待确认文档: `.ai_state/design/agent-next-phase-blueprint.md`
+- 当前已完成: A-001 命令单一事实源收口
+- 当前已验证: Python 侧通过 CLI 将 `/audit data/case1` 提交给 Claude；Claude 负责读取路径、判断输入缺失并返回 `manual_review_reason=insufficient_evidence`
+- 当前已完成: A-002 agent / skill 关系收口 + extractor / auditor / reviewer 中间契约
+- 当前已完成: A-003 审后业务记忆沉淀层
+- 当前已完成: A-004 单条审核业务闭环
+- 当前已验证: `tests/fixtures/expense/travel-missing-preapproval` 已通过真实 `/audit` 形成归档结果，并通过真实 `/distill-memory` 生成首条 `knowledge/memory/expense/expense.travel.pre-approval-mismatch.manual-review.v1.json`
+- 当前已完成: A-005 规则治理与追溯查询增强
+- 当前已完成: A-006 多域协同与二次复核成本治理
+- 当前建议起步项: 进入一次新的架构 review / 发布前整理

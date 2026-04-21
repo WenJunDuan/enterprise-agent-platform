@@ -67,6 +67,37 @@
     },
     "timestamp": {
       "type": "string"
+    },
+    "manual_review_reason": {
+      "type": "string",
+      "enum": [
+        "missing_approval",
+        "rule_gap",
+        "data_conflict",
+        "insufficient_evidence",
+        "budget_exceeded",
+        "invoice_invalid",
+        "pre_approval_mismatch"
+      ]
+    },
+    "risk_dimensions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "score"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "enum": ["invoice", "amount", "approval", "budget", "anomaly"]
+          },
+          "score": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10
+          }
+        }
+      }
     }
   },
   "required": [

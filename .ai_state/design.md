@@ -10,7 +10,7 @@
 - `server/cli.py`: 本地 CLI 外壳，负责终端参数解析与终端输出
 - `server/app_server.py`: Python 版后台进程管理、日志查看、doctor、maintain
 - `server/platform/`: 路径、配置、诊断、维护、底层文件存储工具与源文件预处理
-- `server/stores/`: request/session/result/runtime 仓储接口与本地 JSONL/JSON 实现
+- `server/stores/`: request/session/result/review-delta/runtime/memory 仓储接口；当前 request 日志保留 JSONL，request/session/result/review-delta/memory 查询索引已切到 SQLite
 - `tests/`: 测试代码与后续测试用例数据承载位置
 - `knowledge/external/`: 当前仓库中保存原始制度文件或外部参考材料的位置
 - `logs/`: 唯一的本地运行时、请求、会话、结果、进程状态归档根目录
@@ -21,31 +21,37 @@
 - 结构化输出通过 Claude Agent SDK `output_format` + JSON Schema 强制约束，不再依赖 prompt 文本声明。
 - 审核输出继续保留内部 `approved / rejected / manual_review` 三态，但对外统一映射为 `result/conclusion/explanation` 中文展示字段；其中 `manual_review` 固定显示为“待人工复核”，且必须说明无法自动放行的原因。
 - `request_id` 是全链路审计主键；`conversation_id` 表示应用级会话；`claude_session_id` 对应 Claude SDK 的可恢复会话。
+- HTTP 查询类列表接口统一返回 `items + meta`；`meta` 当前至少包含 `limit / offset / returned`，有过滤条件时追加 `filters`，不伪造总量字段。
+- HTTP 错误响应统一保留兼容字段 `detail`，并补充结构化 `error{code,message,status_code,path,correlation_id}`；其中 `correlation_id` 与响应头 `X-Request-ID` 对齐，用于联调与日志追踪。
 - Python 不拥有业务能力实现；`init-rules`、`audit` 等能力定义在 `.claude/commands` / `.claude/skills`，CLI 与 serve 只通过统一 adapter 调用这些 Claude 能力。
 - serve 层现已提供异步审核提交能力：`POST /audit/submit` 统一接收目录模式与上传模式，`GET /audit/tasks/{request_id}` 提供状态轮询，`GET /audit/tasks/{request_id}/result` 提供轻量结果读取。
 - 前台调试入口是 `python -m server.cli serve`；后台常驻入口是 `uv run app-server start`，两者本质上都启动同一个 Python 服务进程。
-- 本地 JSONL/JSON 布局先对齐未来数据库字段，再在后续通过仓储层替换为 PostgreSQL。
+- 本地存储当前采用“请求日志/运行日志保留文件，request/session/result/review-delta/memory 查询索引使用 SQLite，结果归档保留 JSON 文件”的混合布局；后续如需升级到 PostgreSQL，优先迁移查询索引层，不改 Claude 业务侧内容。
 - 顶层 `data/` 和 `raw_policies/` 不是当前仓库正式目录；测试数据应收敛到 `tests/`，真实制度源材料当前放在 `knowledge/external/`。
 - 当前业务建设顺序调整为：`/init-rules` 优先，审后业务记忆沉淀次之，单条审核业务闭环随后；`batch-audit` 不进入当前主线。
 
 ## 本地存储布局
 
 - `logs/service/requests/requests-YYYY-MM.jsonl`: serve 请求审计索引
+- `logs/service/requests/index.sqlite3`: serve 请求查询索引
 - `logs/service/audit-tasks/tasks.json`: 异步审核任务状态
-- `logs/sessions/index/sessions-YYYY-MM.jsonl`: 会话索引
+- `logs/sessions/index.sqlite3`: 会话查询索引
 - `logs/sessions/events/YYYY/MM/DD/*.jsonl`: Claude 原始事件流
-- `logs/results/index/results-YYYY-MM.jsonl`: 结构化结果索引
+- `logs/results/index.sqlite3`: 结构化结果查询索引
 - `logs/results/by-request/YYYY/MM/DD/{request_id}.json`: 结构化结果归档
+- `logs/review-deltas/index.sqlite3`: review-delta 查询索引
+- `logs/review-deltas/by-request/YYYY/MM/DD/{request_id}.json`: review-delta 归档
+- `logs/knowledge/memory-index.sqlite3`: memory 资产查询索引
 - `logs/runtime/app-server/`: PID、状态文件、stdout/stderr、维护对象
 - `data/submissions/{request_id}/`: 上传模式生成的 case 目录与附件落盘位置
 
 ## 约束
 
 - 结果、请求、会话三层都用 `request_id` 串联，保证可恢复、可追溯。
-- 索引采用按月分片的 JSONL，避免单文件无限增长。
+- 请求审计仍保留按月分片 JSONL；request/session/result/review-delta/memory 查询索引已切到 SQLite。
 - 原始事件流和结构化结果分离存储：前者保留过程，后者保留最终归档。
 - CLI 与 serve 共享同一套 Claude command 调用适配层；差异只体现在终端输出与 HTTP JSON/SSE 输出。
-- 后续如果接 PostgreSQL，优先迁移 `request/session/result` 三类仓储实现，不改 Claude 业务侧内容。
+- 后续如果接 PostgreSQL，优先迁移 `request/session/result/review-delta/memory` 查询索引层，不改 Claude 业务侧内容。
 
 ## 记忆分层
 

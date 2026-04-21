@@ -1,0 +1,148 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "expense_review_delta",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "claim_id": {
+      "type": "string"
+    },
+    "initial_verdict": {
+      "type": "string",
+      "enum": [
+        "approved",
+        "rejected",
+        "manual_review"
+      ]
+    },
+    "reviewer_verdict": {
+      "type": "string",
+      "enum": [
+        "approved",
+        "rejected",
+        "manual_review"
+      ]
+    },
+    "agrees_with_initial": {
+      "type": "boolean"
+    },
+    "escalation_recommended": {
+      "type": "boolean"
+    },
+    "confirmed_points": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "disagreement_points": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "type": "string"
+          },
+          "initial_assessment": {
+            "type": "string"
+          },
+          "reviewer_assessment": {
+            "type": "string"
+          },
+          "evidence_basis": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "field",
+          "initial_assessment",
+          "reviewer_assessment",
+          "evidence_basis"
+        ]
+      }
+    },
+    "additional_policy_refs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "additional_evidence_chain": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "source": {
+            "type": "string"
+          },
+          "finding": {
+            "type": "string"
+          },
+          "conclusion": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "finding",
+          "conclusion"
+        ]
+      }
+    },
+    "final_recommendation": {
+      "type": "string",
+      "enum": [
+        "keep_initial",
+        "replace_with_reviewer",
+        "manual_review"
+      ]
+    },
+    "explanation": {
+      "type": "string",
+      "minLength": 1
+    },
+    "reviewed_by": {
+      "type": "string",
+      "const": "expense-reviewer"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "claim_id",
+    "initial_verdict",
+    "reviewer_verdict",
+    "agrees_with_initial",
+    "escalation_recommended",
+    "confirmed_points",
+    "disagreement_points",
+    "additional_policy_refs",
+    "additional_evidence_chain",
+    "final_recommendation",
+    "explanation",
+    "reviewed_by",
+    "timestamp"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "agrees_with_initial": {
+            "const": false
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "disagreement_points": {
+            "minItems": 1
+          }
+        }
+      }
+    }
+  ]
+}
