@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import time
 import uuid
@@ -22,6 +23,7 @@ from claude_agent_sdk import (
     query,
 )
 from server.platform.config import configure_claude_runtime_env, get_claude_runtime_snapshot
+from server.platform.logging_setup import logging_context
 from server.platform.paths import PROJECT_ROOT, build_session_event_log_path, ensure_local_layout
 from server.platform.storage import append_jsonl_record
 from server.stores.result_store import archive_result_payload
@@ -30,6 +32,7 @@ from server.stores.session_store import (
     append_session_record,
     new_conversation_id,
     resolve_latest_session_id,
+    resolve_latest_session_id_admin,
     utc_now,
 )
 
@@ -39,6 +42,7 @@ CONTRACTS_DIR = PROJECT_ROOT / ".claude" / "contracts"
 DEFAULT_OUTPUT_SCHEMA_NAME = "common/audit-result.schema.json"
 INIT_RULES_REPORT_SCHEMA_NAME = "system/init-rules-report.schema.json"
 StructuredJSON = dict[str, Any] | list[Any]
+logger = logging.getLogger(__name__)
 
 
 class JSONContractError(ValueError):
@@ -122,6 +126,42 @@ def validate_structured_output_semantics(
             raise JSONContractError("audit result field `conclusion` does not match verdict.")
         if not explanation:
             raise JSONContractError("audit result field `explanation` must be non-empty.")
+
+        if verdict == "manual_review":
+            reason = structured_output.get("manual_review_reason")
+            valid_reasons = {
+                "missing_approval",
+                "rule_gap",
+                "data_conflict",
+                "insufficient_evidence",
+                "budget_exceeded",
+                "invoice_invalid",
+                "pre_approval_mismatch",
+            }
+            if reason not in valid_reasons:
+                raise JSONContractError(
+                    "audit result with verdict=manual_review must include a valid manual_review_reason."
+                )
+
+        dimensions = structured_output.get("risk_dimensions")
+        if dimensions is not None:
+            if not isinstance(dimensions, list):
+                raise JSONContractError("audit result field `risk_dimensions` must be a list.")
+            valid_dim_names = {"invoice", "amount", "approval", "budget", "anomaly"}
+            for dim in dimensions:
+                if not isinstance(dim, dict):
+                    raise JSONContractError("each risk dimension must be an object.")
+                name = dim.get("name")
+                score = dim.get("score")
+                if name not in valid_dim_names:
+                    raise JSONContractError(
+                        f"risk dimension name `{name}` is not in the allowed set."
+                    )
+                if not isinstance(score, int) or isinstance(score, bool) or score < 0 or score > 10:
+                    raise JSONContractError(
+                        "risk dimension score must be an integer between 0 and 10."
+                    )
+
         return
 
     if schema_name != INIT_RULES_REPORT_SCHEMA_NAME:
@@ -173,9 +213,17 @@ def build_options(**overrides: Any) -> ClaudeAgentOptions:
 class SessionLogger:
     """Persist the raw SDK event stream as JSONL."""
 
-    def __init__(self, session_id: str, request_id: str, prompt: str, started_at: str) -> None:
+    def __init__(
+        self,
+        session_id: str,
+        request_id: str,
+        prompt: str,
+        started_at: str,
+        tenant: str | None,
+    ) -> None:
         self.session_id = session_id
         self.request_id = request_id
+        self.tenant = tenant
         self.start_time = time.time()
         self.started_at = started_at
         self.log_file = build_session_event_log_path(
@@ -188,6 +236,7 @@ class SessionLogger:
                 "event": "session_start",
                 "session_id": session_id,
                 "request_id": request_id,
+                "tenant": tenant,
                 "prompt": prompt,
                 "timestamp": started_at,
             }
@@ -198,19 +247,28 @@ class SessionLogger:
         event: dict[str, Any] | None = None
 
         if isinstance(message, SystemMessage):
+            session_id = getattr(message, "session_id", None) or getattr(
+                getattr(message, "data", {}),
+                "get",
+                lambda *_: None,
+            )("session_id")
+            if session_id:
+                self.session_id = str(session_id)
             self._write(
                 {
                     "event": "system",
                     "subtype": getattr(message, "subtype", ""),
-                    "session_id": getattr(message, "session_id", ""),
+                    "session_id": self.session_id,
                     "timestamp": self._now(),
                 }
             )
-            session_id = getattr(message, "session_id", None)
             if session_id:
                 event = {"type": "session", "session_id": session_id}
 
         elif isinstance(message, AssistantMessage):
+            message_session_id = getattr(message, "session_id", None)
+            if message_session_id:
+                self.session_id = str(message_session_id)
             for block in getattr(message, "content", []):
                 if isinstance(block, TextBlock):
                     event = {"type": "text", "content": block.text}
@@ -218,6 +276,7 @@ class SessionLogger:
                         {
                             "event": "assistant_text",
                             "content": block.text,
+                            "session_id": self.session_id,
                             "timestamp": self._now(),
                         }
                     )
@@ -227,6 +286,7 @@ class SessionLogger:
                             "event": "tool_call",
                             "tool": block.name,
                             "input": str(block.input)[:1000],
+                            "session_id": self.session_id,
                             "timestamp": self._now(),
                         }
                     )
@@ -235,11 +295,14 @@ class SessionLogger:
                         {
                             "event": "tool_result",
                             "content": str(getattr(block, "content", ""))[:1000],
+                            "session_id": self.session_id,
                             "timestamp": self._now(),
                         }
                     )
 
         elif isinstance(message, ResultMessage):
+            if getattr(message, "session_id", None):
+                self.session_id = str(message.session_id)
             elapsed = time.time() - self.start_time
             event = {
                 "type": "result",
@@ -257,6 +320,7 @@ class SessionLogger:
                     "duration_sec": round(elapsed, 2),
                     "cost_usd": event["cost"],
                     "structured_output": getattr(message, "structured_output", None),
+                    "session_id": self.session_id,
                     "timestamp": self._now(),
                 }
             )
@@ -264,7 +328,24 @@ class SessionLogger:
         return event
 
     def _write(self, record: dict[str, Any]) -> None:
-        append_jsonl_record(self.log_file, record)
+        enriched = {
+            "request_id": self.request_id,
+            "tenant": self.tenant,
+            "session_id": self.session_id,
+            **record,
+        }
+        append_jsonl_record(self.log_file, enriched)
+        if record.get("event") in {"session_start", "session_end"}:
+            logger.info(
+                "session_event",
+                extra={
+                    "event_name": record.get("event"),
+                    "request_id": self.request_id,
+                    "tenant": self.tenant,
+                    "session_id": self.session_id,
+                    "result_subtype": record.get("subtype"),
+                },
+            )
 
     def log_error(self, error: Exception) -> None:
         """Capture internal bridge errors that happen outside Claude result blocks."""
@@ -297,76 +378,91 @@ async def run_agent(
     request_id = request_id or str(uuid.uuid4())
     started_at = utc_now()
     resolved_resume_session_id = resume_session_id or (
-        resolve_latest_session_id(conversation_id) if not fork_from_session_id and not continue_recent else None
+        (
+            resolve_latest_session_id(conversation_id, tenant=tenant)
+            if tenant
+            else resolve_latest_session_id_admin(conversation_id)
+        )
+        if not fork_from_session_id and not continue_recent
+        else None
     )
     current_session_id = resolved_resume_session_id or fork_from_session_id or str(uuid.uuid4())
-    logger = SessionLogger(current_session_id, request_id, prompt, started_at)
+    session_logger = SessionLogger(current_session_id, request_id, prompt, started_at, tenant)
     options = build_options(**opts)
 
-    if fork_from_session_id:
-        options.resume = fork_from_session_id
-        options.fork_session = True
-    elif resolved_resume_session_id:
-        options.resume = resolved_resume_session_id
-    elif continue_recent:
-        options.continue_conversation = True
+    with logging_context(request_id=request_id, tenant=tenant, session_id=current_session_id):
+        if fork_from_session_id:
+            options.resume = fork_from_session_id
+            options.fork_session = True
+        elif resolved_resume_session_id:
+            options.resume = resolved_resume_session_id
+        elif continue_recent:
+            options.continue_conversation = True
 
-    final_claude_session_id: str | None = None
-    final_subtype = ""
-    final_cost = 0.0
-    final_status = "success"
-    saw_terminal_result = False
-    saw_assistant_text = False
+        final_claude_session_id: str | None = None
+        final_subtype = ""
+        final_cost = 0.0
+        final_status = "success"
+        saw_terminal_result = False
+        saw_assistant_text = False
 
-    try:
-        async for message in query(prompt=prompt, options=options):
-            event = logger.log_message(message)
-            if isinstance(message, ResultMessage):
-                saw_terminal_result = True
-                final_claude_session_id = getattr(message, "session_id", None) or final_claude_session_id
-                final_subtype = getattr(message, "subtype", "")
-                final_cost = float(getattr(message, "total_cost_usd", 0.0) or 0.0)
-                if getattr(message, "is_error", False):
-                    final_status = "error"
-            elif isinstance(message, SystemMessage):
-                final_claude_session_id = getattr(message, "session_id", None) or final_claude_session_id
+        try:
+            async for message in query(prompt=prompt, options=options):
+                event = session_logger.log_message(message)
+                if isinstance(message, ResultMessage):
+                    saw_terminal_result = True
+                    final_claude_session_id = getattr(message, "session_id", None) or final_claude_session_id
+                    final_subtype = getattr(message, "subtype", "")
+                    final_cost = float(getattr(message, "total_cost_usd", 0.0) or 0.0)
+                    if getattr(message, "is_error", False):
+                        final_status = "error"
+                elif isinstance(message, SystemMessage):
+                    final_claude_session_id = (
+                        getattr(message, "session_id", None)
+                        or getattr(getattr(message, "data", {}), "get", lambda *_: None)("session_id")
+                        or final_claude_session_id
+                    )
 
-            if event:
-                if event["type"] == "text":
-                    saw_assistant_text = True
-                yield event
+                if event:
+                    if event["type"] == "text":
+                        saw_assistant_text = True
+                    yield event
 
-        if not saw_terminal_result and not saw_assistant_text:
+            if not saw_terminal_result and not saw_assistant_text:
+                final_status = "error"
+                raise ClaudeRuntimeError(
+                    "Claude request ended without any assistant result. "
+                    "Recent session logs show only API retries; check gateway base URL, auth, or model id."
+                )
+        except Exception as exc:
             final_status = "error"
-            raise ClaudeRuntimeError(
-                "Claude request ended without any assistant result. "
-                "Recent session logs show only API retries; check gateway base URL, auth, or model id."
+            logger.exception(
+                "claude_bridge_failed",
+                extra={"request_id": request_id, "tenant": tenant, "session_id": current_session_id},
             )
-    except Exception as exc:
-        final_status = "error"
-        logger.log_error(exc)
-        raise
-    finally:
-        append_session_record(
-            SessionRecord(
-                request_id=request_id,
-                conversation_id=conversation_id,
-                claude_session_id=final_claude_session_id,
-                resume_session_id=resolved_resume_session_id,
-                fork_from_session_id=fork_from_session_id,
-                schema_name=str(opts.get("schema_name")) if opts.get("schema_name") else None,
-                request_mode="stream",
-                prompt_preview=prompt[:200],
-                log_file=str(logger.log_file),
-                status=final_status,
-                result_subtype=final_subtype or None,
-                cost_usd=final_cost,
-                started_at=started_at,
-                finished_at=utc_now(),
-                tenant=tenant,
-                result_file=None,
+            session_logger.log_error(exc)
+            raise
+        finally:
+            append_session_record(
+                SessionRecord(
+                    request_id=request_id,
+                    conversation_id=conversation_id,
+                    claude_session_id=final_claude_session_id,
+                    resume_session_id=resolved_resume_session_id,
+                    fork_from_session_id=fork_from_session_id,
+                    schema_name=str(opts.get("schema_name")) if opts.get("schema_name") else None,
+                    request_mode="stream",
+                    prompt_preview=prompt[:200],
+                    log_file=str(session_logger.log_file),
+                    status=final_status,
+                    result_subtype=final_subtype or None,
+                    cost_usd=final_cost,
+                    started_at=started_at,
+                    finished_at=utc_now(),
+                    tenant=tenant,
+                    result_file=None,
+                )
             )
-        )
 
 
 async def run_agent_full(prompt: str, **opts: Any) -> str:
@@ -397,118 +493,133 @@ async def run_agent_json(
     request_id = request_id or str(uuid.uuid4())
     started_at = utc_now()
     resolved_resume_session_id = resume_session_id or (
-        resolve_latest_session_id(conversation_id) if not fork_from_session_id and not continue_recent else None
+        (
+            resolve_latest_session_id(conversation_id, tenant=tenant)
+            if tenant
+            else resolve_latest_session_id_admin(conversation_id)
+        )
+        if not fork_from_session_id and not continue_recent
+        else None
     )
     current_session_id = resolved_resume_session_id or fork_from_session_id or str(uuid.uuid4())
-    logger = SessionLogger(current_session_id, request_id, prompt, started_at)
+    session_logger = SessionLogger(current_session_id, request_id, prompt, started_at, tenant)
     options = build_options(output_format=build_output_format(schema_name), **opts)
 
-    if fork_from_session_id:
-        options.resume = fork_from_session_id
-        options.fork_session = True
-    elif resolved_resume_session_id:
-        options.resume = resolved_resume_session_id
-    elif continue_recent:
-        options.continue_conversation = True
+    with logging_context(request_id=request_id, tenant=tenant, session_id=current_session_id):
+        if fork_from_session_id:
+            options.resume = fork_from_session_id
+            options.fork_session = True
+        elif resolved_resume_session_id:
+            options.resume = resolved_resume_session_id
+        elif continue_recent:
+            options.continue_conversation = True
 
-    final_claude_session_id: str | None = None
-    final_subtype = ""
-    final_cost = 0.0
-    final_status = "success"
-    result_file: str | None = None
-    finished_at: str | None = None
-    final_structured_output: StructuredJSON | None = None
+        final_claude_session_id: str | None = None
+        final_subtype = ""
+        final_cost = 0.0
+        final_status = "success"
+        result_file: str | None = None
+        finished_at: str | None = None
+        final_structured_output: StructuredJSON | None = None
 
-    try:
-        async for message in query(prompt=prompt, options=options):
-            logger.log_message(message)
+        try:
+            async for message in query(prompt=prompt, options=options):
+                session_logger.log_message(message)
 
-            if isinstance(message, SystemMessage):
+                if isinstance(message, SystemMessage):
+                    final_claude_session_id = (
+                        getattr(message, "session_id", None)
+                        or getattr(getattr(message, "data", {}), "get", lambda *_: None)("session_id")
+                        or final_claude_session_id
+                    )
+                    continue
+
+                if not isinstance(message, ResultMessage):
+                    continue
+
                 final_claude_session_id = getattr(message, "session_id", None) or final_claude_session_id
-                continue
+                final_subtype = getattr(message, "subtype", "")
+                final_cost = float(getattr(message, "total_cost_usd", 0.0) or 0.0)
+                structured_output = getattr(message, "structured_output", None)
 
-            if not isinstance(message, ResultMessage):
-                continue
+                if structured_output is not None and final_structured_output is None:
+                    if not isinstance(structured_output, (dict, list)):
+                        final_status = "error"
+                        raise JSONContractError("Claude returned a non-object structured output.")
+                    validate_structured_output_semantics(schema_name, structured_output)
+                    final_structured_output = structured_output
+                    finished_at = utc_now()
+                    continue
 
-            final_claude_session_id = getattr(message, "session_id", None) or final_claude_session_id
-            final_subtype = getattr(message, "subtype", "")
-            final_cost = float(getattr(message, "total_cost_usd", 0.0) or 0.0)
-            structured_output = getattr(message, "structured_output", None)
-
-            if structured_output is not None and final_structured_output is None:
-                if not isinstance(structured_output, (dict, list)):
+                if final_subtype == "error_max_structured_output_retries":
                     final_status = "error"
-                    raise JSONContractError("Claude returned a non-object structured output.")
-                validate_structured_output_semantics(schema_name, structured_output)
-                final_structured_output = structured_output
-                finished_at = utc_now()
-                continue
+                    raise JSONContractError(
+                        f"Claude failed to satisfy structured output schema after retries: {schema_name}"
+                    )
 
-            if final_subtype == "error_max_structured_output_retries":
+                if getattr(message, "is_error", False):
+                    final_status = "error"
+                    raise JSONContractError(message.result or "Claude returned an error result.")
+
+            if final_structured_output is None:
                 final_status = "error"
-                raise JSONContractError(
-                    f"Claude failed to satisfy structured output schema after retries: {schema_name}"
-                )
+                raise JSONContractError("Claude returned no structured output.")
 
-            if getattr(message, "is_error", False):
-                final_status = "error"
-                raise JSONContractError(message.result or "Claude returned an error result.")
-
-        if final_structured_output is None:
-            final_status = "error"
-            raise JSONContractError("Claude returned no structured output.")
-
-        result_record = archive_result_payload(
-            request_id=request_id,
-            tenant=tenant,
-            conversation_id=conversation_id,
-            claude_session_id=final_claude_session_id,
-            resume_session_id=resolved_resume_session_id,
-            fork_from_session_id=fork_from_session_id,
-            schema_name=schema_name,
-            request_mode="structured",
-            result_subtype=final_subtype or None,
-            cost_usd=final_cost,
-            prompt_preview=prompt[:200],
-            response=final_structured_output,
-            created_at=finished_at or utc_now(),
-        )
-        result_file = result_record.result_file
-        return final_structured_output, AgentRunMeta(
-            request_id=request_id,
-            conversation_id=conversation_id,
-            claude_session_id=final_claude_session_id,
-            resume_session_id=resolved_resume_session_id,
-            fork_from_session_id=fork_from_session_id,
-            schema_name=schema_name,
-            log_file=str(logger.log_file),
-            result_file=result_file,
-            result_subtype=final_subtype or None,
-            cost_usd=final_cost,
-            finished_at=finished_at,
-        )
-    except Exception as exc:
-        final_status = "error"
-        logger.log_error(exc)
-        raise
-    finally:
-        append_session_record(
-            SessionRecord(
+            result_record = archive_result_payload(
                 request_id=request_id,
+                tenant=tenant,
                 conversation_id=conversation_id,
                 claude_session_id=final_claude_session_id,
                 resume_session_id=resolved_resume_session_id,
                 fork_from_session_id=fork_from_session_id,
                 schema_name=schema_name,
                 request_mode="structured",
-                prompt_preview=prompt[:200],
-                log_file=str(logger.log_file),
-                status=final_status,
                 result_subtype=final_subtype or None,
                 cost_usd=final_cost,
-                started_at=started_at,
-                finished_at=finished_at or utc_now(),
-                tenant=tenant,
-                result_file=result_file,
+                prompt_preview=prompt[:200],
+                response=final_structured_output,
+                created_at=finished_at or utc_now(),
             )
-        )
+            result_file = result_record.result_file
+            return final_structured_output, AgentRunMeta(
+                request_id=request_id,
+                conversation_id=conversation_id,
+                claude_session_id=final_claude_session_id,
+                resume_session_id=resolved_resume_session_id,
+                fork_from_session_id=fork_from_session_id,
+                schema_name=schema_name,
+                log_file=str(session_logger.log_file),
+                result_file=result_file,
+                result_subtype=final_subtype or None,
+                cost_usd=final_cost,
+                finished_at=finished_at,
+            )
+        except Exception as exc:
+            final_status = "error"
+            logger.exception(
+                "claude_bridge_failed",
+                extra={"request_id": request_id, "tenant": tenant, "session_id": current_session_id},
+            )
+            session_logger.log_error(exc)
+            raise
+        finally:
+            append_session_record(
+                SessionRecord(
+                    request_id=request_id,
+                    conversation_id=conversation_id,
+                    claude_session_id=final_claude_session_id,
+                    resume_session_id=resolved_resume_session_id,
+                    fork_from_session_id=fork_from_session_id,
+                    schema_name=schema_name,
+                    request_mode="structured",
+                    prompt_preview=prompt[:200],
+                    log_file=str(session_logger.log_file),
+                    status=final_status,
+                    result_subtype=final_subtype or None,
+                    cost_usd=final_cost,
+                    started_at=started_at,
+                    finished_at=finished_at or utc_now(),
+                    tenant=tenant,
+                    result_file=result_file,
+                )
+            )

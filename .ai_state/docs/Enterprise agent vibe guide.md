@@ -161,7 +161,7 @@ mkdir enterprise-agent && cd enterprise-agent
 uv init --no-readme
 uv python pin 3.14
 
-uv add claude-agent-sdk anthropic fastapi uvicorn typer
+uv add claude-agent-sdk fastapi uvicorn typer
 uv add --dev pytest ruff
 
 # 验证
@@ -1391,10 +1391,35 @@ sys.exit(0)
 PostToolUse hook：第二模型审核 agent 的输出内容。
 exit(0) = 放行, exit(2) = 阻断。
 """
+import asyncio
 import json
 import sys
+from pathlib import Path
 
-from anthropic import Anthropic
+from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, query
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+
+async def run_second_review(content: str) -> str:
+    options = ClaudeAgentOptions(
+        allowed_tools=[],
+        hooks={},
+        max_turns=1,
+        cwd=str(PROJECT_ROOT),
+        setting_sources=["project"],
+        permission_mode="bypassPermissions",
+    )
+    prompt = (
+        "Review the structured result below.\n"
+        "Check for sensitive data leakage, missing policy support, and contradictions.\n"
+        "Reply with PASS or BLOCK:reason only.\n\n"
+        f"{content}"
+    )
+    async for message in query(prompt=prompt, options=options):
+        if isinstance(message, ResultMessage):
+            return (message.result or "").strip()
+    return ""
 
 hook_input = json.load(sys.stdin)
 
@@ -1403,26 +1428,7 @@ if "logs/results/" not in file_path:
     sys.exit(0)
 
 content = hook_input.get("tool_input", {}).get("content", "")
-
-client = Anthropic()
-response = client.messages.create(
-    model="claude-haiku-4-5-20251001",
-    max_tokens=500,
-    messages=[{
-        "role": "user",
-        "content": f"""审核以下输出的质量：
-1. 是否包含敏感个人信息泄露（身份证号、银行卡号等）
-2. 判定理由是否引用了政策条款
-3. 是否存在逻辑矛盾
-
-输出内容：
-{content}
-
-只回答 PASS 或 BLOCK:原因"""
-    }],
-)
-
-result = response.content[0].text.strip()
+result = asyncio.run(run_second_review(content))
 if result.startswith("BLOCK"):
     print(json.dumps({"error": f"输出审核未通过: {result}"}))
     sys.exit(2)

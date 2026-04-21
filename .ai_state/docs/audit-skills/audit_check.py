@@ -159,8 +159,10 @@ class TripContext:
             if e.get("doc_type") == "itinerary":
                 dr = e.get("date_range", {})
                 s, end = parse_date(dr.get("start")), parse_date(dr.get("end"))
-                if s: starts.append(s)
-                if end: ends.append(end)
+                if s:
+                    starts.append(s)
+                if end:
+                    ends.append(end)
         if starts and ends:
             self.trip_start = min(starts)
             self.trip_end = max(ends)
@@ -421,7 +423,7 @@ def check_07_taxi_daily_limit(ctx: TripContext, r: AuditResult):
 
     for date_str, info in daily_taxi.items():
         if info["total"] <= limit:
-            r.add("pass", "TRA-X01", f"出租车日费用合规",
+            r.add("pass", "TRA-X01", "出租车日费用合规",
                   f"{date_str}: ¥{info['total']:.0f} (上限 ¥{limit}/日)",
                   info["files"])
         else:
@@ -910,10 +912,9 @@ def main():
         json.dump(results, f, ensure_ascii=False, indent=2)
 
     s = results["summary"]
-    total = sum(s.values())
     c = results["context"]
     print(f"\n{'='*60}")
-    print(f"审计引擎 v2.0 — 执行完成")
+    print("审计引擎 v2.0 — 执行完成")
     print(f"{'='*60}")
     print(f"  出差人职级: {c['rank_tier']}")
     print(f"  出差期间:   {c['trip_start']} ~ {c['trip_end']} ({c['trip_days']}天)")

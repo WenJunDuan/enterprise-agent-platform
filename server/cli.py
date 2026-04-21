@@ -19,18 +19,29 @@ from server.core import (
     DEFAULT_OUTPUT_SCHEMA_NAME,
     run_agent_full,
 )
+from server.platform import config as config_module
+from server.platform.asset_validation import validate_knowledge_assets
 from server.platform.config import get_claude_runtime_report
 from server.platform.source_proxy import prepare_text_proxy
-from server.stores.request_store import get_request_audit_by_request_id, list_request_audits
+from server.stores.memory_store import get_memory_record_by_id, list_memory_records
+from server.stores.request_store import (
+    get_request_audit_by_request_id_admin,
+    list_request_audits_admin,
+)
 from server.stores.result_store import (
-    get_result_payload_by_request_id,
-    get_result_record_by_request_id,
-    list_result_records,
+    get_result_payload_by_request_id_admin,
+    get_result_record_by_request_id_admin,
+    list_result_records_admin,
+)
+from server.stores.review_delta_store import (
+    get_review_delta_payload_by_request_id_admin,
+    get_review_delta_record_by_request_id_admin,
+    list_review_delta_records_admin,
 )
 from server.stores.session_store import (
     get_sdk_session_transcript,
-    list_conversation_summaries,
-    list_logged_sessions,
+    list_conversation_summaries_admin,
+    list_logged_sessions_admin,
     new_conversation_id,
 )
 
@@ -189,7 +200,7 @@ def sessions(
 ) -> None:
     """List logged application sessions."""
     _echo_json(
-        list_logged_sessions(
+        list_logged_sessions_admin(
             conversation_id=conversation_id or None,
             limit=limit,
             offset=offset,
@@ -215,21 +226,25 @@ def conversations(
     offset: int = typer.Option(0, help="Starting offset."),
 ) -> None:
     """List conversation summaries."""
-    _echo_json(list_conversation_summaries(limit=limit, offset=offset))
+    _echo_json(list_conversation_summaries_admin(limit=limit, offset=offset))
 
 
 @app.command()
 def requests(
     conversation_id: str = typer.Option("", help="Filter by application conversation id."),
     claude_session_id: str = typer.Option("", help="Filter by Claude session id."),
+    route: str = typer.Option("", help="Filter by route."),
+    status: str = typer.Option("", help="Filter by request status."),
     limit: int = typer.Option(20, help="Maximum records."),
     offset: int = typer.Option(0, help="Starting offset."),
 ) -> None:
     """List serve-level request audits."""
     _echo_json(
-        list_request_audits(
+        list_request_audits_admin(
             conversation_id=conversation_id or None,
             claude_session_id=claude_session_id or None,
+            route=route or None,
+            status=status or None,
             limit=limit,
             offset=offset,
         )
@@ -239,7 +254,7 @@ def requests(
 @app.command("request-detail")
 def request_detail(request_id: str = typer.Argument(..., help="Request id.")) -> None:
     """Show a single serve-level request audit."""
-    record = get_request_audit_by_request_id(request_id=request_id)
+    record = get_request_audit_by_request_id_admin(request_id=request_id)
     if record is None:
         typer.echo("Request not found.")
         raise typer.Exit(code=1)
@@ -250,14 +265,18 @@ def request_detail(request_id: str = typer.Argument(..., help="Request id.")) ->
 def results(
     conversation_id: str = typer.Option("", help="Filter by application conversation id."),
     claim_id: str = typer.Option("", help="Filter by claim id."),
+    verdict: str = typer.Option("", help="Filter by verdict."),
+    manual_review_reason: str = typer.Option("", help="Filter by manual review reason."),
     limit: int = typer.Option(20, help="Maximum records."),
     offset: int = typer.Option(0, help="Starting offset."),
 ) -> None:
     """List archived structured results."""
     _echo_json(
-        list_result_records(
+        list_result_records_admin(
             conversation_id=conversation_id or None,
             claim_id=claim_id or None,
+            verdict=verdict or None,
+            manual_review_reason=manual_review_reason or None,
             limit=limit,
             offset=offset,
         )
@@ -267,25 +286,108 @@ def results(
 @app.command("result-detail")
 def result_detail(request_id: str = typer.Argument(..., help="Request id.")) -> None:
     """Show one archived structured result."""
-    record = get_result_record_by_request_id(request_id=request_id)
+    record = get_result_record_by_request_id_admin(request_id=request_id)
     if record is None:
         typer.echo("Result not found.")
         raise typer.Exit(code=1)
     _echo_json(
         {
             "record": record,
-            "payload": get_result_payload_by_request_id(request_id=request_id),
+            "payload": get_result_payload_by_request_id_admin(request_id=request_id),
+            "linked_memories": list_memory_records(source_request_id=request_id, limit=100, offset=0),
+            "review_delta": get_review_delta_payload_by_request_id_admin(request_id),
         }
     )
 
 
 @app.command()
+def memories(
+    domain: str = typer.Option("", help="Filter by domain."),
+    category: str = typer.Option("", help="Filter by category."),
+    recommended_verdict: str = typer.Option("", help="Filter by recommended verdict."),
+    manual_review_reason: str = typer.Option("", help="Filter by manual review reason."),
+    source_request_id: str = typer.Option("", help="Filter by source request id."),
+    limit: int = typer.Option(20, help="Maximum records."),
+    offset: int = typer.Option(0, help="Starting offset."),
+) -> None:
+    """List indexed memory assets."""
+    _echo_json(
+        list_memory_records(
+            domain=domain or None,
+            category=category or None,
+            recommended_verdict=recommended_verdict or None,
+            manual_review_reason=manual_review_reason or None,
+            source_request_id=source_request_id or None,
+            limit=limit,
+            offset=offset,
+        )
+    )
+
+
+@app.command("memory-detail")
+def memory_detail(memory_id: str = typer.Argument(..., help="Memory id.")) -> None:
+    """Show one indexed memory asset."""
+    record = get_memory_record_by_id(memory_id)
+    if record is None:
+        typer.echo("Memory not found.")
+        raise typer.Exit(code=1)
+    _echo_json(record)
+
+
+@app.command("review-deltas")
+def review_deltas(
+    claim_id: str = typer.Option("", help="Filter by claim id."),
+    final_recommendation: str = typer.Option("", help="Filter by final recommendation."),
+    reviewer_verdict: str = typer.Option("", help="Filter by reviewer verdict."),
+    limit: int = typer.Option(20, help="Maximum records."),
+    offset: int = typer.Option(0, help="Starting offset."),
+) -> None:
+    """List indexed review delta records."""
+    _echo_json(
+        list_review_delta_records_admin(
+            claim_id=claim_id or None,
+            final_recommendation=final_recommendation or None,
+            reviewer_verdict=reviewer_verdict or None,
+            limit=limit,
+            offset=offset,
+        )
+    )
+
+
+@app.command("review-delta-detail")
+def review_delta_detail(request_id: str = typer.Argument(..., help="Request id.")) -> None:
+    """Show one indexed review delta payload."""
+    record = get_review_delta_record_by_request_id_admin(request_id)
+    if record is None:
+        typer.echo("Review delta not found.")
+        raise typer.Exit(code=1)
+    _echo_json(
+        {
+            "record": record,
+            "payload": get_review_delta_payload_by_request_id_admin(request_id),
+        }
+    )
+
+
+@app.command("validate-assets")
+def validate_assets() -> None:
+    """Validate rule and memory assets under knowledge/."""
+    report = validate_knowledge_assets()
+    _echo_json(report)
+    if report["status"] != "ok":
+        raise typer.Exit(code=1)
+
+
+@app.command()
 def serve(
-    host: str = typer.Option("127.0.0.1", help="Bind host."),
-    port: int = typer.Option(8000, help="Bind port."),
+    host: str = typer.Option("", help="Bind host. Defaults to APP_SERVER_HOST."),
+    port: int = typer.Option(0, help="Bind port. Defaults to APP_SERVER_PORT."),
 ) -> None:
     """Start the HTTP API server."""
-    uvicorn.run("server.api:app", host=host, port=port, reload=False)
+    settings = config_module.get_app_settings()
+    resolved_host = host or settings.api_host
+    resolved_port = port or settings.api_port
+    uvicorn.run("server.api:app", host=resolved_host, port=resolved_port, reload=False)
 
 
 if __name__ == "__main__":

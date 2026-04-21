@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Any
@@ -119,6 +120,32 @@ def describe_storage_target(path: Path) -> dict[str, Any]:
         "writable": os.access(writable_target, os.W_OK),
         "parent_exists": path.parent.exists(),
     }
+
+
+def warn_if_store_capacity_exceeded(*, store_name: str, shard_dir: Path, shard_path: Path) -> None:
+    """Log soft warnings when append-only shard storage grows beyond configured limits."""
+    from server.platform.config import get_app_settings
+
+    settings = get_app_settings()
+    shard_size = shard_path.stat().st_size if shard_path.exists() else 0
+    shard_count = len(list_jsonl_files(shard_dir))
+    if (
+        shard_size <= settings.session_store_max_shard_bytes
+        and shard_count <= settings.session_store_max_shards
+    ):
+        return
+
+    logging.getLogger(__name__).warning(
+        "store capacity warning",
+        extra={
+            "store_name": store_name,
+            "shard_path": str(shard_path),
+            "shard_size_bytes": shard_size,
+            "shard_count": shard_count,
+            "max_shard_bytes": settings.session_store_max_shard_bytes,
+            "max_shards": settings.session_store_max_shards,
+        },
+    )
 
 
 def _lock(handle: Any, *, exclusive: bool) -> None:

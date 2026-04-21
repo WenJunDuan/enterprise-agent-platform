@@ -10,16 +10,23 @@ LOGS_ROOT = PROJECT_ROOT / "logs"
 
 SERVICE_LOG_DIR = LOGS_ROOT / "service"
 SERVICE_REQUEST_SHARD_DIR = SERVICE_LOG_DIR / "requests"
+SERVICE_REQUEST_DB_FILE = SERVICE_REQUEST_SHARD_DIR / "index.sqlite3"
 AUDIT_TASK_DIR = SERVICE_LOG_DIR / "audit-tasks"
 AUDIT_TASK_FILE = AUDIT_TASK_DIR / "tasks.json"
 
 SESSION_LOG_DIR = LOGS_ROOT / "sessions"
 SESSION_INDEX_SHARD_DIR = SESSION_LOG_DIR / "index"
+SESSION_INDEX_DB_FILE = SESSION_LOG_DIR / "index.sqlite3"
 SESSION_EVENT_DIR = SESSION_LOG_DIR / "events"
 
 RESULT_LOG_DIR = LOGS_ROOT / "results"
 RESULT_INDEX_SHARD_DIR = RESULT_LOG_DIR / "index"
+RESULT_INDEX_DB_FILE = RESULT_LOG_DIR / "index.sqlite3"
 RESULT_BY_REQUEST_DIR = RESULT_LOG_DIR / "by-request"
+
+REVIEW_LOG_DIR = LOGS_ROOT / "review-deltas"
+REVIEW_DELTA_INDEX_DB_FILE = REVIEW_LOG_DIR / "index.sqlite3"
+REVIEW_DELTA_BY_REQUEST_DIR = REVIEW_LOG_DIR / "by-request"
 
 RUNTIME_LOG_DIR = LOGS_ROOT / "runtime"
 APP_SERVER_DIR = RUNTIME_LOG_DIR / "app-server"
@@ -27,6 +34,9 @@ APP_SERVER_PID_FILE = APP_SERVER_DIR / "server.pid"
 APP_SERVER_STATUS_FILE = APP_SERVER_DIR / "server.status.json"
 APP_SERVER_STDOUT_LOG = APP_SERVER_DIR / "stdout.log"
 APP_SERVER_STDERR_LOG = APP_SERVER_DIR / "stderr.log"
+
+KNOWLEDGE_LOG_DIR = LOGS_ROOT / "knowledge"
+MEMORY_INDEX_DB_FILE = KNOWLEDGE_LOG_DIR / "memory-index.sqlite3"
 
 SUBMISSION_ROOT_DIR = PROJECT_ROOT / "data" / "submissions"
 
@@ -44,8 +54,11 @@ def ensure_local_layout() -> None:
         RESULT_LOG_DIR,
         RESULT_INDEX_SHARD_DIR,
         RESULT_BY_REQUEST_DIR,
+        REVIEW_LOG_DIR,
+        REVIEW_DELTA_BY_REQUEST_DIR,
         RUNTIME_LOG_DIR,
         APP_SERVER_DIR,
+        KNOWLEDGE_LOG_DIR,
         SUBMISSION_ROOT_DIR,
     ]:
         path.mkdir(parents=True, exist_ok=True)
@@ -67,6 +80,13 @@ def build_result_archive_path(request_id: str, timestamp: str | None = None) -> 
     """Build the structured result archive path for one request."""
     moment = _coerce_timestamp(timestamp)
     archive_dir = RESULT_BY_REQUEST_DIR / moment.strftime("%Y") / moment.strftime("%m") / moment.strftime("%d")
+    return archive_dir / f"{request_id}.json"
+
+
+def build_review_delta_archive_path(request_id: str, timestamp: str | None = None) -> Path:
+    """Build the review-delta archive path for one request."""
+    moment = _coerce_timestamp(timestamp)
+    archive_dir = REVIEW_DELTA_BY_REQUEST_DIR / moment.strftime("%Y") / moment.strftime("%m") / moment.strftime("%d")
     return archive_dir / f"{request_id}.json"
 
 

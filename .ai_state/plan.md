@@ -64,7 +64,7 @@
       文件: `server/app_server.py`、`server/api.py`、`server/cli.py`、`README.md`、`tests/test_bootstrap.py`
       依赖: T-013
 
-- [ ] T-015: 固化审核结果中文展示契约；验收标准是内部继续保留 `approved/rejected/manual_review` 三态，对外统一输出 `result/conclusion/explanation`，其中 `manual_review` 固定显示为“待人工复核”且必须说明无法自动放行的原因
+- [x] T-015: 固化审核结果中文展示契约；验收标准是内部继续保留 `approved/rejected/manual_review` 三态，对外统一输出 `result/conclusion/explanation`，其中 `manual_review` 固定显示为“待人工复核”且必须说明无法自动放行的原因
       文件: `.claude/contracts/common/audit-result.schema.json`、`.claude/skills/common/result-format/SKILL.md`、`.claude/hooks/check-before-write.py`、`tests/test_bootstrap.py`
       依赖: T-014
 
@@ -107,3 +107,55 @@
 - [x] L-008: 收口 `docker run` 文档示例，避免手工重复改端口，改为先从 `.env` 提取 `APP_SERVER_PORT` 再执行映射
       文件: `README.md`
       依赖: T-017
+
+- [x] H-001: Python 平台清理 Tier 1+2（2026-04-20）；验收标准是 store `__init__` 类型注解齐全、默认租户密钥有启动告警、store 有容量保护、prompt 外置 + 启动校验、引入统一 logging + correlation id、租户隔离 `tenant` 字段必填、新增 session lifecycle / tenant isolation / prompt load / store capacity / tenant key defaults 测试
+      文件: `server/stores/`、`server/platform/logging_setup.py`、`server/platform/config.py`、`server/platform/diagnostics.py`、`server/prompts/`、`server/command_adapter.py`、`server/api.py`、`server/core.py`、`tests/`
+      依赖: T-014
+
+- [x] H-002: audit 结果 schema 扩展（2026-04-20）；验收标准是 schema 新增 `manual_review_reason` 枚举（7 值）+ `risk_dimensions` 多维打分（5 维 0-10），`core.py` validator 同步校验（`manual_review` 必填合法 reason、score 严格 int 0-10），`prompts/audit.md` 告知 Claude 枚举要求，`README.md` 新字段说明，新增 `tests/test_audit_result_schema.py` 11 用例；保持向后兼容（新字段不入 required）
+      文件: `.claude/contracts/common/audit-result.schema.json`、`server/core.py`、`server/prompts/audit.md`、`README.md`、`tests/test_audit_result_schema.py`
+      依赖: T-014
+
+- [~] H-003: audit P1 Python 业务编排尝试（2026-04-20 已撤销）；原设计是把 Python 拆成"数据搬运层 + Claude 判断层"，新增 `server/audit/` 目录（contracts / intake / extractor / rules_loader / amount_extract / approval_signatures / orchestrator）+ `POST /audit/fast` 单轮端点。判定为越界（Python 不得引入"发票 / 规则 / 金额 / 签字节点"等业务概念），全部删除。经验写入 `.ai_state/lessons.md`
+      文件: （已删除）`server/audit/`、`server/prompts/audit_fast.md`、`tests/test_audit_*.py`；（已回退）`server/api.py`、`server/command_adapter.py`
+      依赖: H-002（撤销不影响 H-002）
+
+## Next Phase — Agent 架构与优化执行序列（2026-04-21）
+
+- [x] A-001: 收口命令单一事实源（2026-04-21）；验收标准是 Python adapter 不再承载独立业务语义，`audit` / `init-rules` 的规则说明只有一份
+      文件: `.claude/commands/`、`server/command_adapter.py`、`README.md`、`.ai_state/design/agent-next-phase-blueprint.md`；实施结果：删除 `server/prompts/audit.md` 与 `server/prompts/init-rules.md`，adapter 统一走 slash command，补充空格参数 quoting，`.claude/commands/audit.md` 历史路径示例已收口
+      依赖: 无
+      Review Gate: command 边界 review
+
+- [x] A-002: 收口 agent / skill 关系并补中间契约（2026-04-21）；验收标准是 extractor 输出与 reviewer 差异都有明确 schema，agent 之间不再只靠自由文本衔接
+      文件: `.claude/agents/expense/`、`.claude/skills/`、`.claude/contracts/`、`README.md`；实施结果：新增 `expense/extract-result.schema.json` 与 `expense/review-delta.schema.json`，同步 extractor / auditor / reviewer 的职责与输入输出边界，补 `tests/test_agent_contracts.py`
+      依赖: A-001
+      Review Gate: schema + 单域主链 review
+
+- [x] A-003: 设计并落地审后业务记忆沉淀层（2026-04-21），形成 `logs/results -> knowledge/memory/` 的回链；验收标准是案例记忆具备独立 schema、保留 `request_id/result_file` 指针，且不混入 Python 业务逻辑
+      文件: `.claude/`、`knowledge/`、`.ai_state/design/agent-next-phase-blueprint.md`；实施结果：新增 `knowledge/_schema/case-memory.schema.json`、`.claude/commands/distill-memory.md`、`.claude/skills/system/memory-distill/SKILL.md`、`knowledge/memory/{expense,hr,legal}/`
+      依赖: A-002
+      Review Gate: 记忆层边界 review
+
+- [x] A-004: 打通单条审核闭环（2026-04-21），接入初始化后的规则与沉淀记忆；验收标准是能基于当前真实输入组织方式完成一次完整 `/audit`，并能解释规则来源与记忆来源
+      文件: `.claude/CLAUDE.md`、`.claude/agents/expense/`、`.claude/hooks/`、`knowledge/expense/`、`knowledge/memory/`；实施结果：新增 `tests/fixtures/expense/travel-missing-preapproval/` 真实输入样例，完成 `/audit -> audit-result -> /distill-memory -> case-memory` 首条本地闭环，新增 `common-memory-query` 并接入 expense 主链，生成首条真实 memory 资产
+      依赖: A-003
+      Review Gate: 真实样例闭环 review
+
+- [x] A-005: 建立规则治理与追溯查询增强（2026-04-21），补齐 `claim_id / review_delta / manual_review_reason` 查询；验收标准是规则资产可校验、结果可追溯、复核差异可检索
+      文件: `knowledge/_schema/`、`knowledge/`、`server/api.py`、`server/cli.py`、`server/stores/`、`tests/`
+      实施结果（第一阶段，2026-04-21）：`request_store` 双写 SQLite 查询索引、`memory_store` 建立 SQLite 索引、`/requests` 和 `/results` 补过滤参数、`/memories` 查询面上线、`/results/{request_id}` 回链 `linked_memories`
+      实施结果（第二阶段，2026-04-21）：新增 `review_delta_store`、`/review-deltas`、`/governance/assets`、CLI `validate-assets`，并完成 rules/memory 资产校验与复核差异查询面
+      依赖: A-004
+      Review Gate: 治理 + 查询面 review
+
+- [x] A-006: 以触发条件驱动的方式扩展多域协同和二次复核成本治理（2026-04-21）；验收标准是 HR/legal 只在明确条件下参与，post-write review 不再默认为全量高成本路径
+      文件: `.claude/CLAUDE.md`、`.claude/agents/`、`.claude/hooks/`、`README.md`；实施结果：在 `CLAUDE.md` 与 `audit.md` 中固化 reviewer / HR / Legal 触发条件，并将 `review-output` hook 收紧为高风险 / 冲突场景触发
+      依赖: A-005
+      Review Gate: 多域协同 + 成本治理 review
+
+- [x] A-007: 项目级整体架构 review + API 返回集优化 + 发布前整理（2026-04-21）；验收标准是查询列表统一返回 `meta`、HTTP 错误统一补结构化 `error` 且保留 `detail` 兼容、README/前端文档同步、全仓 `ruff check .` 与 `pytest` 均通过
+      文件: `server/api.py`、`tests/test_query_surfaces.py`、`README.md`、`.ai_state/docs/前端审核服务对接文档.md`、`.ai_state/docs/audit-skills/audit_check.py`、`.ai_state/reviews/sprint-agent-a007.md`
+      实施结果：为 `/sessions`、`/conversations`、`/requests`、`/results`、`/memories`、`/review-deltas`、`/sessions/{session_id}/messages` 增加 `meta(limit/offset/returned/filters)`；新增统一 HTTP 异常处理，返回 `detail + error{code,message,status_code,path,correlation_id}`；补查询面与错误返回回归测试；修复 `.ai_state/docs/audit-skills/audit_check.py` 的 lint 问题，发布前质量门恢复为全绿
+      依赖: A-006
+      Review Gate: API contract + release cleanup review

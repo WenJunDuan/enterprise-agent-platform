@@ -9,7 +9,7 @@
 | expense | 报销、费用、发票、差旅、招待、借款       | `expense-extractor` → `expense-auditor` → `expense-reviewer` |
 | hr      | 考勤、打卡、迟到、早退、缺勤、请假、调休 | `attendance-checker` / `leave-auditor`                       |
 | legal   | 合同、条款、协议、法务审查               | `contract-reviewer`                                          |
-| system  | 制度导入、规则初始化、政策更新           | `system-rule-init`                                           |
+| system  | 制度导入、规则初始化、政策更新、记忆沉淀 | `system-rule-init` / `system-memory-distill`                 |
 
 ## 路由原则
 
@@ -24,24 +24,40 @@
 
 - 适用于报销申请、费用合规、发票核验、差旅审核、招待审核、借款相关问题。
 - 默认流程是 `expense-extractor` → `expense-auditor`。
-- 当风险较高、证据冲突或用户要求复核时，追加 `expense-reviewer`。
+- 当出现以下任一条件时，追加 `expense-reviewer`：
+  - 用户明确要求复核 / 第二意见
+  - `risk_score >= 70`
+  - 初审输出 `manual_review` 且 `manual_review_reason ∈ {data_conflict, pre_approval_mismatch, missing_approval, invoice_invalid}`
+  - 证据冲突明显，或 extractor / auditor 无法给出单一稳定解释
+- `expense-extractor` 的输出必须符合 `.claude/contracts/expense/extract-result.schema.json`。
+- `expense-reviewer` 的输出必须符合 `.claude/contracts/expense/review-delta.schema.json`。
 
 ### hr
 
 - 考勤异常走 `attendance-checker`。
 - 请假、调休、休假合规走 `leave-auditor`。
 - 当报销问题需要考勤、出勤或休假信息作为旁证时，HR 域作为辅助域参与。
+- 仅在以下条件触发 HR 辅助域：
+  - 差旅/交通类报销涉及周末、节假日、加班、调休、请假、出勤冲突
+  - 报销说明或附件明确出现“考勤 / 打卡 / 请假 / 调休 / 出勤”证据
+  - 需要核对“是否真的发生出差/出勤”这类事实性旁证
 
 ### legal
 
 - 合同、协议、条款审阅走 `contract-reviewer`。
 - 当费用、采购或合作事项需要条款依据时，legal 域可作为辅助域参与。
+- 仅在以下条件触发 legal 辅助域：
+  - 材料中存在合同、协议、条款、补充协议、付款约定等附件
+  - 费用本身需要合同作为前置依据
+  - 高额付款、采购、合作、供应商结算等场景需要用合同条款校验付款合理性
 
 ### system
 
 - 制度文件导入、规则初始化、政策更新走 `system-rule-init`。
+- 审核结果沉淀、案例记忆更新走 `system-memory-distill`。
 - 该域只负责把制度转成结构化规则，不做实际业务审批结论。
 - 制度源材料默认来自 `knowledge/external/`，初始化产物写回 `knowledge/{domain}/`。
+- 业务记忆沉淀产物写回 `knowledge/memory/{domain}/`，并保留 `request_id` / `result_file` 回链。
 - 当用户要求初始化规则时，应优先返回“写入了哪些规则文件、提取了多少规则、哪些条款仍需人工确认”。
 
 ## 结果要求
@@ -64,6 +80,15 @@
 
 - “这笔差旅报销是否符合考勤记录” → `expense` 为主域，`hr` 为辅助域。
 - “合同约定是否支持这笔付款申请” → `legal` 为主域，`expense` 为辅助域。
+
+## 二次复核成本治理
+
+- post-write `review-output` 不是默认全量执行的主审流程。
+- 只有以下结果才值得进入第二道 SDK 复核：
+  - `rejected`
+  - `risk_score >= 70`
+  - `manual_review_reason ∈ {data_conflict, pre_approval_mismatch, missing_approval, invoice_invalid}`
+- 低风险 `approved` 和普通 `manual_review(insufficient_evidence / rule_gap)` 默认不走二审 hook，避免把成本打满。
 
 ## 保守原则
 

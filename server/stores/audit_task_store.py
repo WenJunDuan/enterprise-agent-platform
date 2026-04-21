@@ -22,6 +22,7 @@ ensure_local_layout()
 class AuditTaskRecord:
     request_id: str
     tenant: str | None
+    session_id: str | None
     status: str
     mode: str
     source_mode: str
@@ -48,6 +49,8 @@ def upsert_audit_task(record: dict[str, Any]) -> None:
         merged = {**existing, **record}
         if "tenant" not in merged:
             merged["tenant"] = None
+        if "session_id" not in merged:
+            merged["session_id"] = None
         if "source_mode" not in merged and "mode" in merged:
             merged["source_mode"] = merged["mode"]
         task_record = AuditTaskRecord(**merged)
@@ -55,28 +58,37 @@ def upsert_audit_task(record: dict[str, Any]) -> None:
         append_json_file(AUDIT_TASK_FILE, payload)
 
 
-def get_audit_task(request_id: str, tenant: str | None = None) -> dict[str, Any] | None:
+def get_audit_task(request_id: str, tenant: str) -> dict[str, Any] | None:
     payload = _load_task_map()
     record = payload.get(request_id)
     if not isinstance(record, dict):
         return None
-    if tenant is not None and record.get("tenant") != tenant:
+    if record.get("tenant") != tenant:
         return None
     return record
 
 
-def list_audit_tasks(tenant: str | None = None) -> list[dict[str, Any]]:
+def list_audit_tasks(tenant: str) -> list[dict[str, Any]]:
     payload = _load_task_map()
     records = [value for value in payload.values() if isinstance(value, dict)]
-    if tenant is None:
-        return records
     return [record for record in records if record.get("tenant") == tenant]
+
+
+def get_audit_task_admin(request_id: str) -> dict[str, Any] | None:
+    payload = _load_task_map()
+    record = payload.get(request_id)
+    return record if isinstance(record, dict) else None
+
+
+def list_audit_tasks_admin() -> list[dict[str, Any]]:
+    payload = _load_task_map()
+    return [value for value in payload.values() if isinstance(value, dict)]
 
 
 def recover_stale_audit_tasks(timeout_seconds: int, now: str | None = None) -> list[str]:
     current = _coerce_timestamp(now)
     recovered: list[str] = []
-    for record in list_audit_tasks():
+    for record in list_audit_tasks_admin():
         if record.get("status") != "running":
             continue
         started_at = record.get("started_at") or record.get("updated_at")

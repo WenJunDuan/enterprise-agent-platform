@@ -16,7 +16,7 @@
   - `CLAUDE.md`、settings、agents、skills 的推荐写法
   - 服务端三入口和部署方式
 
-## `.ai_state/docs/frontend-audit-serve-api.md`
+## `.ai_state/docs/前端审核服务对接文档.md`
 
 - 作用: 前端/联调用的异步审核接口说明
 - 重点:

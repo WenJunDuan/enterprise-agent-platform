@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from dataclasses import dataclass
 from functools import lru_cache
@@ -17,6 +18,8 @@ DOTENV_LOADED = load_dotenv(DOTENV_PATH)
 ensure_local_layout()
 
 KNOWN_CLAUDE_MODEL_ALIASES = {"default", "sonnet", "opus", "haiku", "opusplan"}
+DEFAULT_TENANT_KEYS_RAW = '{"default":"sk-default"}'
+_DEFAULT_TENANT_KEY_WARNING_EMITTED = False
 
 
 def _looks_like_native_claude_model(model_name: str) -> bool:
@@ -215,7 +218,14 @@ def _env_int(name: str, default: int) -> int:
 
 def load_tenant_keys() -> dict[str, str]:
     """Load tenant API keys from environment."""
-    raw = os.getenv("TENANT_KEYS", '{"default":"sk-default"}')
+    global _DEFAULT_TENANT_KEY_WARNING_EMITTED
+
+    raw = os.getenv("TENANT_KEYS", DEFAULT_TENANT_KEYS_RAW)
+    if tenant_keys_are_default(raw) and not _DEFAULT_TENANT_KEY_WARNING_EMITTED:
+        logging.warning(
+            "TENANT_KEYS env var not set, using insecure default; set TENANT_KEYS before production."
+        )
+        _DEFAULT_TENANT_KEY_WARNING_EMITTED = True
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as exc:
@@ -225,11 +235,18 @@ def load_tenant_keys() -> dict[str, str]:
     return {str(key): str(value) for key, value in data.items()}
 
 
+def tenant_keys_are_default(raw: str | None = None) -> bool:
+    candidate = raw if raw is not None else os.getenv("TENANT_KEYS", DEFAULT_TENANT_KEYS_RAW)
+    return candidate.strip() == DEFAULT_TENANT_KEYS_RAW
+
+
 @dataclass(frozen=True, slots=True)
 class AppSettings:
     api_host: str
     api_port: int
     allow_unscoped_continue_recent: bool
+    session_store_max_shard_bytes: int
+    session_store_max_shards: int
     session_archive_after_days: int
     audit_task_running_timeout_seconds: int
     submission_retention_days: int
@@ -246,6 +263,8 @@ def get_app_settings() -> AppSettings:
         api_host=os.getenv("APP_SERVER_HOST", "127.0.0.1"),
         api_port=_env_int("APP_SERVER_PORT", 8000),
         allow_unscoped_continue_recent=_env_bool("ALLOW_UNSCOPED_CONTINUE_RECENT", default=False),
+        session_store_max_shard_bytes=_env_int("SESSION_STORE_MAX_SHARD_BYTES", 50 * 1024 * 1024),
+        session_store_max_shards=_env_int("SESSION_STORE_MAX_SHARDS", 24),
         session_archive_after_days=_env_int("SESSION_ARCHIVE_AFTER_DAYS", 7),
         audit_task_running_timeout_seconds=_env_int("AUDIT_TASK_RUNNING_TIMEOUT_SECONDS", 600),
         submission_retention_days=_env_int("SUBMISSION_RETENTION_DAYS", 7),
@@ -264,6 +283,9 @@ def runtime_setting_snapshot() -> dict[str, Any]:
         "api_host": settings.api_host,
         "api_port": settings.api_port,
         "allow_unscoped_continue_recent": settings.allow_unscoped_continue_recent,
+        "tenant_keys_are_default": tenant_keys_are_default(),
+        "session_store_max_shard_bytes": settings.session_store_max_shard_bytes,
+        "session_store_max_shards": settings.session_store_max_shards,
         "session_archive_after_days": settings.session_archive_after_days,
         "audit_task_running_timeout_seconds": settings.audit_task_running_timeout_seconds,
         "submission_retention_days": settings.submission_retention_days,
