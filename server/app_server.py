@@ -62,13 +62,9 @@ def _build_service_urls(host: str, port: int) -> dict[str, str]:
     return {
         "base_url": base_url,
         "health": f"{base_url}/health",
-        "ready": f"{base_url}/ready",
-        "chat": f"{base_url}/chat",
-        "chat_stream": f"{base_url}/chat/stream",
-        "audit": f"{base_url}/audit",
-        "init_rules": f"{base_url}/init-rules",
-        "sessions": f"{base_url}/sessions",
-        "results": f"{base_url}/results",
+        "audit_submit": f"{base_url}/audit/submit",
+        "audit_task_template": f"{base_url}/audit/tasks/{{request_id}}",
+        "audit_result_template": f"{base_url}/audit/tasks/{{request_id}}/result",
     }
 
 
@@ -119,13 +115,11 @@ def _service_http_snapshot(runtime_snapshot: dict[str, object]) -> dict[str, obj
             "running": False,
             "urls": urls,
             "health": {"ok": False, "status_code": None, "payload": None, "error": "app-server is not running"},
-            "ready": {"ok": False, "status_code": None, "payload": None, "error": "app-server is not running"},
         }
     return {
         "running": True,
         "urls": urls,
         "health": _probe_json_endpoint(urls["health"]),
-        "ready": _probe_json_endpoint(urls["ready"]),
     }
 
 
@@ -309,18 +303,9 @@ def maintain() -> None:
 
 
 @app.command()
-def inspect() -> None:
-    """Print a full local diagnostics snapshot without applying exit rules."""
-    payload = collect_runtime_diagnostics()
-    payload["service_http"] = _service_http_snapshot(runtime_status_snapshot())
-    typer.echo(json.dumps(payload, ensure_ascii=False, indent=2))
-
-
-@app.command()
 def doctor(
     strict: bool = typer.Option(False, help="Exit non-zero when diagnostics are degraded."),
     require_running: bool = typer.Option(False, help="Also fail when app-server is not running."),
-    require_ready: bool = typer.Option(False, help="Also fail when /ready does not return healthy."),
 ) -> None:
     """Run shared runtime diagnostics for local operations."""
     report = collect_runtime_diagnostics()
@@ -332,8 +317,6 @@ def doctor(
     if strict and report["status"] != "ok":
         should_fail = True
     if require_running and not bool(report["checks"]["app_server"]["running"]):
-        should_fail = True
-    if require_ready and not bool(service_http["ready"]["ok"]):
         should_fail = True
 
     if should_fail:

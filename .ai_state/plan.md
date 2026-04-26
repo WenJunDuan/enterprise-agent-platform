@@ -159,3 +159,55 @@
       实施结果：为 `/sessions`、`/conversations`、`/requests`、`/results`、`/memories`、`/review-deltas`、`/sessions/{session_id}/messages` 增加 `meta(limit/offset/returned/filters)`；新增统一 HTTP 异常处理，返回 `detail + error{code,message,status_code,path,correlation_id}`；补查询面与错误返回回归测试；修复 `.ai_state/docs/audit-skills/audit_check.py` 的 lint 问题，发布前质量门恢复为全绿
       依赖: A-006
       Review Gate: API contract + release cleanup review
+
+- [x] A-008: README 重写与命令面收口（2026-04-22）；验收标准是 README 先给出快速开始、端口、CLI 两套命令和 HTTP API 总览，关键信息不再埋在长段落里，且文档中的服务命令与当前实现一致
+      文件: `README.md`、`.ai_state/reviews/sprint-agent-a008.md`
+      实施结果：将 README 从“长教程堆叠”重构为“快速开始 → 端口与地址 → 命令总览 → HTTP API → 审核流程 → 查询追溯 → 部署 → 测试排障”的结构，并用 `server.cli --help`、`app-server --help`、`app-server doctor --help` 校验关键命令示例
+      依赖: A-007
+      Review Gate: docs usability review
+
+- [x] A-009: health/ready 返回面瘦身 + 其他接口冗长度巡检（2026-04-22）；验收标准是 `/health` 和 `/ready` 不再暴露完整内部 diagnostics 包，只保留紧凑摘要，且确认其他业务主接口没有同级别的过度暴露问题
+      文件: `server/api.py`、`tests/test_health_endpoints.py`、`tests/test_tenant_key_defaults.py`、`README.md`、`.ai_state/reviews/sprint-agent-a009.md`
+      实施结果：新增公共健康检查摘要层，`/health` 与 `/ready` 现在只返回 `status + app_server + failing_checks + advisories`；完整 diagnostics 保留给 `app-server inspect/doctor`；补健康检查精简回归测试并更新 README，同时审阅其他接口，确认当前冗长返回主要集中在 detail/admin 型接口而非主业务列表面
+      依赖: A-008
+      Review Gate: API surface trim review
+
+- [x] A-010: 删除 `/ready` 与 `inspect`，统一到 `health + doctor`（2026-04-22）；验收标准是公共 HTTP 探针只保留 `/health`，本地运维诊断只保留 `doctor`，README/测试/CLI 帮助与实际实现一致
+      文件: `server/api.py`、`server/app_server.py`、`tests/test_health_endpoints.py`、`tests/test_tenant_key_defaults.py`、`tests/test_cli_serve.py`、`README.md`、`.ai_state/reviews/sprint-agent-a010.md`
+      实施结果：删除 `/ready` 路由，`/health` 改为同时承担状态探针并在 degraded 时返回 `503`；删除 `app-server inspect`，`doctor` 去掉 `--require-ready`；`service_http` 只保留 `health`；补 route/help 回归测试并同步 README
+      依赖: A-009
+      Review Gate: surface deletion review
+
+- [x] A-011: 业务 API / CLI 边界收口 + 业务返回面整理（2026-04-22）；验收标准是 HTTP API 不再与 CLI 重复暴露查询/治理接口，异步审核返回只保留业务必需字段，README/前端对接文档同步说明
+      文件: `server/api.py`、`server/app_server.py`、`tests/test_query_surfaces.py`、`tests/test_tenant_isolation.py`、`tests/test_audit_submit_attachments.py`、`tests/test_cli_serve.py`、`README.md`、`.ai_state/docs/前端审核服务对接文档.md`、`.ai_state/reviews/sprint-agent-a011.md`
+      实施结果：移除 HTTP 上的 `/sessions`、`/conversations`、`/requests*`、`/results*`、`/memories*`、`/review-deltas*`、`/governance/assets`、`/sessions/{session_id}/messages`，将查询/治理统一收回 CLI；`/audit/submit` 删除 `result_url`，`/audit/tasks/{request_id}` 收口为 `request_id/status/mode/claim_id/error_detail/progress_message/submitted_at/started_at/finished_at/updated_at`；`app-server doctor` 的服务 URL 快照同步去掉已删除的查询面
+      依赖: A-010
+      Review Gate: business-vs-cli boundary review
+
+- [x] A-012: 最小业务 HTTP 面落地（2026-04-22）；验收标准是 HTTP 只保留 `health + audit submit/status/result`，命令型能力全部收回 CLI，README 与前端文档同步更新
+      文件: `server/api.py`、`server/app_server.py`、`tests/test_query_surfaces.py`、`tests/test_cli_serve.py`、`tests/test_audit_submit_attachments.py`、`README.md`、`.ai_state/docs/前端审核服务对接文档.md`、`.ai_state/reviews/sprint-agent-a012.md`
+      实施结果：移除 HTTP 上的 `/chat`、`/chat/stream`、`/audit`、`/init-rules`，当前公开 HTTP 只剩 `/health`、`/audit/submit`、`/audit/tasks/{request_id}`、`/audit/tasks/{request_id}/result`；`app-server doctor` 的 URL 快照同步改为这组最小业务面；测试与文档已全部对齐
+      依赖: A-011
+      Review Gate: minimal-http-surface review
+
+## Sprint 2 修复计划 — React Frontend Gate Recovery（2026-04-24）
+
+- [x] S2-FIX-001: 修复过期的 store capacity 测试；验收标准是 `tests/test_store_capacity.py` 不再导入已删除的 `JSONLResultStore`，并与当前 SQLite result store 边界一致。
+      文件: `tests/test_store_capacity.py`、必要时 `server/stores/result_store.py`
+      风险: 不能为了让测试通过恢复已裁剪的 JSONL result index 主路径。
+- [x] S2-FIX-002: 修复 Vite/TypeScript 环境类型；验收标准是 `cd ui && npm run build` 通过，且不提交 `ui/.env.local` 与 `ui/node_modules/`。
+      文件: `ui/src/vite-env.d.ts` 或等效 Vite 类型声明
+      风险: 只补类型声明，不改 API client 行为。
+- [x] S2-FIX-003: 回归后端质量门；验收标准是 `UV_CACHE_DIR=/tmp/uv-cache uv run pytest -q` 与 `UV_CACHE_DIR=/tmp/uv-cache uv run ruff check .` 通过。
+      文件: `tests/`、必要时 `.ai_state/reviews/sprint-2.md`
+      风险: 若发现 unrelated 旧失败，只记录并隔离，不扩大修复面。
+- [x] S2-FIX-004: 同步 `.ai_state` 真实状态；验收标准是 `tasks.md`、`progress.md`、`reviews/sprint-2.md` 反映实际验证结果，不再保留虚假 PASS。
+      文件: `.ai_state/tasks.md`、`.ai_state/progress.md`、`.ai_state/reviews/sprint-2.md`
+      风险: 文档必须以验证命令输出为准。
+
+## Sprint 2 Review Closure Plan（2026-04-26）
+
+- [x] S2-REV-001: 修正 `.ai_state/design.md` 中过期的 HTTP 查询面、后端变更与 SSE 描述。
+- [x] S2-REV-002: 修正前端对接文档中的接口数量、`GET /audit/tasks`、`VITE_API_BASE` / `VITE_API_KEY`。
+- [x] S2-REV-003: 新增 `.ai_state/init.sh`，让 review/impl 阶段 get-bearings 可执行。
+- [x] S2-REV-004: 完成主线自审、质量门验证、lessons 追加，并将 Sprint 2 推进到 ship 阶段。

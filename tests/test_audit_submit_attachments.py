@@ -1,12 +1,4 @@
-"""Regression tests for /audit/submit attachment handling.
-
-Covers the two must-work cases for the multipart upload mode:
-- zero attachments (pure form submission)
-- one or more attachments
-
-The guard that used to reject empty `files` lists has been removed; these
-tests pin the behaviour so a future regression cannot silently restore it.
-"""
+"""Regression tests for /audit/submit attachment handling."""
 
 from __future__ import annotations
 
@@ -76,7 +68,7 @@ def _multipart_body_without_files(form_payload: dict) -> tuple[bytes, str]:
     return body, content_type
 
 
-def test_audit_submit_upload_without_files(
+def test_audit_submit_upload_without_files_returns_400(
     client: TestClient,
     isolated_submissions: Path,
     auth_headers: dict[str, str],
@@ -89,14 +81,9 @@ def test_audit_submit_upload_without_files(
         headers={**auth_headers, "Content-Type": content_type},
     )
 
-    assert response.status_code == 200, response.text
-    payload = response.json()
-    assert payload["status"] == "accepted"
-    assert payload["mode"] == "upload"
-
-    audit_request = _read_audit_request(isolated_submissions, payload["request_id"])
-    assert audit_request["attachments"] == []
-    assert audit_request["form"]["case_id"] == VALID_FORM["case_id"]
+    assert response.status_code == 400, response.text
+    assert response.json()["detail"] == "At least one file is required for upload mode"
+    assert not any(isolated_submissions.iterdir())
 
 
 def test_audit_submit_upload_with_multiple_files(
@@ -124,6 +111,7 @@ def test_audit_submit_upload_with_multiple_files(
     payload = response.json()
     assert payload["status"] == "accepted"
     assert payload["mode"] == "upload"
+    assert "result_url" not in payload
 
     audit_request = _read_audit_request(isolated_submissions, payload["request_id"])
     attachments = audit_request["attachments"]

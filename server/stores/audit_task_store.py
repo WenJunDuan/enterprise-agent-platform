@@ -68,10 +68,18 @@ def get_audit_task(request_id: str, tenant: str) -> dict[str, Any] | None:
     return record
 
 
-def list_audit_tasks(tenant: str) -> list[dict[str, Any]]:
+def list_audit_tasks(
+    tenant: str,
+    status: str | None = None,
+    limit: int = 20,
+    offset: int = 0,
+) -> list[dict[str, Any]]:
     payload = _load_task_map()
-    records = [value for value in payload.values() if isinstance(value, dict)]
-    return [record for record in records if record.get("tenant") == tenant]
+    records = [v for v in payload.values() if isinstance(v, dict) and v.get("tenant") == tenant]
+    if status:
+        records = [r for r in records if r.get("status") == status]
+    records.sort(key=lambda r: str(r.get("submitted_at") or r.get("updated_at") or ""), reverse=True)
+    return records[offset : offset + limit]
 
 
 def get_audit_task_admin(request_id: str) -> dict[str, Any] | None:

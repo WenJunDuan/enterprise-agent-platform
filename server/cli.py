@@ -21,6 +21,7 @@ from server.core import (
 )
 from server.platform import config as config_module
 from server.platform.asset_validation import validate_knowledge_assets
+from server.platform.maintenance import run_maintenance
 from server.platform.config import get_claude_runtime_report
 from server.platform.source_proxy import prepare_text_proxy
 from server.stores.memory_store import get_memory_record_by_id, list_memory_records
@@ -176,14 +177,16 @@ def init_rules(
     """Initialize structured rules from a source document."""
     _ensure_cli_runtime()
     try:
-        canonical_source, _ = prepare_text_proxy(source, INIT_RULES_PROXY_DIR)
+        canonical_source, proxy_path = prepare_text_proxy(source, INIT_RULES_PROXY_DIR)
     except ValueError as exc:
         raise typer.BadParameter(str(exc), param_hint="source") from exc
+
+    readable_source = proxy_path if proxy_path else canonical_source
 
     async def _run() -> tuple[dict | list, AgentRunMeta]:
         return await run_command_json(
             "init-rules",
-            canonical_source,
+            readable_source,
             domain,
             conversation_id=new_conversation_id(),
             schema_name=INIT_RULES_REPORT_SCHEMA_NAME,
@@ -376,6 +379,13 @@ def validate_assets() -> None:
     _echo_json(report)
     if report["status"] != "ok":
         raise typer.Exit(code=1)
+
+
+@app.command()
+def maintenance() -> None:
+    """Run local maintenance tasks: rotate logs, archive sessions, clean up submissions."""
+    report = run_maintenance()
+    _echo_json(report)
 
 
 @app.command()
