@@ -315,16 +315,17 @@ curl -X POST "http://127.0.0.1:${APP_SERVER_PORT}/audit/submit" \
 curl -X POST "http://127.0.0.1:${APP_SERVER_PORT}/audit/submit" \
   -H "Authorization: Bearer ${TOKEN}" \
   -F 'mode=upload' \
-  -F 'form_json={"case_id":"case1","applicant_name":"张三","expense_type":"业务招待"}' \
+  -F 'form_json={"company_form_id":"case1","payload":{"任意字段":"任意值"}}' \
   -F 'files=@data/case1/dzfp_26322000002323013701_南通烛照智能云平台有限公司_20260326133128.pdf'
 ```
 
 上传校验：
 
-- `form_json` 必须是 JSON 对象
-- 必填字段是 `case_id`、`applicant_name`、`expense_type`
-- 上传模式必须至少包含 1 个 `files` 附件
-- 支持的扩展名：`.pdf`、`.png`、`.jpg`、`.jpeg`、`.webp`
+- `form_json` 可选；传入时必须是 JSON 对象
+- 除 `mode` / `form_json` / `files` 外的普通 multipart 文本字段会原样归档到 `fields`
+- Python 不校验任何业务字段；不同公司、不同业务线的表单语义交给 Claude agent 审核
+- `files` 可选，支持 0 个或多个附件；服务端不按业务扩展名白名单拦截
+- 只有完全空的上传（无 `form_json`、无普通字段、无附件）会被拒绝
 - 空文件会被拒绝
 - 文件大小不能超过 `MAX_UPLOAD_FILE_BYTES`
 

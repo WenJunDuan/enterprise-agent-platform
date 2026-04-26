@@ -1,4 +1,4 @@
-import type { AuditTask, AuditResult, SubmitFormData, SubmitAcceptedResponse } from '../types'
+import type { AuditTask, AuditResult, SubmitAcceptedResponse } from '../types'
 
 const BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? '/'
 const API_KEY = (import.meta.env.VITE_API_KEY as string | undefined) ?? ''
@@ -44,12 +44,14 @@ export async function listTasks(params?: {
 }
 
 export async function submitExpense(
-  formData: SubmitFormData,
-  files: File[],
+  formData: unknown,
+  files: File[] = [],
 ): Promise<SubmitAcceptedResponse> {
   const body = new FormData()
   body.append('mode', 'upload')
-  body.append('form_json', JSON.stringify(formData))
+  if (formData != null) {
+    body.append('form_json', JSON.stringify(formData))
+  }
   for (const file of files) {
     body.append('files', file)
   }

@@ -12,12 +12,14 @@ from server import api as api_module
 
 
 VALID_FORM = {
-    "case_id": "TEST-CASE-001",
-    "applicant_name": "测试人",
-    "expense_type": "业务招待",
+    "company_form_id": "TEST-CASE-001",
+    "payload": {
+        "任意字段": "测试值",
+        "业务类型": "由 Claude 识别",
+    },
 }
 
-# 8-byte PNG signature + zero padding; passes _validate_upload_bytes (.png + non-empty).
+# 8-byte PNG signature + zero padding; passes non-empty upload checks.
 PNG_BYTES = bytes.fromhex("89504E470D0A1A0A") + b"\x00" * 16
 
 
@@ -68,7 +70,7 @@ def _multipart_body_without_files(form_payload: dict) -> tuple[bytes, str]:
     return body, content_type
 
 
-def test_audit_submit_upload_without_files_returns_400(
+def test_audit_submit_upload_without_files_is_accepted(
     client: TestClient,
     isolated_submissions: Path,
     auth_headers: dict[str, str],
@@ -81,9 +83,14 @@ def test_audit_submit_upload_without_files_returns_400(
         headers={**auth_headers, "Content-Type": content_type},
     )
 
-    assert response.status_code == 400, response.text
-    assert response.json()["detail"] == "At least one file is required for upload mode"
-    assert not any(isolated_submissions.iterdir())
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["status"] == "accepted"
+
+    audit_request = _read_audit_request(isolated_submissions, payload["request_id"])
+    assert audit_request["form"] == VALID_FORM
+    assert audit_request["fields"] == {}
+    assert audit_request["attachments"] == []
 
 
 def test_audit_submit_upload_with_multiple_files(
@@ -98,6 +105,7 @@ def test_audit_submit_upload_with_multiple_files(
     data = {
         "mode": "upload",
         "form_json": json.dumps(VALID_FORM),
+        "company_specific_field": "any text value",
     }
 
     response = client.post(
@@ -114,6 +122,8 @@ def test_audit_submit_upload_with_multiple_files(
     assert "result_url" not in payload
 
     audit_request = _read_audit_request(isolated_submissions, payload["request_id"])
+    assert audit_request["form"] == VALID_FORM
+    assert audit_request["fields"] == {"company_specific_field": "any text value"}
     attachments = audit_request["attachments"]
     assert len(attachments) == 2
     names = sorted(entry["name"] for entry in attachments)
@@ -121,3 +131,23 @@ def test_audit_submit_upload_with_multiple_files(
     for entry in attachments:
         assert entry["type"] == "uploaded"
         assert entry["path"], "serialized path should not be empty"
+
+
+def test_audit_submit_upload_accepts_arbitrary_file_extension(
+    client: TestClient,
+    isolated_submissions: Path,
+    auth_headers: dict[str, str],
+) -> None:
+    response = client.post(
+        "/audit/submit",
+        data={"mode": "upload", "custom_field": "no fixed business schema"},
+        files={"files": ("invoice-export.xlsx", b"spreadsheet-bytes", "application/octet-stream")},
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    audit_request = _read_audit_request(isolated_submissions, payload["request_id"])
+    assert audit_request["form"] == {}
+    assert audit_request["fields"] == {"custom_field": "no fixed business schema"}
+    assert audit_request["attachments"][0]["name"] == "invoice-export.xlsx"

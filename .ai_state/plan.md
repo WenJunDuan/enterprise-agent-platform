@@ -211,3 +211,70 @@
 - [x] S2-REV-002: 修正前端对接文档中的接口数量、`GET /audit/tasks`、`VITE_API_BASE` / `VITE_API_KEY`。
 - [x] S2-REV-003: 新增 `.ai_state/init.sh`，让 review/impl 阶段 get-bearings 可执行。
 - [x] S2-REV-004: 完成主线自审、质量门验证、lessons 追加，并将 Sprint 2 推进到 ship 阶段。
+
+## Sprint 3 Plan — 真实报销填报与列表增强（2026-04-26）
+
+### WHY
+
+当前 `ui/` 只覆盖最小审核提交：案例编号、申请人、费用类型、附件。它能打通链路，但不像真实发票报销：缺少申请人/部门/成本中心、发票与金额拆分、行程/招待/借款/审批信息、异常场景选择、附件分类与列表筛选。Sprint 3 目标是把 UI 提升为“真实复杂报销单模拟器”，但不把业务判断下沉到 Python。
+
+### Contract Boundary
+
+- 后端 `POST /audit/submit` 不校验业务字段；只校验传输外壳、安全落盘和可解析性。
+- 前端可以把任意公司/业务线字段放入 `form_json`，也可以用普通 multipart 文本字段；字段语义由 Claude 审核链路读取。
+- `files` 附件为可选的 0 个或多个，Python 不按业务扩展名白名单拦截，只保留文件名安全、非空文件和大小限制。
+- 不新增 HTTP 业务路由；继续使用 `/audit/submit`、`/audit/tasks`、`/audit/tasks/{request_id}`、`/audit/tasks/{request_id}/result`。
+- 不在 Python 中新增发票/金额/规则/审批判断逻辑。
+
+### Scope
+
+- 表单页改为多区块真实报销填报：基础信息、费用明细、发票信息、行程/招待信息、审批与借款、异常场景、附件上传与提交预览。
+- 列表页增强业务信息密度：统计卡片、状态过滤、关键词搜索、风险/异常标签、本地提交摘要回显。
+- 使用浏览器 `localStorage` 保存最近提交的表单摘要，用于弥补后端任务列表目前只返回 `claim_id`/状态时间线、不返回完整表单 payload 的限制。
+- 维持现有 Tailwind + React Router 结构，不引入 UI 框架或后端依赖。
+
+### Non-Scope
+
+- 不改 Claude 审核 prompt/规则。
+- 不新增数据库字段或任务状态 schema。
+- 不上传附件内容做前端解析；只展示文件名、类型、大小、附件分类。
+- 不做真实 OCR、发票查验或预算校验；这些只作为模拟字段和异常勾选项进入 `form_json`。
+
+### Proposed UI Model
+
+表单字段按真实报销场景组织：
+
+- 基础信息：报销单号、申请人、部门、成本中心、项目/客户、申请日期、币种、紧急程度、费用类型。
+- 金额信息：总金额、税额、未税金额、支付方式、是否公司卡、是否预付/借款、借款单号、预算科目。
+- 发票信息：发票类型、发票号码、发票代码、开票日期、销售方、纳税人识别号、发票验真状态、是否抬头不符。
+- 差旅信息：出发/到达城市、开始/结束日期、交通方式、住宿晚数、同行人数、是否事前申请。
+- 招待信息：招待对象、客户公司、参与人数、人均金额、招待时段、业务目的。
+- 审批与异常：审批单号、审批人、事前审批状态、预算超额、重复发票、附件缺失、金额不一致、跨期报销、超标准住宿/招待。
+- 附件：发票、行程单、付款凭证、审批单、合同/订单、其他；每个附件可选分类，提交前展示清单。
+
+### Acceptance Criteria
+
+- `SubmitExpense` 至少覆盖 30 个真实报销字段，并能根据费用类型展示差旅/招待等场景字段。
+- 提交 payload 不依赖后端业务必填字段；复杂字段进入 `form_json` 并由 Claude 解释。
+- 附件上传支持 0 个或多个文件、附件分类、大小展示、删除单个文件。
+- 提交前展示 JSON/摘要预览，便于验证模拟场景。
+- `TaskList` 展示状态统计、关键词搜索、费用类型/异常标签、本地摘要；无本地摘要时保持后端任务列表可用。
+- `TaskDetail` 若能命中本地摘要，展示提交时的业务表单摘要和附件摘要。
+- `cd ui && npm run build` 通过；后端 `pytest`/`ruff` 不因类型或契约漂移失败。
+
+### Implementation Tasks
+
+- [x] S3-T0: 调整 `/audit/submit` 为无业务字段约束的通用 multipart intake，测试覆盖无固定字段、附件可选、任意扩展名归档。
+- [x] S3-T1: 扩展 `SubmitFormData` 类型为真实报销模板 payload，但不把模板字段作为后端必填边界。
+- [x] S3-T2: 新增前端本地提交摘要存储工具，用 `request_id` 关联 form summary / attachment summary / scenario flags。
+- [x] S3-T3: 重构 `SubmitExpense` 为多区块复杂表单，含场景字段、异常勾选、附件分类与预览。
+- [x] S3-T4: 增强 `TaskList`，增加统计卡、关键词搜索、摘要列、异常标签和更真实的空状态。
+- [x] S3-T5: 增强 `TaskDetail`，展示本地提交摘要、附件摘要、异常场景与原始结果。
+- [x] S3-T6: 同步 `.ai_state/design.md`、前端对接文档与 README 的 UI 使用说明。
+- [x] S3-T7: 运行 `cd ui && npm run build`、`UV_CACHE_DIR=/tmp/uv-cache uv run pytest -q`、`UV_CACHE_DIR=/tmp/uv-cache uv run ruff check .`。
+
+### Risks
+
+- 后端任务列表不返回完整 form payload，因此列表业务摘要只能依赖 `localStorage`；跨浏览器/清缓存后会降级为只展示后端字段。
+- 字段很多会让单页变重，需要用分区、默认值和场景预设降低填报成本。
+- 前端模板字段只是示例 UI 模型，不能再被文档或测试描述成 Python 必填契约。

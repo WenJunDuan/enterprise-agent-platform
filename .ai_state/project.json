@@ -1,6 +1,6 @@
 {
   "path": "/Users/mi_manchi/workspace/enterprise-agent-platform",
-  "stage": "",
+  "stage": "ship",
   "sprint": 3,
   "path_kind": "Feature",
   "tech_stack": "python>=3.12, claude-agent-sdk, fastapi, typer, uvicorn",

@@ -33,3 +33,8 @@
 - **Pitfall**: `.ai_state/reviews/sprint-2.md` 曾出现 local PASS 早于真实 gate 的情况；以后进入 review 前必须实际跑 `pytest`、`ruff`、前端 build，并把失败先写回 review。
 - **Constraint**: Vite 环境变量必须有 `ui/src/vite-env.d.ts:1` 的 `vite/client` 类型声明；否则 `ui/src/api/client.ts` 的 `import.meta.env.VITE_API_BASE` / `VITE_API_KEY` 无法通过 `tsc`。
 - **Constraint**: review/impl 阶段的 session-start 会尝试执行 `.ai_state/init.sh`；项目必须保留一个无副作用、可重复运行的 init 脚本（`.ai_state/init.sh:1`）。
+
+## [2026-04-26 Sprint 3] 上传入口只做通用 intake
+- **Pattern**: 通用表单入口应把 `form_json` 解析、普通 multipart 字段归档和附件落盘拆开处理，`server/api.py:315` 解析可选 JSON，`server/api.py:302` 收集普通字段，`server/api.py:380` 写入统一 `audit-request.json`。
+- **Pitfall**: 前端模板字段很容易被文档和测试误固化成 Python 必填契约；`tests/test_audit_submit_attachments.py:77` 应覆盖无附件仍可提交，`tests/test_api.py:55` 应覆盖无 `form_json` 的附件提交。
+- **Constraint**: UI 对接层必须用通用 payload 和可选附件，`ui/src/api/client.ts:46` 接收 `unknown` formData 和默认空 `File[]`，`ui/src/pages/SubmitExpense.tsx:373` 不再因 0 附件阻断提交。

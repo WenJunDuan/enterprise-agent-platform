@@ -36,3 +36,25 @@
 - [x] S2-REV-002: Sync frontend integration docs with `VITE_API_BASE` / `VITE_API_KEY` and task-list API
 - [x] S2-REV-003: Add `.ai_state/init.sh` so review/impl get-bearings no longer fails
 - [x] S2-REV-004: Record final review closure, lessons, and stage transition to ship
+
+# Sprint 3 Tasks — 真实报销填报与列表增强
+
+## Checklist
+
+- [x] S3-T0: Convert `/audit/submit` upload intake to business-agnostic form and attachment archiving
+- [x] S3-T1: Expand `SubmitFormData` for realistic reimbursement template payload without backend-required business fields
+- [x] S3-T2: Add local submission summary storage keyed by `request_id`
+- [x] S3-T3: Rebuild `SubmitExpense` into multi-section reimbursement form with scenario flags and attachment categories
+- [x] S3-T4: Enhance `TaskList` with statistics, search, business summary columns, and anomaly tags
+- [x] S3-T5: Enhance `TaskDetail` with submitted form summary and attachment summary when available
+- [x] S3-T6: Sync `.ai_state`/README/frontend docs with the richer UI contract
+- [x] S3-T7: Validate backend and frontend quality gates
+
+## Acceptance Criteria
+
+- Submit form contains realistic invoice reimbursement sections and at least 30 business fields.
+- Upload supports optional attachments, attachment categories, file size display, and removal.
+- Extra fields are serialized into `form_json`; backend no longer requires `case_id`, `applicant_name`, or `expense_type`.
+- Task list remains usable with only backend data, and becomes richer when local summaries are available.
+- Task detail shows local submitted payload summary when available without depending on new backend APIs.
+- `cd ui && npm run build`, `UV_CACHE_DIR=/tmp/uv-cache uv run pytest -q`, and `UV_CACHE_DIR=/tmp/uv-cache uv run ruff check .` pass.
