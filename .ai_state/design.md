@@ -4,7 +4,7 @@
 
 - `.claude/`: agents、skills、hooks、commands、contracts，承载业务工作流与输出契约
 - `knowledge/`: 结构化制度和规则资产
-- `server/api.py`: HTTP serve 接口、租户鉴权、健康检查、业务 command JSON API、请求/会话/结果查询
+- `server/api.py`: 最小业务 HTTP 接口、租户鉴权、健康检查、异步审核提交/状态/结果读取
 - `server/core.py`: Claude Agent SDK 桥接、结构化输出约束、会话控制、事件记录
 - `server/command_adapter.py`: Python 对 Claude slash command 的统一调用适配层
 - `server/cli.py`: 本地 CLI 外壳，负责终端参数解析与终端输出
@@ -21,10 +21,10 @@
 - 结构化输出通过 Claude Agent SDK `output_format` + JSON Schema 强制约束，不再依赖 prompt 文本声明。
 - 审核输出继续保留内部 `approved / rejected / manual_review` 三态，但对外统一映射为 `result/conclusion/explanation` 中文展示字段；其中 `manual_review` 固定显示为“待人工复核”，且必须说明无法自动放行的原因。
 - `request_id` 是全链路审计主键；`conversation_id` 表示应用级会话；`claude_session_id` 对应 Claude SDK 的可恢复会话。
-- HTTP 查询类列表接口统一返回 `items + meta`；`meta` 当前至少包含 `limit / offset / returned`，有过滤条件时追加 `filters`，不伪造总量字段。
+- 查询/治理能力已收回 CLI；HTTP 只保留前端业务主链路与健康探针，不再重复暴露 `/requests`、`/results`、`/memories` 等治理面。
 - HTTP 错误响应统一保留兼容字段 `detail`，并补充结构化 `error{code,message,status_code,path,correlation_id}`；其中 `correlation_id` 与响应头 `X-Request-ID` 对齐，用于联调与日志追踪。
 - Python 不拥有业务能力实现；`init-rules`、`audit` 等能力定义在 `.claude/commands` / `.claude/skills`，CLI 与 serve 只通过统一 adapter 调用这些 Claude 能力。
-- serve 层现已提供异步审核提交能力：`POST /audit/submit` 统一接收目录模式与上传模式，`GET /audit/tasks/{request_id}` 提供状态轮询，`GET /audit/tasks/{request_id}/result` 提供轻量结果读取。
+- serve 层现已提供异步审核提交能力：`POST /audit/submit` 统一接收目录模式与上传模式（上传模式至少 1 个 `files` 附件），`GET /audit/tasks` 提供任务列表，`GET /audit/tasks/{request_id}` 提供状态轮询，`GET /audit/tasks/{request_id}/result` 提供轻量结果读取。
 - 前台调试入口是 `python -m server.cli serve`；后台常驻入口是 `uv run app-server start`，两者本质上都启动同一个 Python 服务进程。
 - 本地存储当前采用“请求日志/运行日志保留文件，request/session/result/review-delta/memory 查询索引使用 SQLite，结果归档保留 JSON 文件”的混合布局；后续如需升级到 PostgreSQL，优先迁移查询索引层，不改 Claude 业务侧内容。
 - 顶层 `data/` 和 `raw_policies/` 不是当前仓库正式目录；测试数据应收敛到 `tests/`，真实制度源材料当前放在 `knowledge/external/`。
@@ -50,7 +50,7 @@
 - 结果、请求、会话三层都用 `request_id` 串联，保证可恢复、可追溯。
 - 请求审计仍保留按月分片 JSONL；request/session/result/review-delta/memory 查询索引已切到 SQLite。
 - 原始事件流和结构化结果分离存储：前者保留过程，后者保留最终归档。
-- CLI 与 serve 共享同一套 Claude command 调用适配层；差异只体现在终端输出与 HTTP JSON/SSE 输出。
+- CLI 与 serve 共享同一套 Claude command 调用适配层；差异只体现在终端输出与 HTTP JSON 输出。
 - 后续如果接 PostgreSQL，优先迁移 `request/session/result/review-delta/memory` 查询索引层，不改 Claude 业务侧内容。
 
 ## 记忆分层
@@ -65,3 +65,93 @@
 - 旧 `server/logs` 路径已废弃；真实运行数据统一写入项目根 `logs/`。
 - 仓储层不再读取 legacy 单文件日志，也不再保留 `output/results/` 兼容实现。
 - 文档与命令中仍有少量 `data/claims`、`raw_policies/...` 的历史示例路径，需要在下一阶段统一到当前仓库目录模型。
+
+---
+
+## Sprint 2 — React Frontend Architecture
+
+### WHY
+
+The backend FastAPI audit platform has no user-facing UI. Engineers must call raw HTTP endpoints to submit expense claims and track status. A lightweight React SPA eliminates that friction without changing the backend contract.
+
+### System Boundaries
+
+```
+Browser
+  │
+  ├─ ui/  (Vite dev server :5173)
+  │    ├─ Proxy: /audit/* → http://localhost:8000
+  │    └─ Proxy: /health  → http://localhost:8000
+  │
+  └─ server/  (FastAPI :8000)
+       └─ CORSMiddleware: allow_origins=[":5173"]
+```
+
+### Frontend Stack
+
+| Layer | Choice | Rationale |
+|-------|--------|-----------|
+| Bundler | Vite 5 | Fast HMR, native ESM, built-in proxy |
+| UI lib | React 18 | Concurrent features, large ecosystem |
+| Language | TypeScript 5 | Type-safe API contracts |
+| Styling | Tailwind CSS v3 | Utility-first, no runtime overhead |
+| Routing | React Router v6 | File-like routes, loader-friendly |
+
+### Directory Layout
+
+```
+ui/
+├── index.html
+├── package.json
+├── vite.config.ts          # proxy config
+├── tsconfig.json
+├── tsconfig.node.json
+├── tailwind.config.js
+├── postcss.config.js
+├── .env.local              # VITE_API_KEY=sk-default (gitignored)
+├── .gitignore
+└── src/
+    ├── main.tsx            # createRoot entry
+    ├── index.css           # @tailwind directives
+    ├── App.tsx             # BrowserRouter + Routes
+    ├── api/
+    │   └── client.ts       # fetch wrapper, Bearer auth injection
+    ├── types/
+    │   └── index.ts        # AuditTask, AuditResult, etc.
+    ├── components/
+    │   ├── Layout.tsx      # top nav shell
+    │   └── StatusBadge.tsx # color-coded status pill
+    └── pages/
+        ├── TaskList.tsx    # table, filter, pagination
+        ├── SubmitExpense.tsx # upload form
+        └── TaskDetail.tsx  # detail + 3s polling + result
+```
+
+### Pages & Routes
+
+| Route | Component | Description |
+|-------|-----------|-------------|
+| `/` | TaskList | Paginated task table with status filter |
+| `/submit` | SubmitExpense | Multipart form → POST /audit/submit |
+| `/tasks/:id` | TaskDetail | Status polling + result display |
+
+### API Integration
+
+- Base URL: `import.meta.env.VITE_API_BASE` (default `/`)
+- Auth: `Authorization: Bearer ${VITE_API_KEY}` injected by `api/client.ts` on every request
+- API key stored in `ui/.env.local` — never committed (in `.gitignore`)
+- Task list uses `GET /audit/tasks?status=&limit=&offset=` and expects a plain `AuditTask[]`.
+- Submit form uses multipart `POST /audit/submit`; upload mode requires at least one `files` part.
+
+### Polling Strategy
+
+TaskDetail polls `GET /audit/tasks/:id` every 3 seconds when `status ∈ {accepted, running}`.
+Poll stops (interval cleared) when `status ∈ {completed, failed}` or component unmounts.
+Result is fetched once on transition to `completed`.
+
+### Backend Changes
+
+- Add `CORSMiddleware` after `app = FastAPI(...)` to allow `http://localhost:5173`.
+- Add `GET /audit/tasks` as the frontend task-list endpoint; the route is registered before `GET /audit/tasks/{request_id}`.
+- Keep `/audit/submit` upload mode strict: `form_json` is required and at least one `files` part must be present.
+- Preserve the minimal HTTP boundary: no `/requests`, `/results`, `/memories`, `/review-deltas`, `/chat`, `/audit`, or `/init-rules` routes.

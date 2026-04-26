@@ -15,14 +15,6 @@ def test_tenant_b_cannot_see_tenant_a_records(
     query_recorder,
     isolated_local_layout: dict[str, Path],
 ) -> None:
-    chat_response = client.post(
-        "/chat",
-        json={"message": "tenant A seed", "conversation_id": "conv-tenant-a"},
-        headers=auth_headers["tenantA"],
-    )
-    assert chat_response.status_code == 200, chat_response.text
-    chat_payload = chat_response.json()
-
     case_dir = isolated_local_layout["project_root"] / "data" / "case-a"
     case_dir.mkdir(parents=True, exist_ok=True)
     (case_dir / "receipt.txt").write_text("tenant A audit input", encoding="utf-8")
@@ -44,36 +36,6 @@ def test_tenant_b_cannot_see_tenant_a_records(
         )
     )
 
-    sessions = client.get("/sessions", headers=auth_headers["tenantB"])
-    assert sessions.status_code == 200, sessions.text
-    assert chat_payload["claude_session_id"] not in sessions.text
-
-    conversations = client.get("/conversations", headers=auth_headers["tenantB"])
-    assert conversations.status_code == 200, conversations.text
-    assert chat_payload["conversation_id"] not in conversations.text
-
-    requests = client.get("/requests", headers=auth_headers["tenantB"])
-    assert requests.status_code == 200, requests.text
-    assert chat_payload["request_id"] not in requests.text
-    assert submit_payload["request_id"] not in requests.text
-
-    results = client.get("/results", headers=auth_headers["tenantB"])
-    assert results.status_code == 200, results.text
-    assert chat_payload["request_id"] not in results.text
-    assert submit_payload["request_id"] not in results.text
-
-    request_detail = client.get(
-        f"/requests/{chat_payload['request_id']}",
-        headers=auth_headers["tenantB"],
-    )
-    assert request_detail.status_code == 404
-
-    result_detail = client.get(
-        f"/results/{submit_payload['request_id']}",
-        headers=auth_headers["tenantB"],
-    )
-    assert result_detail.status_code == 404
-
     task_detail = client.get(
         f"/audit/tasks/{submit_payload['request_id']}",
         headers=auth_headers["tenantB"],
@@ -85,12 +47,6 @@ def test_tenant_b_cannot_see_tenant_a_records(
         headers=auth_headers["tenantB"],
     )
     assert task_result.status_code == 404
-
-    messages = client.get(
-        f"/sessions/{chat_payload['claude_session_id']}/messages",
-        headers=auth_headers["tenantB"],
-    )
-    assert messages.status_code in {403, 404}
 
 
 def test_session_store_public_reads_require_explicit_tenant() -> None:

@@ -183,7 +183,7 @@ enterprise-agent/
 │   ├── __init__.py
 │   ├── core.py                           # Claude SDK 调用核心
 │   ├── command_adapter.py                # 统一 Claude command 调用适配
-│   ├── api.py                            # HTTP API（FastAPI + JSON/SSE）
+│   ├── api.py                            # HTTP API（FastAPI + JSON）
 │   ├── cli.py                            # CLI（Typer，本地终端外壳）
 │   ├── app_server.py                     # 后台服务管理
 │   ├── platform/

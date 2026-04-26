@@ -1,13 +1,13 @@
 {
   "path": "/Users/mi_manchi/workspace/enterprise-agent-platform",
-  "stage": "impl",
-  "sprint": 1,
-  "path_kind": "Refactor",
+  "stage": "",
+  "sprint": 3,
+  "path_kind": "Feature",
   "tech_stack": "python>=3.12, claude-agent-sdk, fastapi, typer, uvicorn",
   "test_cmd": "uv run pytest",
   "build_cmd": "uv build",
   "lint_cmd": "uv run ruff check .",
-  "dev_cmd": "uv run uvicorn server.app_server:app --reload",
+  "dev_cmd": "uv run uvicorn server.api:app --reload",
   "conventions": [
     "line-length=100",
     "target=py312",

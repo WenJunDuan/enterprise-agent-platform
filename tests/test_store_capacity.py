@@ -7,7 +7,6 @@ import pytest
 
 from server.platform import config as config_module
 from server.stores.request_store import JSONLRequestAuditStore, RequestAuditRecord
-from server.stores.result_store import JSONLResultStore, ResultRecord
 from server.stores.session_store import JSONLSessionStore, SessionRecord
 
 
@@ -76,33 +75,3 @@ def test_request_store_warns_when_shard_limit_is_exceeded(
 
     assert "store capacity warning" in caplog.text
     assert any((tmp_path / "requests").glob("*.jsonl"))
-
-
-def test_result_store_warns_when_shard_limit_is_exceeded(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    caplog,
-) -> None:
-    config_module.get_app_settings.cache_clear()
-    monkeypatch.setenv("SESSION_STORE_MAX_SHARD_BYTES", "1")
-    monkeypatch.setenv("SESSION_STORE_MAX_SHARDS", "1")
-    caplog.set_level(logging.WARNING)
-    store = JSONLResultStore(tmp_path / "results" / "index", tmp_path / "results" / "by-request")
-
-    store.archive_result(
-        ResultRecord(
-            request_id="req-1",
-            created_at="2026-04-20T00:00:00+00:00",
-            conversation_id="conv-1",
-            request_mode="structured",
-            schema_name="schema.json",
-            result_file="logs/results/by-request/2026/04/20/req-1.json",
-            tenant="tenantA",
-            claude_session_id="session-1",
-            prompt_preview="x" * 32,
-        ),
-        {"response": {"ok": True}},
-    )
-
-    assert "store capacity warning" in caplog.text
-    assert any((tmp_path / "results" / "index").glob("*.jsonl"))

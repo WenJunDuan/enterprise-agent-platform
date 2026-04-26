@@ -23,3 +23,13 @@
 - 发布前做 API 返回集优化时，优先选“增量兼容”而不是“一刀切重包”。这次把 HTTP 错误统一补成 `detail + error{...}`，而不是直接移除 `detail`，可以在不打断现有前端的前提下完成契约升级。
 - 查询型列表接口如果暂时拿不到可靠 total count，就不要伪造 `total`；统一返回 `returned + filters` 更诚实，也能避免前端误把当前页条数当成全量统计。
 - 质量门要跑全仓而不是只跑 `server/ tests`。这次发布前整理暴露出 `.ai_state/docs/audit-skills/audit_check.py` 的历史 lint 问题，说明文档侧辅助脚本同样会影响真实发布 gate。
+- README 这类入口文档的首要目标不是“信息尽可能全”，而是“高频问题 30 秒内能找到答案”。这次把端口、两套 CLI、常用 API 和启动方式提前后，可读性明显比长篇顺叙教程更好。
+- 公共探针接口与本地运维诊断命令都要克制数量。最终收口成 `health + doctor` 比 `health + ready + inspect + doctor` 更清晰：外部只看一个探针，内部只保留一个重型诊断入口。
+- 如果 CLI 已经承担本地追溯、治理和排障职责，就不要再在 HTTP API 上重复暴露同一批查询面。更清晰的边界是：HTTP 只留业务主链路，CLI 留查询/治理/调试。
+- 如果目标是“最小业务 HTTP 面”，就要避免半收半放。真正稳定的边界是：HTTP 只留前端必需的异步业务链路，命令型能力如 `chat/audit/init-rules` 也统一收回 CLI。
+
+## [2026-04-26 Sprint 2] 前端接入必须把文档契约和真实 API 同步验证
+- **Pattern**: 前端新增列表页时，后端需要显式锁定 `GET /audit/tasks` 路由顺序和返回 shape，避免被 `GET /audit/tasks/{request_id}` 吞掉；对应测试在 `tests/test_api.py` 和 `tests/test_query_surfaces.py`。
+- **Pitfall**: `.ai_state/reviews/sprint-2.md` 曾出现 local PASS 早于真实 gate 的情况；以后进入 review 前必须实际跑 `pytest`、`ruff`、前端 build，并把失败先写回 review。
+- **Constraint**: Vite 环境变量必须有 `ui/src/vite-env.d.ts:1` 的 `vite/client` 类型声明；否则 `ui/src/api/client.ts` 的 `import.meta.env.VITE_API_BASE` / `VITE_API_KEY` 无法通过 `tsc`。
+- **Constraint**: review/impl 阶段的 session-start 会尝试执行 `.ai_state/init.sh`；项目必须保留一个无副作用、可重复运行的 init 脚本（`.ai_state/init.sh:1`）。

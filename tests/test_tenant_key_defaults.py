@@ -31,8 +31,9 @@ def test_ready_reports_non_default_tenant_keys(
     monkeypatch.setattr(config_module, "_DEFAULT_TENANT_KEY_WARNING_EMITTED", False)
     client = TestClient(api_module.app)
 
-    response = client.get("/ready")
+    response = client.get("/health")
 
     assert response.status_code in {200, 503}
     payload = response.json()
-    assert payload["checks"]["runtime_config"]["tenant_keys_are_default"] is False
+    assert "checks" not in payload
+    assert "tenant_keys" not in payload["failing_checks"]

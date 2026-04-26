@@ -17,11 +17,9 @@ from server.platform.paths import (
 from server.platform.sqlite_store import connect_sqlite, describe_sqlite_target, row_to_dict
 from server.platform.storage import (
     append_json_file,
-    append_jsonl_record,
     describe_storage_target,
     load_json_file,
     load_jsonl_records_from_paths,
-    warn_if_store_capacity_exceeded,
 )
 
 ensure_local_layout()
@@ -78,78 +76,6 @@ class ResultStore(Protocol):
         tenant: str,
     ) -> dict[str, Any] | None: ...
 
-    def describe(self) -> dict[str, Any]: ...
-
-
-class JSONLResultStore:
-    """File-backed structured result archive."""
-
-    def __init__(self, shard_dir: Path, archive_root: Path) -> None:
-        self.shard_dir = shard_dir
-        self.archive_root = archive_root
-
-    def archive_result(self, record: ResultRecord, payload: dict[str, Any]) -> None:
-        append_json_file(self._result_path(record.result_file), payload)
-        shard_path = self.shard_dir / f"results-{_month_key(record.created_at)}.jsonl"
-        append_jsonl_record(shard_path, asdict(record))
-        warn_if_store_capacity_exceeded(
-            store_name="result_store",
-            shard_dir=self.shard_dir,
-            shard_path=shard_path,
-        )
-
-    def list_records(
-        self,
-        tenant: str,
-        conversation_id: str | None = None,
-        claim_id: str | None = None,
-        verdict: str | None = None,
-        manual_review_reason: str | None = None,
-        limit: int = 20,
-        offset: int = 0,
-    ) -> list[dict[str, Any]]:
-        records = self._load_records_admin()
-        filtered: list[dict[str, Any]] = []
-        for record in records:
-            if record.get("tenant") != tenant:
-                continue
-            if conversation_id and record.get("conversation_id") != conversation_id:
-                continue
-            if claim_id and record.get("claim_id") != claim_id:
-                continue
-            if verdict and record.get("verdict") != verdict:
-                continue
-            if manual_review_reason and record.get("manual_review_reason") != manual_review_reason:
-                continue
-            filtered.append(record)
-        ordered = list(reversed(filtered))
-        return ordered[offset : offset + limit]
-
-    def get_record_by_request_id(
-        self,
-        request_id: str,
-        tenant: str,
-    ) -> dict[str, Any] | None:
-        records = self._load_records_admin()
-        for record in reversed(records):
-            if record.get("request_id") != request_id:
-                continue
-            if record.get("tenant") != tenant:
-                return None
-            return record
-        return None
-
-    def get_payload_by_request_id(
-        self,
-        request_id: str,
-        tenant: str,
-    ) -> dict[str, Any] | None:
-        record = self.get_record_by_request_id(request_id=request_id, tenant=tenant)
-        if record is None:
-            return None
-        payload = load_json_file(self._result_path(str(record["result_file"])))
-        return payload
-
     def list_records_admin(
         self,
         conversation_id: str | None = None,
@@ -158,53 +84,13 @@ class JSONLResultStore:
         manual_review_reason: str | None = None,
         limit: int = 20,
         offset: int = 0,
-    ) -> list[dict[str, Any]]:
-        records = self._load_records_admin()
-        filtered: list[dict[str, Any]] = []
-        for record in records:
-            if conversation_id and record.get("conversation_id") != conversation_id:
-                continue
-            if claim_id and record.get("claim_id") != claim_id:
-                continue
-            if verdict and record.get("verdict") != verdict:
-                continue
-            if manual_review_reason and record.get("manual_review_reason") != manual_review_reason:
-                continue
-            filtered.append(record)
-        ordered = list(reversed(filtered))
-        return ordered[offset : offset + limit]
+    ) -> list[dict[str, Any]]: ...
 
-    def get_record_by_request_id_admin(self, request_id: str) -> dict[str, Any] | None:
-        for record in reversed(self._load_records_admin()):
-            if record.get("request_id") == request_id:
-                return record
-        return None
+    def get_record_by_request_id_admin(self, request_id: str) -> dict[str, Any] | None: ...
 
-    def get_payload_by_request_id_admin(self, request_id: str) -> dict[str, Any] | None:
-        record = self.get_record_by_request_id_admin(request_id)
-        if record is None:
-            return None
-        return load_json_file(self._result_path(str(record["result_file"])))
+    def get_payload_by_request_id_admin(self, request_id: str) -> dict[str, Any] | None: ...
 
-    def describe(self) -> dict[str, Any]:
-        description = describe_storage_target(self.shard_dir)
-        description["backend"] = "jsonl-sharded+json-files"
-        description["archive_dir"] = str(self.archive_root)
-        description["archive"] = describe_storage_target(self.archive_root)
-        return description
-
-    def _shard_paths(self) -> list[Path]:
-        return [item for item in sorted(self.shard_dir.glob("*.jsonl")) if item.is_file()]
-
-    def _result_path(self, stored_path: str):
-        path = (self.archive_root.parent.parent / stored_path).resolve()
-        root = self.archive_root.parent.parent.resolve()
-        if root not in path.parents and path != root:
-            raise ValueError(f"Result path escapes logs root: {stored_path}")
-        return path
-
-    def _load_records_admin(self) -> list[dict[str, Any]]:
-        return load_jsonl_records_from_paths(self._shard_paths())
+    def describe(self) -> dict[str, Any]: ...
 
 
 class SQLiteResultStore:
@@ -559,9 +445,3 @@ def get_result_payload_by_request_id_admin(request_id: str) -> dict[str, Any] | 
 
 def describe_result_store() -> dict[str, Any]:
     return RESULT_STORE.describe()
-
-
-def _month_key(timestamp: str | None) -> str:
-    if timestamp:
-        return datetime.fromisoformat(timestamp).strftime("%Y-%m")
-    return datetime.now(timezone.utc).strftime("%Y-%m")
