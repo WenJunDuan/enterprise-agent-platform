@@ -10,3 +10,11 @@
 2026-04-26 00:00 [Feature/ship/Sprint 2] 完成 S2-REV-004：stale contract scan、init、pytest、ruff、uv build、ui build、git diff --check 全部通过；Sprint 2 已推进到 ship，等待用户控制 commit/PR。
 2026-04-26 00:00 [Feature/ship/Sprint 2] 生成 .ai_state/ship.md，记录安全提交范围、禁止 force-add 的本地产物与建议 commit message；等待显式提交指令。
 2026-04-26 00:00 [Feature/ship/Sprint 2] 用户确认提交；已将 project.json 标记为 Sprint 2 完成并推进到 Sprint 3 空阶段，准备创建本地 git commit。
+2026-04-26 00:00 [Feature/plan/Sprint 3] 生成真实报销填报与列表增强计划：多区块表单、本地提交摘要、列表/详情增强；等待确认后进入实现。
+2026-04-26 00:00 [Feature/impl/Sprint 3] 用户确认开始实现；阶段切换为 impl，按 S3-T1 至 S3-T7 顺序推进。
+2026-04-26 00:00 [Feature/impl/Sprint 3] 完成 S3-T1/S3-T2：扩展真实报销 payload 类型，并新增按 request_id 关联的前端本地提交摘要存储。
+2026-04-26 00:00 [Feature/impl/Sprint 3] 用户中断 UI 实现并调整契约方向：Python 接收层不应校验业务字段，应只做传输/安全/归档约束，表单语义交给 Claude agent。
+2026-04-26 00:00 [Feature/impl/Sprint 3] 完成 S3-T0：`/audit/submit` 上传模式改为通用 intake，删除业务必填字段与附件扩展名白名单，允许 0 个或多个附件。
+2026-04-26 00:00 [Feature/impl/Sprint 3] 完成 S3-T3/S3-T4/S3-T5：复杂报销填报、任务列表、任务详情已接入本地提交摘要与新上传契约。
+2026-04-26 00:00 [Feature/impl/Sprint 3] 完成 S3-T6：README、design、plan、tasks、前端对接文档同步为 Python 不校验业务字段。
+2026-04-26 00:00 [Feature/review/Sprint 3] 完成 S3-T7：聚焦 pytest、全量 pytest、ruff、前端 build 均通过；写入 sprint-3 review。

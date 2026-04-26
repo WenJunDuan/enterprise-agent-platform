@@ -2,7 +2,14 @@ import { useState, useEffect, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { getTask, getTaskResult } from '../api/client'
 import StatusBadge from '../components/StatusBadge'
-import type { AuditTask, AuditResult, Verdict } from '../types'
+import {
+  ATTACHMENT_CATEGORY_LABELS,
+  SCENARIO_FLAG_LABELS,
+  formatAmount,
+  formatFileSize,
+} from '../lib/reimbursementLabels'
+import { getSubmissionSummary } from '../lib/submissionSummary'
+import type { AuditTask, AuditResult, SubmissionSummary, Verdict } from '../types'
 
 const POLL_INTERVAL = 3000
 
@@ -26,6 +33,149 @@ function RiskBar({ score }: { score: number }) {
         <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} />
       </div>
       <span className="text-sm font-medium text-gray-700 w-8 text-right">{pct}</span>
+    </div>
+  )
+}
+
+function InfoItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-xs text-gray-400 mb-1">{label}</p>
+      <p className="text-sm text-gray-700 break-words">{value || '—'}</p>
+    </div>
+  )
+}
+
+function SubmittedSummarySection({ summary }: { summary: SubmissionSummary | null }) {
+  const [showPayload, setShowPayload] = useState(false)
+
+  if (!summary) {
+    return (
+      <div className="bg-white rounded-lg border border-gray-200 p-6">
+        <h2 className="text-base font-semibold text-gray-800">提交表单摘要</h2>
+        <p className="mt-2 text-sm text-gray-500">
+          未命中本机 `localStorage` 摘要。后端任务详情仍可用，但历史任务或清理浏览器缓存后不会回显完整表单。
+        </p>
+      </div>
+    )
+  }
+
+  const form = summary.form
+
+  return (
+    <div className="bg-white rounded-lg border border-gray-200 p-6 space-y-5">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h2 className="text-base font-semibold text-gray-800">提交表单摘要</h2>
+          <p className="text-xs text-gray-500 mt-1">提交时间：{formatDate(summary.submitted_at)}</p>
+        </div>
+        <div className="rounded-lg bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700">
+          {formatAmount(form.total_amount, form.currency)}
+        </div>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-4">
+        <InfoItem label="报销单号" value={form.case_id} />
+        <InfoItem label="申请人" value={`${form.applicant_name} / ${form.applicant_employee_id}`} />
+        <InfoItem label="费用类型" value={form.expense_type} />
+        <InfoItem label="部门" value={form.department} />
+        <InfoItem label="成本中心" value={form.cost_center} />
+        <InfoItem label="项目/客户" value={form.project_name || form.customer_name} />
+        <InfoItem label="支付方式" value={form.payment_method} />
+        <InfoItem label="审批状态" value={form.approval_status} />
+      </div>
+
+      <div className="rounded-lg border border-gray-100 bg-gray-50 p-4">
+        <p className="text-xs font-medium text-gray-500 mb-2">报销事由</p>
+        <p className="text-sm text-gray-800 leading-relaxed">{form.reimbursement_reason || '—'}</p>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="rounded-lg border border-gray-200 p-4">
+          <p className="text-sm font-medium text-gray-800 mb-3">发票与金额</p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <InfoItem label="发票类型" value={form.invoice_type} />
+            <InfoItem label="验真状态" value={form.invoice_validation_status} />
+            <InfoItem label="发票号码" value={form.invoice_number} />
+            <InfoItem label="开票日期" value={form.invoice_issue_date} />
+            <InfoItem label="销售方" value={form.invoice_seller_name} />
+            <InfoItem label="购买方抬头" value={form.invoice_buyer_title} />
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-gray-200 p-4">
+          <p className="text-sm font-medium text-gray-800 mb-3">
+            {form.expense_type === '业务招待' ? '招待信息' : '行程/场景信息'}
+          </p>
+          {form.expense_type === '业务招待' ? (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <InfoItem label="招待对象" value={form.entertainment_target} />
+              <InfoItem label="客户公司" value={form.entertainment_company} />
+              <InfoItem label="参与人数" value={form.participant_count} />
+              <InfoItem label="人均金额" value={formatAmount(form.per_capita_amount, form.currency)} />
+              <InfoItem label="招待时段" value={form.entertainment_period} />
+              <InfoItem label="业务目的" value={form.business_purpose} />
+            </div>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <InfoItem label="出发城市" value={form.travel_from_city} />
+              <InfoItem label="到达城市" value={form.travel_to_city} />
+              <InfoItem label="出差日期" value={`${form.travel_start_date} 至 ${form.travel_end_date}`} />
+              <InfoItem label="交通方式" value={form.transportation_type} />
+              <InfoItem label="住宿晚数" value={form.hotel_nights} />
+              <InfoItem label="事前申请" value={form.has_pre_trip_approval ? '是' : '否'} />
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div>
+        <p className="text-sm font-medium text-gray-800 mb-2">异常场景</p>
+        {form.scenario_flags.length === 0 ? (
+          <p className="text-sm text-gray-500">未标记异常场景</p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {form.scenario_flags.map(flag => (
+              <span key={flag} className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700">
+                {SCENARIO_FLAG_LABELS[flag]}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div>
+        <p className="text-sm font-medium text-gray-800 mb-2">附件摘要</p>
+        {summary.attachments.length === 0 ? (
+          <p className="text-sm text-gray-500">无附件摘要</p>
+        ) : (
+          <div className="space-y-2">
+            {summary.attachments.map(item => (
+              <div key={item.id} className="flex flex-col gap-1 rounded-lg border border-gray-100 bg-gray-50 p-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-gray-800">{item.name}</p>
+                  <p className="text-xs text-gray-500">{ATTACHMENT_CATEGORY_LABELS[item.category]} · {item.type}</p>
+                </div>
+                <span className="text-xs text-gray-500">{formatFileSize(item.size)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div>
+        <button
+          onClick={() => setShowPayload(value => !value)}
+          className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
+        >
+          {showPayload ? '收起提交 payload' : '查看提交 payload'}
+        </button>
+        {showPayload && (
+          <pre className="mt-2 p-3 bg-gray-950 text-gray-100 border border-gray-200 rounded-md text-xs overflow-auto max-h-96">
+            {JSON.stringify(form, null, 2)}
+          </pre>
+        )}
+      </div>
     </div>
   )
 }
@@ -89,7 +239,7 @@ function ResultSection({ result }: { result: AuditResult }) {
 
       <div>
         <button
-          onClick={() => setShowRaw(v => !v)}
+          onClick={() => setShowRaw(value => !value)}
           className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
         >
           {showRaw ? '收起原始数据' : '查看原始 JSON'}
@@ -108,6 +258,7 @@ export default function TaskDetail() {
   const { id } = useParams<{ id: string }>()
   const [task, setTask] = useState<AuditTask | null>(null)
   const [result, setResult] = useState<AuditResult | null>(null)
+  const [summary, setSummary] = useState<SubmissionSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -144,6 +295,7 @@ export default function TaskDetail() {
   useEffect(() => {
     if (!id) return
     setLoading(true)
+    setSummary(getSubmissionSummary(id))
     fetchTask().finally(() => setLoading(false))
 
     timerRef.current = setInterval(() => {
@@ -178,7 +330,7 @@ export default function TaskDetail() {
   if (!task) return null
 
   return (
-    <div className="max-w-2xl space-y-6">
+    <div className="space-y-6">
       <div className="flex items-center justify-between">
         <Link to="/" className="text-sm text-gray-500 hover:text-blue-600 transition-colors">
           ← 返回任务列表
@@ -200,19 +352,11 @@ export default function TaskDetail() {
           </div>
         )}
 
-        <div className="grid grid-cols-3 gap-4">
-          <div>
-            <p className="text-xs text-gray-400 mb-1">提交时间</p>
-            <p className="text-sm text-gray-700">{formatDate(task.submitted_at)}</p>
-          </div>
-          <div>
-            <p className="text-xs text-gray-400 mb-1">开始时间</p>
-            <p className="text-sm text-gray-700">{formatDate(task.started_at)}</p>
-          </div>
-          <div>
-            <p className="text-xs text-gray-400 mb-1">完成时间</p>
-            <p className="text-sm text-gray-700">{formatDate(task.finished_at)}</p>
-          </div>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+          <InfoItem label="案例 ID" value={task.claim_id ?? summary?.form.case_id ?? ''} />
+          <InfoItem label="提交时间" value={formatDate(task.submitted_at)} />
+          <InfoItem label="开始时间" value={formatDate(task.started_at)} />
+          <InfoItem label="完成时间" value={formatDate(task.finished_at)} />
         </div>
 
         {task.status === 'failed' && task.error_detail && (
@@ -222,6 +366,8 @@ export default function TaskDetail() {
           </div>
         )}
       </div>
+
+      <SubmittedSummarySection summary={summary} />
 
       {task.status === 'completed' && result && (
         <div className="bg-white rounded-lg border border-gray-200 p-6">

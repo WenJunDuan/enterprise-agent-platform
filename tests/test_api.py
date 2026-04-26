@@ -24,7 +24,7 @@ def api_client(
 
 
 BEARER_A = "Bearer sk-A"
-FORM_JSON = json.dumps({"case_id": "C001", "applicant_name": "张三", "expense_type": "差旅"})
+FORM_JSON = json.dumps({"company_form_id": "C001", "custom_fields": {"申请人": "张三"}})
 PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"\x00" * 16
 
 
@@ -52,14 +52,17 @@ def test_submit_unsupported_content_type_returns_415(api_client: TestClient) -> 
     assert response.status_code == 415
 
 
-def test_submit_multipart_missing_form_json_returns_400(api_client: TestClient) -> None:
+def test_submit_multipart_without_form_json_accepts_attachment_only(api_client: TestClient) -> None:
     response = api_client.post(
         "/audit/submit",
         data={"mode": "upload"},
         files={"files": ("receipt.png", BytesIO(PNG_BYTES), "image/png")},
         headers={"Authorization": BEARER_A},
     )
-    assert response.status_code == 400
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "accepted"
+    assert body["mode"] == "upload"
 
 
 def test_submit_urlencoded_without_files_returns_415(api_client: TestClient) -> None:
@@ -72,7 +75,7 @@ def test_submit_urlencoded_without_files_returns_415(api_client: TestClient) -> 
 
 
 def test_submit_multipart_valid_returns_200(api_client: TestClient) -> None:
-    form = json.dumps({"case_id": "C002", "applicant_name": "李四", "expense_type": "餐饮"})
+    form = json.dumps({"business_unit": "north", "payload": {"任意字段": "任意值"}})
     response = api_client.post(
         "/audit/submit",
         data={"mode": "upload", "form_json": form},
@@ -124,7 +127,7 @@ def test_task_detail_not_found_returns_404(api_client: TestClient) -> None:
 
 
 def test_task_detail_found_returns_200(api_client: TestClient) -> None:
-    form = json.dumps({"case_id": "C003", "applicant_name": "王五", "expense_type": "交通"})
+    form = json.dumps({"custom_claim": "C003", "employee": {"name": "王五"}, "category": "交通"})
     submit = api_client.post(
         "/audit/submit",
         data={"mode": "upload", "form_json": form},

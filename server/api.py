@@ -61,8 +61,6 @@ app.add_middleware(
 )
 
 TENANT_KEYS = load_tenant_keys()
-REQUIRED_FORM_FIELDS = {"case_id", "applicant_name", "expense_type"}
-ALLOWED_UPLOAD_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".webp"}
 ALLOWED_DIRECTORY_ROOT = (PROJECT_ROOT / "data").resolve()
 
 
@@ -284,24 +282,47 @@ def _sanitize_upload_name(name: str, index: int) -> str:
     return sanitized
 
 
-def _validate_form_payload(payload: dict[str, Any]) -> None:
-    missing = [
-        field
-        for field in sorted(REQUIRED_FORM_FIELDS)
-        if not isinstance(payload.get(field), str) or not str(payload.get(field)).strip()
-    ]
-    if missing:
-        raise HTTPException(status_code=400, detail=f"Missing required form fields: {', '.join(missing)}")
-
-
-def _validate_upload_bytes(name: str, content: bytes) -> None:
-    suffix = Path(name).suffix.lower()
-    if suffix not in ALLOWED_UPLOAD_EXTENSIONS:
-        raise HTTPException(status_code=400, detail="Unsupported file type")
+def _validate_upload_bytes(content: bytes) -> None:
     if not content:
         raise HTTPException(status_code=400, detail="Uploaded file cannot be empty")
     if len(content) > get_app_settings().max_upload_file_bytes:
         raise HTTPException(status_code=400, detail="Uploaded file exceeds size limit")
+
+
+def _append_form_field(fields: dict[str, Any], key: str, value: str) -> None:
+    current = fields.get(key)
+    if current is None:
+        fields[key] = value
+    elif isinstance(current, list):
+        current.append(value)
+    else:
+        fields[key] = [current, value]
+
+
+def _collect_scalar_form_fields(form_data: Any) -> dict[str, Any]:
+    fields: dict[str, Any] = {}
+    iterator = form_data.multi_items() if hasattr(form_data, "multi_items") else form_data.items()
+    for key, value in iterator:
+        field_name = str(key)
+        if field_name in {"mode", "form_json", "files"}:
+            continue
+        if hasattr(value, "filename"):
+            continue
+        _append_form_field(fields, field_name, str(value))
+    return fields
+
+
+def _parse_optional_form_json(form_json: str | None) -> dict[str, Any]:
+    normalized = str(form_json or "").strip()
+    if not normalized:
+        return {}
+    try:
+        parsed_form = json.loads(normalized)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="Invalid form_json") from exc
+    if not isinstance(parsed_form, dict):
+        raise HTTPException(status_code=400, detail="form_json must decode to a JSON object")
+    return parsed_form
 
 
 def _validate_directory_case_path(case_path: str) -> str:
@@ -328,21 +349,15 @@ def _serialize_case_path(path: Path) -> str:
 async def _materialize_upload_submission(
     *,
     request_id: str,
-    form_json: str,
+    form_json: str | None,
     form_data: Any,
 ) -> str:
-    try:
-        parsed_form = json.loads(form_json)
-    except json.JSONDecodeError as exc:
-        raise HTTPException(status_code=400, detail="Invalid form_json") from exc
-
-    if not isinstance(parsed_form, dict):
-        raise HTTPException(status_code=400, detail="form_json must decode to a JSON object")
-    _validate_form_payload(parsed_form)
-
+    parsed_form = _parse_optional_form_json(form_json)
+    scalar_fields = _collect_scalar_form_fields(form_data)
     files = form_data.getlist("files")
-    if not files:
-        raise HTTPException(status_code=400, detail="At least one file is required for upload mode")
+    if not parsed_form and not scalar_fields and not files:
+        raise HTTPException(status_code=400, detail="upload mode requires form_json, form fields, or files")
+
     case_dir = SUBMISSION_ROOT_DIR / request_id
     case_dir.mkdir(parents=True, exist_ok=True)
 
@@ -352,7 +367,7 @@ async def _materialize_upload_submission(
             safe_name = _sanitize_upload_name(getattr(upload, "filename", "") or "", index)
             target_path = case_dir / safe_name
             content = await upload.read()
-            _validate_upload_bytes(safe_name, content)
+            _validate_upload_bytes(content)
             target_path.write_bytes(content)
             attachments.append(
                 {
@@ -366,6 +381,7 @@ async def _materialize_upload_submission(
             case_dir / "audit-request.json",
             {
                 "form": parsed_form,
+                "fields": scalar_fields,
                 "attachments": attachments,
             },
         )
@@ -481,12 +497,9 @@ async def audit_submit(
         mode = str(form_data.get("mode") or "").strip()
         if mode != "upload":
             raise HTTPException(status_code=400, detail="multipart requests must use mode=upload")
-        form_json = str(form_data.get("form_json") or "").strip()
-        if not form_json:
-            raise HTTPException(status_code=400, detail="form_json is required for upload mode")
         case_path = await _materialize_upload_submission(
             request_id=request_id,
-            form_json=form_json,
+            form_json=form_data.get("form_json"),
             form_data=form_data,
         )
     else:

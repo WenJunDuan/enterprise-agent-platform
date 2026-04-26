@@ -24,7 +24,7 @@
 - 查询/治理能力已收回 CLI；HTTP 只保留前端业务主链路与健康探针，不再重复暴露 `/requests`、`/results`、`/memories` 等治理面。
 - HTTP 错误响应统一保留兼容字段 `detail`，并补充结构化 `error{code,message,status_code,path,correlation_id}`；其中 `correlation_id` 与响应头 `X-Request-ID` 对齐，用于联调与日志追踪。
 - Python 不拥有业务能力实现；`init-rules`、`audit` 等能力定义在 `.claude/commands` / `.claude/skills`，CLI 与 serve 只通过统一 adapter 调用这些 Claude 能力。
-- serve 层现已提供异步审核提交能力：`POST /audit/submit` 统一接收目录模式与上传模式（上传模式至少 1 个 `files` 附件），`GET /audit/tasks` 提供任务列表，`GET /audit/tasks/{request_id}` 提供状态轮询，`GET /audit/tasks/{request_id}/result` 提供轻量结果读取。
+- serve 层现已提供异步审核提交能力：`POST /audit/submit` 统一接收目录模式与上传模式；上传模式只做传输/安全/归档约束，`form_json` 与普通 multipart 字段不做业务必填校验，附件为 0 个或多个，语义判断交给 Claude agent。`GET /audit/tasks` 提供任务列表，`GET /audit/tasks/{request_id}` 提供状态轮询，`GET /audit/tasks/{request_id}/result` 提供轻量结果读取。
 - 前台调试入口是 `python -m server.cli serve`；后台常驻入口是 `uv run app-server start`，两者本质上都启动同一个 Python 服务进程。
 - 本地存储当前采用“请求日志/运行日志保留文件，request/session/result/review-delta/memory 查询索引使用 SQLite，结果归档保留 JSON 文件”的混合布局；后续如需升级到 PostgreSQL，优先迁移查询索引层，不改 Claude 业务侧内容。
 - 顶层 `data/` 和 `raw_policies/` 不是当前仓库正式目录；测试数据应收敛到 `tests/`，真实制度源材料当前放在 `knowledge/external/`。
@@ -153,5 +153,5 @@ Result is fetched once on transition to `completed`.
 
 - Add `CORSMiddleware` after `app = FastAPI(...)` to allow `http://localhost:5173`.
 - Add `GET /audit/tasks` as the frontend task-list endpoint; the route is registered before `GET /audit/tasks/{request_id}`.
-- Keep `/audit/submit` upload mode strict: `form_json` is required and at least one `files` part must be present.
+- Keep `/audit/submit` upload mode business-agnostic: `form_json` is optional but must decode to a JSON object when present; scalar multipart fields are archived under `fields`; `files` is optional and only subject to filename, non-empty content, and size safeguards.
 - Preserve the minimal HTTP boundary: no `/requests`, `/results`, `/memories`, `/review-deltas`, `/chat`, `/audit`, or `/init-rules` routes.
