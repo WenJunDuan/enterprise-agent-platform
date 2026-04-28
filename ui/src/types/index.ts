@@ -18,12 +18,32 @@ export type Verdict = 'approved' | 'rejected' | 'manual_review'
 export interface AuditResult {
   claim_id?: string
   verdict?: Verdict
+  result?: boolean
+  conclusion?: '合规' | '不合规' | '待人工复核' | string
+  explanation?: string
+  reasons?: string[]
   risk_score?: number
   summary?: string
   policy_refs?: string[]
-  evidence_chain?: Record<string, unknown>[]
+  extracted_data?: Record<string, unknown>
+  evidence_chain?: EvidenceItem[]
+  risk_dimensions?: RiskDimension[]
+  reviewed_by?: string
+  timestamp?: string
   manual_review_reason?: string
   [key: string]: unknown
+}
+
+export interface EvidenceItem {
+  source?: string
+  finding?: string
+  conclusion?: string
+  [key: string]: unknown
+}
+
+export interface RiskDimension {
+  name: 'invoice' | 'amount' | 'approval' | 'budget' | 'anomaly' | string
+  score: number
 }
 
 export interface SubmitFormData {
@@ -87,6 +107,18 @@ export interface SubmitAcceptedResponse {
   status: string
   mode: string
   task_status_url: string
+}
+
+export interface HealthResponse {
+  status: string
+  app_server?: {
+    ok?: boolean
+    running?: boolean
+    [key: string]: unknown
+  }
+  failing_checks?: string[]
+  advisories?: string[]
+  [key: string]: unknown
 }
 
 export type ExpenseType =

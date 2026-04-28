@@ -108,7 +108,7 @@ ui/
 ├── tsconfig.node.json
 ├── tailwind.config.js
 ├── postcss.config.js
-├── .env.local              # VITE_API_KEY=sk-default (gitignored)
+├── .env.local              # VITE_TENANT_TOKEN=... (gitignored)
 ├── .gitignore
 └── src/
     ├── main.tsx            # createRoot entry
@@ -131,17 +131,20 @@ ui/
 
 | Route | Component | Description |
 |-------|-----------|-------------|
-| `/` | TaskList | Paginated task table with status filter |
-| `/submit` | SubmitExpense | Multipart form → POST /audit/submit |
-| `/tasks/:id` | TaskDetail | Status polling + result display |
+| `/` | TaskList | Paginated task table with status/search filters, local summary overlay, and fallback-test controls |
+| `/submit` | SubmitExpense | Rich reimbursement template → multipart POST /audit/submit |
+| `/tasks/:id` | TaskDetail | Status polling + submitted summary + full audit-result display |
 
 ### API Integration
 
 - Base URL: `import.meta.env.VITE_API_BASE` (default `/`)
-- Auth: `Authorization: Bearer ${VITE_API_KEY}` injected by `api/client.ts` on every request
-- API key stored in `ui/.env.local` — never committed (in `.gitignore`)
+- Auth: `Authorization: Bearer ${VITE_TENANT_TOKEN}` injected by `api/client.ts`; `VITE_API_KEY` is only kept as a legacy local alias.
+- `TENANT_KEYS` remains server-side truth; API consumers pass `Authorization: Bearer <tenant-token>` directly and do not use `VITE_*` variables.
+- Tenant token stored in `ui/.env.local` for local UI self-test only — never committed (in `.gitignore`)
+- Layout renders a `/health` connection status strip so local testers can see backend reachability and API config before submitting.
 - Task list uses `GET /audit/tasks?status=&limit=&offset=` and expects a plain `AuditTask[]`.
-- Submit form uses multipart `POST /audit/submit`; upload mode requires at least one `files` part.
+- Submit form uses multipart `POST /audit/submit`; `form_json` and `files` are both optional as long as the upload contains at least one meaningful form field or file.
+- Task detail renders `conclusion` / `explanation` / `reasons` / `policy_refs` / `risk_score` / `risk_dimensions` / `evidence_chain` from the current audit-result schema.
 
 ### Polling Strategy
 

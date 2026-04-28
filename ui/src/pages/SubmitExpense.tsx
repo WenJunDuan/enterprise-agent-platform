@@ -319,6 +319,7 @@ export default function SubmitExpense() {
   const [attachments, setAttachments] = useState<SelectedAttachment[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
 
   const attachmentSummaries = useMemo(
     () => attachments.map(toAttachmentSummary),
@@ -332,6 +333,7 @@ export default function SubmitExpense() {
 
   function updateField<K extends keyof SubmitFormData>(field: K, value: SubmitFormData[K]) {
     setFormData(current => ({ ...current, [field]: value }))
+    setNotice(null)
   }
 
   function applyPreset(data: Partial<SubmitFormData>) {
@@ -340,6 +342,31 @@ export default function SubmitExpense() {
       ...data,
       attachment_summaries: attachmentSummaries,
     }))
+    setNotice('已套用场景模板，可继续调整字段后提交')
+  }
+
+  function resetForm() {
+    setFormData(createDefaultForm())
+    setAttachments([])
+    setError(null)
+    setNotice('已重置为默认报销样例')
+  }
+
+  function generateNewCaseId() {
+    updateField('case_id', createCaseId())
+    setNotice('已生成新的报销单号')
+  }
+
+  async function copyPayloadPreview() {
+    const text = JSON.stringify(payloadPreview, null, 2)
+    try {
+      await navigator.clipboard.writeText(text)
+      setError(null)
+      setNotice('已复制当前 form_json，可用于 Postman/curl 联调')
+    } catch {
+      setNotice(null)
+      setError('复制失败：当前浏览器不允许访问剪贴板，请直接从右侧预览框复制')
+    }
   }
 
   function toggleScenario(flag: ScenarioFlag) {
@@ -359,6 +386,9 @@ export default function SubmitExpense() {
         return { id: summary.id, file, category }
       }),
     ])
+    if (selectedFiles.length > 0) {
+      setNotice(`已添加 ${selectedFiles.length} 个附件`)
+    }
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
@@ -373,6 +403,7 @@ export default function SubmitExpense() {
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
     setError(null)
+    setNotice(null)
 
     const submitPayload: SubmitFormData = {
       ...formData,
@@ -408,10 +439,36 @@ export default function SubmitExpense() {
             这是前端报销模板；后端只归档通用 `form_json` 与附件，不校验任何业务字段。
           </p>
         </div>
-        <div className="text-xs text-gray-500">
-          当前字段：基础、金额、发票、行程/招待、审批、异常、附件
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={generateNewCaseId}
+            className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
+          >
+            生成新单号
+          </button>
+          <button
+            type="button"
+            onClick={() => void copyPayloadPreview()}
+            className="rounded-md border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs text-blue-700 hover:bg-blue-100"
+          >
+            复制 form_json
+          </button>
+          <button
+            type="button"
+            onClick={resetForm}
+            className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
+          >
+            重置样例
+          </button>
         </div>
       </div>
+
+      {notice && (
+        <div className="rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
+          {notice}
+        </div>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
         <form onSubmit={handleSubmit} className="space-y-5">
@@ -569,7 +626,6 @@ export default function SubmitExpense() {
               ref={fileInputRef}
               type="file"
               multiple
-              accept=".pdf,.png,.jpg,.jpeg,.xlsx,.xls,.doc,.docx"
               onChange={handleFileChange}
               className="w-full text-sm text-gray-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
             />

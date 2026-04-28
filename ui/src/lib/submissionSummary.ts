@@ -35,6 +35,11 @@ export function saveSubmissionSummary(summary: SubmissionSummary): void {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(Object.fromEntries(entries)))
 }
 
+export function clearSubmissionSummaries(): void {
+  if (!canUseStorage()) return
+  window.localStorage.removeItem(STORAGE_KEY)
+}
+
 export function createAttachmentSummary(
   file: File,
   category: AttachmentSummary['category'],

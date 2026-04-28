@@ -1,4 +1,5 @@
 import { Link, Outlet } from 'react-router-dom'
+import ConnectionStatus from './ConnectionStatus'
 
 export default function Layout() {
   return (
@@ -24,6 +25,7 @@ export default function Layout() {
           </div>
         </div>
       </nav>
+      <ConnectionStatus />
       <main className="max-w-7xl mx-auto px-4 py-6">
         <Outlet />
       </main>

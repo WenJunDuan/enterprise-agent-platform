@@ -18,3 +18,7 @@
 2026-04-26 00:00 [Feature/impl/Sprint 3] 完成 S3-T3/S3-T4/S3-T5：复杂报销填报、任务列表、任务详情已接入本地提交摘要与新上传契约。
 2026-04-26 00:00 [Feature/impl/Sprint 3] 完成 S3-T6：README、design、plan、tasks、前端对接文档同步为 Python 不校验业务字段。
 2026-04-26 00:00 [Feature/review/Sprint 3] 完成 S3-T7：聚焦 pytest、全量 pytest、ruff、前端 build 均通过；写入 sprint-3 review。
+2026-04-27 00:00 [Quick/impl/Sprint 4] 用户要求继续完善前端用于自测；进入 Sprint 4，范围为健康连接提示、填报自测辅助、结果字段完整展示、摘要清理和联调文档。
+2026-04-27 00:00 [Quick/impl/Sprint 4] 完成 S4-T1/S4-T2/S4-T3/S4-T4：新增后端连接状态条、填报页复制/重置/新单号、详情页完整结果字段、列表清空本机摘要。
+2026-04-27 00:00 [Quick/review/Sprint 4] 完成 S4-T5：README、前端对接文档、design、session、review、lessons 已同步；ui build、pytest、ruff、diff check 全部通过。
+2026-04-27 00:00 [Bugfix/Sprint 4] 调整租户 token 对接边界：UI 改用 `VITE_TENANT_TOKEN` 命名，外部接口调用继续直接发送 `Authorization: Bearer <tenant-token>`，缺失/格式错误 token 统一返回 401。

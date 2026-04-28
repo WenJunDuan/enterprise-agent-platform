@@ -1,13 +1,15 @@
 # Session
 
-- 日期: 2026-04-26
+- 日期: 2026-04-27
 - 仓库: `enterprise-agent-platform`
-- 当前阶段: Sprint 3 ship
-- 当前里程碑: 通用表单 intake + 复杂报销 UI 已完成
+- 当前阶段: Sprint 4 ship
+- 当前里程碑: 前端联调自测收口已完成
 
 ## 当前边界
 
 - Python 只做通信、鉴权、传输解析、安全落盘、任务状态和 Claude command 调用。
+- `TENANT_KEYS` 是服务端租户 token 映射；现场接口调用方直接传 `Authorization: Bearer <tenant-token>`，React UI 只是本地/内嵌调用方。
+- 本地 UI 用 `VITE_TENANT_TOKEN` 读取租户 token；`VITE_API_KEY` 仅保留旧名兼容，不再作为推荐命名。
 - Python 不校验 `case_id`、`applicant_name`、`expense_type`、金额、发票号、费用类型、附件业务类型等业务字段。
 - `POST /audit/submit` 上传模式接受：
   - `mode=upload`
@@ -22,6 +24,7 @@
 - `server/api.py` 已改为无业务字段约束的通用上传 intake。
 - `tests/test_api.py` 和 `tests/test_audit_submit_attachments.py` 已覆盖新契约。
 - `ui/` 已提供复杂报销填报页、增强任务列表、增强任务详情，并通过 `localStorage` 关联本机提交摘要。
+- Sprint 4 已补充前端连接状态条、填报页自测按钮、结果字段完整展示、列表本机摘要清理能力，并同步 README / 前端对接文档。
 - README、`.ai_state/design.md`、`.ai_state/plan.md`、`.ai_state/tasks.md`、`.ai_state/docs/前端审核服务对接文档.md` 已同步新契约。
 - `.ai_state/reviews/sprint-3.md` 已记录本轮 review 和验证结果。
 
@@ -35,5 +38,4 @@
 
 ## 下一步
 
-- 如需发布，先由用户决定是否提交当前 Sprint 3 变更。
-- 如要继续增强，可优先做真实浏览器联调：启动后端和 Vite，提交一笔无附件、一笔多附件、一笔任意字段 payload，检查 `data/submissions/{request_id}/audit-request.json`。
+- 如需真实浏览器验证：启动后端和 Vite，检查顶部连接条，提交一笔无附件和一笔多附件报销，再打开详情页确认结果字段展示。

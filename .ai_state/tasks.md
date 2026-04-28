@@ -58,3 +58,21 @@
 - Task list remains usable with only backend data, and becomes richer when local summaries are available.
 - Task detail shows local submitted payload summary when available without depending on new backend APIs.
 - `cd ui && npm run build`, `UV_CACHE_DIR=/tmp/uv-cache uv run pytest -q`, and `UV_CACHE_DIR=/tmp/uv-cache uv run ruff check .` pass.
+
+# Sprint 4 Tasks — 前端联调自测收口
+
+## Checklist
+
+- [x] S4-T1: Add backend health/API config indicator for local self-test
+- [x] S4-T2: Add submit-page self-test helpers for reset, new case id, and copy payload
+- [x] S4-T3: Show full audit result fields including conclusion, explanation, reasons, evidence, and risk dimensions
+- [x] S4-T4: Add local summary management and fallback-test controls
+- [x] S4-T5: Sync docs/state and validate frontend/backend gates
+
+## Acceptance Criteria
+
+- UI clearly shows whether `/health` is reachable and which API base/tenant-token source is used.
+- User can reset the form, generate a new case id, copy the exact `form_json`, and upload arbitrary file types.
+- Result detail renders the current audit schema fields, not only `summary` / `verdict`.
+- Task list can clear local summaries to test backend-only fallback.
+- `cd ui && npm run build`, `UV_CACHE_DIR=/tmp/uv-cache uv run pytest -q`, and `UV_CACHE_DIR=/tmp/uv-cache uv run ruff check .` pass.
