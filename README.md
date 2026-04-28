@@ -254,6 +254,13 @@ TENANT_KEYS={"default":"sk-your-token"}
 Authorization: Bearer sk-your-token
 ```
 
+说明：
+
+- `TENANT_KEYS` 是服务端租户 token 映射，key 是租户名，value 是调用凭证。
+- 外部系统 / 现场接口对接时，不使用 `VITE_*` 变量，直接在 HTTP 请求里带 `Authorization: Bearer <tenant-token>`。
+- 本仓库自带的 React UI 只是一个调用方；本地联调时可把某个 tenant token 写到 `ui/.env.local` 的 `VITE_TENANT_TOKEN`。
+- 缺少 `Authorization`、格式不是 Bearer、或 token 不匹配时，业务接口统一返回 `401`。
+
 ### 路由清单
 
 文档与诊断：
@@ -376,6 +383,27 @@ curl -X POST "http://127.0.0.1:${APP_SERVER_PORT}/audit/submit" \
 - `evidence_chain`
 - `manual_review_reason`
 - `risk_dimensions`
+
+## 前端本地自测
+
+```bash
+# 1. 启动后端
+uv run python -m server.cli serve
+
+# 2. 启动前端
+cd ui
+cp .env.example .env.local   # 已有 .env.local 可跳过
+# 将 VITE_TENANT_TOKEN 填成后端 .env 里 TENANT_KEYS 的某个 value
+npm run dev
+```
+
+浏览器打开 `http://localhost:5173` 后重点检查：
+
+- 顶部连接条显示 `/health` 是否连通，并显示当前 `VITE_API_BASE` / `VITE_TENANT_TOKEN` 来源。
+- 填报页可用“生成新单号 / 复制 form_json / 重置样例”辅助测试。
+- 附件选择器不限制业务扩展名；无附件也可以提交。
+- 详情页会展示 `conclusion`、`explanation`、`reasons`、`policy_refs`、`risk_score`、`risk_dimensions`、`evidence_chain`。
+- 列表页可点“清空本机摘要”测试只依赖后端紧凑任务字段时的降级展示。
 
 ## CLI 查询与追溯
 

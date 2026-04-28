@@ -278,3 +278,31 @@
 - 后端任务列表不返回完整 form payload，因此列表业务摘要只能依赖 `localStorage`；跨浏览器/清缓存后会降级为只展示后端字段。
 - 字段很多会让单页变重，需要用分区、默认值和场景预设降低填报成本。
 - 前端模板字段只是示例 UI 模型，不能再被文档或测试描述成 Python 必填契约。
+
+## Sprint 4 Plan — 前端联调自测收口（2026-04-27）
+
+### WHY
+
+Sprint 3 已完成复杂报销 UI 和通用上传契约，但用户自测时仍需要更明确的联调反馈：后端是否连上、当前 API base/token 是否正确、提交的 `form_json` 到底是什么、审核结果里的 `conclusion/explanation/reasons/evidence_chain/risk_dimensions` 是否完整展示，以及如何验证无本地摘要时的列表/详情降级效果。
+
+### Scope
+
+- 在前端 Layout 增加 `/health` 连接状态与 API 配置提示。
+- 在填报页增加重置、生成新单号、复制 `form_json` 等自测辅助动作，并放开文件选择器扩展名限制。
+- 在详情页补齐当前 audit-result schema 的主要字段展示：`result`、`conclusion`、`explanation`、`reasons`、`evidence_chain`、`risk_dimensions`、`extracted_data`。
+- 在列表页增加本机摘要清理按钮，便于测试后端紧凑字段 fallback。
+- 补充 `ui/.env.example` 和 README 自测步骤。
+
+### Non-Scope
+
+- 不新增后端路由。
+- 不改变 `/audit/submit` 通用 intake 契约。
+- 不把 UI 模板字段变成后端必填字段。
+
+### Implementation Tasks
+
+- [ ] S4-T1: Add backend health/API config indicator for local self-test.
+- [ ] S4-T2: Add submit-page self-test helpers for reset, new case id, and copy payload.
+- [ ] S4-T3: Show full audit result fields including conclusion, explanation, reasons, evidence, and risk dimensions.
+- [ ] S4-T4: Add local summary management and fallback-test controls.
+- [ ] S4-T5: Sync docs/state and validate frontend/backend gates.

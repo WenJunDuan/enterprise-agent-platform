@@ -24,6 +24,14 @@ const VERDICT_CONFIG: Record<Verdict, { label: string; classes: string }> = {
   manual_review: { label: '待人工复核', classes: 'text-yellow-700 bg-yellow-50 border-yellow-200' },
 }
 
+const RISK_DIMENSION_LABELS: Record<string, string> = {
+  invoice: '发票',
+  amount: '金额',
+  approval: '审批',
+  budget: '预算',
+  anomaly: '异常',
+}
+
 function RiskBar({ score }: { score: number }) {
   const pct = Math.min(100, Math.max(0, score))
   const color = pct >= 70 ? 'bg-red-500' : pct >= 40 ? 'bg-yellow-400' : 'bg-green-500'
@@ -37,12 +45,31 @@ function RiskBar({ score }: { score: number }) {
   )
 }
 
+function ResultBadge({ passed }: { passed: boolean }) {
+  return (
+    <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${
+      passed ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+    }`}
+    >
+      {passed ? '自动审核通过' : '未自动通过'}
+    </span>
+  )
+}
+
 function InfoItem({ label, value }: { label: string; value: string }) {
   return (
     <div>
       <p className="text-xs text-gray-400 mb-1">{label}</p>
       <p className="text-sm text-gray-700 break-words">{value || '—'}</p>
     </div>
+  )
+}
+
+function JsonPreview({ value }: { value: unknown }) {
+  return (
+    <pre className="mt-2 max-h-72 overflow-auto rounded-md border border-gray-200 bg-gray-50 p-3 text-xs text-gray-600">
+      {JSON.stringify(value, null, 2)}
+    </pre>
   )
 }
 
@@ -182,6 +209,7 @@ function SubmittedSummarySection({ summary }: { summary: SubmissionSummary | nul
 
 function ResultSection({ result }: { result: AuditResult }) {
   const [showRaw, setShowRaw] = useState(false)
+  const [showExtracted, setShowExtracted] = useState(false)
   const verdict = result.verdict
   const verdictCfg = verdict ? VERDICT_CONFIG[verdict] : null
 
@@ -195,10 +223,39 @@ function ResultSection({ result }: { result: AuditResult }) {
         </div>
       )}
 
+      <div className="grid gap-4 md:grid-cols-3">
+        {typeof result.result === 'boolean' && (
+          <div>
+            <p className="text-sm text-gray-500 mb-1">自动判断</p>
+            <ResultBadge passed={result.result} />
+          </div>
+        )}
+        {result.conclusion && (
+          <InfoItem label="中文结论" value={result.conclusion} />
+        )}
+        {result.reviewed_by && (
+          <InfoItem label="审核来源" value={result.reviewed_by} />
+        )}
+      </div>
+
       {result.risk_score != null && (
         <div>
           <p className="text-sm text-gray-600 mb-1">风险评分</p>
           <RiskBar score={result.risk_score} />
+        </div>
+      )}
+
+      {result.risk_dimensions && result.risk_dimensions.length > 0 && (
+        <div>
+          <p className="text-sm text-gray-500 mb-2">风险维度</p>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+            {result.risk_dimensions.map(item => (
+              <div key={`${item.name}-${item.score}`} className="rounded-lg border border-gray-200 p-3">
+                <p className="text-xs text-gray-500">{RISK_DIMENSION_LABELS[item.name] ?? item.name}</p>
+                <p className="mt-1 text-lg font-semibold text-gray-800">{item.score}<span className="text-xs font-normal text-gray-400"> / 10</span></p>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -209,10 +266,31 @@ function ResultSection({ result }: { result: AuditResult }) {
         </div>
       )}
 
-      {result.summary && (
+      {result.explanation && (
+        <div>
+          <p className="text-sm text-gray-500 mb-1">审核说明</p>
+          <p className="text-sm text-gray-800 leading-relaxed">{result.explanation}</p>
+        </div>
+      )}
+
+      {result.summary && !result.explanation && (
         <div>
           <p className="text-sm text-gray-500 mb-1">摘要</p>
           <p className="text-sm text-gray-800 leading-relaxed">{result.summary}</p>
+        </div>
+      )}
+
+      {result.reasons && result.reasons.length > 0 && (
+        <div>
+          <p className="text-sm text-gray-500 mb-1">结论依据</p>
+          <ul className="space-y-1">
+            {result.reasons.map((reason, index) => (
+              <li key={`${reason}-${index}`} className="text-sm text-gray-700 flex items-start gap-1.5">
+                <span className="text-blue-400 mt-0.5">•</span>
+                {reason}
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 
@@ -235,6 +313,39 @@ function ResultSection({ result }: { result: AuditResult }) {
             ))}
           </ul>
         </div>
+      )}
+
+      {result.evidence_chain && result.evidence_chain.length > 0 && (
+        <div>
+          <p className="text-sm text-gray-500 mb-2">证据链</p>
+          <div className="space-y-2">
+            {result.evidence_chain.map((item, index) => (
+              <div key={`${item.source ?? 'evidence'}-${index}`} className="rounded-lg border border-gray-200 p-3">
+                <p className="text-xs text-gray-400 mb-1">{item.source ?? `证据 ${index + 1}`}</p>
+                <p className="text-sm text-gray-800">{item.finding ?? '—'}</p>
+                {item.conclusion && (
+                  <p className="mt-1 text-xs text-gray-500">结论：{item.conclusion}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {result.extracted_data && Object.keys(result.extracted_data).length > 0 && (
+        <div>
+          <button
+            onClick={() => setShowExtracted(value => !value)}
+            className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
+          >
+            {showExtracted ? '收起提取数据' : '查看提取数据'}
+          </button>
+          {showExtracted && <JsonPreview value={result.extracted_data} />}
+        </div>
+      )}
+
+      {result.timestamp && (
+        <InfoItem label="结果时间" value={result.timestamp} />
       )}
 
       <div>

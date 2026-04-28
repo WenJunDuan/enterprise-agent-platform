@@ -43,4 +43,4 @@ feat: add React audit UI and tighten HTTP contract
 - HTTP public surface is `/health`, `/audit/submit`, `/audit/tasks`, `/audit/tasks/{request_id}`, `/audit/tasks/{request_id}/result`.
 - CLI keeps query/governance surfaces.
 - Upload mode requires at least one `files` attachment.
-- Frontend uses `VITE_API_BASE` and `VITE_API_KEY`.
+- Frontend uses `VITE_API_BASE` and `VITE_TENANT_TOKEN` (`VITE_API_KEY` is legacy local alias only).

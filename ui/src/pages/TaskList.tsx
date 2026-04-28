@@ -7,7 +7,7 @@ import {
   formatAmount,
   formatFileSize,
 } from '../lib/reimbursementLabels'
-import { readSubmissionSummaries } from '../lib/submissionSummary'
+import { clearSubmissionSummaries, readSubmissionSummaries } from '../lib/submissionSummary'
 import type { AuditTask, SubmissionSummary } from '../types'
 
 const LIMIT = 20
@@ -67,6 +67,7 @@ export default function TaskList() {
   const [offset, setOffset] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -122,6 +123,12 @@ export default function TaskList() {
     setOffset(0)
   }
 
+  function handleClearSummaries() {
+    clearSubmissionSummaries()
+    setSummaries({})
+    setNotice('已清空本机提交摘要；列表会按后端紧凑任务字段降级展示')
+  }
+
   return (
     <div className="space-y-5">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
@@ -166,7 +173,7 @@ export default function TaskList() {
         </div>
       </div>
 
-      <div className="grid gap-3 rounded-xl border border-gray-200 bg-white p-4 lg:grid-cols-[minmax(0,1fr)_180px_180px_auto]">
+      <div className="grid gap-3 rounded-xl border border-gray-200 bg-white p-4 lg:grid-cols-[minmax(0,1fr)_180px_180px_auto_auto]">
         <input
           value={search}
           onChange={event => setSearch(event.target.value)}
@@ -199,7 +206,21 @@ export default function TaskList() {
         >
           刷新
         </button>
+        <button
+          type="button"
+          onClick={handleClearSummaries}
+          disabled={Object.keys(summaries).length === 0}
+          className="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          清空本机摘要
+        </button>
       </div>
+
+      {notice && (
+        <div className="p-3 bg-blue-50 border border-blue-200 rounded-md text-sm text-blue-700">
+          {notice}
+        </div>
+      )}
 
       {error && (
         <div className="p-3 bg-red-50 border border-red-200 rounded-md text-sm text-red-700">

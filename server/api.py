@@ -89,7 +89,15 @@ class AuditTaskStatusResponse(BaseModel):
     updated_at: str
 
 
-def verify_tenant(api_key: str) -> str:
+def _authorization_error(detail: str) -> HTTPException:
+    return HTTPException(
+        status_code=401,
+        detail=detail,
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+def verify_tenant(authorization: str | None) -> str:
     if tenant_keys_are_default():
         allow_default = os.getenv("ALLOW_INSECURE_DEFAULT_TENANT_KEY", "").lower() in {"1", "true", "yes", "on"}
         if not allow_default:
@@ -97,11 +105,16 @@ def verify_tenant(api_key: str) -> str:
                 status_code=503,
                 detail="Server is not configured with tenant keys. Set the TENANT_KEYS environment variable.",
             )
-    token = api_key.replace("Bearer ", "", 1).strip()
+    if not authorization:
+        raise _authorization_error("Missing Authorization header")
+    scheme, _, credentials = authorization.strip().partition(" ")
+    if scheme.lower() != "bearer" or not credentials.strip():
+        raise _authorization_error("Authorization header must use Bearer token")
+    token = credentials.strip()
     for tenant, key in TENANT_KEYS.items():
         if key == token:
             return tenant
-    raise HTTPException(status_code=401, detail="Invalid API key")
+    raise _authorization_error("Invalid tenant token")
 
 
 def _public_runtime_status() -> dict[str, Any]:
@@ -190,6 +203,7 @@ async def request_context_middleware(request: Request, call_next):
 async def http_exception_handler(request: Request, exc: StarletteHTTPException) -> JSONResponse:
     return JSONResponse(
         status_code=exc.status_code,
+        headers=getattr(exc, "headers", None),
         content=_error_response_content(
             request,
             status_code=exc.status_code,
@@ -479,7 +493,7 @@ async def _execute_directory_audit_task(
 @app.post("/audit/submit", response_model=AuditSubmitAcceptedResponse)
 async def audit_submit(
     request: Request,
-    authorization: str = Header(...),
+    authorization: str | None = Header(None),
 ) -> AuditSubmitAcceptedResponse:
     tenant = verify_tenant(authorization)
     request_id = new_request_id()
@@ -542,7 +556,7 @@ async def audit_submit(
 
 @app.get("/audit/tasks", response_model=list[AuditTaskStatusResponse])
 async def list_audit_tasks_endpoint(
-    authorization: str = Header(...),
+    authorization: str | None = Header(None),
     status: str | None = Query(None),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
@@ -555,7 +569,7 @@ async def list_audit_tasks_endpoint(
 @app.get("/audit/tasks/{request_id}", response_model=AuditTaskStatusResponse)
 async def audit_task_status(
     request_id: str,
-    authorization: str = Header(...),
+    authorization: str | None = Header(None),
 ) -> AuditTaskStatusResponse:
     tenant = verify_tenant(authorization)
     record = get_audit_task(request_id, tenant=tenant)
@@ -565,7 +579,7 @@ async def audit_task_status(
 
 
 @app.get("/audit/tasks/{request_id}/result")
-async def audit_task_result(request_id: str, authorization: str = Header(...)) -> dict[str, Any]:
+async def audit_task_result(request_id: str, authorization: str | None = Header(None)) -> dict[str, Any]:
     tenant = verify_tenant(authorization)
     record = get_audit_task(request_id, tenant=tenant)
     if record is None:
