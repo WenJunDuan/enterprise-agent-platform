@@ -17,8 +17,6 @@
     ],
     "deny": [
       "Bash",
-      "Read(./.env)",
-      "Read(./.env.*)",
       "Read(./.claude/settings.local.json)",
       "Read(./token.json)",
       "Read(./**/token.json)"
