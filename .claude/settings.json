@@ -7,16 +7,8 @@
   "cleanupPeriodDays": 180,
   "includeGitInstructions": false,
   "permissions": {
-    "allow": [
-      "Read",
-      "Glob",
-      "Grep",
-      "Task",
-      "Skill",
-      "Write"
-    ],
+    "allow": ["Read", "Glob", "Grep", "Task", "Skill", "Write"],
     "deny": [
-      "Bash",
       "Read(./.claude/settings.local.json)",
       "Read(./token.json)",
       "Read(./**/token.json)"
