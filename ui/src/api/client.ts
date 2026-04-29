@@ -70,6 +70,9 @@ export async function listTasks(params?: {
 
 export async function getHealth(): Promise<HealthResponse> {
   const res = await fetch(url('/health'))
+  if (res.status === 200 || res.status === 503) {
+    return res.json() as Promise<HealthResponse>
+  }
   return handleResponse<HealthResponse>(res)
 }
 
