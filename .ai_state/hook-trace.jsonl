@@ -1,0 +1,9 @@
+{"ts":"2026-04-29T06:35:13.181Z","hook":"permission-request","tool":"Edit","cmd":""}
+{"ts":"2026-04-29T07:47:41.562Z","hook":"permission-request","tool":"Edit","cmd":""}
+{"ts":"2026-04-29T08:14:28.809Z","hook":"lesson-drafter","topic":"subagent-bash","draft":"draft-2026-04-29-subagent-bash-081428.md"}
+{"ts":"2026-04-29T08:30:50.597Z","hook":"permission-request","tool":"Bash","cmd":"uv run uvicorn server.api:app --reload 2>&1 | head -50 &\nsleep 5 && kill %1 2>/d..."}
+{"ts":"2026-04-29T08:31:52.916Z","hook":"permission-request","tool":"Bash","cmd":"ps -p 19186 -p 19190 -o pid,ppid,command 2>/dev/null"}
+{"ts":"2026-04-29T08:33:36.588Z","hook":"permission-request","tool":"Bash","cmd":"kill -9 9474 && echo \"Killed PID 9474\""}
+{"ts":"2026-04-29T08:33:55.900Z","hook":"permission-request","tool":"Bash","cmd":"uv run python -m server.cli serve > /tmp/server-9999.log 2>&1 &\necho \"PID=$!\""}
+{"ts":"2026-04-29T08:35:03.890Z","hook":"permission-request","tool":"Bash","cmd":"lsof -i :9999 -t 2>/dev/null | xargs -r kill -9 && echo \"killed\" || echo \"nothin..."}
+{"ts":"2026-04-29T08:35:40.424Z","hook":"permission-request","tool":"Bash","cmd":"curl -s --noproxy '*' http://localhost:9999/health 2>&1"}

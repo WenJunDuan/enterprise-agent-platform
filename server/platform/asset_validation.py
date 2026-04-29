@@ -34,7 +34,14 @@ def validate_knowledge_assets() -> dict[str, Any]:
 
 def validate_rule_assets(root: Path | None = None) -> dict[str, Any]:
     knowledge_root = root or KNOWLEDGE_ROOT
-    schema = json.loads(RULE_SCHEMA_PATH.read_text(encoding="utf-8"))
+    schema_path = RULE_SCHEMA_PATH if root is None else knowledge_root / "_schema" / "rule.schema.json"
+    if not schema_path.exists():
+        return {
+            "status": "degraded",
+            "checked_files": 0,
+            "errors": [f"Rule schema not found: {schema_path}"],
+        }
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
     errors: list[str] = []
     checked_files = 0
 
@@ -56,7 +63,7 @@ def validate_rule_assets(root: Path | None = None) -> dict[str, Any]:
 
         for rule in payload.get("rules", []):
             rule_id = str(rule.get("rule_id") or "")
-            expected_prefix = f"{expected_domain}.{expected_category}."
+            expected_prefix = f"{expected_domain}_{expected_category}_"
             if not rule_id.startswith(expected_prefix):
                 errors.append(f"{path}: rule_id {rule_id} does not match {expected_prefix}*")
 
@@ -70,9 +77,20 @@ def validate_rule_assets(root: Path | None = None) -> dict[str, Any]:
 def validate_memory_assets(root: Path | None = None) -> dict[str, Any]:
     knowledge_root = root or KNOWLEDGE_ROOT
     memory_root = knowledge_root / "memory"
-    schema = json.loads(MEMORY_SCHEMA_PATH.read_text(encoding="utf-8"))
     errors: list[str] = []
     checked_files = 0
+
+    schema_path = MEMORY_SCHEMA_PATH if root is None else knowledge_root / "_schema" / "case-memory.schema.json"
+    if not schema_path.exists():
+        return {
+            "status": "degraded",
+            "checked_files": 0,
+            "errors": [f"Memory schema not found: {schema_path}"],
+        }
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+
+    if not memory_root.exists():
+        return {"status": "ok", "checked_files": 0, "errors": []}
 
     for path in sorted(memory_root.rglob("*.json")):
         checked_files += 1
