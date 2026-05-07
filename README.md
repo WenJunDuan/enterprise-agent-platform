@@ -457,49 +457,83 @@ HTTP 错误统一保留兼容字段 `detail`，并补充结构化 `error`：
 
 ## 部署
 
-### Docker
+本仓库不再提供 Docker 镜像与 Compose 文件。直接在目标机上原地运行；生产环境用 systemd 守护 `app-server` 进程。
 
-构建镜像：
+### 目标机依赖
 
-```bash
-docker build -t enterprise-agent-platform:local .
-```
+| 组件 | 版本 | 安装提示 |
+| --- | --- | --- |
+| Python | 3.12+ | 系统包或 pyenv |
+| `uv` | 最新 | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
+| Node.js | 20+ | nodesource / nvm（Claude Agent SDK 子进程依赖） |
+| `@anthropic-ai/claude-code` | 最新 | `npm install -g @anthropic-ai/claude-code` |
+| `poppler-utils` | 任意 | `apt install poppler-utils`（PDF 解析依赖） |
 
-运行：
-
-```bash
-APP_SERVER_PORT="$(grep '^APP_SERVER_PORT=' .env | tail -n 1 | cut -d= -f2- | tr -d '\r')"
-APP_SERVER_PORT="${APP_SERVER_PORT:-8000}"
-
-docker run --rm \
-  --env-file .env \
-  -p "${APP_SERVER_PORT}:${APP_SERVER_PORT}" \
-  -v "$(pwd)/.claude:/app/.claude" \
-  -v "$(pwd)/knowledge:/app/knowledge" \
-  -v "$(pwd)/data:/app/data" \
-  -v "$(pwd)/logs:/app/logs" \
-  enterprise-agent-platform:local
-```
-
-### Docker Compose
+### 部署步骤
 
 ```bash
-docker compose up -d --build
-docker compose ps
-docker compose logs -f agent-server
-docker compose down
+# 1. 把仓库放到目标机器（git clone / scp / rsync 都可以）
+git clone <your-remote> /opt/enterprise-agent-platform
+cd /opt/enterprise-agent-platform
+
+# 2. 准备配置
+cp .env.example .env
+$EDITOR .env   # 至少填 MODEL_BASE_URL / MODEL_API_KEY / MODEL_NAME / TENANT_KEYS
+
+# 3. 装 Python 依赖
+uv sync
+
+# 4. 冒烟
+uv run python -m server.cli runtime
+uv run python -m server.cli ask "你好"
+
+# 5. 起后台
+uv run app-server start
+uv run app-server status
 ```
 
-当前 `docker-compose.yml` 会挂载：
+### systemd 守护（推荐生产用）
 
-- `./.claude:/app/.claude`
-- `./knowledge:/app/knowledge`
-- `./data:/app/data`
-- `./logs:/app/logs`
+把以下文件放到 `/etc/systemd/system/enterprise-agent.service`，按本机情况调整 `User` / `WorkingDirectory` / `ExecStart`：
+
+```ini
+[Unit]
+Description=Enterprise Agent Platform
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=app
+WorkingDirectory=/opt/enterprise-agent-platform
+EnvironmentFile=/opt/enterprise-agent-platform/.env
+ExecStart=/usr/local/bin/uv run python -m uvicorn server.api:app --host ${APP_SERVER_HOST} --port ${APP_SERVER_PORT} --no-server-header
+Restart=on-failure
+RestartSec=5s
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+```
+
+启用：
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now enterprise-agent
+sudo systemctl status enterprise-agent
+journalctl -u enterprise-agent -f
+```
+
+systemd 与 `uv run app-server start` 二选一：systemd 接管时，由 systemd 直接拉起 uvicorn，不再走 `app-server` 后台进程管理那一套（那是开发期方便用的）。注意 systemd 路径下进程日志走 `journalctl -u enterprise-agent`，**不再写 `logs/runtime/app-server/` 下的 `server.pid` / `stdout.log` / `stderr.log`**；状态查询不能再用 `app-server status`，请直接 `systemctl status` + `curl /health`。
+
+### 反向代理（建议）
+
+服务进程默认绑 `127.0.0.1:${APP_SERVER_PORT}`。生产建议用 nginx / Caddy 在前面挂 TLS 与 rate-limit，再把请求转发到本地服务端口。
 
 ### 部署约束
 
-这个项目更适合常驻实例，不适合 Serverless：
+这个项目仍然只适合常驻实例，不适合 Serverless：
 
 - Claude Agent SDK 会拉起 CLI 子进程
 - 单次调用可能持续几十秒到几分钟
@@ -508,8 +542,8 @@ docker compose down
 更适合的部署形态：
 
 - VM
-- 常驻容器
-- 有状态主机
+- 物理机
+- 常驻进程（systemd / supervisor / pm2）
 
 ## 测试与排障
 
