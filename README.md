@@ -167,8 +167,8 @@ uv run python -m server.cli --help
 uv run python -m server.cli runtime
 uv run python -m server.cli ask "你好"
 uv run python -m server.cli init-rules knowledge/external/数睿员工手册.pdf expense
-uv run python -m server.cli audit data/case1
-uv run python -m server.cli audit-json data/case1
+uv run python -m server.cli audit data/your-sample
+uv run python -m server.cli audit-json data/your-sample
 uv run python -m server.cli results --limit 20
 uv run python -m server.cli review-deltas --limit 20
 ```
@@ -227,6 +227,7 @@ uv run app-server stop
 | `SUBMISSION_RETENTION_DAYS` | 上传目录保留天数 | `7` |
 | `MAX_UPLOAD_FILE_BYTES` | 单文件上传大小上限 | `10485760` |
 | `ALLOW_UNSCOPED_CONTINUE_RECENT` | 是否允许未指定 conversation 时继续最近会话 | `false` |
+| `ALLOW_INSECURE_DEFAULT_TENANT_KEY` | 是否允许使用默认示例 tenant key；生产环境必须设为 `false` | `false` |
 | `APP_SERVER_LOG_MAX_BYTES` | app-server 单个日志文件最大字节数 | `5242880` |
 | `APP_SERVER_LOG_BACKUPS` | app-server 日志轮转数量 | `5` |
 
@@ -235,6 +236,7 @@ uv run app-server stop
 - 如果 `MODEL_NAME` 是自定义网关模型名，例如 `gpt-5.4`，运行时会自动映射到 Claude SDK 可识别的别名。
 - 如果网关要求自定义请求头，可以用 `MODEL_CUSTOM_HEADERS` 注入。
 - 如果你忘了配置 `TENANT_KEYS`，服务会退回默认值并给出告警；开发环境可用，生产环境不要这样配。
+- `MODEL_BASE_URL` 既可以指向 Anthropic 原生 API、Anthropic 兼容企业网关，也可以指向自部署的协议翻译层（如 LiteLLM proxy）以接入本地 / 第三方模型；翻译层需对外暴露 Anthropic Messages API。
 
 ## HTTP API
 
@@ -300,19 +302,20 @@ curl "http://127.0.0.1:${APP_SERVER_PORT}/health"
 
 ### 目录模式
 
-适合本地样例、联调和压测：
+适合用本地准备好的样例做联调：
 
 ```bash
 curl -X POST "http://127.0.0.1:${APP_SERVER_PORT}/audit/submit" \
   -H "Authorization: Bearer ${TOKEN}" \
   -H "Content-Type: application/json" \
-  -d '{"mode":"directory","directory_path":"data/case1"}'
+  -d '{"mode":"directory","directory_path":"data/your-sample"}'
 ```
 
 约束：
 
 - `directory_path` 必须存在
 - 目录必须位于项目根 `data/` 下
+- 仓库不再随附内置 case 样例，请按业务自行放置
 
 ### 上传模式
 
@@ -322,8 +325,8 @@ curl -X POST "http://127.0.0.1:${APP_SERVER_PORT}/audit/submit" \
 curl -X POST "http://127.0.0.1:${APP_SERVER_PORT}/audit/submit" \
   -H "Authorization: Bearer ${TOKEN}" \
   -F 'mode=upload' \
-  -F 'form_json={"company_form_id":"case1","payload":{"任意字段":"任意值"}}' \
-  -F 'files=@data/case1/dzfp_INVOICE-NO-A_示例云平台有限公司_20260326133128.pdf'
+  -F 'form_json={"company_form_id":"demo-001","payload":{"任意字段":"任意值"}}' \
+  -F 'files=@/path/to/your-attachment.pdf'
 ```
 
 上传校验：
@@ -510,10 +513,9 @@ docker compose down
 
 ## 测试与排障
 
-### 测试
+### Lint
 
 ```bash
-uv run pytest
 uv run ruff check .
 ```
 
@@ -531,7 +533,7 @@ CLI：
 ```bash
 uv run python -m server.cli runtime
 uv run python -m server.cli ask "你好"
-uv run python -m server.cli audit-json data/case1
+uv run python -m server.cli audit-json data/your-sample
 ```
 
 HTTP：
@@ -540,19 +542,8 @@ HTTP：
 curl -X POST "http://127.0.0.1:${APP_SERVER_PORT}/audit/submit" \
   -H "Authorization: Bearer ${TOKEN}" \
   -H "Content-Type: application/json" \
-  -d '{"mode":"directory","directory_path":"data/case2"}'
+  -d '{"mode":"directory","directory_path":"data/your-sample"}'
 ```
-
-### 压测样例
-
-目录模式压测可直接使用：
-
-- `data/case2` 到 `data/case9`：相对合法样例
-- `data/case10` 到 `data/case13`：缺件或缺文件
-- `data/case14` 到 `data/case17`：脏数据或越界
-- `data/case18` 到 `data/case21`：重复、冲突、脏文本、伪文件
-
-详细场景见 [`data/scenario-index.json`](./data/scenario-index.json)。
 
 ## 目录结构
 
@@ -561,10 +552,9 @@ curl -X POST "http://127.0.0.1:${APP_SERVER_PORT}/audit/submit" \
 ```text
 .claude/              Claude commands, agents, hooks, skills, contracts
 knowledge/            结构化规则、制度材料、memory 资产
-data/                 本地 case 样例与上传落盘目录
+data/                 本地放置的样例目录与上传落盘目录（仓库不内置 case）
 logs/                 请求、结果、会话、runtime、review delta 等运行时归档
 server/               Python 服务外壳、CLI、平台层与 stores
-tests/                测试代码与 fixtures
 ```
 
 运行时最常查的路径：
