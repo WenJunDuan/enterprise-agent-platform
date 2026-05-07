@@ -7,3 +7,12 @@
 {"ts":"2026-04-29T08:33:55.900Z","hook":"permission-request","tool":"Bash","cmd":"uv run python -m server.cli serve > /tmp/server-9999.log 2>&1 &\necho \"PID=$!\""}
 {"ts":"2026-04-29T08:35:03.890Z","hook":"permission-request","tool":"Bash","cmd":"lsof -i :9999 -t 2>/dev/null | xargs -r kill -9 && echo \"killed\" || echo \"nothin..."}
 {"ts":"2026-04-29T08:35:40.424Z","hook":"permission-request","tool":"Bash","cmd":"curl -s --noproxy '*' http://localhost:9999/health 2>&1"}
+{"ts":"2026-04-29T09:47:20.823Z","hook":"permission-request","tool":"Edit","cmd":""}
+{"ts":"2026-05-06T06:40:26.404Z","hook":"permission-request","tool":"Bash","cmd":"git -C /Users/mi_manchi/workspace/enterprise-agent-platform ls-files data/ 2>/de..."}
+{"ts":"2026-05-06T06:42:05.048Z","hook":"permission-request","tool":"Bash","cmd":"git -C /Users/mi_manchi/workspace/enterprise-agent-platform diff README.md | hea..."}
+{"ts":"2026-05-06T06:42:42.182Z","hook":"permission-request","tool":"Bash","cmd":"git -C /Users/mi_manchi/workspace/enterprise-agent-platform rm start.sh"}
+{"ts":"2026-05-06T06:42:52.099Z","hook":"permission-request","tool":"Bash","cmd":"rm /Users/mi_manchi/workspace/enterprise-agent-platform/data/scenario-index.json"}
+{"ts":"2026-05-06T06:56:31.604Z","hook":"permission-request","tool":"Bash","cmd":"uv sync 2>&1 | tail -10"}
+{"ts":"2026-05-07T01:30:50.701Z","hook":"permission-request","tool":"Bash","cmd":"echo \"=== ALLOWED PATHS ===\" && \\\necho \"[GET /health]\" && curl -s -o /tmp/r.txt ..."}
+{"ts":"2026-05-07T01:35:48.054Z","hook":"permission-request","tool":"Bash","cmd":"unset http_proxy https_proxy HTTPS_PROXY HTTP_PROXY ALL_PROXY all_proxy\necho \"==..."}
+{"ts":"2026-05-07T01:50:47.371Z","hook":"permission-request","tool":"Bash","cmd":"echo \"=== PROBE PATHS (expect 404 + minimal body) ===\"\nfor p in \"/.env\" \"/.git/H..."}

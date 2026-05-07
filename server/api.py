@@ -19,6 +19,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.routing import Match
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from server.command_adapter import run_command_json
 from server.platform.config import get_app_settings, load_tenant_keys, tenant_keys_are_default
@@ -59,6 +61,39 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+class StrictRouteMiddleware:
+    """ASGI gate: drop any HTTP request whose path does not match a registered route."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        fastapi_app = scope.get("app")
+        if fastapi_app is not None:
+            for route in fastapi_app.routes:
+                match, _ = route.matches(scope)
+                if match != Match.NONE:
+                    await self.app(scope, receive, send)
+                    return
+        client = scope.get("client") or ("", 0)
+        logger.warning(
+            "rejected_unknown_route",
+            extra={
+                "path": scope.get("path"),
+                "method": scope.get("method"),
+                "client_host": client[0],
+            },
+        )
+        response = JSONResponse({"detail": "Not Found"}, status_code=404)
+        await response(scope, receive, send)
+
+
+app.add_middleware(StrictRouteMiddleware)
 
 TENANT_KEYS = load_tenant_keys()
 ALLOWED_DIRECTORY_ROOT = (PROJECT_ROOT / "data").resolve()

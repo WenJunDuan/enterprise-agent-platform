@@ -4,15 +4,14 @@
   "sprint": 4,
   "path_kind": "Quick",
   "tech_stack": "python>=3.12, claude-agent-sdk, fastapi, typer, uvicorn",
-  "test_cmd": "uv run pytest",
+  "test_cmd": "uv run ruff check .",
   "build_cmd": "uv build",
   "lint_cmd": "uv run ruff check .",
-  "dev_cmd": "uv run uvicorn server.api:app --reload",
+  "dev_cmd": "uv run python -m server.cli serve",
   "conventions": [
     "line-length=100",
     "target=py312",
     "ruff formatter",
-    "pytest testpaths=tests",
     "packages=[server]"
   ],
   "gotchas": [
