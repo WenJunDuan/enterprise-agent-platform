@@ -16,3 +16,7 @@
 {"ts":"2026-05-07T01:30:50.701Z","hook":"permission-request","tool":"Bash","cmd":"echo \"=== ALLOWED PATHS ===\" && \\\necho \"[GET /health]\" && curl -s -o /tmp/r.txt ..."}
 {"ts":"2026-05-07T01:35:48.054Z","hook":"permission-request","tool":"Bash","cmd":"unset http_proxy https_proxy HTTPS_PROXY HTTP_PROXY ALL_PROXY all_proxy\necho \"==..."}
 {"ts":"2026-05-07T01:50:47.371Z","hook":"permission-request","tool":"Bash","cmd":"echo \"=== PROBE PATHS (expect 404 + minimal body) ===\"\nfor p in \"/.env\" \"/.git/H..."}
+{"ts":"2026-05-07T02:45:20.253Z","hook":"permission-request","tool":"Bash","cmd":"uv pip index versions claude-agent-sdk 2>&1 | head -10"}
+{"ts":"2026-05-07T02:54:10.187Z","hook":"permission-request","tool":"Edit","cmd":""}
+{"ts":"2026-05-07T02:59:43.968Z","hook":"permission-request","tool":"Bash","cmd":"uv lock --upgrade-package claude-agent-sdk 2>&1 | tail -8 && echo \"---\" && uv sy..."}
+{"ts":"2026-05-07T03:04:43.506Z","hook":"permission-request","tool":"Bash","cmd":"sleep 1 && uv run app-server status 2>&1 | grep -E '\"running\"|\"pid\"|\"port\"' | he..."}

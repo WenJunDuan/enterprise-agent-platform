@@ -233,7 +233,7 @@ uv run app-server stop
 
 说明：
 
-- 如果 `MODEL_NAME` 是自定义网关模型名，例如 `gpt-5.4`，运行时会自动映射到 Claude SDK 可识别的别名。
+- `MODEL_NAME` 原样透传到 `ANTHROPIC_MODEL`，代码不再做"是不是 Claude 模型"的判断，也不再写死 `sonnet` 之类兜底；如果想用 SDK 的 alias 路由（例如把 `sonnet` 映射成自定义模型），自行在 `.env` 里加 `ANTHROPIC_DEFAULT_SONNET_MODEL` / `ANTHROPIC_DEFAULT_OPUS_MODEL` / `ANTHROPIC_DEFAULT_HAIKU_MODEL`。
 - 如果网关要求自定义请求头，可以用 `MODEL_CUSTOM_HEADERS` 注入。
 - 如果你忘了配置 `TENANT_KEYS`，服务会退回默认值并给出告警；开发环境可用，生产环境不要这样配。
 - `MODEL_BASE_URL` 既可以指向 Anthropic 原生 API、Anthropic 兼容企业网关，也可以指向自部署的协议翻译层（如 LiteLLM proxy）以接入本地 / 第三方模型；翻译层需对外暴露 Anthropic Messages API。

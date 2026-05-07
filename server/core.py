@@ -204,7 +204,7 @@ def build_options(**overrides: Any) -> ClaudeAgentOptions:
         "permission_mode": "bypassPermissions",
         "max_turns": 80,
         "max_budget_usd": float(os.getenv("MAX_BUDGET_USD", "1.0")),
-        "model": runtime["anthropic_model"] or "sonnet",
+        "model": runtime["anthropic_model"],
     }
     defaults.update(overrides)
     return ClaudeAgentOptions(**defaults)
