@@ -17,14 +17,8 @@ DOTENV_PATH = PROJECT_ROOT / ".env"
 DOTENV_LOADED = load_dotenv(DOTENV_PATH)
 ensure_local_layout()
 
-KNOWN_CLAUDE_MODEL_ALIASES = {"default", "sonnet", "opus", "haiku", "opusplan"}
 DEFAULT_TENANT_KEYS_RAW = '{"default":"sk-default"}'
 _DEFAULT_TENANT_KEY_WARNING_EMITTED = False
-
-
-def _looks_like_native_claude_model(model_name: str) -> bool:
-    normalized = model_name.strip()
-    return normalized.startswith("claude-") or normalized in KNOWN_CLAUDE_MODEL_ALIASES
 
 
 def _normalize_custom_headers(value: str) -> str:
@@ -46,45 +40,30 @@ def _normalize_custom_headers(value: str) -> str:
 def configure_claude_runtime_env(
     environ: MutableMapping[str, str] | None = None,
 ) -> dict[str, str | None]:
-    """Map local gateway-style env vars to Claude SDK/CLI env vars."""
+    """Transparently forward MODEL_* env vars onto their ANTHROPIC_* counterparts.
+
+    No branching on model identity; if the user wants alias routing
+    (e.g. `sonnet` → some other model), they configure
+    ANTHROPIC_DEFAULT_*_MODEL themselves in .env — the SDK/CLI handles it.
+    """
     env = environ if environ is not None else os.environ
 
-    model_base_url = env.get("MODEL_BASE_URL")
-    model_api_key = env.get("MODEL_API_KEY")
-    model_auth_token = env.get("MODEL_AUTH_TOKEN")
-    model_name = env.get("MODEL_NAME")
-    model_custom_headers = env.get("MODEL_CUSTOM_HEADERS")
+    passthrough = (
+        ("MODEL_BASE_URL", "ANTHROPIC_BASE_URL"),
+        ("MODEL_API_KEY", "ANTHROPIC_API_KEY"),
+        ("MODEL_AUTH_TOKEN", "ANTHROPIC_AUTH_TOKEN"),
+        ("MODEL_NAME", "ANTHROPIC_MODEL"),
+    )
+    for src, dst in passthrough:
+        value = env.get(src)
+        if value and not env.get(dst):
+            env[dst] = value.strip()
 
-    if model_base_url and not env.get("ANTHROPIC_BASE_URL"):
-        env["ANTHROPIC_BASE_URL"] = model_base_url
+    if env.get("MODEL_API_KEY") and not env.get("ANTHROPIC_AUTH_TOKEN"):
+        env["ANTHROPIC_AUTH_TOKEN"] = env["MODEL_API_KEY"].strip()
 
-    if model_api_key and not env.get("ANTHROPIC_API_KEY"):
-        env["ANTHROPIC_API_KEY"] = model_api_key
-
-    if model_auth_token and not env.get("ANTHROPIC_AUTH_TOKEN"):
-        env["ANTHROPIC_AUTH_TOKEN"] = model_auth_token
-    elif model_api_key and not env.get("ANTHROPIC_AUTH_TOKEN"):
-        env["ANTHROPIC_AUTH_TOKEN"] = model_api_key
-
-    if model_custom_headers and not env.get("ANTHROPIC_CUSTOM_HEADERS"):
-        env["ANTHROPIC_CUSTOM_HEADERS"] = _normalize_custom_headers(model_custom_headers)
-
-    if model_name:
-        normalized = model_name.strip()
-        looks_like_native_model = _looks_like_native_claude_model(normalized)
-
-        if looks_like_native_model:
-            if not env.get("ANTHROPIC_MODEL"):
-                env["ANTHROPIC_MODEL"] = normalized
-        else:
-            if not env.get("ANTHROPIC_DEFAULT_SONNET_MODEL"):
-                env["ANTHROPIC_DEFAULT_SONNET_MODEL"] = normalized
-            if not env.get("ANTHROPIC_DEFAULT_OPUS_MODEL"):
-                env["ANTHROPIC_DEFAULT_OPUS_MODEL"] = normalized
-            if not env.get("ANTHROPIC_DEFAULT_HAIKU_MODEL"):
-                env["ANTHROPIC_DEFAULT_HAIKU_MODEL"] = normalized
-            if not env.get("ANTHROPIC_MODEL"):
-                env["ANTHROPIC_MODEL"] = "sonnet"
+    if env.get("MODEL_CUSTOM_HEADERS") and not env.get("ANTHROPIC_CUSTOM_HEADERS"):
+        env["ANTHROPIC_CUSTOM_HEADERS"] = _normalize_custom_headers(env["MODEL_CUSTOM_HEADERS"])
 
     return {
         "anthropic_base_url": env.get("ANTHROPIC_BASE_URL"),
@@ -183,23 +162,23 @@ def get_claude_runtime_report(environ: MutableMapping[str, str] | None = None) -
     }
 
 
-def resolve_second_review_model(environ: Mapping[str, str] | None = None) -> str:
-    """Pick a safe review model for either native Claude or an external gateway."""
+def resolve_second_review_model(environ: Mapping[str, str] | None = None) -> str | None:
+    """Resolve the second-pass review model from .env only.
+
+    Order: SECOND_REVIEW_MODEL → ANTHROPIC_DEFAULT_HAIKU_MODEL → ANTHROPIC_MODEL → MODEL_NAME.
+    Returns None when nothing is configured; the caller decides how to handle it.
+    """
     env = environ if environ is not None else os.environ
-
-    explicit = env.get("SECOND_REVIEW_MODEL")
-    if explicit and explicit.strip():
-        return explicit.strip()
-
-    mapped_haiku = env.get("ANTHROPIC_DEFAULT_HAIKU_MODEL")
-    if mapped_haiku and mapped_haiku.strip():
-        return mapped_haiku.strip()
-
-    model_name = env.get("MODEL_NAME")
-    if model_name and not _looks_like_native_claude_model(model_name):
-        return model_name.strip()
-
-    return "claude-haiku-4-5-20251001"
+    for key in (
+        "SECOND_REVIEW_MODEL",
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+        "ANTHROPIC_MODEL",
+        "MODEL_NAME",
+    ):
+        value = (env.get(key) or "").strip()
+        if value:
+            return value
+    return None
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
