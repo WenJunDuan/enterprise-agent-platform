@@ -1,7 +1,6 @@
 import { SCENARIO_FLAG_LABELS, SCENARIO_FLAG_OPTIONS, formatAmount } from '../../lib/reimbursementLabels'
 import type { ScenarioFlag, SubmitFormData } from '../../types'
 import type { SelectedAttachment } from './Step3Attachments'
-import { toAttachmentSummaries } from './shared'
 
 interface Props {
   form: SubmitFormData
@@ -11,9 +10,6 @@ interface Props {
 }
 
 export default function Step4Preview({ form, attachments, submitting, update }: Props) {
-  const attachmentSummaries = toAttachmentSummaries(attachments)
-  const payload: SubmitFormData = { ...form, attachment_summaries: attachmentSummaries }
-
   function toggleScenario(flag: ScenarioFlag) {
     const next = form.scenario_flags.includes(flag)
       ? form.scenario_flags.filter(item => item !== flag)
