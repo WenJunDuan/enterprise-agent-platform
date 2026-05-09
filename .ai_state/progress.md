@@ -22,3 +22,4 @@
 2026-04-27 00:00 [Quick/impl/Sprint 4] 完成 S4-T1/S4-T2/S4-T3/S4-T4：新增后端连接状态条、填报页复制/重置/新单号、详情页完整结果字段、列表清空本机摘要。
 2026-04-27 00:00 [Quick/review/Sprint 4] 完成 S4-T5：README、前端对接文档、design、session、review、lessons 已同步；ui build、pytest、ruff、diff check 全部通过。
 2026-04-27 00:00 [Bugfix/Sprint 4] 调整租户 token 对接边界：UI 改用 `VITE_TENANT_TOKEN` 命名，外部接口调用继续直接发送 `Authorization: Bearer <tenant-token>`，缺失/格式错误 token 统一返回 401。
+2026-05-09 11:07 [Bugfix/Sprint 4] 修复 UI 构建失败：删除 Step4Preview 未使用的 payload 死代码，`cd ui && npm run build` 通过。
