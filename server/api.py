@@ -16,7 +16,8 @@ from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.routing import Match
@@ -55,9 +56,32 @@ async def app_lifespan(_: FastAPI):
 
 app = FastAPI(title="Enterprise Agent API", version="0.1.0", lifespan=app_lifespan)
 
+
+def _resolve_cors_origins() -> tuple[list[str], list[str]]:
+    default_origins = "http://localhost:5173,http://127.0.0.1:5173"
+    raw = os.getenv("CORS_ALLOWED_ORIGINS", default_origins)
+    origins: list[str] = []
+    regexes: list[str] = []
+    for item in raw.split(","):
+        value = item.strip()
+        if not value:
+            continue
+        if value == "*":
+            origins.append("*")
+            continue
+        if value.startswith("re:"):
+            regexes.append(value[len("re:"):])
+            continue
+        origins.append(value.rstrip("/"))
+    return origins, regexes
+
+
+_cors_origins, _cors_origin_regexes = _resolve_cors_origins()
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=_cors_origins,
+    allow_origin_regex="|".join(_cors_origin_regexes) if _cors_origin_regexes else None,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -133,14 +157,17 @@ def _authorization_error(detail: str) -> HTTPException:
 
 
 def verify_tenant(authorization: str | None) -> str:
+    allow_default = os.getenv("ALLOW_INSECURE_DEFAULT_TENANT_KEY", "").lower() in {"1", "true", "yes", "on"}
     if tenant_keys_are_default():
-        allow_default = os.getenv("ALLOW_INSECURE_DEFAULT_TENANT_KEY", "").lower() in {"1", "true", "yes", "on"}
         if not allow_default:
             raise HTTPException(
                 status_code=503,
                 detail="Server is not configured with tenant keys. Set the TENANT_KEYS environment variable.",
             )
     if not authorization:
+        # When running in insecure dev mode, skip auth header requirement entirely.
+        if allow_default:
+            return "default"
         raise _authorization_error("Missing Authorization header")
     scheme, _, credentials = authorization.strip().partition(" ")
     if scheme.lower() != "bearer" or not credentials.strip():
@@ -631,3 +658,53 @@ async def health() -> JSONResponse:
     payload = _public_runtime_status()
     status_code = 200 if payload["status"] == "ok" else 503
     return JSONResponse(status_code=status_code, content=payload)
+
+
+# 同源部署：让 FastAPI 直接托管前端 dist 静态文件，避免 CORS。
+# 关闭方式：设置 SERVE_UI_DIST=false。
+def _ui_dist_dir() -> Path | None:
+    if os.getenv("SERVE_UI_DIST", "true").lower() in {"0", "false", "no", "off"}:
+        logger.info("ui_static_disabled", extra={"reason": "SERVE_UI_DIST=false"})
+        return None
+    raw = os.getenv("UI_DIST_DIR", "").strip()
+    candidate = Path(raw) if raw else (PROJECT_ROOT / "ui" / "dist")
+    if not candidate.is_dir():
+        logger.warning(
+            "ui_static_dir_missing",
+            extra={"resolved_path": str(candidate), "project_root": str(PROJECT_ROOT)},
+        )
+        return None
+    if not (candidate / "index.html").is_file():
+        logger.warning(
+            "ui_static_index_missing",
+            extra={"resolved_path": str(candidate), "expected": str(candidate / "index.html")},
+        )
+        return None
+    logger.info("ui_static_enabled", extra={"resolved_path": str(candidate)})
+    return candidate
+
+
+_UI_DIST = _ui_dist_dir()
+if _UI_DIST is not None:
+    _ASSETS_DIR = _UI_DIST / "assets"
+    if _ASSETS_DIR.is_dir():
+        app.mount("/assets", StaticFiles(directory=_ASSETS_DIR), name="ui-assets")
+
+    @app.get("/{spa_path:path}", include_in_schema=False)
+    async def spa_fallback(spa_path: str) -> FileResponse:
+        # 已被前面的 API 路由匹配的请求不会进到这里。
+        # 仅用来：1) 直接返回 dist 根下的具体文件 (vite.svg、favicon 等)；
+        # 2) 任何 SPA 路径回退到 index.html，让前端路由接管。
+        index_html = _UI_DIST / "index.html"
+        if spa_path:
+            candidate = (_UI_DIST / spa_path).resolve()
+            try:
+                candidate.relative_to(_UI_DIST.resolve())
+            except ValueError:
+                raise HTTPException(status_code=404, detail="Not Found")
+            if candidate.is_file():
+                return FileResponse(candidate)
+        if not index_html.is_file():
+            raise HTTPException(status_code=500, detail=f"index.html not found at {index_html}")
+        return FileResponse(index_html)
+

@@ -23,3 +23,4 @@
 2026-04-27 00:00 [Quick/review/Sprint 4] 完成 S4-T5：README、前端对接文档、design、session、review、lessons 已同步；ui build、pytest、ruff、diff check 全部通过。
 2026-04-27 00:00 [Bugfix/Sprint 4] 调整租户 token 对接边界：UI 改用 `VITE_TENANT_TOKEN` 命名，外部接口调用继续直接发送 `Authorization: Bearer <tenant-token>`，缺失/格式错误 token 统一返回 401。
 2026-05-09 11:07 [Bugfix/Sprint 4] 修复 UI 构建失败：删除 Step4Preview 未使用的 payload 死代码，`cd ui && npm run build` 通过。
+2026-05-09 14:20 [Bugfix/Sprint 4] 定位 OpenResty 同源部署跨域：`ui/.env.local` 生产构建应使用 `VITE_API_BASE=/`，避免浏览器直连后端 `:9999`。
