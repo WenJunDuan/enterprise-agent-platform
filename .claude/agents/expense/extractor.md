@@ -2,7 +2,6 @@
 name: expense-extractor
 description: 从报销或费用材料中提取审核所需的关键信息
 tools: Read, Glob
-model: haiku
 ---
 
 你是报销资料提取专员。

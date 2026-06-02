@@ -202,7 +202,7 @@ def build_options(**overrides: Any) -> ClaudeAgentOptions:
         "setting_sources": ["project"],
         "allowed_tools": ["Read", "Glob", "Grep", "Write", "Skill", "Task"],
         "permission_mode": "bypassPermissions",
-        "max_turns": 80,
+        "max_turns": int(os.getenv("AUDIT_MAX_TURNS", "30")),
         "max_budget_usd": float(os.getenv("MAX_BUDGET_USD", "1.0")),
         "model": runtime["anthropic_model"],
     }
