@@ -6,16 +6,16 @@
 
 | 业务域  | 典型场景                                 | 调度入口                                                     |
 | ------- | ---------------------------------------- | ------------------------------------------------------------ |
-| expense | 报销、费用、发票、差旅、招待、借款       | `expense-extractor` → `expense-auditor` → `expense-reviewer` |
+| expense | 报销、费用、发票、差旅、招待、借款       | `/audit` 内联一次性审核（提取+判断同会话）；`expense-reviewer` 暂时关闭 |
 | hr      | 考勤、打卡、迟到、早退、缺勤、请假、调休 | `attendance-checker` / `leave-auditor`                       |
 | legal   | 合同、条款、协议、法务审查               | `contract-reviewer`                                          |
-| system  | 制度导入、规则初始化、政策更新、记忆沉淀 | `system-rule-init` / `system-memory-distill`                 |
+| system  | 制度导入、规则初始化、政策更新、记忆沉淀 | `system-rule-init` / `system-memory-distill`（skill，非 agent） |
 
 ## 路由原则
 
 1. 先识别用户当前的主业务意图，再决定业务域。
 2. 如果意图不清楚，先确认场景，不要自行猜测。
-3. 涉及报销时，默认先做数据提取，再做审核，必要时再做复核。
+3. 涉及报销时，默认走 `/audit` 一次性内联审核（同一会话内完成提取与判断）；复核（`expense-reviewer` 与 post-write 二审 hook）当前暂时关闭。
 4. 涉及多个业务域时，先处理主业务域，再调度辅助业务域补证据。
 
 ## 业务域调度
@@ -23,14 +23,14 @@
 ### expense
 
 - 适用于报销申请、费用合规、发票核验、差旅审核、招待审核、借款相关问题。
-- 默认流程是 `expense-extractor` → `expense-auditor`。
-- 当出现以下任一条件时，追加 `expense-reviewer`：
+- 默认走 `/audit` **一次性内联审核**：在同一会话内完成“事实提取 + 合规判断 + 输出”，不再默认嵌套 `expense-extractor` / `expense-auditor` 子 agent（为压低单次审核耗时）。这两个 agent 仍保留，供多业务域协同等特殊场景按需调度。
+- **复核暂时关闭**：当前不调度 `expense-reviewer`，post-write 二审 hook 也默认关闭（见下方“二次复核成本治理”）。高风险 / 证据冲突 / `manual_review` 在结论中如实标注，交人工处理。需重新开启复核时，设 `SECOND_REVIEW_ENABLED=true` 并按下列条件触发：
   - 用户明确要求复核 / 第二意见
   - `risk_score >= 70`
   - 初审输出 `manual_review` 且 `manual_review_reason ∈ {data_conflict, pre_approval_mismatch, missing_approval, invoice_invalid}`
-  - 证据冲突明显，或 extractor / auditor 无法给出单一稳定解释
-- `expense-extractor` 的输出必须符合 `.claude/contracts/expense/extract-result.schema.json`。
-- `expense-reviewer` 的输出必须符合 `.claude/contracts/expense/review-delta.schema.json`。
+  - 证据冲突明显，或初审无法给出单一稳定解释
+- 内联审核仍须在内部产出符合 `.claude/contracts/expense/extract-result.schema.json` 的事实底稿语义（即便不再单独输出 extract-result）。
+- `expense-reviewer` 重新启用时，其输出必须符合 `.claude/contracts/expense/review-delta.schema.json`。
 
 ### hr
 
@@ -83,6 +83,7 @@
 
 ## 二次复核成本治理
 
+- **当前默认关闭**：post-write `review-output` hook 由 `SECOND_REVIEW_ENABLED` 开关控制，默认 `false`（一次性审核，不触发二审）。以下条件仅在设 `SECOND_REVIEW_ENABLED=true` 后才生效。
 - post-write `review-output` 不是默认全量执行的主审流程。
 - 只有以下结果才值得进入第二道 SDK 复核：
   - `rejected`

@@ -51,7 +51,7 @@ skills:
 
 ## 输出要求
 
-- 最终结果必须通过 `common-result-format`。
+- 最终结果必须直接符合 `common-result-format` 约定的结构（字段命名、中文文案、三态映射），但不必再单独调用该 skill 包一层。
 - 最终审核输出继续使用 `.claude/contracts/common/audit-result.schema.json`。
 - 最终结果必须同时保留完整结构化字段与审核意见字段，供页面直接消费。
 - 必须同时输出 `result`、`conclusion`、`explanation`。
