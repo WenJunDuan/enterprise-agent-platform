@@ -1,4 +1,12 @@
-# Lessons
+---
+name: legacy-v962-migration
+description: v9.6.2→v9.6.4 迁移时整体保留的历史经验 (原 lessons.md)，含职责边界/路径模型/测试契约/前端对接等跨 sprint 教训
+metadata:
+  type: learning
+---
+
+> 本文件由 athena-migrate v9.6.2→v9.6.4 整体迁移自旧 `.ai_state/lessons.md`（2026-06-02）。
+> 未按 doc_type 细分，保留全部历史。后续新经验请按 `compound/{date}-{type}-{slug}.md` 一事一档。
 
 - `.claude/` 只保留业务内容；开发过程、运行方式、服务契约和演进记录统一放在 `.ai_state`。
 - 结构化 JSON 约束要落在 Claude Agent SDK `output_format` 和 schema 上，而不是依赖提示词 wording。
@@ -22,7 +30,7 @@
 - 如果主流程已经统一走 `claude-agent-sdk`，二审 hook 也应尽量统一到同一 SDK，避免主流程和 hook 分别依赖不同的客户端栈。多套 SDK 并存短期未必出错，但长期会带来版本节奏、认证方式、错误模型和调试路径不一致的问题。
 - 发布前做 API 返回集优化时，优先选“增量兼容”而不是“一刀切重包”。这次把 HTTP 错误统一补成 `detail + error{...}`，而不是直接移除 `detail`，可以在不打断现有前端的前提下完成契约升级。
 - 查询型列表接口如果暂时拿不到可靠 total count，就不要伪造 `total`；统一返回 `returned + filters` 更诚实，也能避免前端误把当前页条数当成全量统计。
-- 质量门要跑全仓而不是只跑 `server/ tests`。这次发布前整理暴露出 `.ai_state/docs/audit-skills/audit_check.py` 的历史 lint 问题，说明文档侧辅助脚本同样会影响真实发布 gate。
+- 质量门要跑全仓而不是只跑 `server/ tests`。这次发布前整理暴露出 `docs/audit-skills/audit_check.py` 的历史 lint 问题，说明文档侧辅助脚本同样会影响真实发布 gate。
 - README 这类入口文档的首要目标不是“信息尽可能全”，而是“高频问题 30 秒内能找到答案”。这次把端口、两套 CLI、常用 API 和启动方式提前后，可读性明显比长篇顺叙教程更好。
 - 公共探针接口与本地运维诊断命令都要克制数量。最终收口成 `health + doctor` 比 `health + ready + inspect + doctor` 更清晰：外部只看一个探针，内部只保留一个重型诊断入口。
 - 如果 CLI 已经承担本地追溯、治理和排障职责，就不要再在 HTTP API 上重复暴露同一批查询面。更清晰的边界是：HTTP 只留业务主链路，CLI 留查询/治理/调试。
@@ -30,9 +38,9 @@
 
 ## [2026-04-26 Sprint 2] 前端接入必须把文档契约和真实 API 同步验证
 - **Pattern**: 前端新增列表页时，后端需要显式锁定 `GET /audit/tasks` 路由顺序和返回 shape，避免被 `GET /audit/tasks/{request_id}` 吞掉；对应测试在 `tests/test_api.py` 和 `tests/test_query_surfaces.py`。
-- **Pitfall**: `.ai_state/reviews/sprint-2.md` 曾出现 local PASS 早于真实 gate 的情况；以后进入 review 前必须实际跑 `pytest`、`ruff`、前端 build，并把失败先写回 review。
+- **Pitfall**: 旧 `reviews/sprint-2.md`（迁移后 `reviews/pass2.md`）曾出现 local PASS 早于真实 gate 的情况；以后进入 review 前必须实际跑 `pytest`、`ruff`、前端 build，并把失败先写回 review。
 - **Constraint**: Vite 环境变量必须有 `ui/src/vite-env.d.ts:1` 的 `vite/client` 类型声明；否则 `ui/src/api/client.ts` 的 `import.meta.env.VITE_API_BASE` / tenant token 配置无法通过 `tsc`。
-- **Constraint**: review/impl 阶段的 session-start 会尝试执行 `.ai_state/init.sh`；项目必须保留一个无副作用、可重复运行的 init 脚本（`.ai_state/init.sh:1`）。
+- **Constraint**: review/impl 阶段的 session-start 会尝试执行 init 脚本；项目应保留一个无副作用、可重复运行的 init 脚本（迁移后原 `.ai_state/init.sh` 已废弃）。
 
 ## [2026-04-26 Sprint 3] 上传入口只做通用 intake
 - **Pattern**: 通用表单入口应把 `form_json` 解析、普通 multipart 字段归档和附件落盘拆开处理，`server/api.py:315` 解析可选 JSON，`server/api.py:302` 收集普通字段，`server/api.py:380` 写入统一 `audit-request.json`。
