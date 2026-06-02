@@ -6,7 +6,7 @@ version: "9.6.4"
 # === PACE 路由状态 ===
 path: "Quick"                     # 最后一次活动: Sprint 4 (Quick)
 stage: "ship"                     # 迁移前最后停留阶段
-current_sprint_slug: ""           # 当前无进行中 sprint (历史归档于 sprints/)
+current_sprint_slug: ""
 current_roadmap_slug: ""
 skip_polish: false
 skip_architecture_check: false
@@ -56,7 +56,6 @@ counts:
     trick: 0
     decision: 0
     explore: 0
-
 # === Pointers (指向最新相关文件) ===
 pointers:
   latest_design: "sprints/2026-04-01-serve-lifespan-and-task-store/plan.md"
@@ -69,8 +68,8 @@ pointers:
 
 # === PACE 联动字段 (hook 自动维护) ===
 next_action: ""
-last_subagent: ""
-last_subagent_at: ""
+last_subagent: "unknown"
+last_subagent_at: "2026-06-02T08:14:21.220Z"
 active_worktrees: []
 last_critic_round: 0
 design_changed_after_impl: false
@@ -146,3 +145,23 @@ slug 拆分为独立 sprint 目录；`lessons.md` 整体保留为
 
 ## 历史
 - `2026-06-02 08:04:03`: stage=ship sprint=? turn-end
+
+
+## 历史
+- `2026-06-02 08:09:35`: stage=ship sprint=? turn-end
+
+
+## 历史
+- `2026-06-02 08:11:11`: stage=ship sprint=? turn-end
+
+
+## 历史
+- `2026-06-02 08:20:40`: stage=ship sprint=? turn-end
+
+
+## 历史
+- `2026-06-02 08:31:07`: stage=ship sprint=? turn-end
+
+
+## 历史
+- `2026-06-02 08:34:21`: stage=ship sprint=? turn-end
