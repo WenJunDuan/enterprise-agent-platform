@@ -20,6 +20,14 @@ from server.platform.config import configure_claude_runtime_env, resolve_second_
 configure_claude_runtime_env()
 
 
+def _second_review_enabled() -> bool:
+    """Second-pass review is opt-in; default off keeps audits single-pass and fast."""
+    value = os.getenv("SECOND_REVIEW_ENABLED")
+    if value is None:
+        return False
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _is_result_write(file_path: str) -> bool:
     return "logs/results/" in file_path
 
@@ -108,6 +116,9 @@ async def _run_second_review(content: str) -> str:
 
 
 def main() -> int:
+    if not _second_review_enabled():
+        return 0
+
     hook_input = json.load(sys.stdin)
     tool_input = hook_input.get("tool_input", {})
     file_path = str(tool_input.get("file_path", ""))
