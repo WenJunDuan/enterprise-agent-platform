@@ -109,3 +109,19 @@ export async function getTaskResult(id: string): Promise<AuditResult> {
   })
   return handleResponse<AuditResult>(res)
 }
+
+export async function retryTask(id: string): Promise<AuditTask> {
+  const res = await fetch(url(`/audit/tasks/${encodeURIComponent(id)}/retry`), {
+    method: 'POST',
+    headers: authHeaders(),
+  })
+  return handleResponse<AuditTask>(res)
+}
+
+export async function deleteTask(id: string): Promise<void> {
+  const res = await fetch(url(`/audit/tasks/${encodeURIComponent(id)}`), {
+    method: 'DELETE',
+    headers: authHeaders(),
+  })
+  if (!res.ok) await handleResponse(res)
+}

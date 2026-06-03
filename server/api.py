@@ -32,6 +32,7 @@ from server.platform.diagnostics import collect_runtime_diagnostics
 from server.platform.logging_setup import configure_logging
 from server.platform.storage import append_json_file
 from server.stores.audit_task_store import (
+    delete_audit_task,
     get_audit_task,
     list_audit_tasks,
     recover_stale_audit_tasks,
@@ -422,6 +423,18 @@ def _serialize_case_path(path: Path) -> str:
         return str(path)
 
 
+def _remove_submission_dir(case_path: str | None) -> None:
+    """Delete an uploaded submission directory, but only under the submissions root."""
+    if not case_path:
+        return
+    candidate = Path(case_path)
+    resolved = (candidate if candidate.is_absolute() else PROJECT_ROOT / candidate).resolve()
+    submissions_root = SUBMISSION_ROOT_DIR.resolve()
+    if submissions_root not in resolved.parents:
+        return
+    shutil.rmtree(resolved, ignore_errors=True)
+
+
 async def _materialize_upload_submission(
     *,
     request_id: str,
@@ -652,6 +665,67 @@ async def audit_task_result(request_id: str, authorization: str | None = Header(
     if payload is None or not isinstance(payload.get("response"), dict):
         raise HTTPException(status_code=404, detail="Audit result not found")
     return payload["response"]
+
+
+@app.post("/audit/tasks/{request_id}/retry", response_model=AuditTaskStatusResponse)
+async def retry_audit_task(
+    request_id: str,
+    authorization: str | None = Header(None),
+) -> AuditTaskStatusResponse:
+    tenant = verify_tenant(authorization)
+    record = get_audit_task(request_id, tenant=tenant)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Audit task not found")
+    if record.get("status") == "running":
+        raise HTTPException(status_code=409, detail="Audit task is still running")
+    case_path = str(record.get("case_path") or "").strip()
+    if not case_path:
+        raise HTTPException(status_code=400, detail="Audit task has no source path to re-audit")
+    mode = str(record.get("mode") or "directory")
+    started_at = utc_now()
+    upsert_audit_task(
+        {
+            "request_id": request_id,
+            "tenant": tenant,
+            "status": "running",
+            "mode": mode,
+            "source_mode": mode,
+            "case_path": case_path,
+            "claim_id": None,
+            "result_file": None,
+            "session_id": None,
+            "error_detail": None,
+            "progress_message": "重新审核中",
+            "started_at": started_at,
+            "finished_at": None,
+            "updated_at": started_at,
+        }
+    )
+    _schedule_directory_audit_task(
+        request_id=request_id,
+        tenant=tenant,
+        directory_path=case_path,
+        source_mode=mode,
+    )
+    refreshed = get_audit_task(request_id, tenant=tenant)
+    return _public_audit_task(refreshed if refreshed is not None else record)
+
+
+@app.delete("/audit/tasks/{request_id}")
+async def delete_audit_task_endpoint(
+    request_id: str,
+    authorization: str | None = Header(None),
+) -> dict[str, Any]:
+    tenant = verify_tenant(authorization)
+    record = get_audit_task(request_id, tenant=tenant)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Audit task not found")
+    if record.get("status") == "running":
+        raise HTTPException(status_code=409, detail="Cannot delete a running audit task")
+    _remove_submission_dir(record.get("case_path"))
+    delete_audit_task(request_id, tenant=tenant)
+    return {"request_id": request_id, "status": "deleted"}
+
 
 @app.get("/health")
 async def health() -> JSONResponse:

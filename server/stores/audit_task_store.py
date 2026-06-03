@@ -58,6 +58,18 @@ def upsert_audit_task(record: dict[str, Any]) -> None:
         append_json_file(AUDIT_TASK_FILE, payload)
 
 
+def delete_audit_task(request_id: str, tenant: str) -> bool:
+    """Remove a task owned by `tenant`. Returns True when a record was deleted."""
+    with _task_file_lock():
+        payload = _load_task_map()
+        record = payload.get(request_id)
+        if not isinstance(record, dict) or record.get("tenant") != tenant:
+            return False
+        del payload[request_id]
+        append_json_file(AUDIT_TASK_FILE, payload)
+        return True
+
+
 def get_audit_task(request_id: str, tenant: str) -> dict[str, Any] | None:
     payload = _load_task_map()
     record = payload.get(request_id)

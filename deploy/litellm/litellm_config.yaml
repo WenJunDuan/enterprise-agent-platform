@@ -14,37 +14,37 @@
 # 必填环境变量见同目录 .env.example。
 
 model_list:
-  # —— opus 档：审核主模型（我们的 .env 里 MODEL_NAME=claude-opus-4-8 指向这条）——
+  # —— opus 档：审核主模型
   - model_name: claude-opus-4-8
     litellm_params:
-      model: openai/qwen-max
-      api_base: os.environ/QWEN_API_BASE
-      api_key: os.environ/QWEN_API_KEY
+      model: qwen3.7-max
+      api_base: https://dashscope.aliyuncs.com/compatible-mode/v1
+      api_key: sk-0b051eb212a442c4bcda04a85ad642f7
 
   # —— sonnet 档：子 agent / 默认 sonnet 任务 ——
   - model_name: claude-sonnet-4-6
     litellm_params:
-      model: openai/qwen-plus
-      api_base: os.environ/QWEN_API_BASE
-      api_key: os.environ/QWEN_API_KEY
+      model: qwen3.7-plus
+      api_base: https://dashscope.aliyuncs.com/compatible-mode/v1
+      api_key: sk-0b051eb212a442c4bcda04a85ad642f7
 
   # —— haiku 档：标题生成等内部快任务 ——
   - model_name: claude-haiku-4-5
     litellm_params:
-      model: openai/qwen-turbo
-      api_base: os.environ/QWEN_API_BASE
-      api_key: os.environ/QWEN_API_KEY
+      model: qwen3.7-plus
+      api_base: https://dashscope.aliyuncs.com/compatible-mode/v1
+      api_key: sk-0b051eb212a442c4bcda04a85ad642f7
 
-  # —— 兜底：CLI 内部偶尔会请求未在上面显式列出的 Claude 名，避免 “model not found” ——
+  # —— 兜底：CLI 内部偶尔会请求未在上面显式列出的 Claude 名
   - model_name: "*"
     litellm_params:
-      model: openai/qwen-plus
-      api_base: os.environ/QWEN_API_BASE
-      api_key: os.environ/QWEN_API_KEY
+      model: qwen3.7-plus
+      api_base: https://dashscope.aliyuncs.com/compatible-mode/v1
+      api_key: sk-0b051eb212a442c4bcda04a85ad642f7
 
 litellm_settings:
   drop_params: true
   num_retries: 2
 
 general_settings:
-  master_key: os.environ/LITELLM_MASTER_KEY
+  master_key: sk-litellm-RwySHzvatZqP3NHW1kAHocrFi8ShW4D0IBUt0PNA11t14P9S
