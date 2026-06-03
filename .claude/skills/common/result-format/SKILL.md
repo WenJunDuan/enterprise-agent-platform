@@ -15,13 +15,9 @@ description: Use when 需要把审核结论整理成 audit-result schema 要求�
 
 ## 字段要求
 
-- 最终结果必须同时包含“完整结构化字段 + 审核意见字段”，不能只输出其中一层
-- 继续保留完整结构化字段：`claim_id`、`verdict`、`reasons`、`policy_refs`、`risk_score`、`extracted_data`、`evidence_chain`、`reviewed_by`、`timestamp`
-- 必须同时输出审核意见字段：`result`、`conclusion`、`explanation`
-- 固定映射：
-  - `approved -> result=true, conclusion=合规`
-  - `rejected -> result=false, conclusion=不合规`
-  - `manual_review -> result=false, conclusion=待人工复核`
+- 决策只用 `verdict` 表达；`result`（布尔）与 `conclusion`（中文标签）由服务端从 `verdict` 派生，**不要输出**（schema 也不接受这两个字段）
+- 必须输出的字段：`claim_id`、`verdict`、`explanation`、`reasons`、`policy_refs`、`risk_score`、`extracted_data`、`evidence_chain`、`reviewed_by`、`timestamp`
+- 服务端派生映射（仅供理解，无需你输出）：`approved→合规` / `rejected→不合规` / `manual_review→待人工复核`
 - `policy_refs`: 使用 `rule_id` 数组，不要写自然语言摘要
 - `risk_score`: `0-30` 低风险，`31-69` 中风险，`70-100` 高风险
 - `extracted_data`: 仅保留已确认的结构化字段，不要补全不存在的信息
@@ -36,7 +32,8 @@ description: Use when 需要把审核结论整理成 audit-result schema 要求�
 - 不要输出 schema 之外的字段
 - 不要在 `approved` 或 `rejected` 时让 `policy_refs` 为空
 - 不要把待确认事项伪装成通过结论
-- 不要遗漏任一结构化字段或审核意见字段
+- 不要遗漏任一必需字段
+- 不要输出 `result` / `conclusion`（由服务端派生）
 - 不要输出英文版审核意见
 
 输出格式如下：
@@ -45,8 +42,6 @@ description: Use when 需要把审核结论整理成 audit-result schema 要求�
 {
   "claim_id": "EXP-2026-031",
   "verdict": "manual_review",
-  "result": false,
-  "conclusion": "待人工复核",
   "explanation": "根据《费用报销管理制度》差旅申请规定，判断该事项暂不能自动放行，缺少出差申请单，现有规则链路无法闭合，需人工复核。",
   "reasons": [
     "缺少出差申请单，无法核对事前审批是否满足制度要求"

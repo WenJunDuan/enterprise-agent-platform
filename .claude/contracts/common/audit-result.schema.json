@@ -11,13 +11,6 @@
       "type": "string",
       "enum": ["approved", "rejected", "manual_review"]
     },
-    "result": {
-      "type": "boolean"
-    },
-    "conclusion": {
-      "type": "string",
-      "enum": ["合规", "不合规", "待人工复核"]
-    },
     "explanation": {
       "type": "string",
       "minLength": 1
@@ -103,8 +96,6 @@
   "required": [
     "claim_id",
     "verdict",
-    "result",
-    "conclusion",
     "explanation",
     "reasons",
     "policy_refs",

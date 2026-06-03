@@ -44,6 +44,23 @@ INIT_RULES_REPORT_SCHEMA_NAME = "system/init-rules-report.schema.json"
 StructuredJSON = dict[str, Any] | list[Any]
 logger = logging.getLogger(__name__)
 
+# `verdict` is the single source of truth; `result` (bool) and `conclusion` (label)
+# are derived from it server-side so the model never has to keep three fields in sync.
+AUDIT_DECISION_DERIVATION: dict[str, tuple[bool, str]] = {
+    "approved": (True, "合规"),
+    "rejected": (False, "不合规"),
+    "manual_review": (False, "待人工复核"),
+}
+
+
+def enrich_audit_decision(structured_output: StructuredJSON) -> StructuredJSON:
+    """Inject `result`/`conclusion` derived from `verdict` for backward-compatible payloads."""
+    if isinstance(structured_output, dict):
+        derived = AUDIT_DECISION_DERIVATION.get(str(structured_output.get("verdict")))
+        if derived is not None:
+            structured_output["result"], structured_output["conclusion"] = derived
+    return structured_output
+
 
 class JSONContractError(ValueError):
     """Raised when a Claude response does not satisfy the JSON contract."""
@@ -107,24 +124,10 @@ def validate_structured_output_semantics(
             raise JSONContractError("audit result structured output must be a JSON object.")
 
         verdict = structured_output.get("verdict")
-        verdict_map = {
-            "approved": (True, "合规"),
-            "rejected": (False, "不合规"),
-            "manual_review": (False, "待人工复核"),
-        }
-        if verdict not in verdict_map:
+        if verdict not in AUDIT_DECISION_DERIVATION:
             raise JSONContractError("audit result returned an unknown verdict.")
 
-        expected_result, expected_conclusion = verdict_map[verdict]
-        result = structured_output.get("result")
-        conclusion = structured_output.get("conclusion")
-        explanation = str(structured_output.get("explanation") or "").strip()
-
-        if not isinstance(result, bool) or result is not expected_result:
-            raise JSONContractError("audit result field `result` does not match verdict.")
-        if conclusion != expected_conclusion:
-            raise JSONContractError("audit result field `conclusion` does not match verdict.")
-        if not explanation:
+        if not str(structured_output.get("explanation") or "").strip():
             raise JSONContractError("audit result field `explanation` must be non-empty.")
 
         if verdict == "manual_review":
@@ -547,6 +550,8 @@ async def run_agent_json(
                         final_status = "error"
                         raise JSONContractError("Claude returned a non-object structured output.")
                     validate_structured_output_semantics(schema_name, structured_output)
+                    if schema_name == DEFAULT_OUTPUT_SCHEMA_NAME:
+                        structured_output = enrich_audit_decision(structured_output)
                     final_structured_output = structured_output
                     finished_at = utc_now()
                     continue

@@ -10,8 +10,6 @@ import sys
 REQUIRED_FIELDS = [
     "claim_id",
     "verdict",
-    "result",
-    "conclusion",
     "explanation",
     "reasons",
     "policy_refs",
@@ -48,12 +46,7 @@ def _collect_missing_fields(result: dict[str, object]) -> list[str]:
                 missing.append(field)
             continue
 
-        if field == "result":
-            if not isinstance(value, bool):
-                missing.append(field)
-            continue
-
-        if field in {"conclusion", "explanation"}:
+        if field == "explanation":
             if not _is_non_empty_string(value):
                 missing.append(field)
             continue
@@ -113,22 +106,10 @@ def main() -> int:
         )
         return 2
 
-    expected = {
-        "approved": (True, "合规"),
-        "rejected": (False, "不合规"),
-        "manual_review": (False, "待人工复核"),
-    }
+    valid_verdicts = {"approved", "rejected", "manual_review"}
     verdict = audit_result.get("verdict")
-    if verdict not in expected:
+    if verdict not in valid_verdicts:
         print(json.dumps({"error": "Structured result returned an unknown verdict."}))
-        return 2
-
-    expected_result, expected_conclusion = expected[verdict]
-    if (
-        audit_result.get("result") is not expected_result
-        or audit_result.get("conclusion") != expected_conclusion
-    ):
-        print(json.dumps({"error": "Audit opinion fields do not match verdict mapping."}))
         return 2
 
     if verdict == "approved" and not audit_result.get("policy_refs"):
