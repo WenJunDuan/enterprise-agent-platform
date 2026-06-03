@@ -1,0 +1,51 @@
+# LiteLLM 代理配置 —— 把 Claude 系模型名映射到 Qwen，并双向翻译 tool_use。
+#
+# 链路：
+#   claude-agent-sdk → Claude Code CLI 发出 model=claude-opus-4-8（Claude 名）
+#   → LiteLLM 按下面 model_list 改名并打到真实 Qwen 模型
+#   → 在 Anthropic ↔ OpenAI 协议间翻译请求/响应（含工具调用 tool_use）
+#
+# 为什么发 Claude 名：Claude Code 用模型 ID 的“子串”判断能力（上下文窗口/特性）。
+#   claude-opus-4-8 这类名 → 走完整 opus 能力；qwen-max 这类名 → 能力降级到 ~32K。
+#   所以对外保持 Claude 名，真实模型在这里映射。
+#
+# 起服务：
+#   litellm --config litellm_config.yaml --port 4000
+# 必填环境变量见同目录 .env.example。
+
+model_list:
+  # —— opus 档：审核主模型（我们的 .env 里 MODEL_NAME=claude-opus-4-8 指向这条）——
+  - model_name: claude-opus-4-8
+    litellm_params:
+      model: openai/qwen-max              # 改成你账号实际可用的 Qwen 模型
+      api_base: os.environ/QWEN_API_BASE
+      api_key: os.environ/QWEN_API_KEY
+
+  # —— sonnet 档：子 agent / 默认 sonnet 任务 ——
+  - model_name: claude-sonnet-4-6
+    litellm_params:
+      model: openai/qwen-plus
+      api_base: os.environ/QWEN_API_BASE
+      api_key: os.environ/QWEN_API_KEY
+
+  # —— haiku 档：标题生成等内部快任务 ——
+  # 注意：真实模型名别带 "haiku" 子串，否则 Claude Code 会误判并静默关闭 thinking。
+  - model_name: claude-haiku-4-5
+    litellm_params:
+      model: openai/qwen-turbo
+      api_base: os.environ/QWEN_API_BASE
+      api_key: os.environ/QWEN_API_KEY
+
+  # —— 兜底：CLI 内部偶尔会请求未在上面显式列出的 Claude 名，避免 “model not found” ——
+  - model_name: "*"
+    litellm_params:
+      model: openai/qwen-plus
+      api_base: os.environ/QWEN_API_BASE
+      api_key: os.environ/QWEN_API_KEY
+
+litellm_settings:
+  drop_params: true        # 丢弃后端不支持的参数，避免 400
+  num_retries: 2
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY   # 客户端（我们的服务）用它做 Bearer 鉴权
