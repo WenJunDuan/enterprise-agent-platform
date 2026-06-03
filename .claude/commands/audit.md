@@ -34,9 +34,9 @@ allowed-tools: Read, Write, Glob, Skill, Task
 
 ## 输出契约
 
-1. 最终审核结论必须符合 `.claude/contracts/common/audit-result.schema.json`，同时包含完整结构化字段以及 `result`、`conclusion`、`explanation`。
-2. `conclusion`、`explanation`、`reasons`、`evidence_chain` 必须使用中文。
-3. `manual_review` 时，`conclusion` 必须固定为 `待人工复核`，且 `explanation` 必须明确写出不能自动放行的原因、缺少什么材料，或哪条规则无法闭合。
+1. 最终审核结论必须符合 `.claude/contracts/common/audit-result.schema.json`。决策只用 `verdict`（`approved` / `rejected` / `manual_review`）表达；不要输出 `result` / `conclusion`，它们由服务端从 `verdict` 派生（schema 也不接受这两个字段）。
+2. `explanation`、`reasons`、`evidence_chain` 必须使用中文。
+3. `manual_review` 时，`explanation` 必须明确写出不能自动放行的原因、缺少什么材料，或哪条规则无法闭合。
 4. `manual_review` 时，必须同时填写 `manual_review_reason`，且只能从以下枚举中选择一个最贴切的原因：
    - `missing_approval`
    - `rule_gap`
