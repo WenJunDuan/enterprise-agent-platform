@@ -17,7 +17,7 @@ model_list:
   # —— opus 档：审核主模型（我们的 .env 里 MODEL_NAME=claude-opus-4-8 指向这条）——
   - model_name: claude-opus-4-8
     litellm_params:
-      model: openai/qwen-max              # 改成你账号实际可用的 Qwen 模型
+      model: openai/qwen-max
       api_base: os.environ/QWEN_API_BASE
       api_key: os.environ/QWEN_API_KEY
 
@@ -29,7 +29,6 @@ model_list:
       api_key: os.environ/QWEN_API_KEY
 
   # —— haiku 档：标题生成等内部快任务 ——
-  # 注意：真实模型名别带 "haiku" 子串，否则 Claude Code 会误判并静默关闭 thinking。
   - model_name: claude-haiku-4-5
     litellm_params:
       model: openai/qwen-turbo
@@ -44,8 +43,8 @@ model_list:
       api_key: os.environ/QWEN_API_KEY
 
 litellm_settings:
-  drop_params: true        # 丢弃后端不支持的参数，避免 400
+  drop_params: true
   num_retries: 2
 
 general_settings:
-  master_key: os.environ/LITELLM_MASTER_KEY   # 客户端（我们的服务）用它做 Bearer 鉴权
+  master_key: os.environ/LITELLM_MASTER_KEY
