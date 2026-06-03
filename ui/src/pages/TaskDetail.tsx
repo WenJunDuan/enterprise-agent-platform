@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
-import { useParams, Link } from 'react-router-dom'
-import { getTask, getTaskResult } from '../api/client'
+import { useParams, Link, useNavigate } from 'react-router-dom'
+import { getTask, getTaskResult, retryTask, deleteTask } from '../api/client'
 import { getSubmissionSummary } from '../lib/submissionSummary'
 import { formatAmount } from '../lib/reimbursementLabels'
 import Accordion from '../components/Accordion'
@@ -243,11 +243,14 @@ function SubmissionCard({ summary }: { summary: SubmissionSummary }) {
 
 export default function TaskDetail() {
   const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
   const [task, setTask] = useState<AuditTask | null>(null)
   const [result, setResult] = useState<AuditResult | null>(null)
   const [summary, setSummary] = useState<SubmissionSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [retrying, setRetrying] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const resultFetchedRef = useRef(false)
 
@@ -255,6 +258,42 @@ export default function TaskDetail() {
     if (intervalRef.current) {
       clearInterval(intervalRef.current)
       intervalRef.current = null
+    }
+  }
+
+  function startPolling() {
+    stopPolling()
+    intervalRef.current = setInterval(fetchTask, POLL_INTERVAL)
+  }
+
+  async function handleRetry() {
+    if (!id || retrying) return
+    setRetrying(true)
+    setError(null)
+    try {
+      const t = await retryTask(id)
+      setTask(t)
+      setResult(null)
+      resultFetchedRef.current = false
+      startPolling()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '重新审核失败')
+    } finally {
+      setRetrying(false)
+    }
+  }
+
+  async function handleDelete() {
+    if (!id || deleting) return
+    if (!window.confirm('确定删除该审核任务？此操作不可恢复。')) return
+    setDeleting(true)
+    setError(null)
+    try {
+      await deleteTask(id)
+      navigate('/')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '删除失败')
+      setDeleting(false)
     }
   }
 
@@ -292,7 +331,7 @@ export default function TaskDetail() {
     if (!id) return
     setSummary(getSubmissionSummary(id))
     fetchTask()
-    intervalRef.current = setInterval(fetchTask, POLL_INTERVAL)
+    startPolling()
     return stopPolling
   }, [id])
 
@@ -328,8 +367,24 @@ export default function TaskDetail() {
             <p className="text-xs text-gray-500 mt-0.5">报销单号：{task.claim_id}</p>
           )}
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex flex-wrap items-center justify-end gap-2 shrink-0">
           <CopyButton text={task.request_id} />
+          <button
+            type="button"
+            onClick={handleRetry}
+            disabled={retrying || task.status === 'running'}
+            className="inline-flex items-center rounded-md border border-blue-300 bg-white px-3 py-1.5 text-xs font-medium text-blue-600 hover:bg-blue-50 transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {retrying ? '重新审核中…' : '重新审核'}
+          </button>
+          <button
+            type="button"
+            onClick={handleDelete}
+            disabled={deleting || task.status === 'running'}
+            className="inline-flex items-center rounded-md border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {deleting ? '删除中…' : '删除'}
+          </button>
           <Link to="/" className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-gray-800 transition-colors">
             <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
