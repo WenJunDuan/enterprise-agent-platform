@@ -26,17 +26,6 @@
           }
         ]
       }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python .claude/hooks/review-output.py"
-          }
-        ]
-      }
     ]
   }
 }
