@@ -3,6 +3,7 @@
   "LANGUAGE": "zh-Hans",
   "LC_ALL": "zh-Hans",
   "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+  "CLAUDE_CODE_ATTRIBUTION_HEADER": "0",
   "API_TIMEOUT_MS": "3000000",
   "cleanupPeriodDays": 180,
   "includeGitInstructions": false,
