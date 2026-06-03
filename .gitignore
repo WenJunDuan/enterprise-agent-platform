@@ -13,3 +13,4 @@ knowledge/
 .env
 .data/*
 .ace-tool/
+.ai_state/.snapshots/

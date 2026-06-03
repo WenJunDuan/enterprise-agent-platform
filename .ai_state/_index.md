@@ -69,7 +69,7 @@ pointers:
 # === PACE 联动字段 (hook 自动维护) ===
 next_action: ""
 last_subagent: "unknown"
-last_subagent_at: "2026-06-02T08:14:21.220Z"
+last_subagent_at: "2026-06-02T09:25:27.661Z"
 active_worktrees: []
 last_critic_round: 0
 design_changed_after_impl: false
@@ -165,3 +165,15 @@ slug 拆分为独立 sprint 目录；`lessons.md` 整体保留为
 
 ## 历史
 - `2026-06-02 08:34:21`: stage=ship sprint=? turn-end
+
+
+## 历史
+- `2026-06-02 08:53:20`: stage=ship sprint=? turn-end
+
+
+## 历史
+- `2026-06-02 09:06:14`: stage=ship sprint=? turn-end
+
+
+## 历史
+- `2026-06-02 09:21:58`: stage=ship sprint=? turn-end
