@@ -58,9 +58,10 @@ TENANT_KEYS={"default":"sk-your-token"}        # HTTP API Bearer token 映射
 | `CORS_ALLOWED_ORIGINS` | 跨域白名单（逗号分隔，支持 `re:` 正则） | `localhost:5173` 等 |
 | `MAX_BUDGET_USD` | 单次审核成本上限 | `1.0` |
 | `ALLOW_INSECURE_DEFAULT_TENANT_KEY` | 允许默认示例 token；生产必须 `false` | `false` |
-| `SECOND_REVIEW_ENABLED` | 高风险结果二审 hook | `false` |
 
 > `MODEL_NAME` 原样透传到 `ANTHROPIC_MODEL`。想用 SDK alias 路由可另配 `ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU}_MODEL`。完整变量见 `server/platform/config.py`。
+>
+> 二次复核 hook 已从 `.claude/settings.json` 移除（一次性审核）；如需重启见 `.claude/CLAUDE.md` 的“二次复核成本治理”。
 
 ---
 
