@@ -23,11 +23,10 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.routing import Match
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from server.command_adapter import run_command_json
+from server.audit_runner import run_inline_directory_audit
 from server.platform.config import get_app_settings, load_tenant_keys, tenant_keys_are_default
 from server.platform.logging_setup import logging_context
 from server.platform.paths import PROJECT_ROOT, SUBMISSION_ROOT_DIR
-from server.core import DEFAULT_OUTPUT_SCHEMA_NAME
 from server.platform.diagnostics import collect_runtime_diagnostics
 from server.platform.logging_setup import configure_logging
 from server.platform.storage import append_json_file
@@ -482,10 +481,8 @@ async def _materialize_upload_submission(
 
 
 async def _run_directory_audit(*, request_id: str, tenant: str, directory_path: str):
-    return await run_command_json(
-        "audit",
+    return await run_inline_directory_audit(
         directory_path,
-        schema_name=DEFAULT_OUTPUT_SCHEMA_NAME,
         request_id=request_id,
         tenant=tenant,
     )
