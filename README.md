@@ -1,506 +1,164 @@
 # Enterprise Agent Platform
 
-一个基于 Claude Agent SDK 的企业审核平台脚手架。
+基于 Claude Agent SDK 的企业审核平台。Python 负责 HTTP/CLI 入口、鉴权、进程管理与归档；`.claude/` 与 `knowledge/` 承载审核规则、agent 工作流与输出契约；审核判断由 Claude（经模型网关）完成。
 
-项目分工很明确：
+**运行链路**
 
-- Python 侧负责 HTTP / CLI 入口、鉴权、进程管理、归档和诊断
-- `.claude/` 与 `knowledge/` 承载业务规则、agent 工作流与输出契约
-- `logs/` 保存请求、会话、结果、review delta 和运行时状态
-
-如果你只想先跑起来，先看“快速开始”；如果你想查端口和命令，直接看“端口与地址”和“命令总览”。
-
-## 快速开始
-
-### 1. 前置依赖
-
-- Python `3.12+`
-- Node.js `20+`
-- `uv`
-
-说明：
-
-- Claude Agent SDK 依赖 Claude Code CLI 运行时，所以本机和容器都需要 Node.js。
-- 仓库统一使用 `uv` 管理依赖和命令运行。
-
-### 2. 安装依赖
-
-```bash
-uv sync
+```
+前端(ui/dist) ──┐
+                ├─→ 后端 FastAPI(:9999) ──→ LiteLLM(:4000) ──→ Qwen / 任意 Anthropic 兼容模型
+浏览器/接口 ────┘     鉴权·归档·异步任务       Claude名映射·tool_use 翻译
 ```
 
-### 3. 初始化环境文件
+后端默认同源托管前端 `ui/dist`，无需单独前端服务。模型层用 LiteLLM 把 `claude-*` 名映射到 Qwen 并双向翻译工具调用（详见 [`deploy/litellm/`](deploy/litellm/README.md)）。
+
+---
+
+## 快速开始（本地）
 
 ```bash
-cp .env.example .env
+uv sync                                   # 装 Python 依赖（含 claude-agent-sdk）
+# 创建 .env（仓库不含模板，最小三项见下方“配置”）
+uv run python -m server.cli runtime       # 配置自检：status=ok / errors=[]
+uv run python -m server.cli serve         # 前台起后端（调试用）
 ```
 
-最小可运行配置通常只需要这三项：
+前端联调：
 
 ```bash
-MODEL_BASE_URL=http://your-model-gateway.example.com
-MODEL_API_KEY=your-model-api-key
-MODEL_NAME=gpt-5.4
+cd ui && npm install
+# 创建 ui/.env.local（仓库不含模板）：
+#   VITE_API_BASE=/                               # 走 vite 代理，免跨域
+#   VITE_API_PROXY_TARGET=http://127.0.0.1:9999   # 后端地址
+#   VITE_TENANT_TOKEN=<后端 TENANT_KEYS 的某个 value>
+npm run dev                               # http://localhost:5173
 ```
 
-### 4. 运行时检查
+> 前置：Python 3.12+、`uv`、Node 18+（构建前端 + Claude Agent SDK 自带的 CLI 运行时）。
 
-```bash
-uv run python -m server.cli runtime
+---
+
+## 配置
+
+`.env`（仓库不含 `.env.example`，按需创建，密钥不入库）。最小可运行：
+
+```dotenv
+MODEL_BASE_URL=http://127.0.0.1:4000          # LiteLLM 地址（或任意 Anthropic 兼容、能透传 tool_use 的端点）
+MODEL_AUTH_TOKEN=<LiteLLM master key>
+MODEL_NAME=claude-opus-4-8                     # 保持 Claude 名 → CLI 走完整能力档，LiteLLM 映射到真实模型
+CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1       # 非 Anthropic 后端需剥掉 beta 头，否则常 400
+TENANT_KEYS={"default":"sk-your-token"}        # HTTP API Bearer token 映射
 ```
 
-这个命令会输出脱敏后的运行时配置，能帮你确认：
+常用可选项：
 
-- 模型网关地址是否生效
-- 鉴权信息是否已注入 Claude SDK
-- 当前模型名是否被正确映射
-
-### 5. 启动服务
-
-前台启动，适合本地调试：
-
-```bash
-uv run python -m server.cli serve
-```
-
-后台启动，适合持续运行：
-
-```bash
-uv run app-server start
-uv run app-server status
-```
-
-### 6. 做一次最小冒烟
-
-CLI：
-
-```bash
-uv run python -m server.cli ask "你好"
-```
-
-HTTP：
-
-```bash
-APP_SERVER_PORT="$(grep '^APP_SERVER_PORT=' .env | tail -n 1 | cut -d= -f2- | tr -d '\r')"
-APP_SERVER_PORT="${APP_SERVER_PORT:-8000}"
-
-curl "http://127.0.0.1:${APP_SERVER_PORT}/health"
-```
-
-## 端口与地址
-
-当前项目只有一个 HTTP 服务端口，没有单独的管理端口。
-
-- 监听地址来自 `APP_SERVER_HOST`
-- 监听端口来自 `APP_SERVER_PORT`
-- `.env.example` 默认值是 `127.0.0.1:8000`
-- 对外提供服务时，通常把 host 改成 `0.0.0.0`
-
-常用地址：
-
-- `http://127.0.0.1:${APP_SERVER_PORT}/health`
-- `http://127.0.0.1:${APP_SERVER_PORT}/docs`
-- `http://127.0.0.1:${APP_SERVER_PORT}/redoc`
-
-说明：
-
-- `/health` 当前返回精简摘要：`status`、`app_server`、`failing_checks`、`advisories`
-- 当 `status != "ok"` 时，`/health` 会返回 `503`
-- 更完整的本地运行诊断继续走 `uv run app-server doctor`
-
-查看当前实际绑定值：
-
-```bash
-uv run app-server status
-```
-
-如果你是前台运行，也可以直接看 `.env`：
-
-```bash
-grep '^APP_SERVER_HOST=' .env
-grep '^APP_SERVER_PORT=' .env
-```
-
-## 命令总览
-
-项目有两套 CLI：
-
-1. `python -m server.cli`
-2. `app-server`
-
-前者偏业务和查询，后者偏服务进程管理。
-
-### 业务 CLI
-
-完整帮助：
-
-```bash
-uv run python -m server.cli --help
-```
-
-常用命令：
-
-| 命令 | 用途 |
-| --- | --- |
-| `runtime` | 输出当前脱敏后的 Claude 运行时配置 |
-| `ask` | 执行一次单轮 prompt |
-| `audit` | 对文件或目录触发审核流程 |
-| `audit-json` | 执行审核并打印结构化 JSON 结果 |
-| `init-rules` | 从源材料初始化结构化规则 |
-| `sessions` | 查看已记录的应用会话 |
-| `transcript` | 查看某个 session 的 Claude transcript |
-| `conversations` | 查看 conversation 摘要 |
-| `requests` | 查看服务请求审计记录 |
-| `request-detail` | 查看单条请求审计 |
-| `results` | 查看归档后的结构化结果 |
-| `result-detail` | 查看单条归档结果 |
-| `memories` | 查看 memory 资产索引 |
-| `memory-detail` | 查看单条 memory 资产 |
-| `review-deltas` | 查看复核差异索引 |
-| `review-delta-detail` | 查看单条 review delta |
-| `validate-assets` | 校验 `knowledge/` 下 rules 和 memory 资产 |
-| `serve` | 以前台方式启动 HTTP 服务 |
-
-示例：
-
-```bash
-uv run python -m server.cli runtime
-uv run python -m server.cli ask "你好"
-uv run python -m server.cli init-rules knowledge/external/数睿员工手册.pdf expense
-uv run python -m server.cli audit data/your-sample
-uv run python -m server.cli audit-json data/your-sample
-uv run python -m server.cli results --limit 20
-uv run python -m server.cli review-deltas --limit 20
-```
-
-补充说明：
-
-- `distill-memory` 当前不作为 Python CLI 子命令暴露。
-- 如果需要触发记忆沉淀，走 Claude command 路径即可，例如 `ask "/distill-memory ..."`。
-
-### 服务管理 CLI
-
-完整帮助：
-
-```bash
-uv run app-server --help
-```
-
-常用命令：
-
-| 命令 | 用途 |
-| --- | --- |
-| `start` | 后台启动 API 服务 |
-| `stop` | 停止后台服务 |
-| `restart` | 重启后台服务 |
-| `status` | 查看当前运行状态、host、port、日志文件位置 |
-| `logs` | 查看后台服务日志 |
-| `maintain` | 执行轻量维护任务 |
-| `doctor` | 运行运行时诊断，可加严格检查 |
-
-示例：
-
-```bash
-uv run app-server start
-uv run app-server status
-uv run app-server logs --lines 100
-uv run app-server doctor --require-running
-uv run app-server stop
-```
-
-## 环境变量
-
-最常用的配置项如下：
-
-| 变量 | 说明 | 默认值 |
+| 变量 | 说明 | 默认 |
 | --- | --- | --- |
-| `MODEL_BASE_URL` | 模型网关地址 | 无 |
-| `MODEL_API_KEY` | 模型网关 API Key | 无 |
-| `MODEL_AUTH_TOKEN` | 可选的额外鉴权 token | 无 |
-| `MODEL_NAME` | 实际调用的模型名 | 无 |
-| `MODEL_CUSTOM_HEADERS` | 可选的额外请求头，支持 JSON 对象 | 无 |
-| `TENANT_KEYS` | HTTP API Bearer token 映射 | `{"default":"sk-default"}` |
-| `APP_SERVER_HOST` | 服务监听地址 | `127.0.0.1` |
-| `APP_SERVER_PORT` | 服务监听端口 | `8000` |
-| `MAX_BUDGET_USD` | 单次调用预算上限 | `1.0` |
-| `AUDIT_TASK_RUNNING_TIMEOUT_SECONDS` | 异步审核 running 超时阈值 | `600` |
-| `SUBMISSION_RETENTION_DAYS` | 上传目录保留天数 | `7` |
-| `MAX_UPLOAD_FILE_BYTES` | 单文件上传大小上限 | `10485760` |
-| `ALLOW_UNSCOPED_CONTINUE_RECENT` | 是否允许未指定 conversation 时继续最近会话 | `false` |
-| `ALLOW_INSECURE_DEFAULT_TENANT_KEY` | 是否允许使用默认示例 tenant key；生产环境必须设为 `false` | `false` |
-| `APP_SERVER_LOG_MAX_BYTES` | app-server 单个日志文件最大字节数 | `5242880` |
-| `APP_SERVER_LOG_BACKUPS` | app-server 日志轮转数量 | `5` |
+| `APP_SERVER_HOST` / `APP_SERVER_PORT` | 监听地址/端口；对外服务设 `0.0.0.0` | `127.0.0.1` / `8000` |
+| `CORS_ALLOWED_ORIGINS` | 跨域白名单（逗号分隔，支持 `re:` 正则） | `localhost:5173` 等 |
+| `MAX_BUDGET_USD` | 单次审核成本上限 | `1.0` |
+| `ALLOW_INSECURE_DEFAULT_TENANT_KEY` | 允许默认示例 token；生产必须 `false` | `false` |
+| `SECOND_REVIEW_ENABLED` | 高风险结果二审 hook | `false` |
 
-说明：
+> `MODEL_NAME` 原样透传到 `ANTHROPIC_MODEL`。想用 SDK alias 路由可另配 `ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU}_MODEL`。完整变量见 `server/platform/config.py`。
 
-- `MODEL_NAME` 原样透传到 `ANTHROPIC_MODEL`，代码不再做"是不是 Claude 模型"的判断，也不再写死 `sonnet` 之类兜底；如果想用 SDK 的 alias 路由（例如把 `sonnet` 映射成自定义模型），自行在 `.env` 里加 `ANTHROPIC_DEFAULT_SONNET_MODEL` / `ANTHROPIC_DEFAULT_OPUS_MODEL` / `ANTHROPIC_DEFAULT_HAIKU_MODEL`。
-- 如果网关要求自定义请求头，可以用 `MODEL_CUSTOM_HEADERS` 注入。
-- 如果你忘了配置 `TENANT_KEYS`，服务会退回默认值并给出告警；开发环境可用，生产环境不要这样配。
-- `MODEL_BASE_URL` 既可以指向 Anthropic 原生 API、Anthropic 兼容企业网关，也可以指向自部署的协议翻译层（如 LiteLLM proxy）以接入本地 / 第三方模型；翻译层需对外暴露 Anthropic Messages API。
-
-## HTTP API
-
-### 鉴权方式
-
-服务从 `.env` 的 `TENANT_KEYS` 读取 Bearer token。
-
-示例：
-
-```bash
-TENANT_KEYS={"default":"sk-your-token"}
-```
-
-请求头写法：
-
-```http
-Authorization: Bearer sk-your-token
-```
-
-说明：
-
-- `TENANT_KEYS` 是服务端租户 token 映射，key 是租户名，value 是调用凭证。
-- 外部系统 / 现场接口对接时，不使用 `VITE_*` 变量，直接在 HTTP 请求里带 `Authorization: Bearer <tenant-token>`。
-- 本仓库自带的 React UI 只是一个调用方；本地联调时可把某个 tenant token 写到 `ui/.env.local` 的 `VITE_TENANT_TOKEN`。
-- 缺少 `Authorization`、格式不是 Bearer、或 token 不匹配时，业务接口统一返回 `401`。
-
-### 路由清单
-
-文档与诊断：
-
-- `GET /openapi.json`
-- `GET /docs`
-- `GET /redoc`
-- `GET /health`
-
-业务调用：
-
-- `POST /audit/submit`
-
-异步审核：
-
-- `GET /audit/tasks/{request_id}`
-- `GET /audit/tasks/{request_id}/result`
-
-边界说明：
-
-- HTTP API 现在只保留最小业务调用面
-- 追溯、治理、查询和详细排障统一走 CLI
-
-### 基础调用示例
-
-```bash
-APP_SERVER_PORT="$(grep '^APP_SERVER_PORT=' .env | tail -n 1 | cut -d= -f2- | tr -d '\r')"
-APP_SERVER_PORT="${APP_SERVER_PORT:-8000}"
-TOKEN="sk-your-token"
-```
-
-```bash
-curl "http://127.0.0.1:${APP_SERVER_PORT}/health"
-```
-
-## 审核流程
-
-### 目录模式
-
-适合用本地准备好的样例做联调：
-
-```bash
-curl -X POST "http://127.0.0.1:${APP_SERVER_PORT}/audit/submit" \
-  -H "Authorization: Bearer ${TOKEN}" \
-  -H "Content-Type: application/json" \
-  -d '{"mode":"directory","directory_path":"data/your-sample"}'
-```
-
-约束：
-
-- `directory_path` 必须存在
-- 目录必须位于项目根 `data/` 下
-- 仓库不再随附内置 case 样例，请按业务自行放置
-
-### 上传模式
-
-更接近真实生产请求：
-
-```bash
-curl -X POST "http://127.0.0.1:${APP_SERVER_PORT}/audit/submit" \
-  -H "Authorization: Bearer ${TOKEN}" \
-  -F 'mode=upload' \
-  -F 'form_json={"company_form_id":"demo-001","payload":{"任意字段":"任意值"}}' \
-  -F 'files=@/path/to/your-attachment.pdf'
-```
-
-上传校验：
-
-- `form_json` 可选；传入时必须是 JSON 对象
-- 除 `mode` / `form_json` / `files` 外的普通 multipart 文本字段会原样归档到 `fields`
-- Python 不校验任何业务字段；不同公司、不同业务线的表单语义交给 Claude agent 审核
-- `files` 可选，支持 0 个或多个附件；服务端不按业务扩展名白名单拦截
-- 只有完全空的上传（无 `form_json`、无普通字段、无附件）会被拒绝
-- 空文件会被拒绝
-- 文件大小不能超过 `MAX_UPLOAD_FILE_BYTES`
-
-上传落盘位置：
-
-- `data/submissions/{request_id}/audit-request.json`
-- `data/submissions/{request_id}/<uploaded files>`
-
-### 异步轮询流程
-
-推荐顺序：
-
-1. `POST /audit/submit`
-2. `GET /audit/tasks/{request_id}`
-3. `GET /audit/tasks/{request_id}/result`
-
-任务状态有四种：
-
-- `accepted`
-- `running`
-- `completed`
-- `failed`
-
-`GET /audit/tasks/{request_id}` 当前只返回业务侧真正需要的字段：
-
-- `request_id`
-- `status`
-- `mode`
-- `claim_id`
-- `error_detail`
-- `progress_message`
-- `submitted_at`
-- `started_at`
-- `finished_at`
-- `updated_at`
-
-轻量结果接口 `GET /audit/tasks/{request_id}/result` 会直接返回最终审核 payload，通常包含：
-
-- `claim_id`
-- `verdict`
-- `result`
-- `conclusion`
-- `explanation`
-- `reasons`
-- `policy_refs`
-- `risk_score`
-- `extracted_data`
-- `evidence_chain`
-- `manual_review_reason`
-- `risk_dimensions`
-
-## 前端本地自测
-
-```bash
-# 1. 启动后端
-uv run python -m server.cli serve
-
-# 2. 启动前端
-cd ui
-cp .env.example .env.local   # 已有 .env.local 可跳过
-# 将 VITE_TENANT_TOKEN 填成后端 .env 里 TENANT_KEYS 的某个 value
-npm run dev
-```
-
-浏览器打开 `http://localhost:5173` 后重点检查：
-
-- 顶部连接条显示 `/health` 是否连通，并显示当前 `VITE_API_BASE` / `VITE_TENANT_TOKEN` 来源。
-- 填报页可用“生成新单号 / 复制 form_json / 重置样例”辅助测试。
-- 附件选择器不限制业务扩展名；无附件也可以提交。
-- 详情页会展示 `conclusion`、`explanation`、`reasons`、`policy_refs`、`risk_score`、`risk_dimensions`、`evidence_chain`。
-- 列表页可点“清空本机摘要”测试只依赖后端紧凑任务字段时的降级展示。
-
-## CLI 查询与追溯
-
-为避免 HTTP API 和 CLI 暴露重复接口，查询、治理和详细排障已经统一收回到 CLI。
-
-常用命令：
-
-- `uv run python -m server.cli runtime`
-- `uv run python -m server.cli ask "你好"`
-- `uv run python -m server.cli init-rules <source> <domain>`
-- `uv run python -m server.cli audit <path>`
-- `uv run python -m server.cli audit-json <path>`
-- `uv run python -m server.cli sessions`
-- `uv run python -m server.cli transcript <session_id>`
-- `uv run python -m server.cli conversations`
-- `uv run python -m server.cli requests`
-- `uv run python -m server.cli request-detail <request_id>`
-- `uv run python -m server.cli results`
-- `uv run python -m server.cli result-detail <request_id>`
-- `uv run python -m server.cli memories`
-- `uv run python -m server.cli memory-detail <memory_id>`
-- `uv run python -m server.cli review-deltas`
-- `uv run python -m server.cli review-delta-detail <request_id>`
-- `uv run python -m server.cli validate-assets`
-
-## 错误返回
-
-HTTP 错误统一保留兼容字段 `detail`，并补充结构化 `error`：
-
-```json
-{
-  "detail": "Audit task not found",
-  "error": {
-    "code": "not_found",
-    "message": "Audit task not found",
-    "status_code": 404,
-    "path": "/audit/tasks/req-missing",
-    "correlation_id": "f7d7d6e6f0a64f72b7d00cbf13f7e3d3"
-  }
-}
-```
-
-说明：
-
-- `detail` 保留给旧调用方兼容使用
-- `error.code` 适合前端做稳定分支判断
-- `error.correlation_id` 与响应头 `X-Request-ID` 对齐，便于日志排查
+---
 
 ## 部署
 
-本仓库不再提供 Docker 镜像与 Compose 文件。直接在目标机上原地运行；生产环境用 systemd 守护 `app-server` 进程。
+仓库不提供 Docker；目标机原地运行，生产用 systemd 守护。按依赖顺序：**LiteLLM → 规则 → 后端 → 前端**。
 
-### 目标机依赖
+### 0. 目标机依赖
 
-| 组件 | 版本 | 安装提示 |
+| 组件 | 版本 | 说明 |
 | --- | --- | --- |
 | Python | 3.12+ | 系统包或 pyenv |
 | `uv` | 最新 | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
-| Node.js | 20+ | nodesource / nvm（Claude Agent SDK 子进程依赖） |
-| `@anthropic-ai/claude-code` | 最新 | `npm install -g @anthropic-ai/claude-code` |
-| `poppler-utils` | 任意 | `apt install poppler-utils`（PDF 解析依赖） |
+| Node.js | 18+ | 构建前端 + SDK 自带 CLI 运行时（无需单独装 claude-code） |
+| `poppler-utils` | 可选 | 仅 `init-rules` 解析 PDF 时需要 |
 
-### 部署步骤
+### 1. 拉代码
 
 ```bash
-# 1. 把仓库放到目标机器（git clone / scp / rsync 都可以）
 git clone <your-remote> /opt/enterprise-agent-platform
 cd /opt/enterprise-agent-platform
-
-# 2. 准备配置
-cp .env.example .env
-$EDITOR .env   # 至少填 MODEL_BASE_URL / MODEL_API_KEY / MODEL_NAME / TENANT_KEYS
-
-# 3. 装 Python 依赖
 uv sync
-
-# 4. 冒烟
-uv run python -m server.cli runtime
-uv run python -m server.cli ask "你好"
-
-# 5. 起后台
-uv run app-server start
-uv run app-server status
 ```
 
-### systemd 守护（推荐生产用）
+### 2. 起 LiteLLM（模型骨干，下游都依赖它）
 
-把以下文件放到 `/etc/systemd/system/enterprise-agent.service`，按本机情况调整 `User` / `WorkingDirectory` / `ExecStart`：
+```bash
+pip install "litellm[proxy]==<安全版本>"      # ⚠️ 避开被投毒的 1.82.7 / 1.82.8
+cp deploy/litellm/.env.example deploy/litellm/.env
+#   填 QWEN_API_KEY / QWEN_API_BASE / LITELLM_MASTER_KEY，按需改 litellm_config.yaml 模型名
+set -a && . deploy/litellm/.env && set +a
+litellm --config deploy/litellm/litellm_config.yaml --port 4000
+curl http://127.0.0.1:4000/health             # 应有响应
+```
+
+细节见 [`deploy/litellm/README.md`](deploy/litellm/README.md)。
+
+### 3. 铺规则（关键：`knowledge/` 被 gitignore，不随仓库走）
+
+审核读 `knowledge/expense/*.rules.json`，缺失会一律 `manual_review(rule_gap)`。二选一：
+
+```bash
+# A. 从现有机器同步 knowledge/（含 expense/*.rules.json 与 memory/）到同路径
+# B. 现场初始化：制度源放 knowledge/external/，逐个生成
+uv run python -m server.cli init-rules knowledge/external/制度.pdf expense
+uv run python -m server.cli validate-assets   # status 应为 ok
+```
+
+### 4. 起后端
+
+填好 `.env`（见“配置”，`MODEL_BASE_URL=http://127.0.0.1:4000`、`MODEL_AUTH_TOKEN` = LiteLLM master key），然后**上线前必过工具调用门槛**：
+
+```bash
+uv run python -m server.cli runtime           # status=ok
+uv run python -m server.cli ask "用 Read 工具读取 README.md，只回第一行"
+ls -t logs/sessions/events/*/*/*/*.jsonl | head -1 | xargs grep -c '"event": "tool_call"'
+#   ↑ 必须 ≥1。为 0 说明工具调用没透传，审核会编造结果，禁止上线
+uv run app-server start                        # 后台常驻（开发期用；生产见 systemd）
+```
+
+### 5. 构建前端（后端同源托管）
+
+```bash
+cd ui && npm install && npm run build && cd .. # 产物 ui/dist
+uv run app-server restart                      # 后端默认 SERVE_UI_DIST=true，挂载 ui/dist
+# 访问 http://<服务器>:<端口>/ 即前端页面
+```
+
+### 6. systemd 守护（生产推荐）
+
+`/etc/systemd/system/litellm.service`：
+
+```ini
+[Unit]
+Description=LiteLLM proxy
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=app
+WorkingDirectory=/opt/enterprise-agent-platform
+EnvironmentFile=/opt/enterprise-agent-platform/deploy/litellm/.env
+ExecStart=/usr/local/bin/litellm --config /opt/enterprise-agent-platform/deploy/litellm/litellm_config.yaml --port 4000
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
+```
+
+`/etc/systemd/system/enterprise-agent.service`：
 
 ```ini
 [Unit]
 Description=Enterprise Agent Platform
-After=network-online.target
-Wants=network-online.target
+After=litellm.service
+Requires=litellm.service
 
 [Service]
 Type=simple
@@ -516,118 +174,103 @@ LimitNOFILE=65536
 WantedBy=multi-user.target
 ```
 
-启用：
-
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable --now enterprise-agent
-sudo systemctl status enterprise-agent
+sudo systemctl enable --now litellm enterprise-agent
 journalctl -u enterprise-agent -f
 ```
 
-systemd 与 `uv run app-server start` 二选一：systemd 接管时，由 systemd 直接拉起 uvicorn，不再走 `app-server` 后台进程管理那一套（那是开发期方便用的）。注意 systemd 路径下进程日志走 `journalctl -u enterprise-agent`，**不再写 `logs/runtime/app-server/` 下的 `server.pid` / `stdout.log` / `stderr.log`**；状态查询不能再用 `app-server status`，请直接 `systemctl status` + `curl /health`。
+> systemd 接管后由它直接拉起 uvicorn，不再走 `app-server` 后台管理；进程日志走 `journalctl`，状态用 `systemctl status` + `curl /health`（不再写 `logs/runtime/app-server/`）。
 
-### 反向代理（建议）
+### 7. 反向代理与验收
 
-服务进程默认绑 `127.0.0.1:${APP_SERVER_PORT}`。生产建议用 nginx / Caddy 在前面挂 TLS 与 rate-limit，再把请求转发到本地服务端口。
+- nginx / Caddy 在前面挂 TLS + rate-limit，转发到后端端口；LiteLLM 只绑 `127.0.0.1`，不对外。
+- 验收顺序：`LiteLLM /health` → `cli runtime` ok → **tool_call 探针 ≥1** → 前端首页 → 提交一单 → 任务 `completed` 且结果含真实 `policy_refs`/`evidence_chain`。
 
-### 部署约束
+> 仅适合常驻实例（VM / 物理机 / systemd），不适合 Serverless：SDK 会拉起 CLI 子进程、单次审核可达数分钟、依赖本地 `.claude`/`knowledge`/`data`/`logs`。
 
-这个项目仍然只适合常驻实例，不适合 Serverless：
+---
 
-- Claude Agent SDK 会拉起 CLI 子进程
-- 单次调用可能持续几十秒到几分钟
-- 服务依赖本地文件系统访问 `.claude`、`knowledge`、`data`、`logs`
+## 命令
 
-更适合的部署形态：
+### 业务 CLI（`uv run python -m server.cli <cmd>`）
 
-- VM
-- 物理机
-- 常驻进程（systemd / supervisor / pm2）
+| 命令 | 用途 |
+| --- | --- |
+| `runtime` | 输出脱敏后的运行时配置自检 |
+| `ask "<prompt>"` | 单轮 prompt |
+| `audit <path>` / `audit-json <path>` | 对文件/目录触发审核（后者出结构化 JSON） |
+| `init-rules <source> <domain>` | 从制度源初始化规则 |
+| `validate-assets` | 校验 `knowledge/` 规则与 memory |
+| `results` / `result-detail <id>` | 归档结构化结果 |
+| `sessions` / `transcript <id>` / `requests` / `conversations` | 会话与请求追溯 |
+| `memories` / `memory-detail <id>` | memory 资产 |
+| `serve` | 前台启动 HTTP 服务 |
 
-## 测试与排障
+`--help` 查看完整列表。`distill-memory` 仅走 Claude command（`ask "/distill-memory ..."`），不作为 CLI 子命令。
 
-### Lint
+### 服务管理（`uv run app-server <cmd>`）
+
+`start` / `stop` / `restart` / `status` / `logs` / `doctor` / `maintain`。开发期用；生产由 systemd 接管。
+
+---
+
+## HTTP API
+
+鉴权：所有业务接口带 `Authorization: Bearer <tenant-token>`（token 来自 `.env` 的 `TENANT_KEYS`），缺失/格式错/不匹配返回 `401`；`GET /health` 免鉴权。
+
+| 方法 | 路径 | 用途 |
+| --- | --- | --- |
+| `POST` | `/audit/submit` | 提交审核（`directory` 或 `upload` 模式） |
+| `GET` | `/audit/tasks/{id}` | 轮询任务状态（`accepted`/`running`/`completed`/`failed`） |
+| `GET` | `/audit/tasks/{id}/result` | 拉取最终审核结果 |
+| `GET` | `/health` | 健康探活（非 ok 返 `503`） |
+
+异步流程：`submit` 拿 `request_id` → 轮询 `tasks/{id}` 到终态 → `completed` 时取 `result`。前端对接细节见 [`.ai_state/docs/前端审核服务对接文档.md`](.ai_state/docs/前端审核服务对接文档.md)。
+
+错误响应除兼容 `detail` 外带结构化 `error`（`code`/`message`/`correlation_id`，与响应头 `X-Request-ID` 对齐）。
+
+### 提交示例
 
 ```bash
-uv run ruff check .
-```
-
-### 常用健康检查
-
-```bash
-curl "http://127.0.0.1:${APP_SERVER_PORT}/health"
-uv run app-server doctor --require-running
-```
-
-### 本地冒烟
-
-CLI：
-
-```bash
-uv run python -m server.cli runtime
-uv run python -m server.cli ask "你好"
-uv run python -m server.cli audit-json data/your-sample
-```
-
-HTTP：
-
-```bash
-curl -X POST "http://127.0.0.1:${APP_SERVER_PORT}/audit/submit" \
-  -H "Authorization: Bearer ${TOKEN}" \
-  -H "Content-Type: application/json" \
+# directory 模式（目录须在项目根 data/ 下）
+curl -X POST http://127.0.0.1:9999/audit/submit \
+  -H "Authorization: Bearer sk-your-token" -H "Content-Type: application/json" \
   -d '{"mode":"directory","directory_path":"data/your-sample"}'
+
+# upload 模式（form_json 任意 JSON 对象，可放发票 OCR；files 0~N 个）
+curl -X POST http://127.0.0.1:9999/audit/submit \
+  -H "Authorization: Bearer sk-your-token" \
+  -F 'mode=upload' \
+  -F 'form_json={"case_id":"demo-001","invoice_ocr":{"invoice_no":"012","amount":880}}' \
+  -F 'files=@/path/to/attachment.pdf'
 ```
+
+---
+
+## 排障
+
+```bash
+uv run ruff check .                            # lint
+curl http://127.0.0.1:<port>/health            # 健康
+uv run app-server doctor --require-running     # 运行时诊断
+uv run app-server logs --lines 100             # 后台日志（非 systemd 模式）
+```
+
+审核“失败/编造”排查：看 `logs/sessions/events/.../*.jsonl`，若 `tool_call` 事件为 0，说明模型网关没透传工具调用（换用 LiteLLM 或确认端点支持 function calling）。
+
+---
 
 ## 目录结构
 
-最常用的目录如下：
-
 ```text
-.claude/              Claude commands, agents, hooks, skills, contracts
-knowledge/            结构化规则、制度材料、memory 资产
-data/                 本地放置的样例目录与上传落盘目录（仓库不内置 case）
-logs/                 请求、结果、会话、runtime、review delta 等运行时归档
-server/               Python 服务外壳、CLI、平台层与 stores
+.claude/        Claude commands / agents / hooks / skills / contracts
+knowledge/      规则、制度材料、memory 资产（gitignore，需单独铺设）
+data/           样例目录与上传落盘（gitignore）
+deploy/litellm/ LiteLLM 协议翻译层配置
+server/         Python 服务外壳、CLI、平台层与 stores
+ui/             React 前端（npm run build → ui/dist）
+logs/           请求/结果/会话/runtime/review-delta 运行时归档（gitignore）
 ```
 
-运行时最常查的路径：
-
-```text
-logs/runtime/app-server/
-  server.pid
-  server.status.json
-  stdout.log
-  stderr.log
-
-logs/service/requests/
-  requests-YYYY-MM.jsonl
-  index.sqlite3
-
-logs/service/audit-tasks/
-  tasks.json
-
-logs/results/
-  index.sqlite3
-  by-request/YYYY/MM/DD/{request_id}.json
-
-logs/review-deltas/
-  index.sqlite3
-  by-request/YYYY/MM/DD/{request_id}.json
-
-logs/knowledge/
-  memory-index.sqlite3
-
-logs/sessions/
-  index.sqlite3
-  events/YYYY/MM/DD/*.jsonl
-```
-
-## 补充说明
-
-- 结构化 JSON 输出由 Claude Agent SDK `output_format` + JSON Schema 强制约束，不依赖提示词口头约定
-- 请求审计日志保留在 `logs/service/requests/*.jsonl`，查询索引使用 SQLite
-- 会话、结果、memory、review delta 查询索引当前都使用 SQLite
-- 原始事件流和最终结果归档仍保留在文件系统中，并通过 `request_id` 串联
-- post-write 二审 hook 不是全量执行，只对高风险或冲突场景触发
-- 业务判断继续放在 `.claude/` 与 `knowledge/`；Python 不直接承载业务语义
+> 结构化输出由 SDK `output_format` + JSON Schema 强制约束；业务判断放在 `.claude/` 与 `knowledge/`，Python 不承载业务语义。
