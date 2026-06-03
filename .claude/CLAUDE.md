@@ -24,7 +24,7 @@
 
 - 适用于报销申请、费用合规、发票核验、差旅审核、招待审核、借款相关问题。
 - 默认走 `/audit` **一次性内联审核**：在同一会话内完成“事实提取 + 合规判断 + 输出”，不再默认嵌套 `expense-extractor` / `expense-auditor` 子 agent（为压低单次审核耗时）。这两个 agent 仍保留，供多业务域协同等特殊场景按需调度。
-- **复核暂时关闭**：当前不调度 `expense-reviewer`，post-write 二审 hook 也默认关闭（见下方“二次复核成本治理”）。高风险 / 证据冲突 / `manual_review` 在结论中如实标注，交人工处理。需重新开启复核时，设 `SECOND_REVIEW_ENABLED=true` 并按下列条件触发：
+- **复核已关闭**：当前不调度 `expense-reviewer`，post-write 二审 hook 已从 `settings.json` 移除（见下方“二次复核成本治理”）。高风险 / 证据冲突 / `manual_review` 在结论中如实标注，交人工处理。需重新开启复核时（先重新注册 hook 再设 `SECOND_REVIEW_ENABLED=true`），按下列条件触发：
   - 用户明确要求复核 / 第二意见
   - `risk_score >= 70`
   - 初审输出 `manual_review` 且 `manual_review_reason ∈ {data_conflict, pre_approval_mismatch, missing_approval, invoice_invalid}`
@@ -83,9 +83,8 @@
 
 ## 二次复核成本治理
 
-- **当前默认关闭**：post-write `review-output` hook 由 `SECOND_REVIEW_ENABLED` 开关控制，默认 `false`（一次性审核，不触发二审）。以下条件仅在设 `SECOND_REVIEW_ENABLED=true` 后才生效。
-- post-write `review-output` 不是默认全量执行的主审流程。
-- 只有以下结果才值得进入第二道 SDK 复核：
+- **当前已彻底关闭**：post-write `review-output` hook 已从 `.claude/settings.json` 移除，不再触发任何二审。重新开启需两步：① 在 `settings.json` 的 `hooks.PostToolUse` 重新注册 `review-output.py`；② 设 `SECOND_REVIEW_ENABLED=true`。`review-output.py` 脚本、`expense-reviewer` agent、`review_delta_store` 均保留待重启。
+- 重启后，`review-output` 仍不是默认全量执行的主审流程；只有以下结果才值得进入第二道 SDK 复核：
   - `rejected`
   - `risk_score >= 70`
   - `manual_review_reason ∈ {data_conflict, pre_approval_mismatch, missing_approval, invoice_invalid}`
