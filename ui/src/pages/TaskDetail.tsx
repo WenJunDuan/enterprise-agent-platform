@@ -71,7 +71,9 @@ function StatusBanner({ task }: { task: AuditTask }) {
           <span className="relative inline-flex rounded-full h-3 w-3 bg-blue-500" />
         </span>
         <p className="text-sm font-medium text-blue-800">
-          审核中{task.progress_message ? `：${task.progress_message}` : '…'}
+          {task.progress_message && !task.progress_message.includes('Claude')
+            ? task.progress_message
+            : 'Agent 正在运行中'}
         </p>
       </div>
     )

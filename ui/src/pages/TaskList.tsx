@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Link } from 'react-router-dom'
-import { listTasks } from '../api/client'
+import { listTasks, retryTask, deleteTask } from '../api/client'
 import StatCard from '../components/StatCard'
 import StatusBadge from '../components/StatusBadge'
 import { formatAmount } from '../lib/reimbursementLabels'
@@ -34,9 +34,10 @@ export default function TaskList() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [action, setAction] = useState<{ id: string; kind: 'retry' | 'delete' } | null>(null)
 
-  const load = useCallback(async () => {
-    setLoading(true)
+  const load = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setLoading(true)
     setError(null)
     try {
       const data = await listTasks({ status: status || undefined, limit: LIMIT, offset })
@@ -45,7 +46,7 @@ export default function TaskList() {
     } catch (err) {
       setError(err instanceof Error ? err.message : '加载失败')
     } finally {
-      setLoading(false)
+      if (!opts?.silent) setLoading(false)
     }
   }, [status, offset])
 
@@ -74,6 +75,37 @@ export default function TaskList() {
     clearSubmissionSummaries()
     setSummaries({})
     setNotice('已清空本机提交摘要；列表将按后端紧凑任务字段降级展示')
+  }
+
+  async function handleRetry(id: string) {
+    if (action) return
+    setAction({ id, kind: 'retry' })
+    setError(null)
+    try {
+      await retryTask(id)
+      setNotice('已触发重新审核')
+      await load({ silent: true })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '重新审核失败')
+    } finally {
+      setAction(null)
+    }
+  }
+
+  async function handleDelete(id: string) {
+    if (action) return
+    if (!window.confirm('确定删除该审核任务？此操作不可恢复。')) return
+    setAction({ id, kind: 'delete' })
+    setError(null)
+    try {
+      await deleteTask(id)
+      setNotice('已删除任务')
+      await load({ silent: true })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '删除失败')
+    } finally {
+      setAction(null)
+    }
   }
 
   return (
@@ -127,7 +159,7 @@ export default function TaskList() {
         <div className="flex gap-2 flex-shrink-0">
           <button
             type="button"
-            onClick={load}
+            onClick={() => load()}
             className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
           >
             刷新
@@ -160,7 +192,7 @@ export default function TaskList() {
                 <th className="text-left px-4 py-3 font-medium text-gray-600">状态</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">金额概要</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">提交时间</th>
-                <th className="px-4 py-3" />
+                <th className="text-right px-4 py-3 font-medium text-gray-600">操作</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -200,13 +232,31 @@ export default function TaskList() {
                     <td className="px-4 py-3 text-gray-500 whitespace-nowrap text-xs">
                       {formatDate(task.submitted_at)}
                     </td>
-                    <td className="px-4 py-3 text-right">
-                      <Link
-                        to={`/tasks/${task.request_id}`}
-                        className="text-blue-600 hover:underline text-xs"
-                      >
-                        查看详情
-                      </Link>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-end gap-2 whitespace-nowrap">
+                        <Link
+                          to={`/tasks/${task.request_id}`}
+                          className="text-blue-600 hover:underline text-xs"
+                        >
+                          查看详情
+                        </Link>
+                        <button
+                          type="button"
+                          onClick={() => handleRetry(task.request_id)}
+                          disabled={action !== null || task.status === 'running'}
+                          className="rounded border border-blue-300 bg-white px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50 transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          {action?.id === task.request_id && action.kind === 'retry' ? '重审中…' : '重新审核'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(task.request_id)}
+                          disabled={action !== null || task.status === 'running'}
+                          className="rounded border border-red-300 bg-white px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          {action?.id === task.request_id && action.kind === 'delete' ? '删除中…' : '删除'}
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))

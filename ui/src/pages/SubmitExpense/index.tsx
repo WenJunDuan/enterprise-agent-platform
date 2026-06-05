@@ -62,7 +62,7 @@ export default function SubmitExpense() {
       <div>
         <h1 className="text-2xl font-semibold text-gray-900">新建报销申请</h1>
         <p className="text-sm text-gray-500 mt-1">
-          分步填写报销信息，提交后由 Claude 自动审核
+          分步填写报销信息，提交后由 Agent 自动审核
         </p>
       </div>
 

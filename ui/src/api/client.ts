@@ -71,7 +71,13 @@ export async function listTasks(params?: {
 export async function getHealth(): Promise<HealthResponse> {
   const res = await fetch(url('/health'))
   if (res.status === 200 || res.status === 503) {
-    return res.json() as Promise<HealthResponse>
+    try {
+      return (await res.json()) as HealthResponse
+    } catch {
+      // 可达但响应非 JSON（如 /health 未被反代显式代理、回退到 SPA index.html）：
+      // 后端原点已经应答，视为可达，避免误报“离线”。
+      return { status: res.status === 200 ? 'ok' : 'degraded' }
+    }
   }
   return handleResponse<HealthResponse>(res)
 }
