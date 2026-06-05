@@ -480,6 +480,11 @@ async def _materialize_upload_submission(
     return _serialize_case_path(case_dir)
 
 
+# 单次审核硬超时（秒）。仅兜底防无限挂起，不是目标耗时：造假快判仍 ~1 跳返回。
+# 默认放宽到 180s，给"读附件"等多跳常规审核留余量（网关 ~17-48s/跳，最坏 3 跳 ~144s）。
+AUDIT_TIMEOUT_SEC = float(os.getenv("AUDIT_TIMEOUT_SEC", "180"))
+
+
 async def _run_directory_audit(*, request_id: str, tenant: str, directory_path: str):
     return await run_inline_directory_audit(
         directory_path,
@@ -509,16 +514,19 @@ async def _execute_directory_audit_task(
                 "result_file": None,
                 "session_id": None,
                 "error_detail": None,
-                "progress_message": "正在调用 Claude 审核",
+                "progress_message": "Agent 正在运行中",
                 "started_at": started_at,
                 "updated_at": started_at,
             }
         )
         try:
-            payload, meta = await _run_directory_audit(
-                request_id=request_id,
-                tenant=tenant,
-                directory_path=directory_path,
+            payload, meta = await asyncio.wait_for(
+                _run_directory_audit(
+                    request_id=request_id,
+                    tenant=tenant,
+                    directory_path=directory_path,
+                ),
+                timeout=AUDIT_TIMEOUT_SEC,
             )
             finished_at = utc_now()
             upsert_audit_task(
@@ -534,6 +542,37 @@ async def _execute_directory_audit_task(
                     "session_id": meta.claude_session_id,
                     "error_detail": None,
                     "progress_message": "审核完成",
+                    "finished_at": finished_at,
+                    "updated_at": finished_at,
+                }
+            )
+        except asyncio.TimeoutError:
+            logger.warning(
+                "directory_audit_timeout",
+                extra={
+                    "request_id": request_id,
+                    "tenant": tenant,
+                    "route": "/audit/submit",
+                    "timeout_sec": AUDIT_TIMEOUT_SEC,
+                },
+            )
+            finished_at = utc_now()
+            upsert_audit_task(
+                {
+                    "request_id": request_id,
+                    "tenant": tenant,
+                    "status": "failed",
+                    "mode": source_mode,
+                    "source_mode": source_mode,
+                    "case_path": directory_path,
+                    "claim_id": None,
+                    "result_file": None,
+                    "session_id": None,
+                    "error_detail": (
+                        f"审核超时：超过 {int(AUDIT_TIMEOUT_SEC)}s 未返回结果"
+                        "（可能模型网关拥塞），请稍后重试"
+                    ),
+                    "progress_message": "审核超时",
                     "finished_at": finished_at,
                     "updated_at": finished_at,
                 }

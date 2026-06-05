@@ -1,0 +1,37 @@
+name: audit-agent
+
+services:
+  audit-agent:
+    image: audit-agent:offline
+    build:
+      context: .
+    container_name: audit-agent
+    restart: unless-stopped
+    env_file:
+      - path: ./audit-agent.env
+        required: true
+        format: raw
+    volumes:
+      - ./knowledge:/app/knowledge
+      - ./data:/app/data
+      - ./logs:/app/logs
+    ports:
+      - "9999:9999"
+    networks:
+      enterprise-agent-net: {}
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - |
+          import urllib.request
+          urllib.request.urlopen("http://127.0.0.1:9999/health", timeout=3).read()
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+networks:
+  enterprise-agent-net:
+    external: true

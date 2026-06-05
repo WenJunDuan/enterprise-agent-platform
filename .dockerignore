@@ -1,0 +1,34 @@
+# VCS / tooling
+.git
+.gitignore
+.ai_state
+.ruff_cache
+**/.DS_Store
+
+# Python virtualenv & caches (host-specific, must not leak into image)
+.venv
+**/__pycache__
+**/*.pyc
+**/*.pyo
+
+# Runtime state — provided as mounted volumes, not baked
+logs
+data
+
+# Frontend sources & deps — only the prebuilt ui/dist is shipped
+ui/node_modules
+ui/src
+ui/.env.local
+
+# Secrets — supplied at runtime via env_file, never baked into the image
+.env
+**/.env
+**/.env.local
+**/*.env.prod
+.claude/settings.local.json
+
+# Large institution source docs (not needed at runtime; only rules JSON is)
+knowledge/external
+
+# Deploy bundle (compose/env/config) — not needed in the runtime image; keeps prod secrets out
+deploy/litellm

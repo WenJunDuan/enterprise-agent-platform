@@ -1,16 +1,31 @@
 import { Link, Outlet, useLocation } from 'react-router-dom'
-import { getApiRuntimeConfig, getHealth } from '../api/client'
+import { getHealth } from '../api/client'
 import { useEffect, useState } from 'react'
 
 type ConnState = 'checking' | 'ok' | 'error'
 
+const HEALTH_POLL_INTERVAL = 15000
+
 function MiniConnectionStatus() {
   const [state, setState] = useState<ConnState>('checking')
 
+  // 周期性复检：避免后端慢启动 / 一次性瞬时失败把状态永久锁死在“离线”。
   useEffect(() => {
-    getHealth()
-      .then(() => setState('ok'))
-      .catch(() => setState('error'))
+    let cancelled = false
+    async function check() {
+      try {
+        await getHealth()
+        if (!cancelled) setState('ok')
+      } catch {
+        if (!cancelled) setState('error')
+      }
+    }
+    void check()
+    const timer = setInterval(() => void check(), HEALTH_POLL_INTERVAL)
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+    }
   }, [])
 
   const dot =
@@ -56,8 +71,6 @@ function NavLink({ to, label, icon, exact }: NavLinkProps) {
   )
 }
 
-const apiConfig = getApiRuntimeConfig()
-
 export default function Layout() {
   return (
     <div className="flex min-h-screen bg-gray-50">
@@ -88,9 +101,8 @@ export default function Layout() {
         </nav>
 
         {/* Footer: mini connection status */}
-        <div className="border-t border-gray-200 px-4 py-3 space-y-1">
+        <div className="border-t border-gray-200 px-4 py-3">
           <MiniConnectionStatus />
-          <p className="text-xs text-gray-400 truncate">API: {apiConfig.displayBase}</p>
         </div>
       </aside>
 

@@ -67,9 +67,48 @@ TENANT_KEYS={"default":"sk-your-token"}        # HTTP API Bearer token 映射
 
 ## 部署
 
-仓库不提供 Docker；目标机原地运行，生产用 systemd 守护。按依赖顺序：**LiteLLM → 规则 → 后端 → 前端**。
+两种部署方式，**Docker Compose 首选**；无 Docker 时用原地 + systemd。
 
-### 0. 目标机依赖
+### 方式 A · Docker Compose（推荐）
+
+镜像自包含 SDK 自带的 `claude` CLI（无需 node）与同源前端 `ui/dist`，模型层 LiteLLM
+与平台应用分成两个 compose 项目管理：
+
+- `/opt/application/litellm/`：LiteLLM 的 `docker-compose.yml`、`litellm_config.yaml`、`litellm.env`
+- `/opt/application/enterprise-agent-platform/`：平台自己的 `Dockerfile`、`docker-compose.yml`、`enterprise-agent.env`
+
+```bash
+# 1) 前端产物与规则必须存在
+cd ui && npm install && npm run build && cd ..
+test -f knowledge/expense/travel.rules.json
+
+# 2) 目标机：准备共享网络
+docker network create enterprise-agent-net || true
+
+# 3) 启动 LiteLLM
+cd /opt/application/litellm
+cp litellm.env.example litellm.env
+# 填 QWEN_API_BASE / QWEN_API_KEY / LITELLM_MASTER_KEY
+docker compose up -d
+curl http://127.0.0.1:4000/health/liveliness
+
+# 4) 启动平台应用
+cd /opt/application/enterprise-agent-platform
+cp enterprise-agent.env.example enterprise-agent.env
+# 填 MODEL_AUTH_TOKEN / TENANT_KEYS / CORS_ALLOWED_ORIGINS
+docker compose up -d --build
+curl http://127.0.0.1:9999/health
+```
+
+> 若目标机断网，先在同架构联网机器 `docker pull` + `docker save` LiteLLM 镜像，再在目标机
+> `docker load`。LiteLLM env 说明和运维命令见
+> [`deploy/litellm/README.md`](deploy/litellm/README.md)。
+
+### 方式 B · 原地运行 + systemd（无 Docker 时备选）
+
+按依赖顺序：**LiteLLM → 规则 → 后端 → 前端**。
+
+#### 0. 目标机依赖
 
 | 组件 | 版本 | 说明 |
 | --- | --- | --- |
@@ -78,7 +117,7 @@ TENANT_KEYS={"default":"sk-your-token"}        # HTTP API Bearer token 映射
 | Node.js | 18+ | 构建前端 + SDK 自带 CLI 运行时（无需单独装 claude-code） |
 | `poppler-utils` | 可选 | 仅 `init-rules` 解析 PDF 时需要 |
 
-### 1. 拉代码
+#### 1. 拉代码
 
 ```bash
 git clone <your-remote> /opt/enterprise-agent-platform
@@ -86,20 +125,20 @@ cd /opt/enterprise-agent-platform
 uv sync
 ```
 
-### 2. 起 LiteLLM（模型骨干，下游都依赖它）
+#### 2. 起 LiteLLM（模型骨干，下游都依赖它）
 
 ```bash
 pip install "litellm[proxy]==<安全版本>"      # ⚠️ 避开被投毒的 1.82.7 / 1.82.8
-cp deploy/litellm/.env.example deploy/litellm/.env
+cp deploy/litellm/litellm.env.example deploy/litellm/litellm.env
 #   填 QWEN_API_KEY / QWEN_API_BASE / LITELLM_MASTER_KEY，按需改 litellm_config.yaml 模型名
-set -a && . deploy/litellm/.env && set +a
+set -a && . deploy/litellm/litellm.env && set +a
 litellm --config deploy/litellm/litellm_config.yaml --port 4000
 curl http://127.0.0.1:4000/health             # 应有响应
 ```
 
 细节见 [`deploy/litellm/README.md`](deploy/litellm/README.md)。
 
-### 3. 铺规则（关键：`knowledge/` 被 gitignore，不随仓库走）
+#### 3. 铺规则（关键：`knowledge/` 被 gitignore，不随仓库走）
 
 审核读 `knowledge/expense/*.rules.json`，缺失会一律 `manual_review(rule_gap)`。二选一：
 
@@ -110,7 +149,7 @@ uv run python -m server.cli init-rules knowledge/external/制度.pdf expense
 uv run python -m server.cli validate-assets   # status 应为 ok
 ```
 
-### 4. 起后端
+#### 4. 起后端
 
 填好 `.env`（见“配置”，`MODEL_BASE_URL=http://127.0.0.1:4000`、`MODEL_AUTH_TOKEN` = LiteLLM master key），然后**上线前必过工具调用门槛**：
 
@@ -122,7 +161,7 @@ ls -t logs/sessions/events/*/*/*/*.jsonl | head -1 | xargs grep -c '"event": "to
 uv run app-server start                        # 后台常驻（开发期用；生产见 systemd）
 ```
 
-### 5. 构建前端（后端同源托管）
+#### 5. 构建前端（后端同源托管）
 
 ```bash
 cd ui && npm install && npm run build && cd .. # 产物 ui/dist
@@ -130,7 +169,7 @@ uv run app-server restart                      # 后端默认 SERVE_UI_DIST=true
 # 访问 http://<服务器>:<端口>/ 即前端页面
 ```
 
-### 6. systemd 守护（生产推荐）
+#### 6. systemd 守护（备选方式下的生产守护）
 
 `/etc/systemd/system/litellm.service`：
 
@@ -144,7 +183,7 @@ Wants=network-online.target
 Type=simple
 User=app
 WorkingDirectory=/opt/enterprise-agent-platform
-EnvironmentFile=/opt/enterprise-agent-platform/deploy/litellm/.env
+EnvironmentFile=/opt/enterprise-agent-platform/deploy/litellm/litellm.env
 ExecStart=/usr/local/bin/litellm --config /opt/enterprise-agent-platform/deploy/litellm/litellm_config.yaml --port 4000
 Restart=on-failure
 RestartSec=5s
@@ -183,7 +222,7 @@ journalctl -u enterprise-agent -f
 
 > systemd 接管后由它直接拉起 uvicorn，不再走 `app-server` 后台管理；进程日志走 `journalctl`，状态用 `systemctl status` + `curl /health`（不再写 `logs/runtime/app-server/`）。
 
-### 7. 反向代理与验收
+#### 7. 反向代理与验收
 
 - nginx / Caddy 在前面挂 TLS + rate-limit，转发到后端端口；LiteLLM 只绑 `127.0.0.1`，不对外。
 - 验收顺序：`LiteLLM /health` → `cli runtime` ok → **tool_call 探针 ≥1** → 前端首页 → 提交一单 → 任务 `completed` 且结果含真实 `policy_refs`/`evidence_chain`。
@@ -268,7 +307,8 @@ uv run app-server logs --lines 100             # 后台日志（非 systemd 模�
 .claude/        Claude commands / agents / hooks / skills / contracts
 knowledge/      规则、制度材料、memory 资产（gitignore，需单独铺设）
 data/           样例目录与上传落盘（gitignore）
-deploy/litellm/ LiteLLM 协议翻译层配置
+Dockerfile      审核后端+前端运行时镜像（含 SDK 自带 claude CLI，无需 node）
+deploy/litellm/ Docker Compose 部署包：compose + 单一 env 模板 + LiteLLM 配置 + 手册
 server/         Python 服务外壳、CLI、平台层与 stores
 ui/             React 前端（npm run build → ui/dist）
 logs/           请求/结果/会话/runtime/review-delta 运行时归档（gitignore）

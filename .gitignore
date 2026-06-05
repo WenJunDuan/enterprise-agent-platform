@@ -11,6 +11,15 @@ data/
 knowledge/
 .ace-tool/*
 .env
+enterprise-agent.env
+audit-agent.env
+# 部署时的真实环境文件 / prod 密钥，禁止入库
+*.env.prod
+deploy/offline/app.env
+deploy/offline/litellm.env
+deploy/litellm/.env
+deploy/litellm/app.env
+deploy/litellm/litellm.env
 .data/*
 .ace-tool/
 .ai_state/.snapshots/
