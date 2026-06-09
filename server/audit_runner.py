@@ -113,6 +113,10 @@ async def run_inline_directory_audit(
     **opts: Any,
 ) -> tuple[StructuredJSON, AgentRunMeta]:
     """Run a directory audit with materials + rules preloaded; keep only Read for attachments."""
+    # setting_sources=[] 砍掉 .claude/CLAUDE.md 等无关系统提示，减小慢模型的 prefill 负担。
+    # 内联审核自包含（规则+案件已注入、schema 由服务端 output_format 约束），不依赖项目设置。
+    # 需回退到加载项目设置时设 AUDIT_LEAN_CONTEXT=0（无需重建镜像）。
+    lean_context = os.getenv("AUDIT_LEAN_CONTEXT", "1").strip().lower() in {"1", "true", "yes", "on"}
     return await run_agent_json(
         build_inline_audit_prompt(directory_path),
         schema_name=DEFAULT_OUTPUT_SCHEMA_NAME,
@@ -120,5 +124,6 @@ async def run_inline_directory_audit(
         tenant=tenant,
         allowed_tools=["Read"],
         max_turns=int(os.getenv("AUDIT_INLINE_MAX_TURNS", "8")),
+        setting_sources=[] if lean_context else ["project"],
         **opts,
     )
