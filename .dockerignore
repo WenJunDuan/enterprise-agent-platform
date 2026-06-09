@@ -25,10 +25,9 @@ ui/.env.local
 **/.env
 **/.env.local
 **/*.env.prod
+audit-agent.env
+enterprise-agent.env
 .claude/settings.local.json
 
 # Large institution source docs (not needed at runtime; only rules JSON is)
 knowledge/external
-
-# Deploy bundle (compose/env/config) — not needed in the runtime image; keeps prod secrets out
-deploy/litellm
