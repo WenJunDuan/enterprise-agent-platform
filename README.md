@@ -10,7 +10,7 @@
 浏览器/接口 ────┘     鉴权·归档·异步任务       Claude名映射·tool_use 翻译
 ```
 
-后端默认同源托管前端 `ui/dist`，无需单独前端服务。模型层用 LiteLLM 把 `claude-*` 名映射到 Qwen 并双向翻译工具调用（详见 [`deploy/litellm/`](deploy/litellm/README.md)）。
+后端默认同源托管前端 `ui/dist`，无需单独前端服务。模型层用 LiteLLM 把 `claude-*` 名映射到 Qwen 并双向翻译工具调用（LiteLLM 由运维独立部署管理）。
 
 ---
 
@@ -130,16 +130,14 @@ uv sync
 
 #### 2. 起 LiteLLM（模型骨干，下游都依赖它）
 
+LiteLLM 由运维独立部署管理（仓库不含其配置）。自备 `litellm_config.yaml`（`claude-*` → Qwen 映射）：
+
 ```bash
 pip install "litellm[proxy]==<安全版本>"      # ⚠️ 避开被投毒的 1.82.7 / 1.82.8
-cp deploy/litellm/litellm.env.example deploy/litellm/litellm.env
-#   填 QWEN_API_KEY / QWEN_API_BASE / LITELLM_MASTER_KEY，按需改 litellm_config.yaml 模型名
-set -a && . deploy/litellm/litellm.env && set +a
-litellm --config deploy/litellm/litellm_config.yaml --port 4000
+#   准备 QWEN_API_BASE / QWEN_API_KEY / LITELLM_MASTER_KEY 等环境变量
+litellm --config <你的 litellm_config.yaml> --port 4000
 curl http://127.0.0.1:4000/health             # 应有响应
 ```
-
-细节见 [`deploy/litellm/README.md`](deploy/litellm/README.md)。
 
 #### 3. 铺规则（关键：`knowledge/` 被 gitignore，不随仓库走）
 
@@ -186,8 +184,8 @@ Wants=network-online.target
 Type=simple
 User=app
 WorkingDirectory=/opt/enterprise-agent-platform
-EnvironmentFile=/opt/enterprise-agent-platform/deploy/litellm/litellm.env
-ExecStart=/usr/local/bin/litellm --config /opt/enterprise-agent-platform/deploy/litellm/litellm_config.yaml --port 4000
+EnvironmentFile=/opt/application/litellm/litellm.env
+ExecStart=/usr/local/bin/litellm --config /opt/application/litellm/litellm_config.yaml --port 4000
 Restart=on-failure
 RestartSec=5s
 
@@ -311,7 +309,7 @@ uv run app-server logs --lines 100             # 后台日志（非 systemd 模�
 knowledge/      规则、制度材料、memory 资产（gitignore，需单独铺设）
 data/           样例目录与上传落盘（gitignore）
 Dockerfile      审核后端+前端运行时镜像（含 SDK 自带 claude CLI，无需 node）
-deploy/litellm/ Docker Compose 部署包：compose + 单一 env 模板 + LiteLLM 配置 + 手册
+docker-compose.yml / docker-entrypoint.sh / enterprise-agent.env.example   平台编排、入口与 env 模板（LiteLLM 由运维独立管理）
 server/         Python 服务外壳、CLI、平台层与 stores
 ui/             React 前端（npm run build → ui/dist）
 logs/           请求/结果/会话/runtime/review-delta 运行时归档（gitignore）
