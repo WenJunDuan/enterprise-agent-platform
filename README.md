@@ -58,6 +58,10 @@ TENANT_KEYS={"default":"sk-your-token"}        # HTTP API Bearer token 映射
 | `CORS_ALLOWED_ORIGINS` | 跨域白名单（逗号分隔，支持 `re:` 正则） | `localhost:5173` 等 |
 | `MAX_BUDGET_USD` | 单次审核成本上限 | `1.0` |
 | `ALLOW_INSECURE_DEFAULT_TENANT_KEY` | 允许默认示例 token；生产必须 `false` | `false` |
+| `AUDIT_TIMEOUT_SEC` | 单次审核硬超时（秒）；现场内网模型/网络慢时调大 | `180` |
+| `AUDIT_TASK_RUNNING_TIMEOUT_SECONDS` | 重启时回收残留 `running` 任务的阈值（秒） | `600` |
+| `MAX_CONCURRENT_AUDITS` | 同时进行的审核上限，超额提交排队保持 `accepted` | `2` |
+| `AUDIT_INLINE_MAX_TURNS` | 内联审核最大轮数，封顶最坏耗时 | `8` |
 
 > `MODEL_NAME` 原样透传到 `ANTHROPIC_MODEL`。想用 SDK alias 路由可另配 `ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU}_MODEL`。完整变量见 `server/platform/config.py`。
 >
@@ -101,8 +105,7 @@ curl http://127.0.0.1:9999/health
 ```
 
 > 若目标机断网，先在同架构联网机器 `docker pull` + `docker save` LiteLLM 镜像，再在目标机
-> `docker load`。LiteLLM env 说明和运维命令见
-> [`deploy/litellm/README.md`](deploy/litellm/README.md)。
+> `docker load`。LiteLLM 的 env 说明与运维命令见 `/opt/application/litellm/` 下的 compose 与配置。
 
 ### 方式 B · 原地运行 + systemd（无 Docker 时备选）
 
