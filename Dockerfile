@@ -30,6 +30,10 @@ RUN pip install \
       "typer>=0.12.0" \
       "uvicorn>=0.30.0"
 
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends gosu \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN groupadd --gid "${APP_GID}" app \
     && useradd --uid "${APP_UID}" --gid app --create-home --home-dir /home/app app
 
@@ -41,13 +45,16 @@ COPY --chown=app:app .claude ./.claude
 COPY --chown=app:app ui/dist ./ui/dist
 COPY --chown=app:app knowledge ./knowledge
 COPY --chown=app:app pyproject.toml README.md ./
+COPY docker-entrypoint.sh ./docker-entrypoint.sh
 
 RUN mkdir -p /app/data /app/logs \
-    && chown -R app:app /app /home/app
+    && chown -R app:app /app /home/app \
+    && chmod +x /app/docker-entrypoint.sh
 
-USER app
+USER root
 
 EXPOSE 9999
 
+ENTRYPOINT ["./docker-entrypoint.sh"]
 CMD ["python", "-m", "uvicorn", "server.api:app", \
      "--host", "0.0.0.0", "--port", "9999", "--no-server-header"]
