@@ -199,6 +199,10 @@ def validate_structured_output_semantics(
 
 def build_options(**overrides: Any) -> ClaudeAgentOptions:
     """Create a shared SDK options object for all entrypoints."""
+    # 兜底进 env：这两项原本靠 setting_sources=["project"] 从 .claude/settings.json 加载；
+    # 内联审核会改用 setting_sources=[] 精简系统提示，放进 env 才不会丢掉长超时与降噪。
+    os.environ.setdefault("API_TIMEOUT_MS", "3000000")
+    os.environ.setdefault("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1")
     runtime = get_claude_runtime_snapshot()
     defaults: dict[str, Any] = {
         "cwd": str(PROJECT_ROOT),

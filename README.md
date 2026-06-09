@@ -62,6 +62,7 @@ TENANT_KEYS={"default":"sk-your-token"}        # HTTP API Bearer token 映射
 | `AUDIT_TASK_RUNNING_TIMEOUT_SECONDS` | 重启时回收残留 `running` 任务的阈值（秒） | `600` |
 | `MAX_CONCURRENT_AUDITS` | 同时进行的审核上限，超额提交排队保持 `accepted` | `2` |
 | `AUDIT_INLINE_MAX_TURNS` | 内联审核最大轮数，封顶最坏耗时 | `8` |
+| `AUDIT_LEAN_CONTEXT` | 内联审核精简系统提示（不加载项目 `.claude` 设置），慢模型提速；回退设 `0` | `1` |
 
 > `MODEL_NAME` 原样透传到 `ANTHROPIC_MODEL`。想用 SDK alias 路由可另配 `ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU}_MODEL`。完整变量见 `server/platform/config.py`。
 >
