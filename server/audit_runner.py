@@ -8,6 +8,7 @@ the injected rules; Python only delivers the inputs.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -118,5 +119,6 @@ async def run_inline_directory_audit(
         request_id=request_id,
         tenant=tenant,
         allowed_tools=["Read"],
+        max_turns=int(os.getenv("AUDIT_INLINE_MAX_TURNS", "8")),
         **opts,
     )

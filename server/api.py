@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 import json
 import logging
 import os
+import secrets
 import shutil
 import uuid
 from pathlib import Path
@@ -174,7 +175,7 @@ def verify_tenant(authorization: str | None) -> str:
         raise _authorization_error("Authorization header must use Bearer token")
     token = credentials.strip()
     for tenant, key in TENANT_KEYS.items():
-        if key == token:
+        if secrets.compare_digest(key, token):
             return tenant
     raise _authorization_error("Invalid tenant token")
 
@@ -484,6 +485,11 @@ async def _materialize_upload_submission(
 # 默认放宽到 180s，给"读附件"等多跳常规审核留余量（网关 ~17-48s/跳，最坏 3 跳 ~144s）。
 AUDIT_TIMEOUT_SEC = float(os.getenv("AUDIT_TIMEOUT_SEC", "180"))
 
+# 同时进行的审核上限。每单审核会拉起一个 claude CLI 子进程，无上限并发会打爆内网机内存/CPU。
+# 超额的提交在信号量处排队，任务状态保持 accepted 直到有空位（排队时间不计入 AUDIT_TIMEOUT_SEC）。
+MAX_CONCURRENT_AUDITS = int(os.getenv("MAX_CONCURRENT_AUDITS", "2"))
+_AUDIT_SEMAPHORE = asyncio.Semaphore(MAX_CONCURRENT_AUDITS)
+
 
 async def _run_directory_audit(*, request_id: str, tenant: str, directory_path: str):
     return await run_inline_directory_audit(
@@ -494,6 +500,23 @@ async def _run_directory_audit(*, request_id: str, tenant: str, directory_path: 
 
 
 async def _execute_directory_audit_task(
+    *,
+    request_id: str,
+    tenant: str,
+    directory_path: str,
+    source_mode: str = "directory",
+) -> None:
+    # 并发闸：拿不到名额就在此 await 排队，排队期间任务保持 accepted（不计入审核超时）。
+    async with _AUDIT_SEMAPHORE:
+        await _execute_directory_audit_task_inner(
+            request_id=request_id,
+            tenant=tenant,
+            directory_path=directory_path,
+            source_mode=source_mode,
+        )
+
+
+async def _execute_directory_audit_task_inner(
     *,
     request_id: str,
     tenant: str,
