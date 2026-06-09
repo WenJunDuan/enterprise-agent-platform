@@ -2,7 +2,7 @@ name: audit-agent
 
 services:
   audit-agent:
-    image: audit-agent:offline
+    image: audit-agent
     build:
       context: .
     container_name: audit-agent

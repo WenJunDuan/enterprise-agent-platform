@@ -177,3 +177,6 @@ slug 拆分为独立 sprint 目录；`lessons.md` 整体保留为
 
 ## 历史
 - `2026-06-02 09:21:58`: stage=ship sprint=? turn-end
+- `2026-06-09 10:12:18`: stage=ship sprint=2026-06-09-audit-agent-docker-repack image=audit-agent artifact=audit-agent.tar run-build-host=true
+- `2026-06-09 14:38:00`: stage=ship sprint=2026-06-09-litellm-no-db-repack image=docker.litellm.ai/berriai/litellm:main-stable artifact=litellm-main-stable.tar no-db=true
+- `2026-06-09 15:13:00`: stage=ship sprint=2026-06-09-litellm-no-db-repack litellm-config=yaml-only active-env=false proxy-auth-removed=true
