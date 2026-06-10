@@ -151,24 +151,22 @@ def validate_structured_output_semantics(
                     "audit result with verdict=manual_review must include a valid manual_review_reason."
                 )
 
+        # risk_dimensions 是可选的风险元数据。网关模型（qwen 等）给的格式常不规范——
+        # 不规范就清洗/丢弃，绝不因为一个可选字段让整单审核失败（核心是 verdict/explanation）。
+        valid_dim_names = {"invoice", "amount", "approval", "budget", "anomaly"}
         dimensions = structured_output.get("risk_dimensions")
-        if dimensions is not None:
-            if not isinstance(dimensions, list):
-                raise JSONContractError("audit result field `risk_dimensions` must be a list.")
-            valid_dim_names = {"invoice", "amount", "approval", "budget", "anomaly"}
-            for dim in dimensions:
-                if not isinstance(dim, dict):
-                    raise JSONContractError("each risk dimension must be an object.")
-                name = dim.get("name")
-                score = dim.get("score")
-                if name not in valid_dim_names:
-                    raise JSONContractError(
-                        f"risk dimension name `{name}` is not in the allowed set."
-                    )
-                if not isinstance(score, int) or isinstance(score, bool) or score < 0 or score > 10:
-                    raise JSONContractError(
-                        "risk dimension score must be an integer between 0 and 10."
-                    )
+        if isinstance(dimensions, list):
+            structured_output["risk_dimensions"] = [
+                dim
+                for dim in dimensions
+                if isinstance(dim, dict)
+                and dim.get("name") in valid_dim_names
+                and isinstance(dim.get("score"), int)
+                and not isinstance(dim.get("score"), bool)
+                and 0 <= dim["score"] <= 10
+            ]
+        elif dimensions is not None:
+            structured_output.pop("risk_dimensions", None)
 
         return
 
