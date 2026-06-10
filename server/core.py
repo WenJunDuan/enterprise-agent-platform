@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import time
 import uuid
 from dataclasses import dataclass
@@ -493,6 +494,47 @@ async def run_agent_full(prompt: str, **opts: Any) -> str:
     return final_result or "\n".join(chunk for chunk in chunks if chunk)
 
 
+def _extract_json_object(text: str) -> dict[str, Any] | None:
+    """从模型的文本输出里抽取第一个能解析的 JSON 对象。
+
+    兼容 reasoning 模型的 <think>…</think> 块、```json 围栏、以及 JSON 前后的散文。
+    用于"文本模式"：不依赖原生 function calling / 结构化输出的网关模型（如 qwen）直接
+    输出 JSON 文本，由服务端解析。
+    """
+    if not text:
+        return None
+    cleaned = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
+    cleaned = cleaned.replace("```json", "").replace("```", "")
+    start = cleaned.find("{")
+    while start != -1:
+        depth = 0
+        in_str = False
+        esc = False
+        for i in range(start, len(cleaned)):
+            ch = cleaned[i]
+            if in_str:
+                if esc:
+                    esc = False
+                elif ch == "\\":
+                    esc = True
+                elif ch == '"':
+                    in_str = False
+            elif ch == '"':
+                in_str = True
+            elif ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    try:
+                        obj = json.loads(cleaned[start : i + 1])
+                    except json.JSONDecodeError:
+                        break
+                    return obj if isinstance(obj, dict) else None
+        start = cleaned.find("{", start + 1)
+    return None
+
+
 async def run_agent_json(
     prompt: str,
     conversation_id: str | None = None,
@@ -500,11 +542,16 @@ async def run_agent_json(
     fork_from_session_id: str | None = None,
     continue_recent: bool = False,
     schema_name: str = DEFAULT_OUTPUT_SCHEMA_NAME,
+    structured: bool = True,
     request_id: str | None = None,
     tenant: str | None = None,
     **opts: Any,
 ) -> tuple[StructuredJSON, AgentRunMeta]:
-    """Run Claude with SDK structured outputs and return the parsed object."""
+    """Run Claude and return the parsed JSON object.
+
+    structured=True 用 SDK 的 output_format 强制结构化输出（需模型支持 function
+    calling）；structured=False 走文本模式：模型直接输出 JSON 文本，服务端自己抽取解析。
+    """
     conversation_id = conversation_id or new_conversation_id()
     request_id = request_id or str(uuid.uuid4())
     started_at = utc_now()
@@ -519,7 +566,8 @@ async def run_agent_json(
     )
     current_session_id = resolved_resume_session_id or fork_from_session_id or str(uuid.uuid4())
     session_logger = SessionLogger(current_session_id, request_id, prompt, started_at, tenant)
-    options = build_options(output_format=build_output_format(schema_name), **opts)
+    output_opts = {"output_format": build_output_format(schema_name)} if structured else {}
+    options = build_options(**output_opts, **opts)
 
     with logging_context(request_id=request_id, tenant=tenant, session_id=current_session_id):
         if fork_from_session_id:
@@ -537,6 +585,7 @@ async def run_agent_json(
         result_file: str | None = None
         finished_at: str | None = None
         final_structured_output: StructuredJSON | None = None
+        text_accum: list[str] = []
 
         try:
             async for message in query(prompt=prompt, options=options):
@@ -550,30 +599,47 @@ async def run_agent_json(
                     )
                     continue
 
+                if isinstance(message, AssistantMessage):
+                    for block in getattr(message, "content", []):
+                        if isinstance(block, TextBlock):
+                            text_accum.append(block.text)
+                    continue
+
                 if not isinstance(message, ResultMessage):
                     continue
 
                 final_claude_session_id = getattr(message, "session_id", None) or final_claude_session_id
                 final_subtype = getattr(message, "subtype", "")
                 final_cost = float(getattr(message, "total_cost_usd", 0.0) or 0.0)
-                structured_output = getattr(message, "structured_output", None)
 
-                if structured_output is not None and final_structured_output is None:
-                    if not isinstance(structured_output, (dict, list)):
+                if structured:
+                    structured_output = getattr(message, "structured_output", None)
+                    if structured_output is not None and final_structured_output is None:
+                        if not isinstance(structured_output, (dict, list)):
+                            final_status = "error"
+                            raise JSONContractError("Claude returned a non-object structured output.")
+                        validate_structured_output_semantics(schema_name, structured_output)
+                        if schema_name == DEFAULT_OUTPUT_SCHEMA_NAME:
+                            structured_output = enrich_audit_decision(structured_output)
+                        final_structured_output = structured_output
+                        finished_at = utc_now()
+                        continue
+                    if final_subtype == "error_max_structured_output_retries":
                         final_status = "error"
-                        raise JSONContractError("Claude returned a non-object structured output.")
-                    validate_structured_output_semantics(schema_name, structured_output)
-                    if schema_name == DEFAULT_OUTPUT_SCHEMA_NAME:
-                        structured_output = enrich_audit_decision(structured_output)
-                    final_structured_output = structured_output
-                    finished_at = utc_now()
-                    continue
-
-                if final_subtype == "error_max_structured_output_retries":
-                    final_status = "error"
-                    raise JSONContractError(
-                        f"Claude failed to satisfy structured output schema after retries: {schema_name}"
-                    )
+                        raise JSONContractError(
+                            f"Claude failed to satisfy structured output schema after retries: {schema_name}"
+                        )
+                elif final_structured_output is None:
+                    # 文本模式：模型把 JSON 当文本输出，这里抽取 + 语义校验。
+                    raw_text = (getattr(message, "result", "") or "") or "".join(text_accum)
+                    parsed = _extract_json_object(raw_text)
+                    if parsed is not None:
+                        validate_structured_output_semantics(schema_name, parsed)
+                        if schema_name == DEFAULT_OUTPUT_SCHEMA_NAME:
+                            parsed = enrich_audit_decision(parsed)
+                        final_structured_output = parsed
+                        finished_at = utc_now()
+                        continue
 
                 if getattr(message, "is_error", False):
                     final_status = "error"
@@ -581,7 +647,11 @@ async def run_agent_json(
 
             if final_structured_output is None:
                 final_status = "error"
-                raise JSONContractError("Claude returned no structured output.")
+                if structured:
+                    raise JSONContractError("Claude returned no structured output.")
+                raise JSONContractError(
+                    "文本模式下未能从模型输出中解析出 JSON 对象（模型可能没按要求只输出 JSON）。"
+                )
 
             result_record = archive_result_payload(
                 request_id=request_id,
@@ -591,7 +661,7 @@ async def run_agent_json(
                 resume_session_id=resolved_resume_session_id,
                 fork_from_session_id=fork_from_session_id,
                 schema_name=schema_name,
-                request_mode="structured",
+                request_mode="structured" if structured else "text",
                 result_subtype=final_subtype or None,
                 cost_usd=final_cost,
                 prompt_preview=prompt[:200],
@@ -629,7 +699,7 @@ async def run_agent_json(
                     resume_session_id=resolved_resume_session_id,
                     fork_from_session_id=fork_from_session_id,
                     schema_name=schema_name,
-                    request_mode="structured",
+                    request_mode="structured" if structured else "text",
                     prompt_preview=prompt[:200],
                     log_file=str(session_logger.log_file),
                     status=final_status,
