@@ -41,9 +41,9 @@ AUDIT_INSTRUCTIONS = """你是企业报销审核员。下方已提供本案的�
 - 造假判定基于数据真实性而非业务限额，此时 `policy_refs` 允许为空数组；但 `evidence_chain` 必须把触发判定的字段与取值写进 `finding`。
 
 输出：
-- 只返回一个符合 `.claude/contracts/common/audit-result.schema.json` 的 JSON 对象。
 - 决策只用 `verdict`（approved / rejected / manual_review）；不要输出 `result` / `conclusion`（服务端派生）。
-- `explanation` / `reasons` / `evidence_chain` 用中文；不要输出 JSON 之外的任何文字。
+- `reasons` 为简短中文字符串数组（每条一句话，**不要嵌套对象**）；`policy_refs` 为规则 ID 字符串数组；`evidence_chain` 各字段用中文。
+- **输出纪律（严格遵守）**：分析在内部完成（如需思考，写在 `<think>...</think>` 内）；最终回复**只能是一个 JSON 对象**，其前后不得有任何分析、前言、说明或重复内容；所有文本字段一律用**中文**，不要中英文混杂。
 """
 
 
