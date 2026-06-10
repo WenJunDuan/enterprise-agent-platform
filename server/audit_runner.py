@@ -114,15 +114,21 @@ async def run_inline_directory_audit(
 ) -> tuple[StructuredJSON, AgentRunMeta]:
     """Run a directory audit with materials + rules preloaded; keep only Read for attachments."""
     # setting_sources=[] 砍掉 .claude/CLAUDE.md 等无关系统提示，减小慢模型的 prefill 负担。
-    # 内联审核自包含（规则+案件已注入、schema 由服务端 output_format 约束），不依赖项目设置。
+    # 内联审核自包含（规则+案件已注入），不依赖项目设置。
     # 需回退到加载项目设置时设 AUDIT_LEAN_CONTEXT=0（无需重建镜像）。
     lean_context = os.getenv("AUDIT_LEAN_CONTEXT", "1").strip().lower() in {"1", "true", "yes", "on"}
+    # 默认文本模式：让模型直接输出 JSON 文本、由服务端解析，兼容不支持原生 function
+    # calling / 结构化输出的网关模型（如 qwen，会把 tool_use/JSON 当文本吐导致 CLI 崩溃）。
+    # 文本模式同时去掉 tools（案件已预加载，无需 Read）。设 AUDIT_STRUCTURED_OUTPUT=1
+    # 改回 SDK 强制结构化输出（仅模型支持 function calling 时）。
+    use_structured = os.getenv("AUDIT_STRUCTURED_OUTPUT", "0").strip().lower() in {"1", "true", "yes", "on"}
     return await run_agent_json(
         build_inline_audit_prompt(directory_path),
         schema_name=DEFAULT_OUTPUT_SCHEMA_NAME,
         request_id=request_id,
         tenant=tenant,
-        allowed_tools=["Read"],
+        structured=use_structured,
+        allowed_tools=["Read"] if use_structured else [],
         max_turns=int(os.getenv("AUDIT_INLINE_MAX_TURNS", "8")),
         setting_sources=[] if lean_context else ["project"],
         **opts,

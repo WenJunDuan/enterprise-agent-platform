@@ -64,6 +64,7 @@ TENANT_KEYS={"default":"sk-your-token"}        # HTTP API Bearer token 映射
 | `AUDIT_INLINE_MAX_TURNS` | 内联审核最大轮数，封顶最坏耗时 | `8` |
 | `AUDIT_LEAN_CONTEXT` | 内联审核精简系统提示（不加载项目 `.claude` 设置），慢模型提速；回退设 `0` | `1` |
 | `ALLOW_ANTHROPIC_API` | 允许连公网 `api.anthropic.com`。内网部署保持不设：base_url 为空/指向 anthropic 时审核会被**直接拒绝**并报清晰错误，且强制关闭遥测等外连 | 未设 |
+| `AUDIT_STRUCTURED_OUTPUT` | `1`=用 SDK 强制结构化输出（**需模型支持 function calling**）；`0`=文本模式（模型直接输出 JSON、服务端解析，兼容 qwen 等不做原生 tool_use 的网关模型） | `0` |
 
 > `MODEL_NAME` 原样透传到 `ANTHROPIC_MODEL`。想用 SDK alias 路由可另配 `ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU}_MODEL`。完整变量见 `server/platform/config.py`。
 >
@@ -325,6 +326,16 @@ docker exec audit-agent python -m server.cli runtime   # 看 anthropic_base_url
 
 > ⚠️ **容器内的 `127.0.0.1`/`localhost` 是容器自己，不是宿主机**。容器间用 service 名（`litellm`）+ 容器内端口，或宿主机 IP + 发布端口。
 > 容器→litellm 连通性自测：`docker exec audit-agent python -c "import urllib.request as u;print(u.urlopen('http://litellm:<端口>/health/liveliness',timeout=5).read())"`
+
+### 审核失败：CLI `exit code 1` / 模型把工具调用当文本吐
+
+**症状**：连接已通（不再 ConnectionRefused），但任务 `failed`，日志 `Fatal error in message reader: Command failed with exit code 1`。带 tools 直接 curl litellm 的 `/v1/messages`，返回的 `content` 里是 `<tool_call><function=...>` 这种**纯文本**，而不是结构化 `tool_use` 块（`stop_reason` 也是 `end_turn` 而非 `tool_use`）。
+
+**根因**：模型（如 qwen）不做原生 function calling —— 把工具调用 / 结构化输出当文本吐，Claude CLI 解析不了 → 崩溃 exit 1。
+
+**修复（二选一）**：
+- 模型侧（最正，需能改 vLLM）：起 qwen 时加 `--enable-auto-tool-choice --tool-call-parser hermes`（+ `--reasoning-parser` 处理 `<think>`），让后端返回结构化 `tool_calls`。
+- 应用侧（默认已开，改不了模型时用）：**文本模式** `AUDIT_STRUCTURED_OUTPUT=0` —— 审核去掉 tools、不强制 `output_format`，模型直接输出 JSON 文本由服务端解析。仅当模型确实支持 function calling 时才设 `=1`。
 
 ---
 
