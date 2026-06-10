@@ -14,6 +14,9 @@
 # Runtime state — provided as mounted volumes, not baked
 logs
 data
+*.tar
+*.tar.sha256
+prod
 
 # Frontend sources & deps — only the prebuilt ui/dist is shipped
 ui/node_modules
