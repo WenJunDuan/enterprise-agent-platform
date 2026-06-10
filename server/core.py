@@ -22,7 +22,11 @@ from claude_agent_sdk import (
     ToolUseBlock,
     query,
 )
-from server.platform.config import configure_claude_runtime_env, get_claude_runtime_snapshot
+from server.platform.config import (
+    configure_claude_runtime_env,
+    get_claude_runtime_snapshot,
+    offline_guard_error,
+)
 from server.platform.logging_setup import logging_context
 from server.platform.paths import PROJECT_ROOT, build_session_event_log_path, ensure_local_layout
 from server.platform.storage import append_jsonl_record
@@ -204,6 +208,11 @@ def build_options(**overrides: Any) -> ClaudeAgentOptions:
     os.environ.setdefault("API_TIMEOUT_MS", "3000000")
     os.environ.setdefault("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1")
     runtime = get_claude_runtime_snapshot()
+    # 内网硬约束：base_url 为空或指向 api.anthropic.com 时直接拒绝运行，
+    # 避免 CLI 去拨公网 anthropic、在物理隔离机上拖到 ConnectionRefused/超时。
+    guard = offline_guard_error()
+    if guard:
+        raise ClaudeRuntimeError(guard)
     defaults: dict[str, Any] = {
         "cwd": str(PROJECT_ROOT),
         "setting_sources": ["project"],

@@ -63,6 +63,7 @@ TENANT_KEYS={"default":"sk-your-token"}        # HTTP API Bearer token 映射
 | `MAX_CONCURRENT_AUDITS` | 同时进行的审核上限，超额提交排队保持 `accepted` | `2` |
 | `AUDIT_INLINE_MAX_TURNS` | 内联审核最大轮数，封顶最坏耗时 | `8` |
 | `AUDIT_LEAN_CONTEXT` | 内联审核精简系统提示（不加载项目 `.claude` 设置），慢模型提速；回退设 `0` | `1` |
+| `ALLOW_ANTHROPIC_API` | 允许连公网 `api.anthropic.com`。内网部署保持不设：base_url 为空/指向 anthropic 时审核会被**直接拒绝**并报清晰错误，且强制关闭遥测等外连 | 未设 |
 
 > `MODEL_NAME` 原样透传到 `ANTHROPIC_MODEL`。想用 SDK alias 路由可另配 `ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU}_MODEL`。完整变量见 `server/platform/config.py`。
 >
