@@ -406,6 +406,8 @@ async def run_agent(
     current_session_id = resolved_resume_session_id or fork_from_session_id or str(uuid.uuid4())
     session_logger = SessionLogger(current_session_id, request_id, prompt, started_at, tenant)
     options = build_options(**opts)
+    cli_stderr: list[str] = []
+    options.stderr = cli_stderr.append
 
     with logging_context(request_id=request_id, tenant=tenant, session_id=current_session_id):
         if fork_from_session_id:
@@ -457,6 +459,11 @@ async def run_agent(
                 "claude_bridge_failed",
                 extra={"request_id": request_id, "tenant": tenant, "session_id": current_session_id},
             )
+            captured_stderr = "".join(cli_stderr).strip()
+            if captured_stderr:
+                # CLI exit 非零时把它的 stderr 全文打出来，否则只有一句无用的
+                # "Check stderr output for details"。这是定位 CLI 崩溃的关键。
+                logger.error("claude_cli_stderr | %s", captured_stderr[-6000:])
             session_logger.log_error(exc)
             raise
         finally:
@@ -568,6 +575,8 @@ async def run_agent_json(
     session_logger = SessionLogger(current_session_id, request_id, prompt, started_at, tenant)
     output_opts = {"output_format": build_output_format(schema_name)} if structured else {}
     options = build_options(**output_opts, **opts)
+    cli_stderr: list[str] = []
+    options.stderr = cli_stderr.append
 
     with logging_context(request_id=request_id, tenant=tenant, session_id=current_session_id):
         if fork_from_session_id:
@@ -688,6 +697,11 @@ async def run_agent_json(
                 "claude_bridge_failed",
                 extra={"request_id": request_id, "tenant": tenant, "session_id": current_session_id},
             )
+            captured_stderr = "".join(cli_stderr).strip()
+            if captured_stderr:
+                # CLI exit 非零时把它的 stderr 全文打出来，否则只有一句无用的
+                # "Check stderr output for details"。这是定位 CLI 崩溃的关键。
+                logger.error("claude_cli_stderr | %s", captured_stderr[-6000:])
             session_logger.log_error(exc)
             raise
         finally:
