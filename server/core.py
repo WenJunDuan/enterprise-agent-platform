@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import re
 import time
 import uuid
 from dataclasses import dataclass
@@ -58,12 +57,33 @@ AUDIT_DECISION_DERIVATION: dict[str, tuple[bool, str]] = {
 }
 
 
+def _coerce_reason_to_str(reason: Any) -> str:
+    """把单条 reason 拍平成字符串。
+
+    契约里 reasons / policy_refs 是字符串数组，但模型(尤其网关模型)可能给成对象
+    （如 {code, description, severity}）→ 前端按字符串渲染对象会触发 React #31 崩溃。
+    """
+    if isinstance(reason, str):
+        return reason
+    if isinstance(reason, dict):
+        desc = str(reason.get("description") or reason.get("message") or reason.get("reason") or "").strip()
+        severity = str(reason.get("severity") or "").strip()
+        text = f"[{severity}] {desc}" if severity and desc else desc
+        return text or json.dumps(reason, ensure_ascii=False)
+    return str(reason)
+
+
 def enrich_audit_decision(structured_output: StructuredJSON) -> StructuredJSON:
-    """Inject `result`/`conclusion` derived from `verdict` for backward-compatible payloads."""
+    """Inject `result`/`conclusion` derived from `verdict`; normalize string-list fields."""
     if isinstance(structured_output, dict):
         derived = AUDIT_DECISION_DERIVATION.get(str(structured_output.get("verdict")))
         if derived is not None:
             structured_output["result"], structured_output["conclusion"] = derived
+        # reasons / policy_refs 契约为字符串数组；模型给成对象数组时拍平，避免前端渲染崩溃。
+        for field in ("reasons", "policy_refs"):
+            value = structured_output.get(field)
+            if isinstance(value, list):
+                structured_output[field] = [_coerce_reason_to_str(item) for item in value]
     return structured_output
 
 
@@ -500,23 +520,33 @@ async def run_agent_full(prompt: str, **opts: Any) -> str:
 
 
 def _extract_json_object(text: str) -> dict[str, Any] | None:
-    """从模型的文本输出里抽取第一个能解析的 JSON 对象。
+    """从模型文本里抽取**最终**的 JSON 对象。
 
-    兼容 reasoning 模型的 <think>…</think> 块、```json 围栏、以及 JSON 前后的散文。
-    用于"文本模式"：不依赖原生 function calling / 结构化输出的网关模型（如 qwen）直接
-    输出 JSON 文本，由服务端解析。
+    针对 reasoning 模型：思考/草稿（常含一段草稿 JSON）在 </think> 之前，真正答案在
+    之后；所以先截到最后一个 </think> 之后，去掉 ```json 围栏，扫出所有平衡的 {...}，
+    返回**最后一个**能解析成 dict 的（最终答案通常在最后）。这样不会误抓推理里的草稿。
+    用于"文本模式"：网关模型（如 qwen）直接输出 JSON 文本，由服务端解析。
     """
     if not text:
         return None
-    cleaned = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
-    cleaned = cleaned.replace("```json", "").replace("```", "")
-    start = cleaned.find("{")
-    while start != -1:
+    # reasoning 模型把草稿放 </think> 之前，真正答案在最后一个 </think> 之后
+    if "</think>" in text:
+        text = text.rsplit("</think>", 1)[-1]
+    cleaned = text.replace("```json", "").replace("```", "")
+    # 扫出所有平衡的顶层 {...}
+    objects: list[str] = []
+    i = 0
+    n = len(cleaned)
+    while i < n:
+        if cleaned[i] != "{":
+            i += 1
+            continue
         depth = 0
         in_str = False
         esc = False
-        for i in range(start, len(cleaned)):
-            ch = cleaned[i]
+        closed_at = -1
+        for j in range(i, n):
+            ch = cleaned[j]
             if in_str:
                 if esc:
                     esc = False
@@ -531,12 +561,18 @@ def _extract_json_object(text: str) -> dict[str, Any] | None:
             elif ch == "}":
                 depth -= 1
                 if depth == 0:
-                    try:
-                        obj = json.loads(cleaned[start : i + 1])
-                    except json.JSONDecodeError:
-                        break
-                    return obj if isinstance(obj, dict) else None
-        start = cleaned.find("{", start + 1)
+                    objects.append(cleaned[i : j + 1])
+                    closed_at = j
+                    break
+        i = closed_at + 1 if closed_at != -1 else n
+    # 最终答案在最后：从后往前返回第一个能解析成 dict 的
+    for candidate in reversed(objects):
+        try:
+            obj = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(obj, dict):
+            return obj
     return None
 
 
