@@ -302,6 +302,30 @@ uv run app-server logs --lines 100             # 后台日志（非 systemd 模�
 
 审核“失败/编造”排查：看 `logs/sessions/events/.../*.jsonl`，若 `tool_call` 事件为 0，说明模型网关没透传工具调用（换用 LiteLLM 或确认端点支持 function calling）。
 
+### 审核失败：`ConnectionRefused` / 连不上模型（内网最常见，曾排查数天）
+
+**症状**：任务 `failed`，日志 `JSONContractError: API Error: Unable to connect to API (ConnectionRefused)`；或长时间不返回后报“审核失败卡在网络或模型拥塞”（**这是兜底超时文案，不是真因**）。
+
+**第一性原理**：claude-agent-sdk **内网完全可用**，配了网关后**不会**强连 `api.anthropic.com`（model API 走 `ANTHROPIC_BASE_URL`，遥测/统计/更新已被代码强制关闭）。`ConnectionRefused` = CLI 按配置的地址去拨却连不上。**先确认 CLI 在拨哪个地址，再谈 litellm/模型**——改 litellm、换 Qwen 模型都救不了“请求根本没到 litellm”。
+
+**一条命令定位**（容器内）：
+```bash
+docker exec audit-agent python -m server.cli runtime   # 看 anthropic_base_url
+```
+- 为空 / 指向 `api.anthropic.com` → CLI 在拨公网。物理隔离机已加**硬约束**：这种情况审核直接拒绝并报「内网部署禁止连接 api.anthropic.com…」（确需公网设 `ALLOW_ANTHROPIC_API=1`）。
+- 指向 `http://litellm:4000` → 在拨 litellm，问题在端口/可达性。
+
+| 现象 | 根因 | 修复 |
+| --- | --- | --- |
+| base_url 空 → 报“禁连 anthropic” | `MODEL_BASE_URL` 没进容器（env_file 没加载 / 换模型时改丢） | 确认 `audit-agent.env` 有 `MODEL_BASE_URL`+`MODEL_AUTH_TOKEN`，compose `env_file` 指对 |
+| `litellm:4000` 仍 refused | litellm **容器内部端口**不是 4000（宿主机发布端口 ≠ 容器内端口） | `docker ps` 看 `->` 后的内部端口，`MODEL_BASE_URL=http://litellm:<内部端口>` |
+| 改了 env 不生效 | `restart` 不重载 env_file | 必须 `docker compose up -d --force-recreate` |
+| 旧 `ANTHROPIC_BASE_URL` 顶掉 `MODEL_BASE_URL` | 映射只在 `ANTHROPIC_BASE_URL` 为空时生效 | 删掉容器里旧的 `ANTHROPIC_BASE_URL` |
+| 直连 litellm 报 `{"No connected db"}` | litellm 配了 DB 但 Postgres 没连上 | 去掉 litellm 的 `DATABASE_URL`/`store_model_in_db`（做无状态代理），或修好 DB |
+
+> ⚠️ **容器内的 `127.0.0.1`/`localhost` 是容器自己，不是宿主机**。容器间用 service 名（`litellm`）+ 容器内端口，或宿主机 IP + 发布端口。
+> 容器→litellm 连通性自测：`docker exec audit-agent python -c "import urllib.request as u;print(u.urlopen('http://litellm:<端口>/health/liveliness',timeout=5).read())"`
+
 ---
 
 ## 目录结构
