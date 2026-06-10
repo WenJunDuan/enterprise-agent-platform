@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import urllib.parse
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any, Mapping, MutableMapping
@@ -37,6 +38,50 @@ def _normalize_custom_headers(value: str) -> str:
     return normalized
 
 
+def _truthy(value: str | None) -> bool:
+    return (value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+# 内网部署默认强制关掉的 CLI 外连开关（均为 self-bundled claude CLI 二进制里真实存在的变量）。
+# 覆盖：遥测 / 错误上报 / 统计(statsig) / 自动更新 / bug 上报 / 插件市场自动安装 / 成本告警。
+_OFFLINE_DISABLE_ENV = (
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC",
+    "CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL",
+    "DISABLE_TELEMETRY",
+    "DISABLE_ERROR_REPORTING",
+    "DISABLE_AUTOUPDATER",
+    "DISABLE_BUG_COMMAND",
+    "DISABLE_COST_WARNINGS",
+)
+
+
+def is_anthropic_api_endpoint(base_url: str | None) -> bool:
+    """内网禁止连接的目标：空（CLI 会退回默认 api.anthropic.com）或 *.anthropic.com 域名。"""
+    if not base_url or not base_url.strip():
+        return True
+    host = (urllib.parse.urlparse(base_url.strip()).hostname or "").lower()
+    return host == "anthropic.com" or host.endswith(".anthropic.com")
+
+
+def offline_guard_error(environ: Mapping[str, str] | None = None) -> str | None:
+    """内网/物理隔离硬约束：拒绝连接 api.anthropic.com。
+
+    base_url 为空或指向 anthropic.com 时返回错误消息（否则返回 None）。
+    设 ALLOW_ANTHROPIC_API=1 整体解除（仅在确有公网访问时）。
+    """
+    env = environ if environ is not None else os.environ
+    if _truthy(env.get("ALLOW_ANTHROPIC_API")):
+        return None
+    base_url = env.get("ANTHROPIC_BASE_URL") or env.get("MODEL_BASE_URL")
+    if is_anthropic_api_endpoint(base_url):
+        return (
+            "内网部署禁止连接 api.anthropic.com：MODEL_BASE_URL / ANTHROPIC_BASE_URL "
+            "为空或指向 anthropic.com，请指向内网网关（如 http://litellm:4000）。"
+            "确需公网访问请设 ALLOW_ANTHROPIC_API=1。"
+        )
+    return None
+
+
 def configure_claude_runtime_env(
     environ: MutableMapping[str, str] | None = None,
 ) -> dict[str, str | None]:
@@ -64,6 +109,12 @@ def configure_claude_runtime_env(
 
     if env.get("MODEL_CUSTOM_HEADERS") and not env.get("ANTHROPIC_CUSTOM_HEADERS"):
         env["ANTHROPIC_CUSTOM_HEADERS"] = _normalize_custom_headers(env["MODEL_CUSTOM_HEADERS"])
+
+    # 内网/物理隔离：默认强制关掉 CLI 对 anthropic.com 的所有非必需外连。
+    # 设 ALLOW_ANTHROPIC_API=1 可整体放开（仅在确有公网访问时）。
+    if not _truthy(env.get("ALLOW_ANTHROPIC_API")):
+        for key in _OFFLINE_DISABLE_ENV:
+            env.setdefault(key, "1")
 
     return {
         "anthropic_base_url": env.get("ANTHROPIC_BASE_URL"),
@@ -147,6 +198,10 @@ def validate_claude_runtime(environ: MutableMapping[str, str] | None = None) -> 
 
     if not runtime["anthropic_model"]:
         errors.append("MODEL_NAME or ANTHROPIC_MODEL is required")
+
+    guard = offline_guard_error(environ)
+    if guard:
+        errors.append(guard)
 
     return errors
 
