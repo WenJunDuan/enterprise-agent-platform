@@ -25,6 +25,7 @@ from starlette.routing import Match
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from server.audit_runner import run_inline_directory_audit
+from server.core import enrich_audit_decision
 from server.platform.config import get_app_settings, load_tenant_keys, tenant_keys_are_default
 from server.platform.logging_setup import logging_context
 from server.platform.paths import PROJECT_ROOT, SUBMISSION_ROOT_DIR
@@ -723,7 +724,10 @@ async def audit_task_result(request_id: str, authorization: str | None = Header(
     payload = get_result_payload_by_request_id(request_id=request_id, tenant=tenant)
     if payload is None or not isinstance(payload.get("response"), dict):
         raise HTTPException(status_code=404, detail="Audit result not found")
-    return payload["response"]
+    # 归一化函数上线前存档的旧结果，reasons / policy_refs 仍可能是对象数组。
+    # 在出口处再拍平一次，避免前端按字符串渲染对象触发 React #31 整页白屏。
+    response = enrich_audit_decision(payload["response"])
+    return response if isinstance(response, dict) else payload["response"]
 
 
 @app.post("/audit/tasks/{request_id}/retry", response_model=AuditTaskStatusResponse)
