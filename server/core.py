@@ -73,6 +73,43 @@ def _coerce_reason_to_str(reason: Any) -> str:
     return str(reason)
 
 
+def _scale_risk_dimension_score(raw: Any) -> int:
+    """把维度分归一到契约的 0-10 区间。
+
+    契约要求 score ∈ [0, 10]，但模型常按 0-100 量纲给（与 risk_score 同尺度）。
+    >10 视为百分制并除以 10；最终 clamp 到 0-10。
+    """
+    try:
+        score = float(raw)
+    except (TypeError, ValueError):
+        return 0
+    if score > 10:  # 模型用了 0-100 量纲，映射回契约的 0-10
+        score /= 10.0
+    return max(0, min(10, round(score)))
+
+
+def _coerce_risk_dimensions(value: Any) -> list[dict[str, Any]] | None:
+    """把 risk_dimensions 归一成契约形态：[{name, score(0-10)}]。
+
+    契约是对象数组，但模型可能给成对象映射 {name: score}（如 {anomaly: 85}）。
+    前端按数组渲染（.map / .length），拿到对象会显示异常或漏渲染，这里统一拍平。
+    """
+    if isinstance(value, dict):
+        pairs: list[tuple[Any, Any]] = list(value.items())
+    elif isinstance(value, list):
+        pairs = [
+            (item.get("name"), item.get("score")) for item in value if isinstance(item, dict)
+        ]
+    else:
+        return None
+    normalized = [
+        {"name": str(name), "score": _scale_risk_dimension_score(score)}
+        for name, score in pairs
+        if name is not None and str(name).strip()
+    ]
+    return normalized or None
+
+
 def enrich_audit_decision(structured_output: StructuredJSON) -> StructuredJSON:
     """Inject `result`/`conclusion` derived from `verdict`; normalize string-list fields."""
     if isinstance(structured_output, dict):
@@ -84,6 +121,11 @@ def enrich_audit_decision(structured_output: StructuredJSON) -> StructuredJSON:
             value = structured_output.get(field)
             if isinstance(value, list):
                 structured_output[field] = [_coerce_reason_to_str(item) for item in value]
+        # risk_dimensions 契约为对象数组；模型给成 {name: score} 映射或 0-100 量纲时归一。
+        if "risk_dimensions" in structured_output:
+            normalized_dims = _coerce_risk_dimensions(structured_output["risk_dimensions"])
+            if normalized_dims is not None:
+                structured_output["risk_dimensions"] = normalized_dims
     return structured_output
 
 
@@ -220,6 +262,18 @@ def validate_structured_output_semantics(
         )
 
 
+def _log_cli_stderr(line: str) -> None:
+    """SDK 把 bundled CLI 的 stderr 逐行回调到这里。
+
+    CLI 崩溃 (exit 1) 时真正的错误只写在它自己的 stderr，默认会被 SDK 吞成
+    "Check stderr output for details"。在这里落到日志，崩溃后即可定位真因
+    （如网关响应畸形、流式解析异常），不必再手动复现。
+    """
+    text = line.rstrip()
+    if text:
+        logger.warning("claude_cli_stderr: %s", text)
+
+
 def build_options(**overrides: Any) -> ClaudeAgentOptions:
     """Create a shared SDK options object for all entrypoints."""
     # 兜底进 env：这两项原本靠 setting_sources=["project"] 从 .claude/settings.json 加载；
@@ -240,6 +294,8 @@ def build_options(**overrides: Any) -> ClaudeAgentOptions:
         "max_turns": int(os.getenv("AUDIT_MAX_TURNS", "30")),
         "max_budget_usd": float(os.getenv("MAX_BUDGET_USD", "1.0")),
         "model": runtime["anthropic_model"],
+        # 捕获 bundled CLI 的 stderr，崩溃时把真因落日志（见 _log_cli_stderr）。
+        "stderr": _log_cli_stderr,
     }
     defaults.update(overrides)
     return ClaudeAgentOptions(**defaults)
