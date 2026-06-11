@@ -8,12 +8,9 @@ description: Use when 任意业务域需要从本地结构化规则文件检索�
 ## 使用方法
 
 1. 根据业务域和类别定位结构化规则文件，例如 expense 域的：
-   - `knowledge/expense/general.rules.json`
-   - `knowledge/expense/invoice.rules.json`
-   - `knowledge/expense/loan.rules.json`
-   - `knowledge/expense/entertainment.rules.json`
    - `knowledge/expense/travel.rules.json`
-   - `knowledge/expense/transport.rules.json`
+   - `knowledge/expense/meal.rules.json`
+   - `knowledge/expense/entertainment.rules.json`
 2. 读取规则文件顶层 `source`，把它当作追溯信息，而不是现场自由造规则的依据。
 3. 按角色、金额、日期、附件、场景和优先级筛选匹配项。
 4. 返回结果至少包含：

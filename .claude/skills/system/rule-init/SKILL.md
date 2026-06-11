@@ -12,14 +12,13 @@ description: Use when 需要把本地制度源文件初始化为结构化规则�
 3. 只提取与目标业务域直接相关、可执行、可审计的规则、标准、门槛和必备材料。
 4. 将规则按类别整理；若一个制度覆盖多个类别，应拆分为多个 `knowledge/{domain}/{category}.rules.json` 文件。
 5. 生成稳定的 `rule_id`，格式为 `{domain}.{category}.{序号}`，并确保同一文件内顺序连续。
-6. 每个规则文档都必须填写顶层 `source.path`、`source.title`、`source.excerpt`：
-   - `source.path` 是真实本地文件路径，例如 `knowledge/external/数睿员工手册.pdf`
-   - `source.title` 是制度标题与章节
-   - `source.excerpt` 是该规则文档覆盖的章节摘要
+6. 每个规则文档都必须填写顶层 `source_path`、`source_version`、`generated_at`（字段以 `knowledge/_schema/rule.schema.json` 为准）：
+   - `source_path` 是真实本地文件路径，例如 `knowledge/external/南通高新区接待管理办法.docx`
+   - `source_version` 是制度标题 / 文号 / 版本
+   - `generated_at` 是规则文件生成时间（ISO 8601）
 7. 对每条规则尽量保留 `original_text`，并在 `notes` 中记录限制条件、上下文或歧义说明。
 8. 对模糊、例外过多或无法唯一结构化的条款标记 `confidence: low`，并加入人工确认说明。
-9. 若需要额外生成阈值聚合文件，例如 `knowledge/{domain}/thresholds.json`，则将其视为派生文件，使用 `_meta` 记录来源，而不是混入 `rule.schema.json` 文档结构。
-10. 完成后返回初始化报告，至少包含：来源文件、目标业务域、写入文件列表、提取规则总数、待人工确认事项。
+9. 完成后返回初始化报告，至少包含：来源文件、目标业务域、写入文件列表、提取规则总数、待人工确认事项。
 
 ## 输出要求
 
@@ -32,16 +31,8 @@ description: Use when 需要把本地制度源文件初始化为结构化规则�
 - 只有在 `written_files` 非空、`categories` 非空、`extracted_rule_count > 0` 时，才允许返回 `status: initialized`。
 - 如果没有实际写入规则文件，或只读了制度却未产出任何规则，必须返回 `status: manual_review`，并明确说明未写入原因；禁止返回空的 `initialized` 结果。
 - 如果存在同名文本代理文件 `logs/service/init-rules/<basename>.txt`，优先读取文本代理，而不是反复直接读取 PDF；但最终 `source_path` 仍写原始文件路径。
-- 如果输入源是 `knowledge/external/数睿员工手册.pdf` 且目标域为 `expense`，应优先映射到：
-  - `6.3` → `general` / `invoice`
-  - `6.4` → `loan`
-  - `6.5` → `entertainment`
-  - `6.6` → `travel`
-  - `6.7` → `transport`
-- 如果 `expense` 域来源是整本员工手册，不要试图在一个大上下文里同时完成全部类别。应按类别拆分，并且每个子任务只负责一个目标文件：
-  - `general` → `knowledge/expense/general.rules.json`
-  - `invoice` → `knowledge/expense/invoice.rules.json`
-  - `loan` → `knowledge/expense/loan.rules.json`
-  - `entertainment` → `knowledge/expense/entertainment.rules.json`
-  - `travel` → `knowledge/expense/travel.rules.json`
-  - `transport` → `knowledge/expense/transport.rules.json`
+- `expense` 域现有制度源与目标文件（南通高新区）：
+  - 差旅（`南通市市级机关国内差旅住宿费标准.pdf` / 高新区差旅须知，援引通州〔2015〕1 号）→ `travel` → `knowledge/expense/travel.rules.json`
+  - 工作餐（`南通高新区工作餐管理制度.docx`）→ `meal` → `knowledge/expense/meal.rules.json`
+  - 接待（`南通高新区接待管理办法.docx`）→ `entertainment` → `knowledge/expense/entertainment.rules.json`
+- 若单个制度源覆盖多个类别，按类别拆分为多个目标文件，每个子任务只负责一个类别和一个目标文件。

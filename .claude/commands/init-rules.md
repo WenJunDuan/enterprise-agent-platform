@@ -17,14 +17,12 @@ allowed-tools: Read, Write, Glob, Skill, Task
 8. 如果未写入任何文件、未提取出规则、制度内容无法稳定结构化，必须返回 `status: manual_review`，并在 `manual_review_items` 与 `notes` 中写清原因，禁止返回空的“成功初始化”结果。
 9. 如果输入源文件是 PDF，且存在同名文本代理文件 `logs/service/init-rules/<basename>.txt`，优先读取文本代理；但最终 `source_path` 必须仍然填写原始文件路径。
 10. 如果目标域是 `expense` 且源文件是大制度手册，按类别分批处理，不要在一次上下文里完成整个 expense 域：
-   - `general` → `knowledge/expense/general.rules.json`
-   - `invoice` → `knowledge/expense/invoice.rules.json`
-   - `loan` → `knowledge/expense/loan.rules.json`
-   - `entertainment` → `knowledge/expense/entertainment.rules.json`
-   - `travel` → `knowledge/expense/travel.rules.json`
-   - `transport` → `knowledge/expense/transport.rules.json`
+   - `travel`（差旅）→ `knowledge/expense/travel.rules.json`
+   - `meal`（工作餐）→ `knowledge/expense/meal.rules.json`
+   - `entertainment`（接待）→ `knowledge/expense/entertainment.rules.json`
+   - 新增类别时按 `knowledge/{domain}/<category>.rules.json` 命名扩展即可
 11. 对 `expense` 大域初始化，允许使用 `Task` 将单个类别拆成独立子任务；每个子任务只负责一个类别和一个目标文件，最后再汇总为单个初始化报告。
 12. 完成写入后，返回一份初始化报告，说明写入了哪些文件、提取了多少规则、有哪些待人工确认项。
 
 参数: $ARGUMENTS
-用法: /init-rules knowledge/external/数睿员工手册.pdf hr
+用法: /init-rules knowledge/external/南通高新区工作餐管理制度.docx expense
