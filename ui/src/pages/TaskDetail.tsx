@@ -15,6 +15,26 @@ function formatDate(iso: string | null): string {
   return new Date(iso).toLocaleString('zh-CN')
 }
 
+/**
+ * 把单条 reason / policy_ref 拍平成可渲染字符串。
+ *
+ * 契约约定是字符串数组，但旧存档结果或网关模型可能返回
+ * {code, description, severity} 对象；直接渲染对象会触发 React #31 整页白屏。
+ * 此处与后端 `_coerce_reason_to_str` 同形，作为前端最后一道兜底。
+ */
+function toText(item: unknown): string {
+  if (typeof item === 'string') return item
+  if (item && typeof item === 'object') {
+    const o = item as Record<string, unknown>
+    const desc = String(o.description ?? o.message ?? o.reason ?? '').trim()
+    const severity = String(o.severity ?? '').trim()
+    if (severity && desc) return `[${severity}] ${desc}`
+    if (desc) return desc
+    return JSON.stringify(item)
+  }
+  return String(item)
+}
+
 const VERDICT_CONFIG: Record<Verdict, { label: string; bg: string; text: string }> = {
   approved: { label: '通过', bg: 'bg-green-50', text: 'text-green-700' },
   rejected: { label: '拒绝', bg: 'bg-red-50', text: 'text-red-700' },
@@ -142,8 +162,34 @@ function ConclusionCard({ result }: { result: AuditResult }) {
   )
 }
 
-function RiskDimensionCard({ dimensions }: { dimensions: { name: string; score: number }[] }) {
-  if (!dimensions || dimensions.length === 0) return null
+/**
+ * 把 risk_dimensions 归一成 [{name, score(0-10)}]。
+ *
+ * 契约是对象数组，但旧数据或模型可能给成 {name: score} 映射，或用 0-100 量纲。
+ * 后端已统一归一，这里做前端兜底：确保 .map/.length 不会拿到对象而漏渲染或报错。
+ */
+function normalizeRiskDimensions(raw: unknown): { name: string; score: number }[] {
+  let entries: [string, unknown][] = []
+  if (Array.isArray(raw)) {
+    entries = raw
+      .filter((d): d is Record<string, unknown> => !!d && typeof d === 'object')
+      .map(d => [String(d.name ?? ''), d.score])
+  } else if (raw && typeof raw === 'object') {
+    entries = Object.entries(raw as Record<string, unknown>)
+  }
+  return entries
+    .filter(([name]) => name)
+    .map(([name, score]) => {
+      let s = Number(score)
+      if (!Number.isFinite(s)) s = 0
+      if (s > 10) s = Math.round(s / 10) // 0-100 量纲 → 契约 0-10
+      return { name, score: Math.max(0, Math.min(10, s)) }
+    })
+}
+
+function RiskDimensionCard({ raw }: { raw: unknown }) {
+  const dimensions = normalizeRiskDimensions(raw)
+  if (dimensions.length === 0) return null
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-6">
       <p className="text-xs font-medium text-gray-400 mb-4">风险维度</p>
@@ -184,7 +230,7 @@ function EvidenceCard({ result }: { result: AuditResult }) {
             {result.reasons!.map((r, i) => (
               <li key={i} className="flex gap-2 text-sm text-gray-700">
                 <span className="mt-0.5 shrink-0 h-4 w-4 rounded-full bg-gray-100 text-center text-xs leading-4 text-gray-500">{i + 1}</span>
-                {r}
+                {toText(r)}
               </li>
             ))}
           </ul>
@@ -196,7 +242,7 @@ function EvidenceCard({ result }: { result: AuditResult }) {
           <ul className="space-y-1.5">
             {result.policy_refs!.map((p, i) => (
               <li key={i} className="text-sm text-gray-600 flex gap-2">
-                <span className="text-blue-400 shrink-0">§</span>{p}
+                <span className="text-blue-400 shrink-0">§</span>{toText(p)}
               </li>
             ))}
           </ul>
@@ -403,9 +449,7 @@ export default function TaskDetail() {
       {result && (
         <>
           <ConclusionCard result={result} />
-          {result.risk_dimensions && result.risk_dimensions.length > 0 && (
-            <RiskDimensionCard dimensions={result.risk_dimensions} />
-          )}
+          <RiskDimensionCard raw={result.risk_dimensions} />
           <EvidenceCard result={result} />
         </>
       )}

@@ -15,19 +15,35 @@ export interface AuditTask {
 
 export type Verdict = 'approved' | 'rejected' | 'manual_review'
 
+/**
+ * 契约里 reasons / policy_refs 是字符串数组，但旧存档结果或网关模型
+ * 可能返回 {code, description, severity} 形态的对象。前端类型放宽为联合，
+ * 渲染时统一经 toText() 拍平，避免直接把对象塞进 JSX 触发 React #31。
+ */
+export interface ReasonDetail {
+  code?: string
+  description?: string
+  severity?: string
+  message?: string
+  reason?: string
+  [key: string]: unknown
+}
+
 export interface AuditResult {
   claim_id?: string
   verdict?: Verdict
   result?: boolean
   conclusion?: '合规' | '不合规' | '待人工复核' | string
   explanation?: string
-  reasons?: string[]
+  reasons?: (string | ReasonDetail)[]
   risk_score?: number
   summary?: string
-  policy_refs?: string[]
+  policy_refs?: (string | ReasonDetail)[]
   extracted_data?: Record<string, unknown>
   evidence_chain?: EvidenceItem[]
-  risk_dimensions?: RiskDimension[]
+  // 契约是 RiskDimension[]，但旧数据/模型可能给成 {name: score} 映射；渲染前经 normalizeRiskDimensions 兜底。
+  risk_dimensions?: RiskDimension[] | Record<string, number>
+
   reviewed_by?: string
   timestamp?: string
   manual_review_reason?: string
