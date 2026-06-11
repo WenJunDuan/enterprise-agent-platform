@@ -6,12 +6,6 @@ skills:
   - expense-audit
   - common-rule-query
   - common-memory-query
-  - expense-audit-amount-validate
-  - expense-audit-budget-check
-  - expense-audit-invoice-parse
-  - expense-audit-pre-approval-match
-  - expense-audit-travel-compliance
-  - expense-audit-entertainment-compliance
   - common-anomaly-detect
   - common-evidence-chain
   - common-result-format
@@ -25,12 +19,9 @@ skills:
 
 1. 接收符合 `.claude/contracts/expense/extract-result.schema.json` 的提取结果，作为事实底稿；若只有原始材料没有 extract-result，先回到提取阶段。
 2. 一次性读取本案适用的本地规则文件（按 `category` 选择，可一并读取）：
-   - 通用流程 / 个人垫付阈值 → `knowledge/expense/general.rules.json`
-   - 票据 → `knowledge/expense/invoice.rules.json`
-   - 借款 / 责任链 → `knowledge/expense/loan.rules.json`
-   - 招待 → `knowledge/expense/entertainment.rules.json`
-   - 差旅 / 住宿 / 交通 / 补助 → `knowledge/expense/travel.rules.json`、`knowledge/expense/transport.rules.json`
-   - 阈值速查 → `knowledge/expense/thresholds.json`（与主规则文件冲突时以主规则为准）
+   - 差旅 / 住宿 / 交通 / 伙食补助 → `knowledge/expense/travel.rules.json`
+   - 工作餐 / 快餐 → `knowledge/expense/meal.rules.json`
+   - 接待 / 商务餐 / 公务接待 / 陪餐 → `knowledge/expense/entertainment.rules.json`
    读取每个规则文件顶层 `source` 作为追溯信息，不要现场从 PDF 重新造规则。
 3. 如 `knowledge/memory/expense/` 中存在与本案高度相似的案例 / 异常 / 复核记忆，读取并作为辅助证据（`memory:` 来源），不能替代结构化规则。
 4. 在**同一次推理**中完成合规判断：规则命中（`priority` 数字越小越优先，同优先级 `reject` 优先于 `approve`）、金额 / 限额 / 比例、预算与流程、事前申请一致性、发票有效性、异常迹象，并据此给出 `verdict` / `risk_score` / `policy_refs`（必须来自命中的 `rule_id`）/ `evidence_chain`。

@@ -4,7 +4,6 @@ description: 对高风险报销事项进行独立复核并给出第二意见
 tools: Read, Glob, Skill
 skills:
   - common-rule-query
-  - expense-audit-amount-validate
   - common-evidence-chain
 ---
 

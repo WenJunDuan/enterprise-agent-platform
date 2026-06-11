@@ -15,12 +15,9 @@ allowed-tools: Read, Write, Glob, Skill, Task
    - 不要用 `Bash test -d` / `find` 这类额外探测，能用 `Read` / `Glob` 就不要多发往返；同一份材料只读一次。
 2. 在内部完成“事实提取”作为事实底稿：`claim_id`、申请人、类别、金额、币种、日期、发票号、附件、`missing_fields`、`ambiguities`、字段间冲突。**不要为此单独输出或单独调用 extractor**，提取与判断在同一会话内连续完成。
 3. **一次性** `Read` 本案适用的本地规则文件（按 `category` 选择，可一并读取）：
-   - 通用流程 / 个人垫付阈值 → `knowledge/expense/general.rules.json`
-   - 票据 → `knowledge/expense/invoice.rules.json`
-   - 借款 / 责任链 → `knowledge/expense/loan.rules.json`
-   - 招待 → `knowledge/expense/entertainment.rules.json`
-   - 差旅 / 住宿 / 交通 / 补助 → `knowledge/expense/travel.rules.json`、`knowledge/expense/transport.rules.json`
-   - 阈值速查 → `knowledge/expense/thresholds.json`（与主规则文件冲突时以主规则为准）
+   - 差旅 / 住宿 / 交通 / 伙食补助 → `knowledge/expense/travel.rules.json`
+   - 工作餐 / 快餐 → `knowledge/expense/meal.rules.json`
+   - 接待 / 商务餐 / 公务接待 / 陪餐 → `knowledge/expense/entertainment.rules.json`
    读取每个规则文件顶层 `source` 作为追溯信息；不要现场从 PDF 重新造规则。规则文件缺失时按降级规则输出 `manual_review`（`rule_gap`），不要编造规则。
 4. 如 `knowledge/memory/expense/` 中存在与本案高度相似的案例 / 异常 / 复核记忆，作为辅助证据（`memory:` 来源）写入 `evidence_chain`，不能替代结构化规则。
 5. 在**同一次推理**中完成合规判断：规则命中（`priority` 越小越优先，同优先级 `reject` 优先于 `approve`）、金额 / 限额 / 比例、预算与流程、事前申请一致性、发票有效性、异常迹象，据此给出 `verdict` / `risk_score` / `policy_refs`（必须来自命中的 `rule_id`）/ `evidence_chain`。

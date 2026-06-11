@@ -17,7 +17,7 @@ description: Use when 需要把规则依据、业务事实和异常发现压缩�
 
 `source` 必须是单个字符串，不要输出数组或对象。推荐格式：
 
-- `rule:expense.travel.004 @ knowledge/expense/travel.rules.json <- knowledge/external/数睿员工手册.pdf`
+- `rule:expense_travel_004 @ knowledge/expense/travel.rules.json <- knowledge/external/南通市市级机关国内差旅住宿费标准.pdf`
 - `memory:expense.travel.pre-approval-mismatch.manual-review.v1 @ knowledge/memory/expense/... <- results/by-request/...`
 - `field:claim.total_amount`
 - `doc:invoice-001.pdf`

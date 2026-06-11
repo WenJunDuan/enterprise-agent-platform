@@ -4,7 +4,18 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
+
+
+def _validation_enabled() -> bool:
+    """写入结果守卫是 opt-in：默认关闭。
+
+    内联审核当前由 Python 端 `validate_structured_output_semantics` 兜底；本 hook
+    只在「模型经 Write 工具写结果」的流程里才有意义。待写入模型（内网 qwen3.6-27b，
+    具备多模态）的产出能力验证通过后，设 `AUDIT_WRITE_VALIDATION_ENABLED=1` 启用本守卫。
+    """
+    return os.getenv("AUDIT_WRITE_VALIDATION_ENABLED", "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 REQUIRED_FIELDS = [
@@ -61,8 +72,15 @@ def _collect_missing_fields(result: dict[str, object]) -> list[str]:
                 missing.append(field)
             continue
 
-        if field in {"reasons", "policy_refs", "evidence_chain"}:
+        if field in {"reasons", "evidence_chain"}:
             if not isinstance(value, list) or not value:
+                missing.append(field)
+            continue
+
+        # policy_refs 允许为空数组（造假判定基于数据真实性而非命中规则，prompt/契约均允许）；
+        # 仅校验类型。“approved 必须带 policy_refs” 由下方 verdict 专项校验负责。
+        if field == "policy_refs":
+            if not isinstance(value, list):
                 missing.append(field)
             continue
 
@@ -73,6 +91,8 @@ def _collect_missing_fields(result: dict[str, object]) -> list[str]:
 
 
 def main() -> int:
+    if not _validation_enabled():
+        return 0
     hook_input = json.load(sys.stdin)
     tool_input = hook_input.get("tool_input", {})
     file_path = str(tool_input.get("file_path", ""))
@@ -115,6 +135,20 @@ def main() -> int:
     if verdict == "approved" and not audit_result.get("policy_refs"):
         print(json.dumps({"error": "Approved results must include policy references from common-rule-query."}))
         return 2
+
+    if verdict == "manual_review":
+        valid_reasons = {
+            "missing_approval",
+            "rule_gap",
+            "data_conflict",
+            "insufficient_evidence",
+            "budget_exceeded",
+            "invoice_invalid",
+            "pre_approval_mismatch",
+        }
+        if audit_result.get("manual_review_reason") not in valid_reasons:
+            print(json.dumps({"error": "manual_review results must include a valid manual_review_reason."}))
+            return 2
 
     return 0
 
