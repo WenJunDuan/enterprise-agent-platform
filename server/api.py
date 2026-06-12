@@ -1,52 +1,105 @@
-"""HTTP API and runtime diagnostics for the local serve layer."""
+"""HTTP API assembly and tenant authentication for the Enterprise Agent Platform.
+
+Responsibilities:
+- App factory: FastAPI instance, middleware stack, lifespan, exception handlers.
+- Tenant authentication: ``verify_tenant`` and ``TENANT_KEYS`` (re-exported here so
+  external callers such as tests and route modules can import from a single stable
+  location without knowing the internal layout).
+- Router wiring: delegates all HTTP route logic to ``server.routes.*``.
+
+Route implementations live in:
+- ``server/routes/audit.py``    — audit task CRUD (/audit/*)
+- ``server/routes/health.py``   — readiness probe (/health)
+"""
 
 from __future__ import annotations
 
-import asyncio
-from contextlib import asynccontextmanager
-import json
 import logging
 import os
 import secrets
-import shutil
 import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
-from fastapi import FastAPI, Header, HTTPException, Query, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, ValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.routing import Match
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from server.audit_runner import run_inline_directory_audit
-from server.core import enrich_audit_decision
 from server.platform.config import get_app_settings, load_tenant_keys, tenant_keys_are_default
-from server.platform.logging_setup import logging_context
-from server.platform.paths import PROJECT_ROOT, SUBMISSION_ROOT_DIR
-from server.platform.diagnostics import collect_runtime_diagnostics
-from server.platform.logging_setup import configure_logging
-from server.platform.storage import append_json_file
-from server.stores.audit_task_store import (
-    delete_audit_task,
-    get_audit_task,
-    list_audit_tasks,
-    recover_stale_audit_tasks,
-    upsert_audit_task,
-)
-from server.stores.request_store import new_request_id, utc_now
-from server.stores.result_store import get_result_payload_by_request_id
+from server.platform.logging_setup import configure_logging, logging_context
+from server.platform.paths import PROJECT_ROOT
+from server.stores.audit_task_store import recover_stale_audit_tasks
 
 configure_logging(
     level=os.getenv("LOG_LEVEL", "INFO"),
-    format="kv" if os.getenv("DEV", "").lower() in {"1", "true", "yes", "on"} or os.getenv("LOG_FORMAT") == "kv" else "json",
+    format=(
+        "kv"
+        if os.getenv("DEV", "").lower() in {"1", "true", "yes", "on"}
+        or os.getenv("LOG_FORMAT") == "kv"
+        else "json"
+    ),
 )
 logger = logging.getLogger(__name__)
+
+
+# ── tenant authentication ─────────────────────────────────────────────────────
+
+TENANT_KEYS = load_tenant_keys()
+
+
+def _authorization_error(detail: str) -> HTTPException:
+    return HTTPException(
+        status_code=401,
+        detail=detail,
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+def verify_tenant(authorization: str | None) -> str:
+    """Validate the Bearer token and return the matching tenant name.
+
+    Raises:
+        HTTPException: 401 when credentials are missing or invalid.
+        HTTPException: 503 when the server has not been configured with tenant keys.
+    """
+    allow_default = os.getenv("ALLOW_INSECURE_DEFAULT_TENANT_KEY", "").lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    if tenant_keys_are_default():
+        if not allow_default:
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "Server is not configured with tenant keys. "
+                    "Set the TENANT_KEYS environment variable."
+                ),
+            )
+    if not authorization:
+        # When running in insecure dev mode, skip auth header requirement entirely.
+        if allow_default:
+            return "default"
+        raise _authorization_error("Missing Authorization header")
+    scheme, _, credentials = authorization.strip().partition(" ")
+    if scheme.lower() != "bearer" or not credentials.strip():
+        raise _authorization_error("Authorization header must use Bearer token")
+    token = credentials.strip()
+    for tenant, key in TENANT_KEYS.items():
+        if secrets.compare_digest(key, token):
+            return tenant
+    raise _authorization_error("Invalid tenant token")
+
+
+# ── lifespan ──────────────────────────────────────────────────────────────────
 
 
 @asynccontextmanager
@@ -56,7 +109,12 @@ async def app_lifespan(_: FastAPI):
     yield
 
 
+# ── app ───────────────────────────────────────────────────────────────────────
+
 app = FastAPI(title="Enterprise Agent API", version="0.1.0", lifespan=app_lifespan)
+
+
+# ── CORS middleware ───────────────────────────────────────────────────────────
 
 
 def _resolve_cors_origins() -> tuple[list[str], list[str]]:
@@ -72,7 +130,7 @@ def _resolve_cors_origins() -> tuple[list[str], list[str]]:
             origins.append("*")
             continue
         if value.startswith("re:"):
-            regexes.append(value[len("re:"):])
+            regexes.append(value[len("re:") :])
             continue
         origins.append(value.rstrip("/"))
     return origins, regexes
@@ -87,6 +145,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ── strict route gate ─────────────────────────────────────────────────────────
 
 
 class StrictRouteMiddleware:
@@ -121,87 +182,21 @@ class StrictRouteMiddleware:
 
 app.add_middleware(StrictRouteMiddleware)
 
-TENANT_KEYS = load_tenant_keys()
-ALLOWED_DIRECTORY_ROOT = (PROJECT_ROOT / "data").resolve()
+
+# ── request correlation middleware ────────────────────────────────────────────
 
 
-class DirectoryAuditSubmitRequest(BaseModel):
-    mode: Literal["directory"]
-    directory_path: str
+@app.middleware("http")
+async def request_context_middleware(request: Request, call_next):
+    correlation_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex
+    request.state.correlation_id = correlation_id
+    with logging_context(correlation_id=correlation_id):
+        response = await call_next(request)
+    response.headers["X-Request-ID"] = correlation_id
+    return response
 
 
-class AuditSubmitAcceptedResponse(BaseModel):
-    request_id: str
-    status: str
-    mode: str
-    task_status_url: str
-
-
-class AuditTaskStatusResponse(BaseModel):
-    request_id: str
-    status: str
-    mode: str
-    claim_id: str | None = None
-    error_detail: str | None = None
-    progress_message: str | None = None
-    submitted_at: str | None = None
-    started_at: str | None = None
-    finished_at: str | None = None
-    updated_at: str
-
-
-def _authorization_error(detail: str) -> HTTPException:
-    return HTTPException(
-        status_code=401,
-        detail=detail,
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-
-
-def verify_tenant(authorization: str | None) -> str:
-    allow_default = os.getenv("ALLOW_INSECURE_DEFAULT_TENANT_KEY", "").lower() in {"1", "true", "yes", "on"}
-    if tenant_keys_are_default():
-        if not allow_default:
-            raise HTTPException(
-                status_code=503,
-                detail="Server is not configured with tenant keys. Set the TENANT_KEYS environment variable.",
-            )
-    if not authorization:
-        # When running in insecure dev mode, skip auth header requirement entirely.
-        if allow_default:
-            return "default"
-        raise _authorization_error("Missing Authorization header")
-    scheme, _, credentials = authorization.strip().partition(" ")
-    if scheme.lower() != "bearer" or not credentials.strip():
-        raise _authorization_error("Authorization header must use Bearer token")
-    token = credentials.strip()
-    for tenant, key in TENANT_KEYS.items():
-        if secrets.compare_digest(key, token):
-            return tenant
-    raise _authorization_error("Invalid tenant token")
-
-
-def _public_runtime_status() -> dict[str, Any]:
-    diagnostics = collect_runtime_diagnostics()
-    checks = diagnostics.get("checks", {})
-    raw_app_server = checks.get("app_server") or {}
-    app_server = {"ok": bool(raw_app_server.get("ok")), "running": bool(raw_app_server.get("running"))}
-    failing_checks = [
-        name
-        for name, check in checks.items()
-        if name != "app_server" and not bool(check.get("ok"))
-    ]
-    advisories = [
-        advisory
-        for advisory in diagnostics.get("advisories", [])
-        if advisory != "app-server process is not running."
-    ]
-    return {
-        "status": diagnostics.get("status", "degraded"),
-        "app_server": app_server,
-        "failing_checks": failing_checks,
-        "advisories": advisories,
-    }
+# ── error response helpers ────────────────────────────────────────────────────
 
 
 def _http_error_code(status_code: int) -> str:
@@ -251,16 +246,7 @@ def _error_response_content(
     return payload
 
 
-
-
-@app.middleware("http")
-async def request_context_middleware(request: Request, call_next):
-    correlation_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex
-    request.state.correlation_id = correlation_id
-    with logging_context(correlation_id=correlation_id):
-        response = await call_next(request)
-    response.headers["X-Request-ID"] = correlation_id
-    return response
+# ── exception handlers ────────────────────────────────────────────────────────
 
 
 @app.exception_handler(StarletteHTTPException)
@@ -298,7 +284,10 @@ async def validation_exception_handler(
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     logger.exception(
         "unhandled_http_exception",
-        extra={"path": request.url.path, "correlation_id": getattr(request.state, "correlation_id", None)},
+        extra={
+            "path": request.url.path,
+            "correlation_id": getattr(request.state, "correlation_id", None),
+        },
     )
     return JSONResponse(
         status_code=500,
@@ -312,490 +301,16 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
     )
 
 
-async def _submit_audit_directory(*, request_id: str) -> dict[str, Any]:
-    return {
-        "request_id": request_id,
-        "status": "accepted",
-        "mode": "directory",
-        "task_status_url": f"/audit/tasks/{request_id}",
-    }
+# ── route registration ────────────────────────────────────────────────────────
+
+from server.routes import audit as _audit_routes  # noqa: E402
+from server.routes import health as _health_routes  # noqa: E402
+
+app.include_router(_audit_routes.router, prefix="/audit")
+app.include_router(_health_routes.router)
 
 
-def _public_audit_task(record: dict[str, Any]) -> AuditTaskStatusResponse:
-    return AuditTaskStatusResponse(
-        request_id=str(record["request_id"]),
-        status=str(record["status"]),
-        mode=str(record["mode"]),
-        claim_id=record.get("claim_id"),
-        error_detail=record.get("error_detail"),
-        progress_message=record.get("progress_message"),
-        submitted_at=record.get("submitted_at"),
-        started_at=record.get("started_at"),
-        finished_at=record.get("finished_at"),
-        updated_at=str(record["updated_at"]),
-    )
-
-
-def _schedule_directory_audit_task(
-    *,
-    request_id: str,
-    tenant: str,
-    directory_path: str,
-    source_mode: str,
-) -> None:
-    asyncio.create_task(
-        _execute_directory_audit_task(
-            request_id=request_id,
-            tenant=tenant,
-            directory_path=directory_path,
-            source_mode=source_mode,
-        )
-    )
-
-
-def _sanitize_upload_name(name: str, index: int) -> str:
-    sanitized = Path(name).name
-    if not sanitized:
-        raise HTTPException(status_code=400, detail=f"File {index} is missing a filename")
-    return sanitized
-
-
-def _validate_upload_bytes(content: bytes) -> None:
-    if not content:
-        raise HTTPException(status_code=400, detail="Uploaded file cannot be empty")
-    if len(content) > get_app_settings().max_upload_file_bytes:
-        raise HTTPException(status_code=400, detail="Uploaded file exceeds size limit")
-
-
-def _append_form_field(fields: dict[str, Any], key: str, value: str) -> None:
-    current = fields.get(key)
-    if current is None:
-        fields[key] = value
-    elif isinstance(current, list):
-        current.append(value)
-    else:
-        fields[key] = [current, value]
-
-
-def _collect_scalar_form_fields(form_data: Any) -> dict[str, Any]:
-    fields: dict[str, Any] = {}
-    iterator = form_data.multi_items() if hasattr(form_data, "multi_items") else form_data.items()
-    for key, value in iterator:
-        field_name = str(key)
-        if field_name in {"mode", "form_json", "files"}:
-            continue
-        if hasattr(value, "filename"):
-            continue
-        _append_form_field(fields, field_name, str(value))
-    return fields
-
-
-def _parse_optional_form_json(form_json: str | None) -> dict[str, Any]:
-    normalized = str(form_json or "").strip()
-    if not normalized:
-        return {}
-    try:
-        parsed_form = json.loads(normalized)
-    except json.JSONDecodeError as exc:
-        raise HTTPException(status_code=400, detail="Invalid form_json") from exc
-    if not isinstance(parsed_form, dict):
-        raise HTTPException(status_code=400, detail="form_json must decode to a JSON object")
-    return parsed_form
-
-
-def _validate_directory_case_path(case_path: str) -> str:
-    path = Path(case_path)
-    if not path.exists() or not path.is_dir():
-        raise HTTPException(status_code=400, detail="directory_path must point to an existing directory")
-
-    resolved = path.resolve()
-    try:
-        resolved.relative_to(ALLOWED_DIRECTORY_ROOT)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail="directory_path is outside allowed roots") from exc
-
-    return _serialize_case_path(resolved)
-
-
-def _serialize_case_path(path: Path) -> str:
-    try:
-        return str(path.relative_to(PROJECT_ROOT))
-    except ValueError:
-        return str(path)
-
-
-def _remove_submission_dir(case_path: str | None) -> None:
-    """Delete an uploaded submission directory, but only under the submissions root."""
-    if not case_path:
-        return
-    candidate = Path(case_path)
-    resolved = (candidate if candidate.is_absolute() else PROJECT_ROOT / candidate).resolve()
-    submissions_root = SUBMISSION_ROOT_DIR.resolve()
-    if submissions_root not in resolved.parents:
-        return
-    shutil.rmtree(resolved, ignore_errors=True)
-
-
-async def _materialize_upload_submission(
-    *,
-    request_id: str,
-    form_json: str | None,
-    form_data: Any,
-) -> str:
-    parsed_form = _parse_optional_form_json(form_json)
-    scalar_fields = _collect_scalar_form_fields(form_data)
-    files = form_data.getlist("files")
-    if not parsed_form and not scalar_fields and not files:
-        raise HTTPException(status_code=400, detail="upload mode requires form_json, form fields, or files")
-
-    case_dir = SUBMISSION_ROOT_DIR / request_id
-    case_dir.mkdir(parents=True, exist_ok=True)
-
-    attachments: list[dict[str, Any]] = []
-    try:
-        for index, upload in enumerate(files, start=1):
-            safe_name = _sanitize_upload_name(getattr(upload, "filename", "") or "", index)
-            target_path = case_dir / safe_name
-            content = await upload.read()
-            _validate_upload_bytes(content)
-            target_path.write_bytes(content)
-            attachments.append(
-                {
-                    "type": "uploaded",
-                    "name": safe_name,
-                    "path": _serialize_case_path(target_path),
-                }
-            )
-
-        append_json_file(
-            case_dir / "audit-request.json",
-            {
-                "form": parsed_form,
-                "fields": scalar_fields,
-                "attachments": attachments,
-            },
-        )
-    except Exception:
-        shutil.rmtree(case_dir, ignore_errors=True)
-        raise
-
-    return _serialize_case_path(case_dir)
-
-
-# 单次审核硬超时（秒）。仅兜底防无限挂起，不是目标耗时：造假快判仍 ~1 跳返回。
-# 默认放宽到 180s，给"读附件"等多跳常规审核留余量（网关 ~17-48s/跳，最坏 3 跳 ~144s）。
-AUDIT_TIMEOUT_SEC = float(os.getenv("AUDIT_TIMEOUT_SEC", "180"))
-
-# 同时进行的审核上限。每单审核会拉起一个 claude CLI 子进程，无上限并发会打爆内网机内存/CPU。
-# 超额的提交在信号量处排队，任务状态保持 accepted 直到有空位（排队时间不计入 AUDIT_TIMEOUT_SEC）。
-MAX_CONCURRENT_AUDITS = int(os.getenv("MAX_CONCURRENT_AUDITS", "2"))
-_AUDIT_SEMAPHORE = asyncio.Semaphore(MAX_CONCURRENT_AUDITS)
-
-
-async def _run_directory_audit(*, request_id: str, tenant: str, directory_path: str):
-    return await run_inline_directory_audit(
-        directory_path,
-        request_id=request_id,
-        tenant=tenant,
-    )
-
-
-async def _execute_directory_audit_task(
-    *,
-    request_id: str,
-    tenant: str,
-    directory_path: str,
-    source_mode: str = "directory",
-) -> None:
-    # 并发闸：拿不到名额就在此 await 排队，排队期间任务保持 accepted（不计入审核超时）。
-    async with _AUDIT_SEMAPHORE:
-        await _execute_directory_audit_task_inner(
-            request_id=request_id,
-            tenant=tenant,
-            directory_path=directory_path,
-            source_mode=source_mode,
-        )
-
-
-async def _execute_directory_audit_task_inner(
-    *,
-    request_id: str,
-    tenant: str,
-    directory_path: str,
-    source_mode: str = "directory",
-) -> None:
-    started_at = utc_now()
-    with logging_context(request_id=request_id, tenant=tenant):
-        upsert_audit_task(
-            {
-                "request_id": request_id,
-                "tenant": tenant,
-                "status": "running",
-                "mode": source_mode,
-                "source_mode": source_mode,
-                "case_path": directory_path,
-                "claim_id": None,
-                "result_file": None,
-                "session_id": None,
-                "error_detail": None,
-                "progress_message": "Agent 正在运行中",
-                "started_at": started_at,
-                "updated_at": started_at,
-            }
-        )
-        try:
-            payload, meta = await asyncio.wait_for(
-                _run_directory_audit(
-                    request_id=request_id,
-                    tenant=tenant,
-                    directory_path=directory_path,
-                ),
-                timeout=AUDIT_TIMEOUT_SEC,
-            )
-            finished_at = utc_now()
-            upsert_audit_task(
-                {
-                    "request_id": request_id,
-                    "tenant": tenant,
-                    "status": "completed",
-                    "mode": source_mode,
-                    "source_mode": source_mode,
-                    "case_path": directory_path,
-                    "claim_id": payload.get("claim_id") if isinstance(payload, dict) else None,
-                    "result_file": meta.result_file,
-                    "session_id": meta.claude_session_id,
-                    "error_detail": None,
-                    "progress_message": "审核完成",
-                    "finished_at": finished_at,
-                    "updated_at": finished_at,
-                }
-            )
-        except asyncio.TimeoutError:
-            logger.warning(
-                "directory_audit_timeout",
-                extra={
-                    "request_id": request_id,
-                    "tenant": tenant,
-                    "route": "/audit/submit",
-                    "timeout_sec": AUDIT_TIMEOUT_SEC,
-                },
-            )
-            finished_at = utc_now()
-            upsert_audit_task(
-                {
-                    "request_id": request_id,
-                    "tenant": tenant,
-                    "status": "failed",
-                    "mode": source_mode,
-                    "source_mode": source_mode,
-                    "case_path": directory_path,
-                    "claim_id": None,
-                    "result_file": None,
-                    "session_id": None,
-                    "error_detail": (
-                        f"审核超时：超过 {int(AUDIT_TIMEOUT_SEC)}s 未返回结果"
-                        "（可能模型网关拥塞），请稍后重试"
-                    ),
-                    "progress_message": "审核超时",
-                    "finished_at": finished_at,
-                    "updated_at": finished_at,
-                }
-            )
-        except Exception as exc:
-            logger.exception(
-                "directory_audit_failed",
-                extra={"request_id": request_id, "tenant": tenant, "route": "/audit/submit"},
-            )
-            finished_at = utc_now()
-            upsert_audit_task(
-                {
-                    "request_id": request_id,
-                    "tenant": tenant,
-                    "status": "failed",
-                    "mode": source_mode,
-                    "source_mode": source_mode,
-                    "case_path": directory_path,
-                    "claim_id": None,
-                    "result_file": None,
-                    "session_id": None,
-                    "error_detail": str(exc),
-                    "progress_message": "审核失败",
-                    "finished_at": finished_at,
-                    "updated_at": finished_at,
-                }
-            )
-
-@app.post("/audit/submit", response_model=AuditSubmitAcceptedResponse)
-async def audit_submit(
-    request: Request,
-    authorization: str | None = Header(None),
-) -> AuditSubmitAcceptedResponse:
-    tenant = verify_tenant(authorization)
-    request_id = new_request_id()
-
-    content_type = request.headers.get("content-type", "")
-    if content_type.startswith("application/json"):
-        try:
-            payload = DirectoryAuditSubmitRequest.model_validate(await request.json())
-        except ValidationError as exc:
-            raise RequestValidationError(exc.errors()) from exc
-        mode = payload.mode
-        case_path = _validate_directory_case_path(payload.directory_path)
-    elif content_type.startswith("multipart/form-data"):
-        form_data = await request.form()
-        mode = str(form_data.get("mode") or "").strip()
-        if mode != "upload":
-            raise HTTPException(status_code=400, detail="multipart requests must use mode=upload")
-        case_path = await _materialize_upload_submission(
-            request_id=request_id,
-            form_json=form_data.get("form_json"),
-            form_data=form_data,
-        )
-    else:
-        raise HTTPException(status_code=415, detail="Unsupported Content-Type")
-
-    submitted_at = utc_now()
-    upsert_audit_task(
-        {
-            "request_id": request_id,
-            "tenant": tenant,
-            "status": "accepted",
-            "mode": mode,
-            "source_mode": mode,
-            "case_path": case_path,
-            "claim_id": None,
-            "result_file": None,
-            "session_id": None,
-            "error_detail": None,
-            "progress_message": "任务已提交",
-            "submitted_at": submitted_at,
-            "started_at": None,
-            "finished_at": None,
-            "updated_at": submitted_at,
-        }
-    )
-    response = await _submit_audit_directory(request_id=request_id)
-    _schedule_directory_audit_task(
-        request_id=request_id,
-        tenant=tenant,
-        directory_path=case_path,
-        source_mode=mode,
-    )
-    return AuditSubmitAcceptedResponse(
-        request_id=response["request_id"],
-        status=response["status"],
-        mode=mode,
-        task_status_url=response["task_status_url"],
-    )
-
-
-@app.get("/audit/tasks", response_model=list[AuditTaskStatusResponse])
-async def list_audit_tasks_endpoint(
-    authorization: str | None = Header(None),
-    status: str | None = Query(None),
-    limit: int = Query(20, ge=1, le=100),
-    offset: int = Query(0, ge=0),
-) -> list[AuditTaskStatusResponse]:
-    tenant = verify_tenant(authorization)
-    records = list_audit_tasks(tenant, status=status, limit=limit, offset=offset)
-    return [_public_audit_task(r) for r in records]
-
-
-@app.get("/audit/tasks/{request_id}", response_model=AuditTaskStatusResponse)
-async def audit_task_status(
-    request_id: str,
-    authorization: str | None = Header(None),
-) -> AuditTaskStatusResponse:
-    tenant = verify_tenant(authorization)
-    record = get_audit_task(request_id, tenant=tenant)
-    if record is None:
-        raise HTTPException(status_code=404, detail="Audit task not found")
-    return _public_audit_task(record)
-
-
-@app.get("/audit/tasks/{request_id}/result")
-async def audit_task_result(request_id: str, authorization: str | None = Header(None)) -> dict[str, Any]:
-    tenant = verify_tenant(authorization)
-    record = get_audit_task(request_id, tenant=tenant)
-    if record is None:
-        raise HTTPException(status_code=404, detail="Audit task not found")
-    if record.get("status") != "completed":
-        raise HTTPException(status_code=409, detail="Audit task is not completed yet")
-    payload = get_result_payload_by_request_id(request_id=request_id, tenant=tenant)
-    if payload is None or not isinstance(payload.get("response"), dict):
-        raise HTTPException(status_code=404, detail="Audit result not found")
-    # 归一化函数上线前存档的旧结果，reasons / policy_refs 仍可能是对象数组。
-    # 在出口处再拍平一次，避免前端按字符串渲染对象触发 React #31 整页白屏。
-    response = enrich_audit_decision(payload["response"])
-    return response if isinstance(response, dict) else payload["response"]
-
-
-@app.post("/audit/tasks/{request_id}/retry", response_model=AuditTaskStatusResponse)
-async def retry_audit_task(
-    request_id: str,
-    authorization: str | None = Header(None),
-) -> AuditTaskStatusResponse:
-    tenant = verify_tenant(authorization)
-    record = get_audit_task(request_id, tenant=tenant)
-    if record is None:
-        raise HTTPException(status_code=404, detail="Audit task not found")
-    if record.get("status") == "running":
-        raise HTTPException(status_code=409, detail="Audit task is still running")
-    case_path = str(record.get("case_path") or "").strip()
-    if not case_path:
-        raise HTTPException(status_code=400, detail="Audit task has no source path to re-audit")
-    mode = str(record.get("mode") or "directory")
-    started_at = utc_now()
-    upsert_audit_task(
-        {
-            "request_id": request_id,
-            "tenant": tenant,
-            "status": "running",
-            "mode": mode,
-            "source_mode": mode,
-            "case_path": case_path,
-            "claim_id": None,
-            "result_file": None,
-            "session_id": None,
-            "error_detail": None,
-            "progress_message": "重新审核中",
-            "started_at": started_at,
-            "finished_at": None,
-            "updated_at": started_at,
-        }
-    )
-    _schedule_directory_audit_task(
-        request_id=request_id,
-        tenant=tenant,
-        directory_path=case_path,
-        source_mode=mode,
-    )
-    refreshed = get_audit_task(request_id, tenant=tenant)
-    return _public_audit_task(refreshed if refreshed is not None else record)
-
-
-@app.delete("/audit/tasks/{request_id}")
-async def delete_audit_task_endpoint(
-    request_id: str,
-    authorization: str | None = Header(None),
-) -> dict[str, Any]:
-    tenant = verify_tenant(authorization)
-    record = get_audit_task(request_id, tenant=tenant)
-    if record is None:
-        raise HTTPException(status_code=404, detail="Audit task not found")
-    if record.get("status") == "running":
-        raise HTTPException(status_code=409, detail="Cannot delete a running audit task")
-    _remove_submission_dir(record.get("case_path"))
-    delete_audit_task(request_id, tenant=tenant)
-    return {"request_id": request_id, "status": "deleted"}
-
-
-@app.get("/health")
-async def health() -> JSONResponse:
-    payload = _public_runtime_status()
-    status_code = 200 if payload["status"] == "ok" else 503
-    return JSONResponse(status_code=status_code, content=payload)
-
+# ── SPA static file serving ───────────────────────────────────────────────────
 
 # 同源部署：让 FastAPI 直接托管前端 dist 静态文件，避免 CORS。
 # 关闭方式：设置 SERVE_UI_DIST=false。
@@ -844,4 +359,3 @@ if _UI_DIST is not None:
         if not index_html.is_file():
             raise HTTPException(status_code=500, detail=f"index.html not found at {index_html}")
         return FileResponse(index_html)
-
