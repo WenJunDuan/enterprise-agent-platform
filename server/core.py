@@ -454,6 +454,69 @@ class SessionLogger:
         return datetime.now(timezone.utc).isoformat()
 
 
+def _resolve_session_ids(
+    conversation_id: str,
+    resume_session_id: str | None,
+    fork_from_session_id: str | None,
+    continue_recent: bool,
+    tenant: str | None,
+) -> tuple[str | None, str]:
+    """Resolve resume/fork/continue 三元逻辑，返回 (resolved_resume_session_id, current_session_id)。
+
+    优先级（高到低）：
+    1. 显式 resume_session_id — 直接用；
+    2. 无 fork/continue_recent 时 — 按 tenant 查最新 session；
+    3. 否则 — 不 resume（fork 或 continue 由调用方设 options）。
+    current_session_id 取 resolved_resume / fork / 新 uuid。
+    """
+    resolved_resume = resume_session_id or (
+        (
+            resolve_latest_session_id(conversation_id, tenant=tenant)
+            if tenant
+            else resolve_latest_session_id_admin(conversation_id)
+        )
+        if not fork_from_session_id and not continue_recent
+        else None
+    )
+    current = resolved_resume or fork_from_session_id or str(uuid.uuid4())
+    return resolved_resume, current
+
+
+def _extract_system_session_id(message: SystemMessage, current: str | None) -> str | None:
+    """从 SystemMessage 里提取 claude session_id，不存在时返回 current 原值。"""
+    return (
+        getattr(message, "session_id", None)
+        or getattr(getattr(message, "data", {}), "get", lambda *_: None)("session_id")
+        or current
+    )
+
+
+def _log_bridge_failure(
+    exc: Exception,
+    *,
+    request_id: str,
+    tenant: str | None,
+    current_session_id: str,
+    cli_stderr: list[str],
+    session_logger: "SessionLogger",
+) -> None:
+    """记录 SDK 调用失败：结构化日志 + CLI stderr 尾部 + session 错误事件。
+
+    CLI exit 非零时真正的错误只在它自己的 stderr，这里把尾部打出来帮助定位崩溃真因
+    （如网关响应畸形、流式解析异常），不必再手动复现。
+    """
+    logger.exception(
+        "claude_bridge_failed",
+        extra={"request_id": request_id, "tenant": tenant, "session_id": current_session_id},
+    )
+    captured_stderr = "".join(cli_stderr).strip()
+    if captured_stderr:
+        # CLI exit 非零时把它的 stderr 全文打出来，否则只有一句无用的
+        # "Check stderr output for details"。这是定位 CLI 崩溃的关键。
+        logger.error("claude_cli_stderr | %s", captured_stderr[-6000:])
+    session_logger.log_error(exc)
+
+
 async def run_agent(
     prompt: str,
     conversation_id: str | None = None,
@@ -468,16 +531,9 @@ async def run_agent(
     conversation_id = conversation_id or new_conversation_id()
     request_id = request_id or str(uuid.uuid4())
     started_at = utc_now()
-    resolved_resume_session_id = resume_session_id or (
-        (
-            resolve_latest_session_id(conversation_id, tenant=tenant)
-            if tenant
-            else resolve_latest_session_id_admin(conversation_id)
-        )
-        if not fork_from_session_id and not continue_recent
-        else None
+    resolved_resume_session_id, current_session_id = _resolve_session_ids(
+        conversation_id, resume_session_id, fork_from_session_id, continue_recent, tenant
     )
-    current_session_id = resolved_resume_session_id or fork_from_session_id or str(uuid.uuid4())
     session_logger = SessionLogger(current_session_id, request_id, prompt, started_at, tenant)
     options = build_options(**opts)
     cli_stderr: list[str] = []
@@ -510,10 +566,8 @@ async def run_agent(
                     if getattr(message, "is_error", False):
                         final_status = "error"
                 elif isinstance(message, SystemMessage):
-                    final_claude_session_id = (
-                        getattr(message, "session_id", None)
-                        or getattr(getattr(message, "data", {}), "get", lambda *_: None)("session_id")
-                        or final_claude_session_id
+                    final_claude_session_id = _extract_system_session_id(
+                        message, final_claude_session_id
                     )
 
                 if event:
@@ -529,16 +583,14 @@ async def run_agent(
                 )
         except Exception as exc:
             final_status = "error"
-            logger.exception(
-                "claude_bridge_failed",
-                extra={"request_id": request_id, "tenant": tenant, "session_id": current_session_id},
+            _log_bridge_failure(
+                exc,
+                request_id=request_id,
+                tenant=tenant,
+                current_session_id=current_session_id,
+                cli_stderr=cli_stderr,
+                session_logger=session_logger,
             )
-            captured_stderr = "".join(cli_stderr).strip()
-            if captured_stderr:
-                # CLI exit 非零时把它的 stderr 全文打出来，否则只有一句无用的
-                # "Check stderr output for details"。这是定位 CLI 崩溃的关键。
-                logger.error("claude_cli_stderr | %s", captured_stderr[-6000:])
-            session_logger.log_error(exc)
             raise
         finally:
             append_session_record(
@@ -652,16 +704,9 @@ async def run_agent_json(
     conversation_id = conversation_id or new_conversation_id()
     request_id = request_id or str(uuid.uuid4())
     started_at = utc_now()
-    resolved_resume_session_id = resume_session_id or (
-        (
-            resolve_latest_session_id(conversation_id, tenant=tenant)
-            if tenant
-            else resolve_latest_session_id_admin(conversation_id)
-        )
-        if not fork_from_session_id and not continue_recent
-        else None
+    resolved_resume_session_id, current_session_id = _resolve_session_ids(
+        conversation_id, resume_session_id, fork_from_session_id, continue_recent, tenant
     )
-    current_session_id = resolved_resume_session_id or fork_from_session_id or str(uuid.uuid4())
     session_logger = SessionLogger(current_session_id, request_id, prompt, started_at, tenant)
     output_opts = {"output_format": build_output_format(schema_name)} if structured else {}
     options = build_options(**output_opts, **opts)
@@ -691,10 +736,8 @@ async def run_agent_json(
                 session_logger.log_message(message)
 
                 if isinstance(message, SystemMessage):
-                    final_claude_session_id = (
-                        getattr(message, "session_id", None)
-                        or getattr(getattr(message, "data", {}), "get", lambda *_: None)("session_id")
-                        or final_claude_session_id
+                    final_claude_session_id = _extract_system_session_id(
+                        message, final_claude_session_id
                     )
                     continue
 
@@ -783,16 +826,14 @@ async def run_agent_json(
             )
         except Exception as exc:
             final_status = "error"
-            logger.exception(
-                "claude_bridge_failed",
-                extra={"request_id": request_id, "tenant": tenant, "session_id": current_session_id},
+            _log_bridge_failure(
+                exc,
+                request_id=request_id,
+                tenant=tenant,
+                current_session_id=current_session_id,
+                cli_stderr=cli_stderr,
+                session_logger=session_logger,
             )
-            captured_stderr = "".join(cli_stderr).strip()
-            if captured_stderr:
-                # CLI exit 非零时把它的 stderr 全文打出来，否则只有一句无用的
-                # "Check stderr output for details"。这是定位 CLI 崩溃的关键。
-                logger.error("claude_cli_stderr | %s", captured_stderr[-6000:])
-            session_logger.log_error(exc)
             raise
         finally:
             append_session_record(
