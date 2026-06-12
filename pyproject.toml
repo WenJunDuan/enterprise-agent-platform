@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [project.scripts]
-app-server = "server.app_server:app"
+app-server = "server.cli:app"
 
 [dependency-groups]
 dev = [
