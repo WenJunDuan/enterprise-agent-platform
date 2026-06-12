@@ -7,21 +7,12 @@ No network calls, no real claude_agent_sdk invocations.
 
 from __future__ import annotations
 
-import os
-
 import pytest
 from fastapi import HTTPException
 
-# ── Guard: server.core (transitively imported via server.api) calls
-# configure_claude_runtime_env() at module level, which is fine (just sets env vars).
-# We set ALLOW_ANTHROPIC_API=1 so the offline guard doesn't trip during module load.
-# We do NOT change production code to enable this test.
-os.environ.setdefault("ALLOW_ANTHROPIC_API", "1")
-os.environ.setdefault("MODEL_BASE_URL", "http://test-gateway:4000")
-os.environ.setdefault("ANTHROPIC_API_KEY", "test-fake-api-key-not-real")
-os.environ.setdefault("MODEL_NAME", "test-model")
+# Env-var offline-guard bypass is now centralised in tests/conftest.py.
 
-from server.api import verify_tenant  # noqa: E402  (env must be set first)
+from server.api import verify_tenant
 
 
 # ═════════════════════════════════════════════════════════════════════════════
