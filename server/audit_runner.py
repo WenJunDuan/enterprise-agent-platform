@@ -9,7 +9,6 @@ the injected rules; Python only delivers the inputs.
 from __future__ import annotations
 
 import logging
-import os
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +18,7 @@ from server.core import (
     StructuredJSON,
     run_agent_json,
 )
+from server.platform.config import get_audit_settings
 from server.platform.paths import PROJECT_ROOT
 
 logger = logging.getLogger(__name__)
@@ -126,48 +126,32 @@ async def run_inline_directory_audit(
     **opts: Any,
 ) -> tuple[StructuredJSON, AgentRunMeta]:
     """Run a directory audit with materials + rules preloaded; keep only Read for attachments."""
-    # setting_sources=[] 砍掉 .claude/CLAUDE.md 等无关系统提示，减小慢模型的 prefill 负担。
-    # 内联审核自包含（规则+案件已注入），不依赖项目设置。
-    # 需回退到加载项目设置时设 AUDIT_LEAN_CONTEXT=0（无需重建镜像）。
-    lean_context = os.getenv("AUDIT_LEAN_CONTEXT", "1").strip().lower() in {"1", "true", "yes", "on"}
-    # 默认文本模式：让模型直接输出 JSON 文本、由服务端解析，兼容不支持原生 function
-    # calling / 结构化输出的网关模型（如 qwen，会把 tool_use/JSON 当文本吐导致 CLI 崩溃）。
-    # 文本模式同时去掉 tools（案件已预加载，无需 Read）。设 AUDIT_STRUCTURED_OUTPUT=1
-    # 改回 SDK 强制结构化输出（仅模型支持 function calling 时）。
-    use_structured = os.getenv("AUDIT_STRUCTURED_OUTPUT", "0").strip().lower() in {"1", "true", "yes", "on"}
-    # 多模态读附件原件（如发票 / 行程图片）：默认关闭以保持低延迟（每次 Read 都是一次网关往返）。
-    # 设 AUDIT_ENABLE_READ=1 后，即便文本模式也给模型 Read 工具，用于核验附件原件；与输出是否
-    # 结构化无关（结构化模式本就需要 Read，故二者任一开启即提供 Read）。
-    enable_read = os.getenv("AUDIT_ENABLE_READ", "0").strip().lower() in {"1", "true", "yes", "on"}
-    allowed_tools = ["Read"] if (use_structured or enable_read) else []
+    # 所有开关集中在 config.AuditSettings（含各项取舍背景）；每次审核读一次，
+    # 部署机改 env 重启即生效。
+    settings = get_audit_settings()
     prompt = build_inline_audit_prompt(directory_path)
 
-    # 慢/网关模型在文本模式下偶发两类随机性失败：① 只输出半截 JSON 或漏填 explanation 等
-    # 必填字段（契约校验失败）；② bundled CLI 处理流式响应时崩溃 (exit 1)。两类都对单次调用
-    # 而非输入本身敏感，重跑一次（新 session）即可显著降低 flaky 失败率。故这里捕获所有
-    # 异常做有界重试，仅在最后一次仍失败时上抛。设 AUDIT_CONTRACT_MAX_RETRY=0 可关闭。
-    max_retry = max(0, int(os.getenv("AUDIT_CONTRACT_MAX_RETRY", "1")))
-    for attempt in range(max_retry + 1):
+    for attempt in range(settings.contract_max_retry + 1):
         try:
             return await run_agent_json(
                 prompt,
                 schema_name=DEFAULT_OUTPUT_SCHEMA_NAME,
                 request_id=request_id,
                 tenant=tenant,
-                structured=use_structured,
-                allowed_tools=allowed_tools,
-                max_turns=int(os.getenv("AUDIT_INLINE_MAX_TURNS", "8")),
-                setting_sources=[] if lean_context else ["project"],
+                structured=settings.structured_output,
+                allowed_tools=settings.allowed_tools,
+                max_turns=settings.inline_max_turns,
+                setting_sources=[] if settings.lean_context else ["project"],
                 **opts,
             )
         except Exception as exc:
-            if attempt >= max_retry:
+            if attempt >= settings.contract_max_retry:
                 raise
             logger.warning(
                 "audit attempt failed (%s, %d/%d), retrying: %s",
                 type(exc).__name__,
                 attempt + 1,
-                max_retry + 1,
+                settings.contract_max_retry + 1,
                 exc,
                 extra={"request_id": request_id, "tenant": tenant or "default"},
             )
