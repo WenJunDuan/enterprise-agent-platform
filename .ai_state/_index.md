@@ -82,7 +82,7 @@ network_in_polish: true
 # === 项目元信息 (迁移自旧 project.json) ===
 project:
   tech_stack: "python>=3.12, claude-agent-sdk, fastapi, typer, uvicorn"
-  test_cmd: "uv run ruff check ."
+  test_cmd: "uv run pytest -q"
   build_cmd: "uv build"
   lint_cmd: "uv run ruff check ."
   dev_cmd: "uv run python -m server.cli serve"
@@ -119,73 +119,57 @@ slug 拆分为独立 sprint 目录；`lessons.md` 整体保留为
 - `docs/` — 项目参考文档 (开发指南 / 前端对接 / audit-skills)，非状态机文件
 
 ## 历史 (由 pace-continuator hook 自动追加, 最多保留近 10 条)
+- `2026-06-12 09:10:36`: stage=ship sprint=  turn-end
+- `2026-06-12 08:46:46`: stage=ship sprint=  turn-end
+- `2026-06-12 08:32:26`: stage=ship sprint=  turn-end
+- `2026-06-12 08:10:09`: stage=ship sprint=  turn-end
+- `2026-06-12 07:50:59`: stage=ship sprint=  turn-end
+- `2026-06-12 07:27:28`: stage=ship sprint=  turn-end
+- `2026-06-12 06:03:01`: stage=ship sprint=  turn-end
+- `2026-06-12 05:40:55`: stage=ship sprint=  turn-end
+- `2026-06-12 05:14:36`: stage=ship sprint=  turn-end
+- `2026-06-12 04:57:52`: stage=ship sprint=  turn-end
 
 - 2026-06-02 [migrate] v9.6.2(legacy flat) → v9.6.4. 备份见 `.ai_state.backup-*`。
 
 
 ## 历史
-- `2026-06-02 07:13:33`: stage=ship sprint=? turn-end
 
 
 ## 历史
-- `2026-06-02 07:17:29`: stage=ship sprint=? turn-end
 
 
 ## 历史
-- `2026-06-02 07:24:14`: stage=ship sprint=? turn-end
 
 
 ## 历史
-- `2026-06-02 07:46:19`: stage=ship sprint=? turn-end
 
 
 ## 历史
-- `2026-06-02 07:48:36`: stage=ship sprint=? turn-end
 
 
 ## 历史
-- `2026-06-02 08:04:03`: stage=ship sprint=? turn-end
 
 
 ## 历史
-- `2026-06-02 08:09:35`: stage=ship sprint=? turn-end
 
 
 ## 历史
-- `2026-06-02 08:11:11`: stage=ship sprint=? turn-end
 
 
 ## 历史
-- `2026-06-02 08:20:40`: stage=ship sprint=? turn-end
 
 
 ## 历史
-- `2026-06-02 08:31:07`: stage=ship sprint=? turn-end
 
 
 ## 历史
-- `2026-06-02 08:34:21`: stage=ship sprint=? turn-end
 
 
 ## 历史
-- `2026-06-02 08:53:20`: stage=ship sprint=? turn-end
 
 
 ## 历史
-- `2026-06-02 09:06:14`: stage=ship sprint=? turn-end
 
 
 ## 历史
-- `2026-06-02 09:21:58`: stage=ship sprint=? turn-end
-- `2026-06-09 10:12:18`: stage=ship sprint=2026-06-09-audit-agent-docker-repack image=audit-agent artifact=audit-agent.tar run-build-host=true
-- `2026-06-09 14:38:00`: stage=ship sprint=2026-06-09-litellm-no-db-repack image=docker.litellm.ai/berriai/litellm:main-stable artifact=litellm-main-stable.tar no-db=true
-- `2026-06-09 15:13:00`: stage=ship sprint=2026-06-09-litellm-no-db-repack litellm-config=yaml-only active-env=false proxy-auth-removed=true
-- `2026-06-09 19:31:00`: stage=ship sprint=2026-06-09-audit-agent-docker-repack image=audit-agent:latest image_id=57675756e0e5 artifact=/opt/application/audit-agent/audit-agent.tar sha256=5fc2a7a6fc140f5c0ab0a0911881dedf6072c4aa88a773a6a3a210374218f551 build_mode=local-runtime-repack remote=100.107.62.19
-- `2026-06-09 20:43:00`: stage=ship sprint=2026-06-09-offline-date-tag-repack audit_image=audit-agent:0609 audit_artifact=/opt/application/audit-agent/audit-agent-0609.tar audit_sha256=526d441ef1c09c536d331cca8ed29dfa06938050a97333f51cd4a387869a3d5b litellm_image=docker.litellm.ai/berriai/litellm:0609 litellm_artifact=/opt/application/litellm/litellm-0609.tar litellm_sha256=3e55d273e9168c0226c785cc5b499b2957b0e68c8507481309f4a8659f00db3d remote=100.107.62.19
-- `2026-06-09 20:47:00`: stage=ship sprint=2026-06-09-offline-date-tag-repack cleanup=true removed_images=[audit-agent:latest,docker.litellm.ai/berriai/litellm:main-stable] kept_images=[audit-agent:0609,docker.litellm.ai/berriai/litellm:0609] removed_old_artifacts=[audit-agent.tar,audit-agent.tar.sha256,litellm-main-stable.tar] docker_image_prune_reclaimed=76.26MB remote=100.107.62.19
-- `2026-06-10 12:41:00`: stage=ship sprint=2026-06-10-audit-agent-repack audit_image=audit-agent:0610 image_id=90ef0e7b397f artifact=/opt/application/audit-agent/audit-agent-0610.tar sha256=576ca98b8f67548e763d0c8e4ccb9628aebd4f680c3f8f386c4265b2b4fb9470 synced_files=[server/core.py,server/platform/config.py,README.md,docker-compose.yml,.dockerignore] removed_old_audit_artifacts=[audit-agent-0609.tar,audit-agent-0609.tar.sha256] litellm_untouched=true remote=100.107.62.19
-- `2026-06-10 14:29:00`: stage=ship sprint=2026-06-10-audit-agent-repack-b2 audit_image=audit-agent:0610b2 image_id=13f9fc10d701 artifact=/opt/application/audit-agent/audit-agent-0610b2.tar sha256=3c4690d09b7a4a11486e1a36a16bd3e20ea39bc9f6de92cce6eaaf608f187d7f synced_files=[server/audit_runner.py,server/core.py,README.md,docker-compose.yml] removed_old_audit_artifacts=[audit-agent-0610.tar,audit-agent-0610.tar.sha256] litellm_untouched=true remote=100.107.62.19
-- `2026-06-10 16:47:00`: stage=ship sprint=2026-06-10-audit-agent-repack-b3 audit_image=audit-agent:0610b3 image_id=f96df1d5a343 artifact=/opt/application/audit-agent/audit-agent-0610b3.tar sha256=b913cbfa7c2fdf3deb0aef3033335289e76090674464127c6d0e02f2c9056618 synced_files=[server/core.py,docker-compose.yml] removed_old_audit_artifacts=[audit-agent-0610b2.tar,audit-agent-0610b2.tar.sha256] litellm_untouched=true remote=100.107.62.19
-- `2026-06-10 16:58:00`: stage=ship sprint=2026-06-10-audit-agent-repack-b4 audit_image=audit-agent:0610b4 image_id=9488e9173489 artifact=/opt/application/audit-agent/audit-agent-0610b4.tar sha256=8eada129609b12103bc0389e9c2f37c95da8dde681e3b9e4753466e68eaff443 synced_files=[server/core.py,docker-compose.yml] removed_old_audit_artifacts=[audit-agent-0610b3.tar,audit-agent-0610b3.tar.sha256] litellm_untouched=true remote=100.107.62.19
-- `2026-06-10 17:35:00`: stage=ship sprint=2026-06-10-audit-agent-repack-b5 audit_image=audit-agent:0610b5 image_id=33152453495e artifact=/opt/application/audit-agent/audit-agent-0610b5.tar sha256=a092c0fa9c9930954ffb7ff4b842be82da6cf3beb02a7f675760c8e9e5304ac2 synced_files=[server/audit_runner.py,server/core.py,docker-compose.yml] removed_old_audit_artifacts=[audit-agent-0610b4.tar,audit-agent-0610b4.tar.sha256] litellm_untouched=true remote=100.107.62.19
-- `2026-06-10 20:10:00`: stage=ship sprint=2026-06-10-audit-agent-repack-b6 audit_image=audit-agent:0610b6 image_id=5912467564ff artifact=/opt/application/audit-agent/audit-agent-0610b6.tar sha256=eb582a71e9e71a22b85e1074b476e03da633783ff18e208f8990a4cf9763bcdf synced_files=[server/api.py,ui/dist,ui/src/pages/TaskDetail.tsx,ui/src/types/index.ts,docker-compose.yml] removed_old_audit_artifacts=[audit-agent-0610b5.tar,audit-agent-0610b5.tar.sha256] litellm_untouched=true remote=100.107.62.19
