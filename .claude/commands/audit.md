@@ -32,7 +32,7 @@ allowed-tools: Read, Write, Glob, Skill, Task
 ## 输出契约
 
 1. 最终审核结论必须符合 `.claude/contracts/common/audit-result.schema.json`。决策只用 `verdict`（`approved` / `rejected` / `manual_review`）表达；不要输出 `result` / `conclusion`，它们由服务端从 `verdict` 派生（schema 也不接受这两个字段）。
-2. `explanation`、`reasons`、`evidence_chain` 必须使用中文。
+2. `explanation`、`reasons`、`evidence_chain` 必须使用中文，且措辞平实、专业、克制（像财务 / 审计意见）：禁用夸张或口语词（硬伤、铁证、实锤等），不堆砌技术黑话（如「Unix 纪元」「默认值占位符」），不加自我点评式括注（如「（典型占位数据）」）；字段异常直接描述现象（例「日期为 1970-01-01，疑似默认值」），定性留有余地（用「疑似 / 需人工核实」，证据不确凿不下「造假」终局结论）。
 3. `manual_review` 时，`explanation` 必须明确写出不能自动放行的原因、缺少什么材料，或哪条规则无法闭合。
 4. `manual_review` 时，必须同时填写 `manual_review_reason`，且只能从以下枚举中选择一个最贴切的原因：
    - `missing_approval`
