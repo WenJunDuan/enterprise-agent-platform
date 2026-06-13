@@ -50,7 +50,7 @@ def validate_rule_assets(root: Path | None = None) -> dict[str, Any]:
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
             validate(payload, schema)
-        except (json.JSONDecodeError, ValidationError) as exc:
+        except (json.JSONDecodeError, ValidationError, UnicodeDecodeError) as exc:
             errors.append(f"{path}: {exc}")
             continue
 
@@ -97,7 +97,7 @@ def validate_memory_assets(root: Path | None = None) -> dict[str, Any]:
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
             validate(payload, schema)
-        except (json.JSONDecodeError, ValidationError) as exc:
+        except (json.JSONDecodeError, ValidationError, UnicodeDecodeError) as exc:
             errors.append(f"{path}: {exc}")
             continue
 
