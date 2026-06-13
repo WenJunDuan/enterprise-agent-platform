@@ -309,11 +309,62 @@ def get_app_settings() -> AppSettings:
     )
 
 
+@dataclass(frozen=True, slots=True)
+class AuditSettings:
+    """内联审核行为开关。
+
+    均可经 env 在 compose 中调整、无需重建镜像；每次审核读一次（不缓存），
+    便于在部署机上改一项重启容器即生效。各字段的取舍背景：
+    - lean_context: setting_sources=[] 砍掉 .claude/CLAUDE.md 等无关系统提示，
+      减小慢/网关模型的 prefill 负担；内联审核自包含（规则+案件已注入），
+      不依赖项目设置。设 AUDIT_LEAN_CONTEXT=0 回退到加载项目设置。
+    - structured_output: True 用 SDK output_format 强制结构化输出（需模型支持
+      function calling）；默认 False 走文本模式——让模型直接输出 JSON 文本、由
+      服务端解析，兼容不支持原生 function calling 的网关模型（如 qwen，会把
+      tool_use/JSON 当文本吐导致 CLI 崩溃）。
+    - enable_read: 多模态读附件原件（发票 / 行程图片）。默认关闭以保持低延迟
+      （每次 Read 都是一次网关往返）；结构化模式本就需要 Read，故二者任一开启
+      即提供 Read 工具。
+    - contract_max_retry: 慢/网关模型在文本模式下偶发两类随机失败——半截 JSON /
+      漏填必填字段（契约校验失败），或 bundled CLI 流式解析崩溃 (exit 1)。两类都
+      对单次调用而非输入本身敏感，重跑一次（新 session）即可显著降低 flaky 率。
+      设 0 关闭重试。
+    """
+
+    lean_context: bool
+    structured_output: bool
+    enable_read: bool
+    contract_max_retry: int
+    inline_max_turns: int
+
+    @property
+    def allowed_tools(self) -> list[str]:
+        """结构化模式需要 Read；文本模式仅在显式开启核验时给 Read。"""
+        return ["Read"] if (self.structured_output or self.enable_read) else []
+
+
+def get_audit_settings() -> AuditSettings:
+    """Read inline-audit behavior knobs fresh from the environment."""
+    return AuditSettings(
+        lean_context=_env_bool("AUDIT_LEAN_CONTEXT", default=True),
+        structured_output=_env_bool("AUDIT_STRUCTURED_OUTPUT", default=False),
+        enable_read=_env_bool("AUDIT_ENABLE_READ", default=False),
+        contract_max_retry=max(0, _env_int("AUDIT_CONTRACT_MAX_RETRY", 1)),
+        inline_max_turns=_env_int("AUDIT_INLINE_MAX_TURNS", 8),
+    )
+
+
 def runtime_setting_snapshot() -> dict[str, Any]:
     """Expose settings in a JSON-serializable shape for diagnostics."""
     settings = get_app_settings()
+    audit = get_audit_settings()
     runtime = get_claude_runtime_snapshot()
     return {
+        "audit_lean_context": audit.lean_context,
+        "audit_structured_output": audit.structured_output,
+        "audit_enable_read": audit.enable_read,
+        "audit_contract_max_retry": audit.contract_max_retry,
+        "audit_inline_max_turns": audit.inline_max_turns,
         "api_host": settings.api_host,
         "api_port": settings.api_port,
         "allow_unscoped_continue_recent": settings.allow_unscoped_continue_recent,
