@@ -1,0 +1,11 @@
+{
+  "_comment": "合成模板：演示 manifest 字段与 case 目录布局。真实评测请新建一个 manifest，把 case_dir 指向 data/ 下的真实案例目录，并按一次 known-good 运行的输出校准 expected_* 字段。",
+  "cases": [
+    {
+      "case_dir": "tests/eval_fixtures/placeholder-invoice",
+      "expected_verdict": "rejected",
+      "min_risk_score": 70,
+      "note": "占位申请人/发票号/1970 日期，数据真实性应判不可信"
+    }
+  ]
+}
