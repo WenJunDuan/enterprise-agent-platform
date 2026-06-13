@@ -2,7 +2,7 @@ name: audit-agent
 
 services:
   audit-agent:
-    image: audit-agent:0611b1
+    image: audit-agent:0613b1
     build:
       context: .
     container_name: audit-agent
