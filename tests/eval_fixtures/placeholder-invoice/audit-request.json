@@ -1,0 +1,10 @@
+{
+  "claim_id": "TEST-0000",
+  "applicant": "测试",
+  "category": "travel",
+  "amount": 9999,
+  "currency": "CNY",
+  "expense_date": "1970-01-01",
+  "invoice_no": "0000000000",
+  "description": "合成评测用例，非真实报销。占位申请人 + 占位发票号 + 1970 占位日期，用于演示 golden-case 评测的 case 目录布局。"
+}
