@@ -16,10 +16,13 @@ from pathlib import Path
 
 from server.ocr import OcrDependencyError
 
-# PaddleOCR-VL：pipeline 版本 + 可选挂到已部署的 vLLM serving 后端（genai_server）
+# PaddleOCR-VL：版面分析(PP-DocLayoutV2)在本进程跑，VLM 识别下放到统一 litellm 网关。
+# 注：仅 VLM 阶段走网关；layout 阶段需本镜像内的 paddlepaddle。
 OCR_VL_PIPELINE_VERSION = os.getenv("OCR_VL_PIPELINE_VERSION", "v1.6")
 OCR_VL_BACKEND = os.getenv("OCR_VL_BACKEND", "vllm-server")
-OCR_VL_SERVER_URL = os.getenv("OCR_VL_SERVER_URL")  # 例 http://paddleocr-vl:8118/v1
+OCR_VL_SERVER_URL = os.getenv("OCR_VL_SERVER_URL")  # litellm OpenAI 端点，例 http://litellm:4000/v1
+OCR_VL_MODEL_NAME = os.getenv("OCR_VL_MODEL_NAME")  # litellm 里为 PaddleOCR-VL 注册的 model_name
+OCR_VL_MAX_CONCURRENCY = os.getenv("OCR_VL_MAX_CONCURRENCY")  # 可选，向网关并发数
 OCR_SEAL_PIPELINE = os.getenv("OCR_SEAL_PIPELINE", "seal_recognition")
 
 
@@ -36,9 +39,14 @@ def _build_vl_pipeline():
         ) from exc
     kwargs: dict = {"pipeline_version": OCR_VL_PIPELINE_VERSION}
     if OCR_VL_SERVER_URL:
-        # 把重的 VLM 推理下放到 genai_server（vLLM）；pipeline 本体只做版面编排
+        # VLM 推理走统一 litellm 网关（OpenAI 兼容）；vl_rec_api_model_name 必须等于
+        # litellm 里为 PaddleOCR-VL 注册的 model_name，否则上游 "model does not exist"。
         kwargs["vl_rec_backend"] = OCR_VL_BACKEND
         kwargs["vl_rec_server_url"] = OCR_VL_SERVER_URL
+        if OCR_VL_MODEL_NAME:
+            kwargs["vl_rec_api_model_name"] = OCR_VL_MODEL_NAME
+        if OCR_VL_MAX_CONCURRENCY:
+            kwargs["vl_rec_max_concurrency"] = int(OCR_VL_MAX_CONCURRENCY)
     return PaddleOCRVL(**kwargs)
 
 
