@@ -4,9 +4,9 @@
 version: "9.6.4"
 
 # === PACE 路由状态 ===
-path: "Quick"                     # 最后一次活动: Sprint 4 (Quick)
-stage: "ship"                     # 迁移前最后停留阶段
-current_sprint_slug: ""
+path: "Feature"                   # 最后一次活动: 2026-06-17 ocr-http-api (Feature)
+stage: "ship"                     # 最后停留阶段: 2026-06-17 ocr-http-api ship
+current_sprint_slug: "2026-06-17-ocr-http-api"
 current_roadmap_slug: ""
 skip_polish: false
 skip_architecture_check: false
@@ -52,18 +52,18 @@ counts:
   reviews_count: 22
   cleanup_count: 0
   compound:
-    learning: 1
+    learning: 2
     trick: 0
     decision: 0
     explore: 0
 # === Pointers (指向最新相关文件) ===
 pointers:
-  latest_design: "sprints/2026-04-01-serve-lifespan-and-task-store/plan.md"
+  latest_design: "sprints/2026-06-17-ocr-http-api/design.md"
   latest_review: "sprints/legacy-2026-06-02-v962-merge/reviews/pass4.md"
   latest_cleanup: ""
   latest_brainstorm: ""
   latest_decisions: []
-  latest_lessons: ["compound/2026-06-02-learning-legacy-v962-migration.md"]
+  latest_lessons: ["compound/2026-06-17-learning-classify-fix-exposes-latent-bug.md", "compound/2026-06-02-learning-legacy-v962-migration.md"]
   latest_architecture_update: ""
 
 # === PACE 联动字段 (hook 自动维护) ===
@@ -104,6 +104,14 @@ fingerprint: ""
 
 ## 当前状态
 
+2026-06-17: Sprint `2026-06-17-ocr-http-api`（Feature, 对话驱动开发, 事后补档）已 ship。
+补齐 OCR 对外 HTTP API（`POST /ocr/extract` 纯识别 + `POST /ocr/fill` 识别+回填）、
+前端 OCR 页面（左右分割, 接入 /ocr/fill）、并修复 classify 文本层误判与 pipeline
+`pages` 字段冲突。验收: 186 tests + ruff + 前端 build + 真实样例端到端。
+设计见 `sprints/2026-06-17-ocr-http-api/design.md`，交付见同目录 `ship.md`，
+教训见 `compound/2026-06-17-learning-classify-fix-exposes-latent-bug.md`。
+待办: extract-result schema 对齐 / 配 key 验真识别 / 20K 截断。代码尚未 commit。
+
 2026-06-02: 从旧扁平 `.ai_state/` 结构 (pre-v9.6.2) 迁移到 v9.6.4 骨架。
 历史 sprint 0-4 的扁平状态文件、`design/` 蓝图与全部 `reviews/` 已归并到
 `sprints/legacy-2026-06-02-v962-merge/`；带日期的 superpowers plans/specs 已按
@@ -119,16 +127,16 @@ slug 拆分为独立 sprint 目录；`lessons.md` 整体保留为
 - `docs/` — 项目参考文档 (开发指南 / 前端对接 / audit-skills)，非状态机文件
 
 ## 历史 (由 pace-continuator hook 自动追加, 最多保留近 10 条)
-- `2026-06-12 09:10:36`: stage=ship sprint=  turn-end
-- `2026-06-12 08:46:46`: stage=ship sprint=  turn-end
-- `2026-06-12 08:32:26`: stage=ship sprint=  turn-end
-- `2026-06-12 08:10:09`: stage=ship sprint=  turn-end
-- `2026-06-12 07:50:59`: stage=ship sprint=  turn-end
-- `2026-06-12 07:27:28`: stage=ship sprint=  turn-end
-- `2026-06-12 06:03:01`: stage=ship sprint=  turn-end
-- `2026-06-12 05:40:55`: stage=ship sprint=  turn-end
-- `2026-06-12 05:14:36`: stage=ship sprint=  turn-end
-- `2026-06-12 04:57:52`: stage=ship sprint=  turn-end
+- `2026-06-17 10:00:43`: stage=ship sprint=2026-06-17-ocr-http-api turn-end
+- `2026-06-17 09:53:50`: stage=ship sprint=  turn-end
+- `2026-06-17 09:51:55`: stage=ship sprint=  turn-end
+- `2026-06-17 09:48:22`: stage=ship sprint=  turn-end
+- `2026-06-17 09:31:54`: stage=ship sprint=  turn-end
+- `2026-06-17 09:13:44`: stage=ship sprint=  turn-end
+- `2026-06-17 08:51:45`: stage=ship sprint=  turn-end
+- `2026-06-17 08:40:42`: stage=ship sprint=  turn-end
+- `2026-06-17 07:39:01`: stage=ship sprint=  turn-end
+- `2026-06-17 07:17:47`: stage=ship sprint=  turn-end
 
 - 2026-06-02 [migrate] v9.6.2(legacy flat) → v9.6.4. 备份见 `.ai_state.backup-*`。
 
