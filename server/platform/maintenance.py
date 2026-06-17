@@ -14,6 +14,7 @@ from server.platform.paths import (
     APP_SERVER_STDOUT_LOG,
     MEMORY_INDEX_DB_FILE,
     LOGS_ROOT,
+    PROJECT_ROOT,
     RESULT_INDEX_DB_FILE,
     RESULT_BY_REQUEST_DIR,
     SERVICE_REQUEST_DB_FILE,
@@ -128,10 +129,12 @@ def cleanup_orphan_submission_directories(days: int, now: str | None = None) -> 
     if not submission_root.exists():
         return []
 
+    # 与 remove_submission_dir 一致：相对 case_path 对 PROJECT_ROOT 解析，不受 CWD 影响，
+    # 否则从非项目目录跑 maintenance 时活跃任务目录会漏出 known、被孤儿清理误删。
     known = {
-        str(Path(str(record["case_path"])).resolve())
+        str((Path(p) if Path(p).is_absolute() else PROJECT_ROOT / p).resolve())
         for record in list_audit_tasks_admin()
-        if record.get("case_path")
+        if (p := str(record.get("case_path") or "").strip())
     }
 
     removed: list[str] = []
