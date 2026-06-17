@@ -7,10 +7,16 @@
 #
 # The server resolves PROJECT_ROOT from the location of server/platform/paths.py,
 # so the app must run in-place from /app (deps installed, package NOT installed).
-FROM python:3.12-slim-bookworm
+# 基础镜像可参数化：内网 docker.io 被挡时走镜像源
+# （如 --build-arg BASE_IMAGE=docker.m.daocloud.io/library/python:3.12-slim-bookworm）。
+ARG BASE_IMAGE=python:3.12-slim-bookworm
+FROM ${BASE_IMAGE}
 
 ARG APP_UID=1000
 ARG APP_GID=1000
+# 文档识别(multi-ocr)依赖开关。默认 0=不装，保持 audit-only 镜像精简；
+# 构建带 OCR 的镜像用 --build-arg WITH_OCR=1（镜像 +~GB）。
+ARG WITH_OCR=0
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -29,6 +35,19 @@ RUN pip install \
       "python-multipart>=0.0.30" \
       "typer>=0.12.0" \
       "uvicorn>=0.30.0"
+
+# 可选 OCR 依赖层（文档识别 multi-ocr）。仅 --build-arg WITH_OCR=1 时装：
+# - paddlepaddle + paddleocr[doc-parser]：版面分析(PP-DocLayoutV2)在容器内本地跑，
+#   VLM 识别走 litellm 网关（OCR_VL_SERVER_URL）；
+# - openpyxl/python-docx/pypdf：原生直读 Excel/Word/文本层 PDF。
+# arm64 上 paddlepaddle wheel 可用性在构建时验证；失败则按官方索引指定 wheel 源。
+ARG WITH_OCR
+RUN if [ "$WITH_OCR" = "1" ]; then \
+      pip install \
+        paddlepaddle \
+        "paddleocr[doc-parser]>=3.4.0" \
+        openpyxl python-docx pypdf ; \
+    fi
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends gosu \
