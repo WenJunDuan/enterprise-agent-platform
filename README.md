@@ -316,7 +316,8 @@ curl -X POST http://127.0.0.1:9999/ocr/extract \
 
 > 扫描件识别需部署 PaddleOCR-VL serving + 容器内 `paddleocr`（见 `OCR_VL_SERVER_URL`）；
 > 未部署时扫描件返回 `kind=error`，Excel / 文本层 PDF / Word 等原生直读不受影响。
-> 并发上限 `MAX_CONCURRENT_OCR`（默认 2），单次硬超时 `OCR_EXTRACT_TIMEOUT_SEC`（默认 120s），
+> 并发上限 `MAX_CONCURRENT_OCR`（默认 2；识别在信号量内运行至完成、无请求级超时，靠 OCR
+> 引擎/litellm 自身超时兜底，保并发闸严格）；回填映射超时 `OCR_FILL_TIMEOUT_SEC`（默认 180s）；
 > 单文件底稿上限 `OCR_MAX_FILE_BLOCK_CHARS`（默认 40000，超长截断并显式标记，提示模型标 needs_review）。
 
 ---

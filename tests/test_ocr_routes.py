@@ -198,3 +198,23 @@ def test_extract_directory_preserves_subdir_paths(client):
         assert paths == ["a/doc.txt", "b/doc.txt"]
     finally:
         shutil.rmtree(case, ignore_errors=True)
+
+
+def test_extract_corrupt_file_isolated_as_error(client):
+    # codex round 3：损坏 xlsx（非法 zip）应标 kind=error 隔离，不让整批 500（per-file 隔离）。
+    files = [
+        ("files", ("good.txt", b"ok content", "text/plain")),
+        (
+            "files",
+            (
+                "bad.xlsx",
+                b"not a real xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            ),
+        ),
+    ]
+    resp = client.post("/ocr/extract", files=files, headers=_AUTH)
+    assert resp.status_code == 200
+    kinds = {r["path"]: r["kind"] for r in resp.json()["results"]}
+    assert kinds["good.txt"] == "text"
+    assert kinds["bad.xlsx"] == "error"
