@@ -33,3 +33,25 @@ def test_recent_orphan_dir_preserved(tmp_path, monkeypatch):
     removed = cleanup_orphan_submission_directories(days=7)  # 刚建，retention 内 → 保留
     assert str(orphan.resolve()) not in removed
     assert orphan.exists()
+
+
+def test_orphan_cleanup_resolves_known_against_project_root(tmp_path, monkeypatch):
+    # codex round 4 P2：known 用 PROJECT_ROOT（非 CWD）解析相对 case_path，
+    # 否则从非项目目录跑 maintenance 会把活跃任务目录漏出 known、误删。
+    monkeypatch.setattr("server.platform.maintenance.SUBMISSION_ROOT_DIR", tmp_path)
+    monkeypatch.setattr("server.platform.maintenance.PROJECT_ROOT", tmp_path)
+    active = tmp_path / "r1"
+    active.mkdir()
+    old = time.time() - 10 * 86400
+    os.utime(active, (old, old))
+    monkeypatch.setattr(
+        "server.platform.maintenance.list_audit_tasks_admin",
+        lambda: [{"case_path": "r1", "source_mode": "upload", "status": "running"}],
+    )
+    workdir = tmp_path / "elsewhere"
+    workdir.mkdir()
+    monkeypatch.chdir(workdir)  # CWD ≠ PROJECT_ROOT
+
+    removed = cleanup_orphan_submission_directories(days=7)
+    assert str(active.resolve()) not in removed  # 活跃任务目录（known 命中）不被误删
+    assert active.exists()

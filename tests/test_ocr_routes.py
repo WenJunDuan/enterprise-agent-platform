@@ -218,3 +218,27 @@ def test_extract_corrupt_file_isolated_as_error(client):
     kinds = {r["path"]: r["kind"] for r in resp.json()["results"]}
     assert kinds["good.txt"] == "text"
     assert kinds["bad.xlsx"] == "error"
+
+
+def test_extract_directory_rejects_symlink_escape(client, tmp_path):
+    # codex round 4 P1：directory 模式不得经子 symlink 读 case 目录外的文件。
+    case = ALLOWED_DIRECTORY_ROOT / "test-ocr-symlink-case"
+    case.mkdir(parents=True, exist_ok=True)
+    secret = tmp_path / "secret.txt"
+    secret.write_text("SECRET_OUTSIDE_DATA", encoding="utf-8")
+    (case / "normal.txt").write_text("ok", encoding="utf-8")
+    (case / "link.txt").symlink_to(secret)
+    try:
+        resp = client.post(
+            "/ocr/extract",
+            json={"mode": "directory", "directory_path": str(case)},
+            headers=_AUTH,
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        paths = [r["path"] for r in body["results"]]
+        assert "normal.txt" in paths
+        assert "link.txt" not in paths  # symlink 被跳过，不识别
+        assert "SECRET_OUTSIDE_DATA" not in body["block"]  # 目标内容未泄露
+    finally:
+        shutil.rmtree(case, ignore_errors=True)

@@ -24,7 +24,17 @@ def _iter_files(case_dir: str) -> list[Path]:
     base = Path(case_dir)
     if not base.is_dir():
         return []
-    return [p for p in sorted(base.rglob("*")) if p.is_file()]
+    base_resolved = base.resolve()
+    files: list[Path] = []
+    for p in sorted(base.rglob("*")):
+        if not p.is_file() or p.is_symlink():
+            continue  # 安全：跳过符号链接，防经 symlink 读取 case 目录外的文件
+        try:
+            p.resolve().relative_to(base_resolved)  # resolved 必须仍在 base 内
+        except ValueError:
+            continue
+        files.append(p)
+    return files
 
 
 def _recognize_with_seal(path: Path, route: dict, *, run_seal: bool) -> dict:

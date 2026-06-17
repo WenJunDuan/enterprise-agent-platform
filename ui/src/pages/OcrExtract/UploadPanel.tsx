@@ -36,14 +36,15 @@ function ExtractItemCard({ item }: { item: OcrExtractItem }) {
           </span>
         )}
       </div>
-      {item.note ? (
-        <p className="rounded border border-dashed border-gray-300 bg-gray-50 px-3 py-2 text-xs text-gray-500">
-          {item.note}
-        </p>
-      ) : item.error ? (
+      {item.error ? (
         <p className="text-xs text-red-600">识别失败：{item.error}</p>
       ) : (
         <>
+          {item.note && (
+            <p className="rounded border border-dashed border-gray-300 bg-gray-50 px-3 py-2 text-xs text-gray-500">
+              {item.note}
+            </p>
+          )}
           {item.pages?.map((page, i) => (
             <pre
               key={`page-${i}`}
