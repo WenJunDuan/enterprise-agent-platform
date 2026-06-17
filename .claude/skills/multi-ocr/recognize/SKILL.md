@@ -11,9 +11,9 @@ description: 对扫描 PDF / 图片 / 图片型 Word 调用 PaddleOCR-VL 完整 
 
 实现：`server/ocr/engine.py:recognize`（模型/端点/参数见 `references/engines.md`）。
 
-- 默认模型 `PaddleOCR-VL-1.6`（当前 OmniDocBench v1.6 SOTA），经 env `OCR_VL_MODEL` 可调。
+- pipeline 版本默认 `v1.6`（OmniDocBench v1.6 SOTA），经 env `OCR_VL_PIPELINE_VERSION` 可调。
 - **必须走完整 pipeline（版面+VLM），不要只打裸 VLM 端点**，否则易掉精度/幻觉（官方明确提示）。
-- vLLM/SGLang 加速后端地址经 env `OCR_VL_BACKEND_URL` 注入。
+- 已部署的 vLLM serving 后端经 env `OCR_VL_SERVER_URL`（+ `OCR_VL_BACKEND=vllm-server`）注入。
 
 ## 输出
 

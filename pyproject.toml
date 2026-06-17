@@ -18,6 +18,16 @@ dependencies = [
     "uvicorn>=0.30.0",
 ]
 
+[project.optional-dependencies]
+# 文档识别(multi-ocr)用：原生直读的纯 Python 依赖（Excel/Word/文本层 PDF）。
+# OCR 引擎 paddleocr[doc-parser] / paddlex 因需配 paddlepaddle-gpu(CUDA/昇腾专版)
+# 单独装，见 .claude/skills/multi-ocr/references/engines.md。
+ocr = [
+    "openpyxl>=3.1",
+    "python-docx>=1.1",
+    "pypdf>=5.0",
+]
+
 [project.scripts]
 app-server = "server.cli:app"
 
