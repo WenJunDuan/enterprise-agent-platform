@@ -354,6 +354,34 @@ def get_audit_settings() -> AuditSettings:
     )
 
 
+@dataclass(frozen=True, slots=True)
+class OcrSettings:
+    """文档识别 → 表单回填的运行开关（env 可调，每次读一次）。
+
+    服务端走"内联单跳"：确定性流水线（分类 + 直读 + 调 OCR）在 server.ocr 进程内跑完，
+    只把识别底稿内联给模型做一次"字段映射"判断——对齐 audit_runner，砍掉逐文件 Bash 往返。
+    - allowed_tools: 映射阶段全部输入已内联，**不需要任何工具**（无 Bash / Read），网关往返压到 1。
+    - max_turns: 单次映射应答即可，给极小轮数。
+    - contract_max_retry: 慢 / 网关模型偶发半截 JSON 或漏字段，重跑一次降 flaky。
+    """
+
+    max_turns: int
+    contract_max_retry: int
+
+    @property
+    def allowed_tools(self) -> list[str]:
+        """映射输入全内联，无需任何工具。"""
+        return []
+
+
+def get_ocr_settings() -> OcrSettings:
+    """Read doc-extract / form-fill behavior knobs fresh from the environment."""
+    return OcrSettings(
+        max_turns=_env_int("OCR_MAX_TURNS", 4),
+        contract_max_retry=max(0, _env_int("OCR_CONTRACT_MAX_RETRY", 1)),
+    )
+
+
 def runtime_setting_snapshot() -> dict[str, Any]:
     """Expose settings in a JSON-serializable shape for diagnostics."""
     settings = get_app_settings()
