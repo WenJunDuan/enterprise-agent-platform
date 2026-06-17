@@ -16,24 +16,29 @@ from pathlib import Path
 
 from server.ocr import OcrDependencyError
 
-# PaddleOCR-VL-1.6：当前 OmniDocBench v1.6 SOTA；版本/后端经 env 可调
-OCR_VL_MODEL = os.getenv("OCR_VL_MODEL", "PaddleOCR-VL-1.6")
-OCR_VL_BACKEND_URL = os.getenv("OCR_VL_BACKEND_URL")  # 例 http://paddleocr-vl:8118/v1
+# PaddleOCR-VL：pipeline 版本 + 可选挂到已部署的 vLLM serving 后端（genai_server）
+OCR_VL_PIPELINE_VERSION = os.getenv("OCR_VL_PIPELINE_VERSION", "v1.6")
+OCR_VL_BACKEND = os.getenv("OCR_VL_BACKEND", "vllm-server")
+OCR_VL_SERVER_URL = os.getenv("OCR_VL_SERVER_URL")  # 例 http://paddleocr-vl:8118/v1
 OCR_SEAL_PIPELINE = os.getenv("OCR_SEAL_PIPELINE", "seal_recognition")
 
 
 def _build_vl_pipeline():
-    """构造 PaddleOCR-VL 完整 pipeline。参数名以安装版本为准。"""
+    """构造 PaddleOCR-VL 完整 pipeline，可选挂到已部署的 vLLM serving 后端。
+
+    API 对齐 PaddleOCR 3.x 官方文档：pipeline_version + vl_rec_backend + vl_rec_server_url。
+    """
     try:
         from paddleocr import PaddleOCRVL
     except ImportError as exc:
         raise OcrDependencyError(
-            "缺少 paddleocr：在 OCR venv 内 pip install 'paddleocr[doc-parser]>=3.4.0'"
+            "缺少 paddleocr：audit-agent 容器内 pip install 'paddleocr[doc-parser]>=3.4.0'"
         ) from exc
-    kwargs: dict = {}
-    if OCR_VL_BACKEND_URL:
-        # 用 vLLM/SGLang 后端加速；具体关键字以版本为准，POC 核对
-        kwargs["vl_rec_backend_url"] = OCR_VL_BACKEND_URL
+    kwargs: dict = {"pipeline_version": OCR_VL_PIPELINE_VERSION}
+    if OCR_VL_SERVER_URL:
+        # 把重的 VLM 推理下放到 genai_server（vLLM）；pipeline 本体只做版面编排
+        kwargs["vl_rec_backend"] = OCR_VL_BACKEND
+        kwargs["vl_rec_server_url"] = OCR_VL_SERVER_URL
     return PaddleOCRVL(**kwargs)
 
 
@@ -45,19 +50,27 @@ def _build_seal_pipeline():
     return create_pipeline(pipeline=OCR_SEAL_PIPELINE)
 
 
+def _page_markdown(res) -> str:
+    """res.markdown 是 dict（keys: markdown_texts / markdown_images / page_continuation_flags）。"""
+    markdown = getattr(res, "markdown", None)
+    if isinstance(markdown, dict):
+        return markdown.get("markdown_texts", "")
+    return markdown or ""
+
+
 def recognize(path: Path) -> dict:
-    """扫描件 → 每页 markdown + layout（PaddleOCR-VL 完整 pipeline）。"""
+    """扫描件 → 每页 markdown + 版面（PaddleOCR-VL 完整 pipeline）。"""
     results = _build_vl_pipeline().predict(str(path))
     pages = []
     for res in results:
         data = res.json if hasattr(res, "json") else {}
         pages.append(
             {
-                "markdown": getattr(res, "markdown", "") or data.get("markdown", ""),
-                "layout": data.get("layout", data.get("parsing_res_list", [])),
+                "markdown": _page_markdown(res),
+                "layout": data.get("parsing_res_list", data.get("layout", [])),
             }
         )
-    return {"kind": "ocr", "model": OCR_VL_MODEL, "pages": pages}
+    return {"kind": "ocr", "pipeline_version": OCR_VL_PIPELINE_VERSION, "pages": pages}
 
 
 def recognize_seal(path: Path) -> dict:
