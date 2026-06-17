@@ -2,7 +2,7 @@
 
 Provides ClaudeRuntimeError, AgentRunMeta, build_options, and the streaming
 run_agent / run_agent_full entrypoints.  The JSON structured-output entrypoint
-lives in server.json_bridge (to keep files ≤ 300 lines).
+lives in server.common.json_bridge (to keep files ≤ 300 lines).
 
 Import these symbols from server.core (the public facade) — do not import
 from this module directly in application code.
@@ -29,7 +29,7 @@ from server.platform.config import (
 )
 from server.platform.logging_setup import logging_context
 from server.platform.paths import PROJECT_ROOT, ensure_local_layout
-from server.session_logging import SessionLogger, _log_bridge_failure, _log_cli_stderr
+from server.common.session_logging import SessionLogger, _log_bridge_failure, _log_cli_stderr
 from server.stores.session_store import (
     SessionRecord,
     append_session_record,

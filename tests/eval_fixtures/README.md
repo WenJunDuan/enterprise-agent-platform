@@ -6,7 +6,7 @@
 ## 运行（在部署机，需要可用的模型网关）
 
 ```bash
-uv run python -m server.audit_eval --manifest tests/eval_fixtures/golden_manifest.json
+uv run python -m server.audit.eval --manifest tests/eval_fixtures/golden_manifest.json
 ```
 
 - 全部 case 的 `verdict`（及可选的 `manual_review_reason` / `risk_score` 区间）

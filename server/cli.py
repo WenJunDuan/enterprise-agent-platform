@@ -10,7 +10,7 @@ from typing import Any
 import typer
 import uvicorn
 
-from server.command_adapter import run_command_full, run_command_json
+from server.common.command_adapter import run_command_full, run_command_json
 from server.core import (
     AgentRunMeta,
     ClaudeRuntimeError,

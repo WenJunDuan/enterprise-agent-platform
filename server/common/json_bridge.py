@@ -17,13 +17,13 @@ from claude_agent_sdk import (
     TextBlock,
     query,
 )
-from server.agent_bridge import (
+from server.common.agent_bridge import (
     AgentRunMeta,
     _extract_system_session_id,
     _resolve_session_ids,
     build_options,
 )
-from server.audit_contract import (
+from server.audit.contract import (
     DEFAULT_OUTPUT_SCHEMA_NAME,
     JSONContractError,
     StructuredJSON,
@@ -33,7 +33,7 @@ from server.audit_contract import (
     validate_structured_output_semantics,
 )
 from server.platform.logging_setup import logging_context
-from server.session_logging import SessionLogger, _log_bridge_failure
+from server.common.session_logging import SessionLogger, _log_bridge_failure
 from server.stores.result_store import archive_result_payload
 from server.stores.session_store import (
     SessionRecord,

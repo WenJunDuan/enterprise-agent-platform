@@ -9,7 +9,7 @@ band) against a golden expectation. Use it as a safety net before changing
 The scoring is pure and unit-tested. The runner needs a live model gateway, so
 run it on the deployment host (not in CI):
 
-    uv run python -m server.audit_eval --manifest tests/eval_fixtures/golden_manifest.json
+    uv run python -m server.audit.eval --manifest tests/eval_fixtures/golden_manifest.json
 
 Real cases live under ``data/`` (gitignored); point ``--manifest`` at a file that
 references them. The committed fixture under ``tests/eval_fixtures/`` is a
@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from server.audit_runner import run_inline_directory_audit
+from server.audit.runner import run_inline_directory_audit
 
 _VALID_VERDICTS = {"approved", "rejected", "manual_review"}
 
