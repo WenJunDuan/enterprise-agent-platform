@@ -305,8 +305,10 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 
 from server.routes import audit as _audit_routes  # noqa: E402
 from server.routes import health as _health_routes  # noqa: E402
+from server.routes import ocr as _ocr_routes  # noqa: E402
 
 app.include_router(_audit_routes.router, prefix="/audit")
+app.include_router(_ocr_routes.router, prefix="/ocr")
 app.include_router(_health_routes.router)
 
 

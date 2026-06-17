@@ -1,0 +1,145 @@
+"""Integration tests for the OCR extract route (POST /ocr/extract).
+
+纯识别端点：上传 / 目录 → 确定性识别底稿。用 native 文件（txt）测，不依赖
+paddleocr；扫描件 OCR 引擎路径需部署 serving，不在单测覆盖。
+"""
+
+from __future__ import annotations
+
+import json
+import shutil
+
+import pytest
+from fastapi.testclient import TestClient
+
+from server.routes.upload_helpers import ALLOWED_DIRECTORY_ROOT
+
+_TOKEN = "test-fake-token-acme-ocr"
+_AUTH = {"Authorization": f"Bearer {_TOKEN}"}
+
+
+@pytest.fixture
+def client(monkeypatch):
+    """TestClient with a patched tenant key (no default-key 503 guard)."""
+    monkeypatch.setattr("server.api.TENANT_KEYS", {"acme": _TOKEN})
+    import server.api as api_module
+
+    monkeypatch.setattr(api_module, "tenant_keys_are_default", lambda: False)
+    monkeypatch.setenv("ALLOW_INSECURE_DEFAULT_TENANT_KEY", "")
+    return TestClient(api_module.app)
+
+
+def test_extract_upload_native_text_returns_results(client):
+    files = [("files", ("note.txt", "报销说明：差旅费 880 元".encode(), "text/plain"))]
+    resp = client.post("/ocr/extract", files=files, headers=_AUTH)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["request_id"]
+    assert len(body["results"]) == 1
+    item = body["results"][0]
+    assert item["kind"] == "text"
+    assert item["route"] == "native"
+    assert "差旅费" in body["block"]
+
+
+def test_extract_multiple_files(client):
+    files = [
+        ("files", ("a.txt", b"first file", "text/plain")),
+        ("files", ("b.txt", b"second file", "text/plain")),
+    ]
+    resp = client.post("/ocr/extract", files=files, headers=_AUTH)
+    assert resp.status_code == 200
+    assert len(resp.json()["results"]) == 2
+
+
+def test_extract_unknown_type_marked_manual(client):
+    # 不在白名单的扩展名 → classify 判 manual，不报错也不调引擎。
+    files = [("files", ("weird.xyz", b"opaque bytes", "application/octet-stream"))]
+    resp = client.post("/ocr/extract", files=files, headers=_AUTH)
+    assert resp.status_code == 200
+    assert resp.json()["results"][0]["kind"] == "manual"
+
+
+def test_extract_requires_auth(client):
+    files = [("files", ("a.txt", b"x", "text/plain"))]
+    resp = client.post("/ocr/extract", files=files)  # no Authorization header
+    assert resp.status_code == 401
+
+
+def test_extract_empty_upload_rejected(client):
+    # multipart 但没有 files 字段 → 400
+    resp = client.post(
+        "/ocr/extract",
+        files=[("other", ("x.txt", b"x", "text/plain"))],
+        headers=_AUTH,
+    )
+    assert resp.status_code == 400
+
+
+def test_extract_directory_mode(client):
+    case = ALLOWED_DIRECTORY_ROOT / "test-ocr-route-case"
+    case.mkdir(parents=True, exist_ok=True)
+    (case / "doc.txt").write_text("目录模式识别内容", encoding="utf-8")
+    try:
+        resp = client.post(
+            "/ocr/extract",
+            json={"mode": "directory", "directory_path": str(case)},
+            headers=_AUTH,
+        )
+        assert resp.status_code == 200
+        assert resp.json()["results"][0]["kind"] == "text"
+    finally:
+        shutil.rmtree(case, ignore_errors=True)
+
+
+def test_extract_directory_outside_root_rejected(client):
+    resp = client.post(
+        "/ocr/extract",
+        json={"mode": "directory", "directory_path": "/etc"},
+        headers=_AUTH,
+    )
+    assert resp.status_code == 400
+
+
+def test_extract_unsupported_content_type(client):
+    resp = client.post(
+        "/ocr/extract",
+        content=b"raw payload",
+        headers={**_AUTH, "Content-Type": "text/plain"},
+    )
+    assert resp.status_code == 415
+
+
+# ── /ocr/fill（识别 + 表单回填，映射阶段 mock 掉模型）─────────────────────────
+
+
+def test_fill_returns_recognized_and_filled(client, monkeypatch):
+    async def fake_map(block, form_schema, *, request_id, tenant=None, **opts):
+        assert "差旅" in block  # 真实识别底稿确实喂进了映射
+        return {
+            "fields": [{"key": "项目名称", "component": "single_line", "value": "X", "confidence": 0.9}],
+            "sub_tables": [],
+            "needs_review": False,
+        }
+
+    monkeypatch.setattr("server.routes.ocr.map_extraction_to_form", fake_map)
+    files = [("files", ("note.txt", "差旅费 880 元".encode(), "text/plain"))]
+    data = {"form_schema": json.dumps({"fields": [{"key": "项目名称", "component": "single_line"}]})}
+    resp = client.post("/ocr/fill", files=files, data=data, headers=_AUTH)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["results"][0]["kind"] == "text"  # 左栏底稿来自真实识别
+    assert "block" in body
+    assert body["fill"]["fields"][0]["key"] == "项目名称"  # 右栏回填来自映射
+
+
+def test_fill_requires_form_schema(client):
+    files = [("files", ("a.txt", b"x", "text/plain"))]
+    resp = client.post("/ocr/fill", files=files, headers=_AUTH)  # 缺 form_schema
+    assert resp.status_code == 400
+
+
+def test_fill_requires_auth(client):
+    files = [("files", ("a.txt", b"x", "text/plain"))]
+    resp = client.post("/ocr/fill", files=files, data={"form_schema": "{}"})  # 无 token
+    assert resp.status_code == 401

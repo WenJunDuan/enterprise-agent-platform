@@ -180,3 +180,75 @@ export interface SubmissionSummary {
   form: SubmitFormData
   attachments: AttachmentSummary[]
 }
+
+// ── OCR 文档识别 → 表单回填 ──────────────────────────────────────────────
+// 类型对齐 .claude/contracts/ocr/*.schema.json。后端 OCR HTTP 路由尚未实现，
+// 当前 OCR 页面使用 mock 数据；契约稳定，类型可直接复用到真实调用。
+
+export type OcrItemKind = 'excel' | 'word' | 'text' | 'pdf_text' | 'ocr' | 'seal' | 'manual' | 'error'
+export type OcrRoute = 'native' | 'ocr' | 'manual'
+
+/** 识别底稿单文件产物，对应 ocr/extract-result.schema.json。 */
+export interface OcrExtractItem {
+  path: string
+  kind: OcrItemKind
+  route?: OcrRoute
+  blocks?: string[]
+  tables?: { name?: string; rows: string[][] }[]
+  seals?: OcrSeal[]
+  error?: string
+  note?: string
+  [key: string]: unknown
+}
+
+export interface OcrSeal {
+  bbox?: number[]
+  shape?: string
+  text?: string
+  color?: string
+  confidence?: number
+}
+
+export type FormComponent = 'single_line' | 'multi_line' | 'select' | 'number' | 'date' | 'sub_table'
+
+/** 回填到目标表单的单个字段，对应 ocr/form-fill.schema.json 的 fields[]。 */
+export interface FormFillField {
+  key: string
+  component: FormComponent
+  value: unknown
+  confidence: number
+  source?: string
+}
+
+/** 付款节点等子表，对应 form-fill 契约的 sub_tables[]。 */
+export interface FormFillSubTable {
+  key: string
+  columns?: string[]
+  rows: Record<string, unknown>[]
+}
+
+/** 表单回填结果，对应 .claude/contracts/ocr/form-fill.schema.json。 */
+export interface FormFillResult {
+  request_id?: string
+  form_id?: string
+  fields: FormFillField[]
+  sub_tables: FormFillSubTable[]
+  low_confidence?: string[]
+  needs_review: boolean
+  evidence?: { source: string; finding: string }[]
+}
+
+/** POST /ocr/extract 的同步响应：每文件识别底稿 + 组装文本。 */
+export interface OcrExtractResponse {
+  request_id: string
+  results: OcrExtractItem[]
+  block: string
+}
+
+/** POST /ocr/fill 的同步响应：识别底稿（左栏）+ 表单回填（右栏）一次返回。 */
+export interface OcrFillResponse {
+  request_id: string
+  results: OcrExtractItem[]
+  block: string
+  fill: FormFillResult
+}

@@ -266,8 +266,12 @@ journalctl -u enterprise-agent -f
 | 方法 | 路径 | 用途 |
 | --- | --- | --- |
 | `POST` | `/audit/submit` | 提交审核（`directory` 或 `upload` 模式） |
+| `GET` | `/audit/tasks` | 列出任务（按 `status` 过滤，分页 `limit`/`offset`） |
 | `GET` | `/audit/tasks/{id}` | 轮询任务状态（`accepted`/`running`/`completed`/`failed`） |
-| `GET` | `/audit/tasks/{id}/result` | 拉取最终审核结果 |
+| `GET` | `/audit/tasks/{id}/result` | 拉取最终审核结果（仅 `completed`，否则 `409`） |
+| `POST` | `/audit/tasks/{id}/retry` | 重新审核（任务非 `running` 时可重试） |
+| `DELETE` | `/audit/tasks/{id}` | 删除任务并清理上传落盘（`running` 时拒绝） |
+| `POST` | `/ocr/extract` | **OCR 纯识别（同步）**：上传文档或 `data/` 目录 → 结构化识别底稿 |
 | `GET` | `/health` | 健康探活（非 ok 返 `503`） |
 
 异步流程：`submit` 拿 `request_id` → 轮询 `tasks/{id}` 到终态 → `completed` 时取 `result`。前端对接细节见 [`.ai_state/docs/前端审核服务对接文档.md`](.ai_state/docs/前端审核服务对接文档.md)。
@@ -289,6 +293,31 @@ curl -X POST http://127.0.0.1:9999/audit/submit \
   -F 'form_json={"case_id":"demo-001","invoice_ocr":{"invoice_no":"012","amount":880}}' \
   -F 'files=@/path/to/attachment.pdf'
 ```
+
+### OCR 纯识别（`POST /ocr/extract`，同步）
+
+给外部系统**单独调 OCR** 的入口：上传文档（`upload` multipart）或指定 `data/` 下目录
+（`directory` JSON），**同步**返回每文件结构化识别底稿（`results`，符合
+`contracts/ocr/extract-result.schema.json`：除 `path`/`kind`/`route`/`blocks`/`tables`/`pages`
+外还含 `container`/`handler`/`has_text_layer`/`page_count`/`reason` 等分诊字段）+ 组装文本（`block`）。
+纯确定性识别，**不做表单回填、不调模型**；每文件错误隔离（单个失败标 `kind=error`，整体仍 `200`）。
+
+```bash
+# upload 模式（files 1~N 个；可选 ?run_seal=true 追加印章识别）
+curl -X POST http://127.0.0.1:9999/ocr/extract \
+  -H "Authorization: Bearer sk-your-token" \
+  -F 'files=@/path/to/scan.pdf' -F 'files=@/path/to/table.xlsx'
+
+# directory 模式（目录须在项目根 data/ 下）
+curl -X POST http://127.0.0.1:9999/ocr/extract \
+  -H "Authorization: Bearer sk-your-token" -H "Content-Type: application/json" \
+  -d '{"mode":"directory","directory_path":"data/your-case"}'
+```
+
+> 扫描件识别需部署 PaddleOCR-VL serving + 容器内 `paddleocr`（见 `OCR_VL_SERVER_URL`）；
+> 未部署时扫描件返回 `kind=error`，Excel / 文本层 PDF / Word 等原生直读不受影响。
+> 并发上限 `MAX_CONCURRENT_OCR`（默认 2），单次硬超时 `OCR_EXTRACT_TIMEOUT_SEC`（默认 120s），
+> 单文件底稿上限 `OCR_MAX_FILE_BLOCK_CHARS`（默认 40000，超长截断并显式标记，提示模型标 needs_review）。
 
 ---
 

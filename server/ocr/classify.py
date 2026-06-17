@@ -18,17 +18,18 @@ PDF_EXT = {".pdf"}
 
 # DOCX 判文本型：正文字符数低于此值且含嵌入图 → 视为图片/扫描型
 DOCX_MIN_TEXT_CHARS = 200
-# 扫描 PDF 经验阈值：单页字节 > 200KB 且无字体 → 图像页
-PDF_SCANNED_KB_PER_PAGE = 200
-
-
 def _probe_pdf(data: bytes) -> dict:
-    """字节级探测 PDF：是否含文本层（字体）vs 扫描图像。"""
+    """字节级探测 PDF 是否含文本层。
+
+    判据用 `fonts > 0`：PDF 渲染文本必须嵌入/引用字体，纯扫描件（整页图像）通常 0 字体。
+    不用字节大小做判据——电子文档可含大图（印章 / 图表）但仍有文本层；曾用 kb/page 阈值
+    把可直读的电子证照（如备案证，单页 ~378KB 但有字体、可抽 570 字符）误判成扫描件、
+    白送 OCR（慢且有损）。
+    """
     pages = max(1, len(re.findall(rb"/Type\s*/Page[^s]", data)))
     fonts = len(re.findall(rb"/Font", data))
     image_filters = len(re.findall(rb"/DCTDecode|/JPXDecode|/CCITTFaxDecode", data))
-    kb_per_page = len(data) / pages / 1024
-    has_text = fonts > 0 and kb_per_page < PDF_SCANNED_KB_PER_PAGE
+    has_text = fonts > 0
     return {
         "pages": pages,
         "has_text_layer": has_text,
@@ -54,13 +55,15 @@ def _probe_docx(path: Path) -> dict:
     return {"has_text_layer": has_text, "scanned": bool(media) and not has_text}
 
 
-def _route(container, route, handler, has_text, reason, pages=None) -> dict:
+def _route(container, route, handler, has_text, reason, page_count=None) -> dict:
     return {
         "container": container,
         "route": route,
         "handler": handler,
         "has_text_layer": has_text,
-        "pages": pages,
+        # 页数（int）。刻意命名 page_count 而非 pages —— OCR 引擎产物里的 pages 是
+        # list[每页内容]，同名会让下游 _render_body 把整数当列表迭代而崩。
+        "page_count": page_count,
         "reason": reason,
     }
 

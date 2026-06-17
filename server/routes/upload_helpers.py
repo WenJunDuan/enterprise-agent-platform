@@ -154,3 +154,27 @@ async def materialize_upload_submission(
         raise
 
     return serialize_case_path(case_dir)
+
+
+async def materialize_ocr_upload(*, request_id: str, files: list[Any]) -> str:
+    """Write uploaded files (no metadata sidecar) to a new submission directory.
+
+    与 materialize_upload_submission 的区别：OCR 纯识别只需要原始文件，**不写**
+    audit-request.json —— 否则该 sidecar 会被 extract_dir 当成待识别文件，污染结果。
+
+    Returns the serialized case path (project-relative string).
+    """
+    if not files:
+        raise HTTPException(status_code=400, detail="ocr extract requires at least one file")
+    case_dir = SUBMISSION_ROOT_DIR / request_id
+    case_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        for index, upload in enumerate(files, start=1):
+            safe_name = sanitize_upload_name(getattr(upload, "filename", "") or "", index)
+            content = await upload.read()
+            validate_upload_bytes(content)
+            (case_dir / safe_name).write_bytes(content)
+    except Exception:
+        shutil.rmtree(case_dir, ignore_errors=True)
+        raise
+    return serialize_case_path(case_dir)

@@ -1,18 +1,42 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "ocr_extract_result",
+  "description": "单文件确定性识别产物。pipeline 在 L1 分诊字段(container/route/handler/...)基础上合并原生直读 / OCR 引擎结果。additionalProperties:true 容许 pipeline 演进时新增诊断字段而不破坏契约。",
   "type": "object",
-  "additionalProperties": false,
+  "additionalProperties": true,
   "properties": {
     "path": { "type": "string" },
     "kind": {
       "type": "string",
-      "enum": ["excel", "word", "text", "pdf_text", "ocr", "seal"]
+      "enum": ["excel", "word", "text", "pdf_text", "ocr", "seal", "manual", "error"]
     },
     "route": {
       "type": "string",
       "enum": ["native", "ocr", "manual"]
     },
+    "container": {
+      "type": "string",
+      "description": "L1 容器分诊类型(excel/text/image/word/pdf/unknown)"
+    },
+    "handler": {
+      "type": "string",
+      "description": "选定处理器(excel/text/image/word/word_scan/pdf_text/pdf_scan/unknown)"
+    },
+    "has_text_layer": {
+      "type": "boolean",
+      "description": "PDF/DOCX 是否含文本层(决定 native vs ocr)"
+    },
+    "page_count": {
+      "type": ["integer", "null"],
+      "description": "页数(int)。区别于 OCR 的 pages(每页内容 list)；非 PDF 为 null"
+    },
+    "reason": { "type": "string", "description": "分诊判定理由" },
+    "pipeline_version": {
+      "type": "string",
+      "description": "OCR 引擎 pipeline 版本(仅 kind=ocr)"
+    },
+    "error": { "type": "string", "description": "识别失败原因(仅 kind=error)" },
+    "note": { "type": "string", "description": "补充说明(如扫描件占位提示)" },
     "blocks": {
       "type": "array",
       "items": { "type": "string" }

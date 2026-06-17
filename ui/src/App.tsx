@@ -4,6 +4,7 @@ import Layout from './components/Layout'
 import TaskList from './pages/TaskList'
 import SubmitExpense from './pages/SubmitExpense'
 import TaskDetail from './pages/TaskDetail'
+import OcrExtract from './pages/OcrExtract'
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state = { error: null }
@@ -47,6 +48,7 @@ export default function App() {
           <Route element={<Layout />}>
             <Route index element={<TaskList />} />
             <Route path="submit" element={<SubmitExpense />} />
+            <Route path="ocr" element={<OcrExtract />} />
             <Route path="tasks/:id" element={<TaskDetail />} />
             <Route path="*" element={<NotFound />} />
           </Route>
