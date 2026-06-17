@@ -56,6 +56,20 @@ def test_text_pdf_routes_native(tmp_path):
     assert result["handler"] == "pdf_text"
 
 
+def test_text_pdf_with_large_embedded_image_routes_native(tmp_path):
+    # 回归：有字体（文本层）但单页大 + 含图（电子证照 / 盖章场景）→ 必须判 native。
+    # 历史 bug：kb/page > 200 阈值会把这类可直读电子文档误判成扫描件、白送 OCR。
+    data = (
+        b"%PDF-1.4\n/Type /Page\n/Font /Helvetica\nBT (filing) Tj ET\n/DCTDecode\n"
+        + b"\x00" * 300_000
+    )
+    path = tmp_path / "filing.pdf"
+    path.write_bytes(data)
+    result = classify(path)
+    assert result["route"] == "native"
+    assert result["handler"] == "pdf_text"
+
+
 def test_text_docx_routes_native(tmp_path):
     # 正文文字充足、无嵌入图 → 文本型
     path = tmp_path / "text.docx"

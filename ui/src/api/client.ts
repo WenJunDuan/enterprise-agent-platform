@@ -1,4 +1,11 @@
-import type { AuditTask, AuditResult, HealthResponse, SubmitAcceptedResponse } from '../types'
+import type {
+  AuditTask,
+  AuditResult,
+  HealthResponse,
+  OcrExtractResponse,
+  OcrFillResponse,
+  SubmitAcceptedResponse,
+} from '../types'
 
 const RAW_BASE = (import.meta.env.VITE_API_BASE as string | undefined) || '/'
 const RAW_TENANT_TOKEN = (import.meta.env.VITE_TENANT_TOKEN as string | undefined) || ''
@@ -130,4 +137,39 @@ export async function deleteTask(id: string): Promise<void> {
     headers: authHeaders(),
   })
   if (!res.ok) await handleResponse(res)
+}
+
+// ── OCR 纯识别（POST /ocr/extract，同步）────────────────────────────────
+//
+// 后端已实现「纯识别」端点：上传文档 → 同步返回结构化识别底稿（results + block）。
+// 注：此端点只做确定性识别，**不含表单回填（form-fill）**；OCR 页面右栏的回填结果
+// 目前仍是演示数据，需另接回填端点（后端暂未实现）。
+
+/** 同步纯识别：上传文档 → 结构化识别底稿（每文件 results + 组装 block）。 */
+export async function extractOcr(files: File[], runSeal = false): Promise<OcrExtractResponse> {
+  const body = new FormData()
+  for (const file of files) body.append('files', file)
+  const res = await fetch(url(`/ocr/extract${runSeal ? '?run_seal=true' : ''}`), {
+    method: 'POST',
+    headers: authHeaders(),
+    body,
+  })
+  return handleResponse<OcrExtractResponse>(res)
+}
+
+/** 同步识别 + 表单回填：上传文档 + 目标表单 schema → 底稿 + 回填结果（POST /ocr/fill）。 */
+export async function fillOcr(
+  files: File[],
+  formSchema: unknown,
+  runSeal = false,
+): Promise<OcrFillResponse> {
+  const body = new FormData()
+  body.append('form_schema', JSON.stringify(formSchema))
+  for (const file of files) body.append('files', file)
+  const res = await fetch(url(`/ocr/fill${runSeal ? '?run_seal=true' : ''}`), {
+    method: 'POST',
+    headers: authHeaders(),
+    body,
+  })
+  return handleResponse<OcrFillResponse>(res)
 }

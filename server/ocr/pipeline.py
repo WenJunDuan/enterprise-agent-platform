@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 
 from server.ocr import OcrError
@@ -16,8 +17,8 @@ from server.ocr.native import native_read
 
 logger = logging.getLogger(__name__)
 
-# 单文件底稿截断上限，防超大扫描件撑爆映射 prompt
-MAX_FILE_BLOCK_CHARS = 20000
+# 单文件底稿截断上限，防超大扫描件撑爆映射 prompt。可经 env 调大（部署机 136 页合同场景）。
+MAX_FILE_BLOCK_CHARS = int(os.getenv("OCR_MAX_FILE_BLOCK_CHARS", "40000"))
 
 
 def _iter_files(case_dir: str) -> list[Path]:
@@ -62,8 +63,11 @@ def _render_tables(tables: list[dict]) -> str:
 def _render_body(result: dict) -> str:
     if result.get("error"):
         return f"[识别失败] {result['error']}"
-    if result.get("pages"):
-        return "\n".join(page.get("markdown", "") for page in result["pages"])
+    # pages 仅指 OCR 引擎产物（list[每页 {markdown}]）；native 文件的页数在 page_count，
+    # 不在此。isinstance 守卫防止把页数整数误当列表迭代。
+    pages = result.get("pages")
+    if isinstance(pages, list) and pages:
+        return "\n".join(page.get("markdown", "") for page in pages)
     if result.get("tables"):
         return _render_tables(result["tables"])
     if result.get("blocks"):
@@ -72,12 +76,23 @@ def _render_body(result: dict) -> str:
 
 
 def build_extraction_block(results: list[dict]) -> str:
-    """把结构化产物组装成内联文本底稿，供模型做字段映射。"""
+    """把结构化产物组装成内联文本底稿，供模型做字段映射。
+
+    单文件超过 MAX_FILE_BLOCK_CHARS 时截断并**显式标记**——避免静默丢掉尾部内容
+    （如合同付款节点）让模型误以为底稿完整。截断段提示模型对相关字段标 needs_review。
+    """
     parts: list[str] = []
     for result in results:
         name = Path(result.get("path", "?")).name
         head = f"### 文件: {name} (kind={result.get('kind')}, route={result.get('route')})"
-        body = _render_body(result)[:MAX_FILE_BLOCK_CHARS]
+        full_body = _render_body(result)
+        body = full_body[:MAX_FILE_BLOCK_CHARS]
+        if len(full_body) > MAX_FILE_BLOCK_CHARS:
+            body += (
+                f"\n\n...[内容已截断：本文件共 {len(full_body)} 字符，仅保留前 "
+                f"{MAX_FILE_BLOCK_CHARS}；尾部信息（如合同付款节点）可能丢失，"
+                f"相关字段请标 low_confidence / needs_review]"
+            )
         seals = result.get("seals")
         if seals:
             head += f" [检出印章 {len(seals)} 枚]"

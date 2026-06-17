@@ -22,6 +22,8 @@ _BASELINE_ROUTES: list[tuple[str, tuple[str, ...]]] = [
     ("/docs", ("GET", "HEAD")),
     ("/docs/oauth2-redirect", ("GET", "HEAD")),
     ("/health", ("GET",)),
+    ("/ocr/extract", ("POST",)),
+    ("/ocr/fill", ("POST",)),
     ("/openapi.json", ("GET", "HEAD")),
     ("/redoc", ("GET", "HEAD")),
 ]
