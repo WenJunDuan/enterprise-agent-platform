@@ -102,3 +102,33 @@ def test_build_block_no_truncation_marker_when_short():
     results = [{"path": "s.txt", "kind": "text", "route": "native", "blocks": ["短内容"]}]
     block = build_extraction_block(results)
     assert "已截断" not in block
+
+
+def test_extract_one_font_only_pdf_falls_back_to_ocr(tmp_path, monkeypatch):
+    # codex round 3：font-only 扫描 PDF（有字体但 native 抽空）应回退 OCR，而非返回空 native。
+    import server.ocr.pipeline as pipeline_mod
+    from server.ocr import OcrError
+
+    monkeypatch.setattr(
+        pipeline_mod,
+        "classify",
+        lambda p: {
+            "path": str(p),
+            "route": "native",
+            "handler": "pdf_text",
+            "kind": "pdf_text",
+            "container": "pdf",
+        },
+    )
+    monkeypatch.setattr(pipeline_mod, "native_read", lambda p: {"kind": "pdf_text", "blocks": ["", "   "]})
+    state = {"recognize_called": False}
+
+    def fake_recognize(p):
+        state["recognize_called"] = True
+        raise OcrError("no engine")
+
+    monkeypatch.setattr(pipeline_mod, "recognize", fake_recognize)
+
+    result = pipeline_mod.extract_one(tmp_path / "x.pdf")
+    assert state["recognize_called"]  # native 抽空确实回退到 OCR
+    assert result["kind"] == "error"  # 本机无引擎 → 归一 error（per-file 隔离）

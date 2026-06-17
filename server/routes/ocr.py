@@ -33,9 +33,9 @@ from server.stores.request_store import new_request_id
 
 logger = logging.getLogger(__name__)
 
-# 同步识别硬超时（秒）。扫描件经 PaddleOCR-VL 可能慢，给足余量但兜底防无限挂起。
-OCR_EXTRACT_TIMEOUT_SEC = float(os.getenv("OCR_EXTRACT_TIMEOUT_SEC", "120"))
-# 表单回填硬超时（秒）。含一次模型映射往返，给足余量（对齐 audit）。
+# 表单回填映射硬超时（秒）。映射是 asyncio 协程（HTTP 可干净取消），故保留请求级超时。
+# 注：识别（to_thread）不设请求超时——工作线程不可取消，超时释放信号量会让并发闸失效；
+# 改由 MAX_CONCURRENT_OCR 信号量 + OCR 引擎 / litellm 自身超时兜底（见各端点注释）。
 OCR_FILL_TIMEOUT_SEC = float(os.getenv("OCR_FILL_TIMEOUT_SEC", "180"))
 # 并发闸：每次识别可能拉起 OCR 引擎（CPU/GPU 重），无上限并发会打爆机器内存/算力。
 # 超额提交在信号量处排队（排队时间不计入识别超时）。
@@ -102,24 +102,11 @@ async def ocr_extract(
         raise HTTPException(status_code=415, detail="Unsupported Content-Type")
 
     try:
-        # 排队不计入识别超时：信号量在外，硬超时在 run_doc_recognize 内。
+        # 识别在信号量内运行至完成：to_thread 工作线程不可取消，若用 wait_for 超时会释放
+        # 名额但线程继续 → 重复请求绕过并发闸、堆积 OCR 任务。故识别不设请求级超时，靠
+        # OCR 引擎 / litellm 自身超时兜底，MAX_CONCURRENT_OCR 由此严格生效。排队不计入超时。
         async with _OCR_SEMAPHORE:
-            recognized = await run_doc_recognize(
-                case_path,
-                run_seal=run_seal,
-                timeout_sec=OCR_EXTRACT_TIMEOUT_SEC,
-            )
-    except asyncio.TimeoutError as exc:
-        # 软超时：to_thread 工作线程无法强制取消、可能仍在读 case_dir。此处**不删**
-        # 上传目录（避免与仍在跑的线程竞争），残留由 maintenance 按 retention 兜底清理。
-        logger.warning(
-            "ocr_extract_timeout",
-            extra={"request_id": request_id, "timeout_sec": OCR_EXTRACT_TIMEOUT_SEC},
-        )
-        raise HTTPException(
-            status_code=504,
-            detail=f"识别超时：超过 {int(OCR_EXTRACT_TIMEOUT_SEC)}s 未完成",
-        ) from exc
+            recognized = await run_doc_recognize(case_path, run_seal=run_seal)
     except OcrError as exc:
         remove_submission_dir(cleanup_path)
         logger.warning("ocr_extract_failed", extra={"request_id": request_id})
@@ -177,9 +164,9 @@ async def ocr_fill(
 
     try:
         async with _OCR_SEMAPHORE:
-            recognized = await run_doc_recognize(
-                case_path, run_seal=run_seal, timeout_sec=OCR_EXTRACT_TIMEOUT_SEC
-            )
+            # 识别不设请求超时（同 /extract，线程不可取消，保并发闸严格）。
+            recognized = await run_doc_recognize(case_path, run_seal=run_seal)
+            # 映射是 asyncio 协程，HTTP 请求可被干净取消，故保留请求级超时。
             fill = await asyncio.wait_for(
                 map_extraction_to_form(
                     recognized["block"], form_schema, request_id=request_id, tenant=tenant
@@ -187,9 +174,10 @@ async def ocr_fill(
                 timeout=OCR_FILL_TIMEOUT_SEC,
             )
     except asyncio.TimeoutError as exc:
-        # 软超时（同 /extract）：识别线程可能仍在跑，不删上传目录，留给 maintenance。
+        # 映射超时：识别已完成、映射协程已取消，删目录安全。
+        remove_submission_dir(case_path)
         logger.warning("ocr_fill_timeout", extra={"request_id": request_id})
-        raise HTTPException(status_code=504, detail="识别或回填超时") from exc
+        raise HTTPException(status_code=504, detail="表单回填超时（模型映射阶段）") from exc
     except OcrError as exc:
         remove_submission_dir(case_path)
         logger.warning("ocr_fill_recognize_failed", extra={"request_id": request_id})

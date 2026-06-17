@@ -10,7 +10,6 @@ import logging
 import os
 from pathlib import Path
 
-from server.ocr import OcrError
 from server.ocr.classify import classify
 from server.ocr.engine import recognize, recognize_seal
 from server.ocr.native import native_read
@@ -28,19 +27,48 @@ def _iter_files(case_dir: str) -> list[Path]:
     return [p for p in sorted(base.rglob("*")) if p.is_file()]
 
 
+def _recognize_with_seal(path: Path, route: dict, *, run_seal: bool) -> dict:
+    """走 OCR 引擎识别（可选印章），合并分诊信息。"""
+    result = {**route, **recognize(path)}
+    if run_seal:
+        result["seals"] = recognize_seal(path).get("seals", [])
+    return result
+
+
+def _has_extractable_text(native: dict) -> bool:
+    """native 直读是否抽到非空文本（blocks 或 tables 任一有内容）。"""
+    if any(block.strip() for block in native.get("blocks", [])):
+        return True
+    return any(
+        any(str(cell).strip() for cell in row)
+        for table in native.get("tables", [])
+        for row in table.get("rows", [])
+    )
+
+
 def extract_one(path: Path, *, run_seal: bool = False) -> dict:
-    """对单个文件分类并按路由直读 / OCR；异常归一为 manual + error。"""
+    """对单个文件分类并按路由直读 / OCR；任何失败归一为 error（per-file 隔离）。
+
+    - font-only 扫描 PDF（有字体但 native 抽不到文本）回退 OCR，避免返回空结果。
+    - 任何异常（损坏文件 / 缺引擎 / 解析错误）归一为 kind=error，单个失败不拖垮整批。
+    """
     try:
         route = classify(path)
         if route["route"] == "native":
-            return {**route, **native_read(path)}
+            native = native_read(path)
+            if route.get("handler") == "pdf_text" and not _has_extractable_text(native):
+                fallback = {
+                    **route,
+                    "route": "ocr",
+                    "handler": "pdf_scan",
+                    "note": "PDF 有字体但无可抽文本，回退 OCR",
+                }
+                return _recognize_with_seal(path, fallback, run_seal=run_seal)
+            return {**route, **native}
         if route["route"] == "ocr":
-            result = {**route, **recognize(path)}
-            if run_seal:
-                result["seals"] = recognize_seal(path).get("seals", [])
-            return result
+            return _recognize_with_seal(path, route, run_seal=run_seal)
         return {**route, "kind": "manual"}
-    except OcrError as exc:
+    except Exception as exc:  # per-file 隔离：损坏 / 缺引擎 / 解析错误都归一为 error
         logger.warning("extract failed for %s: %s", path, exc)
         return {"path": str(path), "kind": "error", "route": "manual", "error": str(exc)}
 

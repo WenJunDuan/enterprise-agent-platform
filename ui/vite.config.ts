@@ -24,6 +24,10 @@ export default defineConfig(({ mode }) => {
           target,
           changeOrigin: true,
         },
+        '/ocr': {
+          target,
+          changeOrigin: true,
+        },
         '/health': {
           target,
           changeOrigin: true,
