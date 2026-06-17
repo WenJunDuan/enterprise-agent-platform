@@ -14,8 +14,10 @@
   paddleocr genai_server --model_name PaddleOCR-VL-1.6-0.9B --host 0.0.0.0 --port 8118 --backend vllm
   ```
 - 环境变量：
-  - `OCR_VL_PIPELINE_VERSION`（默认 `v1.6`）
-  - `OCR_VL_SERVER_URL`（已部署的 vLLM serving，如 `http://paddleocr-vl:8118/v1`）+ `OCR_VL_BACKEND`（默认 `vllm-server`）
+  - `OCR_VL_PIPELINE_VERSION`（默认 `v1.6`）；`OCR_VL_BACKEND`（默认 `vllm-server`）
+  - `OCR_VL_SERVER_URL`（**统一 litellm 网关** OpenAI 端点，如 `http://litellm:4000/v1`，与 audit 同地址）
+  - `OCR_VL_MODEL_NAME`（litellm 里为 PaddleOCR-VL 注册的 `model_name`；pipeline 发 `model=该名` → litellm 转发到 VLM 上游）
+  - 注：仅 **VLM 阶段** 走网关；**版面分析(PP-DocLayoutV2) 在容器内本地跑**，故镜像需装 paddlepaddle+paddleocr。
 - 硬件：官方列支持 NVIDIA / 华为昇腾 NPU / 昆仑芯 / CPU(慢)。昇腾上须 POC 验证目标版本可跑。
 - 文档：https://www.paddleocr.ai/latest/en/version3.x/pipeline_usage/PaddleOCR-VL.html
 - 备选主引擎：MinerU2.5-Pro（端到端、组件更少、表格强），如嫌两段式部署件数多可对比。
