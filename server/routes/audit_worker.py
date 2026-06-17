@@ -11,7 +11,7 @@ import asyncio
 import logging
 import os
 
-from server.audit_runner import run_inline_directory_audit
+from server.audit.runner import run_inline_directory_audit
 from server.platform.logging_setup import logging_context
 from server.stores.audit_task_store import upsert_audit_task
 from server.stores.request_store import utc_now

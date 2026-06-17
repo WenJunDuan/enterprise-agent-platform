@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from server.audit_eval import (
+from server.audit.eval import (
     CaseOutcome,
     GoldenCase,
     format_report,
