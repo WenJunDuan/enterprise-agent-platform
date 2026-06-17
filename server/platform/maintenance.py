@@ -115,6 +115,41 @@ def cleanup_old_submission_directories(days: int, now: str | None = None) -> lis
     return removed
 
 
+def cleanup_orphan_submission_directories(days: int, now: str | None = None) -> list[str]:
+    """Remove submission directories with no audit-task record, older than retention.
+
+    OCR 端点（/ocr/extract、/ocr/fill）的上传目录**不登记为 audit task**，故不被
+    cleanup_old_submission_directories 覆盖；它们 + 任何崩溃 / 超时残留的孤儿目录由本
+    函数按目录 mtime 兜底清理，避免 data/submissions 无限堆积。mtime 在 retention 内
+    （可能仍在处理）的目录保留。
+    """
+    cutoff = _coerce_timestamp(now) - timedelta(days=days)
+    submission_root = SUBMISSION_ROOT_DIR.resolve()
+    if not submission_root.exists():
+        return []
+
+    known = {
+        str(Path(str(record["case_path"])).resolve())
+        for record in list_audit_tasks_admin()
+        if record.get("case_path")
+    }
+
+    removed: list[str] = []
+    for child in submission_root.iterdir():
+        if not child.is_dir():
+            continue
+        resolved = child.resolve()
+        if str(resolved) in known:
+            continue  # 有 audit task 记录 → 交给 cleanup_old_submission_directories
+        modified = datetime.fromtimestamp(resolved.stat().st_mtime, tz=timezone.utc)
+        if modified >= cutoff:
+            continue  # retention 内，可能仍在处理，保留
+        shutil.rmtree(resolved, ignore_errors=True)
+        removed.append(str(resolved))
+
+    return removed
+
+
 def run_maintenance() -> dict[str, Any]:
     """Run lightweight local maintenance tasks for long-running single-node usage."""
     settings = get_app_settings()
@@ -134,10 +169,14 @@ def run_maintenance() -> dict[str, Any]:
     removed_submission_dirs = cleanup_old_submission_directories(
         days=settings.submission_retention_days
     )
+    removed_orphan_dirs = cleanup_orphan_submission_directories(
+        days=settings.submission_retention_days
+    )
     return {
         "rotated_runtime_logs": rotated,
         "archived_session_events": archived,
         "removed_submission_dirs": removed_submission_dirs,
+        "removed_orphan_submission_dirs": removed_orphan_dirs,
         "storage_report": storage_report(),
     }
 

@@ -28,6 +28,7 @@ from server.routes.upload_helpers import (
     remove_submission_dir,
     validate_directory_case_path,
 )
+from server.platform.paths import PROJECT_ROOT
 from server.stores.request_store import new_request_id
 
 logger = logging.getLogger(__name__)
@@ -49,16 +50,20 @@ class DirectoryExtractRequest(BaseModel):
     directory_path: str
 
 
-def _public_results(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """出口投影：把每条 result 的 path 收窄为文件名，避免泄露 host 绝对路径。
+def _public_results(results: list[dict[str, Any]], base_dir: str) -> list[dict[str, Any]]:
+    """出口投影：path 收窄为相对提交目录的路径，隐藏 host 绝对前缀且保留子目录区分。
 
-    upload 模式下 run_doc_recognize 用绝对路径识别，path 会含 data/submissions/<rid>/
-    这类内部布局；外部只需文件名标识，故出口统一拍成 basename。
+    upload 模式文件平铺在 case_dir 下 → 相对路径即文件名；directory 模式可能有子目录
+    （a/x.pdf、b/x.pdf）→ 保留相对路径以区分，避免 basename 塌成重名。越界兜底为文件名。
     """
+    base = Path(base_dir).resolve()
     for item in results:
         path = item.get("path")
         if isinstance(path, str):
-            item["path"] = Path(path).name
+            try:
+                item["path"] = str(Path(path).resolve().relative_to(base))
+            except ValueError:
+                item["path"] = Path(path).name
     return results
 
 
@@ -124,7 +129,8 @@ async def ocr_extract(
         raise
 
     remove_submission_dir(cleanup_path)
-    recognized["results"] = _public_results(recognized["results"])
+    base_abs = (Path(case_path) if Path(case_path).is_absolute() else PROJECT_ROOT / case_path).resolve()
+    recognized["results"] = _public_results(recognized["results"], str(base_abs))
     return {"request_id": request_id, **recognized}
 
 
@@ -194,9 +200,10 @@ async def ocr_fill(
         raise HTTPException(status_code=502, detail="表单回填失败（模型映射阶段）") from exc
 
     remove_submission_dir(case_path)
+    base_abs = (Path(case_path) if Path(case_path).is_absolute() else PROJECT_ROOT / case_path).resolve()
     return {
         "request_id": request_id,
-        "results": _public_results(recognized["results"]),
+        "results": _public_results(recognized["results"], str(base_abs)),
         "block": recognized["block"],
         "fill": fill,
     }

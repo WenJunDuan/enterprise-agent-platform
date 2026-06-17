@@ -170,10 +170,31 @@ def test_extract_duplicate_filenames_both_preserved(client):
 
 
 def test_extract_result_path_is_basename_not_absolute(client):
-    # 出口投影：path 只暴露文件名，不泄露 host 绝对路径。
+    # 出口投影：upload 模式 path 只暴露文件名，不泄露 host 绝对路径。
     files = [("files", ("note.txt", b"hi", "text/plain"))]
     resp = client.post("/ocr/extract", files=files, headers=_AUTH)
     assert resp.status_code == 200
     path = resp.json()["results"][0]["path"]
     assert path == "note.txt"
-    assert "/" not in path
+    assert not path.startswith("/")
+
+
+def test_extract_directory_preserves_subdir_paths(client):
+    # codex round 2：directory 模式有子目录同名文件时，path 须保留相对路径以区分，
+    # 不能塌成 basename（否则 a/doc.txt 与 b/doc.txt 无法区分）。
+    case = ALLOWED_DIRECTORY_ROOT / "test-ocr-subdir-case"
+    (case / "a").mkdir(parents=True, exist_ok=True)
+    (case / "b").mkdir(parents=True, exist_ok=True)
+    (case / "a" / "doc.txt").write_text("AAA", encoding="utf-8")
+    (case / "b" / "doc.txt").write_text("BBB", encoding="utf-8")
+    try:
+        resp = client.post(
+            "/ocr/extract",
+            json={"mode": "directory", "directory_path": str(case)},
+            headers=_AUTH,
+        )
+        assert resp.status_code == 200
+        paths = sorted(r["path"] for r in resp.json()["results"])
+        assert paths == ["a/doc.txt", "b/doc.txt"]
+    finally:
+        shutil.rmtree(case, ignore_errors=True)
