@@ -168,9 +168,15 @@ async def materialize_ocr_upload(*, request_id: str, files: list[Any]) -> str:
         raise HTTPException(status_code=400, detail="ocr extract requires at least one file")
     case_dir = SUBMISSION_ROOT_DIR / request_id
     case_dir.mkdir(parents=True, exist_ok=True)
+    used_names: set[str] = set()
     try:
         for index, upload in enumerate(files, start=1):
             safe_name = sanitize_upload_name(getattr(upload, "filename", "") or "", index)
+            # 同名文件（如不同文件夹各一个 scan.pdf）加序号，防后者覆盖前者导致结果丢失。
+            if safe_name in used_names:
+                stem, suffix = Path(safe_name).stem, Path(safe_name).suffix
+                safe_name = f"{stem}_{index}{suffix}"
+            used_names.add(safe_name)
             content = await upload.read()
             validate_upload_bytes(content)
             (case_dir / safe_name).write_bytes(content)

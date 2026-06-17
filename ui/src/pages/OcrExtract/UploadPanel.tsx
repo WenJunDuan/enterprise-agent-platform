@@ -44,6 +44,14 @@ function ExtractItemCard({ item }: { item: OcrExtractItem }) {
         <p className="text-xs text-red-600">识别失败：{item.error}</p>
       ) : (
         <>
+          {item.pages?.map((page, i) => (
+            <pre
+              key={`page-${i}`}
+              className="whitespace-pre-wrap break-words font-sans text-xs leading-relaxed text-gray-600"
+            >
+              {page.markdown ?? ''}
+            </pre>
+          ))}
           {item.blocks?.map((block, i) => (
             <pre
               key={i}

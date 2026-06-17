@@ -143,3 +143,37 @@ def test_fill_requires_auth(client):
     files = [("files", ("a.txt", b"x", "text/plain"))]
     resp = client.post("/ocr/fill", files=files, data={"form_schema": "{}"})  # 无 token
     assert resp.status_code == 401
+
+
+# ── codex review round 1 修复回归 ─────────────────────────────────────────────
+
+
+def test_extract_malformed_json_returns_400(client):
+    # 畸形 JSON 应返 400（client error），而非 500（曾因 JSONDecodeError 逃逸到 generic handler）。
+    resp = client.post(
+        "/ocr/extract",
+        content=b"{not valid json",
+        headers={**_AUTH, "Content-Type": "application/json"},
+    )
+    assert resp.status_code == 400
+
+
+def test_extract_duplicate_filenames_both_preserved(client):
+    # 两个同名文件不能互相覆盖，否则 results 少一条、回填底稿不全。
+    files = [
+        ("files", ("scan.txt", b"first content", "text/plain")),
+        ("files", ("scan.txt", b"second content", "text/plain")),
+    ]
+    resp = client.post("/ocr/extract", files=files, headers=_AUTH)
+    assert resp.status_code == 200
+    assert len(resp.json()["results"]) == 2
+
+
+def test_extract_result_path_is_basename_not_absolute(client):
+    # 出口投影：path 只暴露文件名，不泄露 host 绝对路径。
+    files = [("files", ("note.txt", b"hi", "text/plain"))]
+    resp = client.post("/ocr/extract", files=files, headers=_AUTH)
+    assert resp.status_code == 200
+    path = resp.json()["results"][0]["path"]
+    assert path == "note.txt"
+    assert "/" not in path

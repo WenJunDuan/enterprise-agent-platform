@@ -195,6 +195,7 @@ export interface OcrExtractItem {
   route?: OcrRoute
   blocks?: string[]
   tables?: { name?: string; rows: string[][] }[]
+  pages?: { markdown?: string; [k: string]: unknown }[]
   seals?: OcrSeal[]
   error?: string
   note?: string
