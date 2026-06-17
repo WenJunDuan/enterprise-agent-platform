@@ -168,13 +168,15 @@ async def run_doc_recognize(
     Args:
         case_dir: 案件目录（项目内相对或绝对路径），含待识别文件。
         run_seal: 是否对扫描件追加印章识别。
-        timeout_sec: 识别硬超时（秒）；None 表示不限。
+        timeout_sec: 识别**软超时**（秒）；None 表示不限。注：超时只取消请求等待，
+            to_thread 工作线程无法强制取消、会继续到自然结束——调用方不应在
+            TimeoutError 后立即删除 case_dir（可能仍被该线程读取）。
 
     Returns:
         {"results": [...每文件 extract-result...], "block": "...组装的识别底稿..."}。
 
     Raises:
-        asyncio.TimeoutError: 超过 timeout_sec 未完成。
+        asyncio.TimeoutError: 超过 timeout_sec 未完成（软超时，工作线程可能仍在跑）。
         ValueError: case_dir 越出项目根（_resolve_case_dir 校验）。
     """
     resolved = _resolve_case_dir(case_dir)

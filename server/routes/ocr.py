@@ -1,11 +1,11 @@
-"""OCR document recognition route: POST /ocr/extract.
+"""OCR document recognition routes: POST /ocr/extract, POST /ocr/fill.
 
-给外部系统单独调用的「纯识别」能力：上传文档（或指定 data/ 下目录）→ 同步返回
-结构化识别底稿（每文件 kind/route/文本/表格，对齐 ocr/extract-result 契约）。
+给外部系统单独调用的「纯识别」能力（/ocr/extract）+ 本平台 UI 演示「识别→回填」
+（/ocr/fill）：上传文档（或指定 data/ 下目录）→ 同步返回结构化识别底稿。
 
-与 /audit 的区别：纯确定性识别，**不做表单回填、不调模型**；同步返回，无异步任务。
-扫描件经 OCR 引擎（PaddleOCR-VL），每文件错误已在 pipeline 内隔离（标 error），
-单个失败不拖垮整批。识别在线程池执行，不阻塞事件循环。
+与 /audit 的区别：纯确定性识别，**不做表单回填、不调模型**（/extract）；同步返回，
+无异步任务。扫描件经 OCR 引擎（PaddleOCR-VL），每文件错误已在 pipeline 内隔离
+（标 error），单个失败不拖垮整批。识别在线程池执行，不阻塞事件循环。
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ import asyncio
 import json
 import logging
 import os
+from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request
@@ -48,6 +49,19 @@ class DirectoryExtractRequest(BaseModel):
     directory_path: str
 
 
+def _public_results(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """出口投影：把每条 result 的 path 收窄为文件名，避免泄露 host 绝对路径。
+
+    upload 模式下 run_doc_recognize 用绝对路径识别，path 会含 data/submissions/<rid>/
+    这类内部布局；外部只需文件名标识，故出口统一拍成 basename。
+    """
+    for item in results:
+        path = item.get("path")
+        if isinstance(path, str):
+            item["path"] = Path(path).name
+    return results
+
+
 @router.post("/extract")
 async def ocr_extract(
     request: Request,
@@ -64,7 +78,11 @@ async def ocr_extract(
     cleanup_path: str | None = None
     if content_type.startswith("application/json"):
         try:
-            req_payload = DirectoryExtractRequest.model_validate(await request.json())
+            raw_body = await request.json()
+        except (json.JSONDecodeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail="Invalid JSON body") from exc
+        try:
+            req_payload = DirectoryExtractRequest.model_validate(raw_body)
         except ValidationError as exc:
             raise RequestValidationError(exc.errors()) from exc
         case_path = validate_directory_case_path(req_payload.directory_path)
@@ -87,6 +105,8 @@ async def ocr_extract(
                 timeout_sec=OCR_EXTRACT_TIMEOUT_SEC,
             )
     except asyncio.TimeoutError as exc:
+        # 软超时：to_thread 工作线程无法强制取消、可能仍在读 case_dir。此处**不删**
+        # 上传目录（避免与仍在跑的线程竞争），残留由 maintenance 按 retention 兜底清理。
         logger.warning(
             "ocr_extract_timeout",
             extra={"request_id": request_id, "timeout_sec": OCR_EXTRACT_TIMEOUT_SEC},
@@ -96,11 +116,15 @@ async def ocr_extract(
             detail=f"识别超时：超过 {int(OCR_EXTRACT_TIMEOUT_SEC)}s 未完成",
         ) from exc
     except OcrError as exc:
+        remove_submission_dir(cleanup_path)
         logger.warning("ocr_extract_failed", extra={"request_id": request_id})
         raise HTTPException(status_code=422, detail=f"识别失败：{exc}") from exc
-    finally:
+    except Exception:
         remove_submission_dir(cleanup_path)
+        raise
 
+    remove_submission_dir(cleanup_path)
+    recognized["results"] = _public_results(recognized["results"])
     return {"request_id": request_id, **recognized}
 
 
@@ -157,20 +181,22 @@ async def ocr_fill(
                 timeout=OCR_FILL_TIMEOUT_SEC,
             )
     except asyncio.TimeoutError as exc:
+        # 软超时（同 /extract）：识别线程可能仍在跑，不删上传目录，留给 maintenance。
         logger.warning("ocr_fill_timeout", extra={"request_id": request_id})
         raise HTTPException(status_code=504, detail="识别或回填超时") from exc
     except OcrError as exc:
+        remove_submission_dir(case_path)
         logger.warning("ocr_fill_recognize_failed", extra={"request_id": request_id})
         raise HTTPException(status_code=422, detail=f"识别失败：{exc}") from exc
     except Exception as exc:  # 映射阶段：模型不通 / 契约校验失败 → 上游问题
+        remove_submission_dir(case_path)
         logger.exception("ocr_fill_mapping_failed", extra={"request_id": request_id})
         raise HTTPException(status_code=502, detail="表单回填失败（模型映射阶段）") from exc
-    finally:
-        remove_submission_dir(case_path)
 
+    remove_submission_dir(case_path)
     return {
         "request_id": request_id,
-        "results": recognized["results"],
+        "results": _public_results(recognized["results"]),
         "block": recognized["block"],
         "fill": fill,
     }
