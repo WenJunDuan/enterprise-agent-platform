@@ -34,7 +34,23 @@ OCR 对外 HTTP API + 前端接入 + 既有分诊缺陷修复。不改审核（a
 
 ## Follow-ups
 
-- [P1] extract-result schema 与实际产物对齐（`additionalProperties` + 多字段）
-- [P1] 配线上 model key 验 `/ocr/fill` 真识别；扫描件验部署机 PaddleOCR-VL serving
-- [P1] `build_extraction_block` 20K 截断砸 136 页合同付款节点（原 review 待办①）
-- 代码本轮**尚未 commit**（建议 `feat(ocr): 对外识别/回填 API + 前端接入`）
+- ✅ extract-result schema 对齐（additionalProperties + 补字段 + kind enum + 一致性测试）
+- ✅ build_extraction_block 截断显式标记 + 上限可配（OCR_MAX_FILE_BLOCK_CHARS）
+- ✅ 代码已 commit（feat + docs + fix×4）
+- ⏳ 配线上 model key 验 /ocr/fill 真识别；扫描件验部署机 PaddleOCR-VL serving（环境依赖）
+
+## 遗漏修复 + codex 四轮交叉 review（2026-06-17 续）
+
+事后检查上阶段遗漏（schema 债 / 截断 / commit / 真识别）设为 goal 解决，再经 codex
+四轮独立交叉 review，共 14 findings 全修：
+
+- 轮1（5）：畸形 JSON→400、上传同名去重、path 投影 basename、软超时不删目录、前端渲染 pages
+- 轮2（2）：孤儿目录 maintenance 兜底、directory 保留相对路径（均为轮1修复引入的副作用）
+- 轮3（4，含 P1）：软超时根治（识别在信号量内 await 完成）、font-only PDF 回退 OCR、
+  解析失败 per-file 隔离、vite 代理 /ocr
+- 轮4（3，含 P1 安全）：directory symlink 任意文件读取防护、maintenance known 用
+  PROJECT_ROOT 解析（防误删）、UI note 改附加 banner
+
+验收：测试 170→200，ruff / 前端 build 全过，6 个 commit（feat + docs + fix×4）。
+**注**：findings 趋势 5→2→4→3，**未收敛到 0**，且多个是修复前一轮引入的——交叉 review
+的修复本身需再 review，应按"连续一轮无 P0/P1/P2"收敛而非固定轮数（详见 compound 教训）。
