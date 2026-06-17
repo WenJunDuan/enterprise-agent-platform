@@ -52,7 +52,7 @@ counts:
   reviews_count: 22
   cleanup_count: 0
   compound:
-    learning: 2
+    learning: 3
     trick: 0
     decision: 0
     explore: 0
@@ -63,7 +63,7 @@ pointers:
   latest_cleanup: ""
   latest_brainstorm: ""
   latest_decisions: []
-  latest_lessons: ["compound/2026-06-17-learning-classify-fix-exposes-latent-bug.md", "compound/2026-06-02-learning-legacy-v962-migration.md"]
+  latest_lessons: ["compound/2026-06-17-learning-cross-review-and-soft-timeout.md", "compound/2026-06-17-learning-classify-fix-exposes-latent-bug.md", "compound/2026-06-02-learning-legacy-v962-migration.md"]
   latest_architecture_update: ""
 
 # === PACE 联动字段 (hook 自动维护) ===
