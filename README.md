@@ -272,6 +272,7 @@ journalctl -u enterprise-agent -f
 | `POST` | `/audit/tasks/{id}/retry` | 重新审核（任务非 `running` 时可重试） |
 | `DELETE` | `/audit/tasks/{id}` | 删除任务并清理上传落盘（`running` 时拒绝） |
 | `POST` | `/ocr/extract` | **OCR 纯识别（同步）**：上传文档或 `data/` 目录 → 结构化识别底稿 |
+| `POST` | `/ocr/fill` | **OCR 识别+表单回填（同步）**：文档 + `form_schema` → 底稿 + 回填（UI 演示，需模型网关） |
 | `GET` | `/health` | 健康探活（非 ok 返 `503`） |
 
 异步流程：`submit` 拿 `request_id` → 轮询 `tasks/{id}` 到终态 → `completed` 时取 `result`。前端对接细节见 [`.ai_state/docs/前端审核服务对接文档.md`](.ai_state/docs/前端审核服务对接文档.md)。
@@ -319,6 +320,22 @@ curl -X POST http://127.0.0.1:9999/ocr/extract \
 > 并发上限 `MAX_CONCURRENT_OCR`（默认 2；识别在信号量内运行至完成、无请求级超时，靠 OCR
 > 引擎/litellm 自身超时兜底，保并发闸严格）；回填映射超时 `OCR_FILL_TIMEOUT_SEC`（默认 180s）；
 > 单文件底稿上限 `OCR_MAX_FILE_BLOCK_CHARS`（默认 40000，超长截断并显式标记，提示模型标 needs_review）。
+
+### OCR 识别 + 表单回填（`POST /ocr/fill`，同步）
+
+本平台 UI「识别 → 回填」演示入口（非给外部系统）：上传文档 + 目标表单 `form_schema`，
+一次返回识别底稿（`results` / `block`）+ 回填结果（`fill`，符合
+`contracts/ocr/form-fill.schema.json`：字段 + 付款子表 + `needs_review`）。**需配模型网关**（映射调一次模型）。
+
+```bash
+# multipart：files 1~N 个 + form_schema（目标表单定义 JSON 字符串）
+curl -X POST http://127.0.0.1:9999/ocr/fill \
+  -H "Authorization: Bearer sk-your-token" \
+  -F 'files=@/path/to/scan.pdf' \
+  -F 'form_schema={"form_id":"project_filing","fields":[{"key":"项目名称","component":"single_line"}]}'
+```
+
+> 映射超时返 `504`，模型不通返 `502`；识别部分与 `/ocr/extract` 同（扫描件需 serving）。
 
 ---
 
