@@ -5,8 +5,7 @@ existing importers (server/, tests/) need no changes.
 
 Sub-modules:
   session_records    — SessionRecord dataclass, SessionStore protocol, utc_now / new_* helpers
-  session_jsonl_store — JSONLSessionStore (file-backed)
-  session_sqlite_store — SQLiteSessionStore (SQLite-backed, default)
+  session_sqlite_store — SQLiteSessionStore (the session index in platform.sqlite3)
   session_queries    — SESSION_STORE singleton + module-level delegating functions
   session_sdk        — SDK transcript / summary helpers
 """
@@ -27,8 +26,7 @@ from server.stores.session_records import (  # noqa: E402
     utc_now,
 )
 
-# ── store implementations ─────────────────────────────────────────────────────
-from server.stores.session_jsonl_store import JSONLSessionStore  # noqa: E402
+# ── store implementation ──────────────────────────────────────────────────────
 from server.stores.session_sqlite_store import SQLiteSessionStore  # noqa: E402
 
 # ── singleton + delegating query functions ────────────────────────────────────
@@ -65,8 +63,7 @@ __all__ = [
     "new_request_id",
     "new_conversation_id",
     "utc_now",
-    # store implementations
-    "JSONLSessionStore",
+    # store implementation
     "SQLiteSessionStore",
     # singleton
     "SESSION_STORE",

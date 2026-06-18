@@ -115,7 +115,7 @@ class TestAppendAndResolveSessionRecord:
         from server.stores.session_store import SQLiteSessionStore
 
         db_path = tmp_path / "sessions.db"
-        fresh_store = SQLiteSessionStore(db_path, legacy_shard_dir=None)
+        fresh_store = SQLiteSessionStore(db_path)
         monkeypatch.setattr(ss, "SESSION_STORE", fresh_store)
         return fresh_store
 
@@ -219,7 +219,7 @@ class TestResolveLatestSessionIdAdmin:
         from server.stores.session_store import SQLiteSessionStore
 
         db_path = tmp_path / "sessions.db"
-        fresh_store = SQLiteSessionStore(db_path, legacy_shard_dir=None)
+        fresh_store = SQLiteSessionStore(db_path)
         monkeypatch.setattr(ss, "SESSION_STORE", fresh_store)
 
     def test_admin_sees_across_tenants(self, tmp_path, monkeypatch):
