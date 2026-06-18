@@ -40,8 +40,40 @@
 
 > 事实更正：`data/` 当前为空、0 追踪、gitignore，并无"已提交初始数据"。
 
+## D · data/ 业务存储重构（用户后续要求"东西少趁早做干净"，已完成 7 步）
+
+决策 A1 统一单库 + B1 payload 折叠进列（见 design-data-storage.md）。净 -198 行，234 passed。
+
+| 步 | 成果 | commit |
+|---|---|---|
+| 1 | 统一单库 data/db/platform.sqlite3（6 表 + WAL）；logs/ 只剩运行日志；blob 迁 data/ | `c3324ae` |
+| 4 | audit_tasks 从 tasks.json 全量重写 → sqlite 表（merge upsert + 索引） | `3efd853` |
+| 2+3 | result/review payload 折叠进 TEXT 列，去 by-request 文件树 + 指针 indirection | `05c67a7` |
+| 6 | 清 legacy JSONL 双后端（request 不再双写）+ 死类（JSONL*Store, -360 行） | `5f1a1ab` |
+| 7a | 清 B1/step6 后死常量/vestigial 参数；storage_report 改报统一库 | `947382d` |
+| 7b | migrate-storage CLI（旧 logs/ → 统一库幂等迁移）+ 文档同步 | `413e7b4` |
+
+**Step 5 纠偏**：memory 文件**保留 knowledge/memory**（CLAUDE.md distill 契约 + asset_validation
+依赖），不挪 data/；其 index 已随 step 1 并入统一库。
+
+### 最终存储形态
+```
+logs/  app/{app,error}.log · runtime/app-server/        ← 仅运行日志
+data/  db/platform.sqlite3（results/requests/sessions/review_deltas/memory_assets/audit_tasks）
+       submissions/（上传原件） · sessions/events/（会话流）   ← 仅大 blob 留文件
+knowledge/memory/（记忆产物，知识库归属）
+```
+
+### Review 结论（自审，234 passed/ruff clean/无循环导入）
+- 正确性：端到端经 API 读结果 OK；result_file 无人再当文件解引用；payload 列 roundtrip 正常。
+- 测试：+audit_task(6) +migrate(3)；现有 234 全绿，含分层守卫。
+- 低风险待办：audit_task upsert 的 read-modify-write 非原子（已弃 flock 改 sqlite）；同
+  request_id 并发更新理论上可丢更新，但访问模式（单 worker 顺序更新）实际不触发。需严格
+  原子可加 `BEGIN IMMEDIATE`。
+- 迁移：表名固定白名单（无注入），幂等 INSERT OR IGNORE + payload 文件按指针读回。
+
 ## 遗留 / 后续
 
 - C 合同库实现（随合同审计开工）。
 - 日志按天滚动 toggle（如需）。
-- `validate_structured_output_semantics` 薄包装可在确认无外部依赖后并入 apply_schema_semantics。
+- audit_task upsert 如需严格原子：connect 加 `BEGIN IMMEDIATE`。
