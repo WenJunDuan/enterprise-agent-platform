@@ -9,7 +9,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
-from server.platform.diagnostics import collect_runtime_diagnostics
+from server.ops.diagnostics import collect_runtime_diagnostics
 
 router = APIRouter(tags=["ops"])
 
