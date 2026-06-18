@@ -18,24 +18,22 @@
 
 ## `.ai_state/docs/前端审核服务对接文档.md`
 
-- 作用: 前端/联调用的异步审核接口说明
+- 作用: 前端/联调用的接口说明（审核异步链路 + OCR 同步识别）
 - 重点:
-  - `POST /audit/submit`
-  - `GET /audit/tasks/{request_id}`
-  - `GET /audit/tasks/{request_id}/result`
-  - 上传模式与目录模式请求格式
+  - 审核: `POST /audit/submit` → 轮询 `GET /audit/tasks/{id}` → `GET /audit/tasks/{id}/result`
+  - OCR: `POST /ocr/extract`（纯识别）/ `POST /ocr/fill`（识别+回填）
+  - 上传模式与目录模式请求格式 + 错误码
 
-## `.ai_state/superpowers/specs/`
+## `.ai_state/sprints/{date}-{slug}/`
 
-- 作用: 当前项目的设计规格文档
+- 作用: 各 sprint 的 design / plan / ship / reviews（v9.6.4 迁移后，原 `superpowers/` 已并入此处）
 - 重点:
-  - `2026-03-31-async-audit-submit-serve-design.md`
-  - `2026-03-31-audit-result-chinese-display-design.md`
+  - `2026-06-17-ocr-http-api/`（OCR 对外 API + 前端 + 四轮 codex review）
+  - `2026-03-31-async-audit-submit-serve/`、`2026-04-01-serve-lifespan-and-task-store/` 等历史 sprint
 
-## `.ai_state/superpowers/plans/`
+## `.ai_state/compound/{date}-{type}-{slug}.md`
 
-- 作用: 已确认的实现计划与后续硬化计划
+- 作用: 跨 sprint 经验沉淀（learning / trick / decision / explore）
 - 重点:
-  - `2026-03-31-async-audit-submit-serve-plan.md`
-  - `2026-03-31-audit-serve-hardening-plan.md`
-  - `2026-04-01-serve-lifespan-and-task-store-plan.md`
+  - `2026-06-17-learning-cross-review-and-soft-timeout.md`（软超时反模式 + 交叉 review 收敛判据）
+  - `2026-06-17-learning-classify-fix-exposes-latent-bug.md`（改判据暴露从未跑过的死分支）
