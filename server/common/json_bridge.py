@@ -28,9 +28,8 @@ from server.common.contract import (
     JSONContractError,
     StructuredJSON,
     _extract_json_object,
+    apply_schema_semantics,
     build_output_format,
-    enrich_audit_decision,
-    validate_structured_output_semantics,
 )
 from server.platform.logging_setup import logging_context
 from server.common.session_logging import SessionLogger, _log_bridge_failure
@@ -61,9 +60,7 @@ def _apply_result_message_structured(
     if structured_output is not None and final_structured_output is None:
         if not isinstance(structured_output, (dict, list)):
             raise JSONContractError("Claude returned a non-object structured output.")
-        validate_structured_output_semantics(schema_name, structured_output)
-        if schema_name == DEFAULT_OUTPUT_SCHEMA_NAME:
-            structured_output = enrich_audit_decision(structured_output)
+        structured_output = apply_schema_semantics(schema_name, structured_output)
         return structured_output, utc_now()
     if final_subtype == "error_max_structured_output_retries":
         raise JSONContractError(
@@ -90,9 +87,7 @@ def _apply_result_message_text(
     raw_text = (getattr(message, "result", "") or "") or "".join(text_accum)
     parsed = _extract_json_object(raw_text)
     if parsed is not None:
-        validate_structured_output_semantics(schema_name, parsed)
-        if schema_name == DEFAULT_OUTPUT_SCHEMA_NAME:
-            parsed = enrich_audit_decision(parsed)
+        parsed = apply_schema_semantics(schema_name, parsed)
         return parsed, utc_now()
     return None, None
 
