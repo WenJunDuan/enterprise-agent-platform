@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -394,6 +395,8 @@ def serve(
     port: int = typer.Option(0, help="Bind port. Defaults to APP_SERVER_PORT."),
 ) -> None:
     """Start the HTTP API server."""
+    # 真实服务进程默认开启运行日志文件落盘（app.log/error.log）；env 显式设置可覆盖。
+    os.environ.setdefault("LOG_TO_FILES", "true")
     settings = config_module.get_app_settings()
     resolved_host = host or settings.api_host
     resolved_port = port or settings.api_port

@@ -8,6 +8,11 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 LOGS_ROOT = PROJECT_ROOT / "logs"
 
+# 运行日志（operational, log4j2 风格）：级别分流 app.log(INFO+) / error.log(WARN+)，
+# 由 logging_setup.configure_logging 挂 RotatingFileHandler 写入。与下面的业务归档
+# （service/sessions/results/…，按 request 分片的领域数据）是两类东西，刻意分目录。
+APP_LOG_DIR = LOGS_ROOT / "app"
+
 SERVICE_LOG_DIR = LOGS_ROOT / "service"
 SERVICE_REQUEST_SHARD_DIR = SERVICE_LOG_DIR / "requests"
 SERVICE_REQUEST_DB_FILE = SERVICE_REQUEST_SHARD_DIR / "index.sqlite3"
@@ -45,6 +50,7 @@ def ensure_local_layout() -> None:
     """Create all local storage directories required by the serve layer."""
     for path in [
         LOGS_ROOT,
+        APP_LOG_DIR,
         SERVICE_LOG_DIR,
         SERVICE_REQUEST_SHARD_DIR,
         AUDIT_TASK_DIR,

@@ -2,13 +2,25 @@
 
 from __future__ import annotations
 
+import gzip
 import json
 import logging
+import os
+import shutil
 import sys
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import datetime, timezone
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
 from typing import Any, Iterator, Literal
+
+from server.platform.paths import APP_LOG_DIR
+
+# 运行日志文件 appender 默认值（log4j2 RollingFile 等价）。环境变量可覆盖。
+_DEFAULT_MAX_BYTES = 50 * 1024 * 1024  # 单文件 50MB 触发滚动
+_DEFAULT_BACKUP_COUNT = 10  # 保留 10 个 gz 备份
+_TRUTHY = {"1", "true", "yes", "on"}
 
 _request_id_var: ContextVar[str | None] = ContextVar("request_id", default=None)
 _correlation_id_var: ContextVar[str | None] = ContextVar("correlation_id", default=None)
@@ -108,14 +120,115 @@ class _KVFormatter(logging.Formatter):
         return " ".join(parts)
 
 
-def configure_logging(level: str, format: Literal["json", "kv"]) -> None:
+def _gzip_rotator(source: str, dest: str) -> None:
+    """Rollover rotator: gzip the closed log segment, then drop the plaintext source.
+
+    `dest` already ends in `.gz` (see `_gzip_namer`), so the backup-shift logic in
+    RotatingFileHandler.doRollover finds `app.log.{n}.gz` consistently.
+    """
+    with open(source, "rb") as src, gzip.open(dest, "wb") as gz:
+        shutil.copyfileobj(src, gz)
+    os.remove(source)
+
+
+def _gzip_namer(name: str) -> str:
+    return name + ".gz"
+
+
+def _build_rotating_file_handler(
+    path: Path,
+    *,
+    max_bytes: int,
+    backup_count: int,
+    context_filter: logging.Filter,
+) -> RotatingFileHandler:
+    """Size-rolling file appender with gzip-compressed backups (log4j2 RollingFile)."""
+    handler = RotatingFileHandler(
+        path, maxBytes=max_bytes, backupCount=backup_count, encoding="utf-8"
+    )
+    handler.addFilter(context_filter)
+    handler.setFormatter(_JSONFormatter())  # 文件始终 JSON：机器可解析
+    handler.rotator = _gzip_rotator
+    handler.namer = _gzip_namer
+    return handler
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        return default
+
+
+def configure_logging(
+    level: str,
+    format: Literal["json", "kv"],
+    *,
+    to_files: bool | None = None,
+    log_dir: Path | None = None,
+    max_bytes: int | None = None,
+    backup_count: int | None = None,
+) -> None:
+    """Configure root logging: a console appender plus optional leveled file appenders.
+
+    The console appender is always installed (container stdout / dev). When file logging
+    is enabled, two rolling file appenders are added under `log_dir` (default logs/app):
+    `app.log` (everything at the configured level) and `error.log` (WARNING+ only),
+    mirroring a log4j2 setup with a ThresholdFilter on the error appender.
+
+    Args:
+        level: Root log level name (e.g. "INFO").
+        format: Console layout — "json" (structured) or "kv" (dev-friendly).
+        to_files: Enable file appenders. Defaults to env LOG_TO_FILES (off ⇒ tests stay
+            stdout-only and never write to disk).
+        log_dir: Directory for the file appenders. Defaults to paths.APP_LOG_DIR.
+        max_bytes: Rollover size threshold. Defaults to env LOG_MAX_BYTES or 50MB.
+        backup_count: Number of gzipped backups to keep. Defaults to env LOG_BACKUP_COUNT or 10.
+    """
     root = logging.getLogger()
+    for existing in root.handlers[:]:
+        existing.close()  # 关闭旧 handler，避免重配时泄漏文件句柄
     root.handlers.clear()
-    handler = logging.StreamHandler(sys.stdout)
-    handler.addFilter(_ContextFilter())
-    handler.setFormatter(_JSONFormatter() if format == "json" else _KVFormatter())
-    root.addHandler(handler)
     root.setLevel(getattr(logging, level.upper(), logging.INFO))
+
+    context_filter = _ContextFilter()
+
+    console = logging.StreamHandler(sys.stdout)
+    console.addFilter(context_filter)
+    console.setFormatter(_JSONFormatter() if format == "json" else _KVFormatter())
+    root.addHandler(console)
+
+    if to_files is None:
+        to_files = os.getenv("LOG_TO_FILES", "").lower() in _TRUTHY
+    if not to_files:
+        return
+
+    resolved_dir = Path(log_dir) if log_dir is not None else APP_LOG_DIR
+    resolved_dir.mkdir(parents=True, exist_ok=True)
+    resolved_max = max_bytes if max_bytes is not None else _env_int("LOG_MAX_BYTES", _DEFAULT_MAX_BYTES)
+    resolved_backups = (
+        backup_count if backup_count is not None else _env_int("LOG_BACKUP_COUNT", _DEFAULT_BACKUP_COUNT)
+    )
+
+    app_handler = _build_rotating_file_handler(
+        resolved_dir / "app.log",
+        max_bytes=resolved_max,
+        backup_count=resolved_backups,
+        context_filter=context_filter,
+    )
+    root.addHandler(app_handler)
+
+    error_handler = _build_rotating_file_handler(
+        resolved_dir / "error.log",
+        max_bytes=resolved_max,
+        backup_count=resolved_backups,
+        context_filter=context_filter,
+    )
+    error_handler.setLevel(logging.WARNING)  # log4j2 ThresholdFilter: error.log 只收 WARN+
+    root.addHandler(error_handler)
 
 
 def _extra_fields(record: logging.LogRecord) -> dict[str, Any]:

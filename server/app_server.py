@@ -195,7 +195,12 @@ def start(
             stdout=stdout_handle,
             stderr=stderr_handle,
             start_new_session=True,
-            env={**os.environ, "PYTHONUNBUFFERED": "1"},
+            # 托管服务进程默认开启运行日志文件落盘（app.log/error.log）；env 显式设置可覆盖。
+            env={
+                "LOG_TO_FILES": "true",
+                **os.environ,
+                "PYTHONUNBUFFERED": "1",
+            },
         )
     finally:
         stdout_handle.close()
