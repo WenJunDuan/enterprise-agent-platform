@@ -403,5 +403,13 @@ def serve(
     uvicorn.run("server.api:app", host=resolved_host, port=resolved_port, reload=False)
 
 
+@app.command("migrate-storage")
+def migrate_storage_command() -> None:
+    """一次性迁移：旧 logs/ 各域 SQLite + by-request payload → 统一库 platform.sqlite3（幂等可重复）。"""
+    from server.stores.migrate import migrate_storage
+
+    _echo_json(migrate_storage())
+
+
 if __name__ == "__main__":
     app()

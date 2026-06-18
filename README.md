@@ -160,7 +160,7 @@ uv run python -m server.cli validate-assets   # status 应为 ok
 ```bash
 uv run python -m server.cli runtime           # status=ok
 uv run python -m server.cli ask "用 Read 工具读取 README.md，只回第一行"
-ls -t logs/sessions/events/*/*/*/*.jsonl | head -1 | xargs grep -c '"event": "tool_call"'
+ls -t data/sessions/events/*/*/*/*.jsonl | head -1 | xargs grep -c '"event": "tool_call"'
 #   ↑ 必须 ≥1。为 0 说明工具调用没透传，审核会编造结果，禁止上线
 uv run app-server start                        # 后台常驻（开发期用；生产见 systemd）
 ```
@@ -391,12 +391,12 @@ docker exec audit-agent python -m server.cli runtime   # 看 anthropic_base_url
 ```text
 .claude/        Claude commands / agents / hooks / skills / contracts
 knowledge/      规则、制度材料、memory 资产（gitignore，需单独铺设）
-data/           样例目录与上传落盘（gitignore）
+data/           业务数据（gitignore）：db/platform.sqlite3 统一库 + submissions 上传 + sessions/events 会话流
 Dockerfile      审核后端+前端运行时镜像（含 SDK 自带 claude CLI，无需 node）
 docker-compose.yml / docker-entrypoint.sh / enterprise-agent.env.example   平台编排、入口与 env 模板（LiteLLM 由运维独立管理）
 server/         Python 服务外壳、CLI、平台层与 stores
 agent-front/    React 前端（npm run build → agent-front/dist）
-logs/           请求/结果/会话/runtime/review-delta 运行时归档（gitignore）
+logs/           仅运行日志（gitignore）：app/{app,error}.log + runtime/app-server/
 ```
 
 > 结构化输出由 SDK `output_format` + JSON Schema 强制约束；业务判断放在 `.claude/` 与 `knowledge/`，Python 不承载业务语义。
