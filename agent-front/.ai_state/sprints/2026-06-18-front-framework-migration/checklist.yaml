@@ -1,0 +1,16 @@
+tasks:
+  - id: replace-framework
+    title: Replace current frontend scaffold with quantum-front framework
+    status: completed
+  - id: port-api-types
+    title: Port audit/OCR API, types, and submission summary storage
+    status: completed
+  - id: port-pages
+    title: Rebuild audit/OCR pages in target design language
+    status: completed
+  - id: wire-routes-nav-proxy
+    title: Wire routes, sidebar navigation, and Vite proxy compatibility
+    status: completed
+  - id: verify
+    title: Build and browser-verify migrated frontend
+    status: completed
