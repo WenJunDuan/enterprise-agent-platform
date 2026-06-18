@@ -1,4 +1,4 @@
-"""SQLite-backed session store implementation with optional legacy JSONL backfill."""
+"""SQLite-backed session store implementation."""
 
 from __future__ import annotations
 
@@ -7,12 +7,11 @@ from pathlib import Path
 from typing import Any
 
 from server.platform.sqlite_store import connect_sqlite, describe_sqlite_target, row_to_dict
-from server.platform.storage import load_jsonl_records_from_paths
 from server.stores.session_records import SessionRecord
 
 
 class SQLiteSessionStore:
-    """SQLite-backed session repository with optional legacy JSONL backfill."""
+    """SQLite-backed session repository (the session index in platform.sqlite3)."""
 
     COLUMNS = [
         "request_id",
@@ -33,11 +32,9 @@ class SQLiteSessionStore:
         "result_file",
     ]
 
-    def __init__(self, db_path: Path, legacy_shard_dir: Path | None) -> None:
+    def __init__(self, db_path: Path) -> None:
         self.db_path = db_path
-        self.legacy_shard_dir = legacy_shard_dir
         self._initialize_schema()
-        self._backfill_legacy_records()
 
     def append_record(self, record: SessionRecord) -> None:
         with connect_sqlite(self.db_path) as connection:
@@ -299,9 +296,7 @@ class SQLiteSessionStore:
         return {str(row["claude_session_id"]) for row in rows}
 
     def describe(self) -> dict[str, Any]:
-        description = describe_sqlite_target(self.db_path, backend="sqlite")
-        description["legacy_shard_dir"] = str(self.legacy_shard_dir) if self.legacy_shard_dir else None
-        return description
+        return describe_sqlite_target(self.db_path, backend="sqlite")
 
     def _initialize_schema(self) -> None:
         with connect_sqlite(self.db_path) as connection:
@@ -332,26 +327,6 @@ class SQLiteSessionStore:
                 CREATE INDEX IF NOT EXISTS idx_sessions_claude_session
                     ON sessions (tenant, claude_session_id);
                 """
-            )
-
-    def _backfill_legacy_records(self) -> None:
-        if self.legacy_shard_dir is None:
-            return
-        shard_paths = [item for item in sorted(self.legacy_shard_dir.glob("*.jsonl")) if item.is_file()]
-        legacy_records = load_jsonl_records_from_paths(shard_paths)
-        if not legacy_records:
-            return
-        with connect_sqlite(self.db_path) as connection:
-            connection.executemany(
-                """
-                INSERT OR IGNORE INTO sessions (
-                    request_id, conversation_id, claude_session_id, resume_session_id,
-                    fork_from_session_id, schema_name, request_mode, prompt_preview,
-                    log_file, status, result_subtype, cost_usd, started_at,
-                    finished_at, tenant, result_file
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                [self._record_values(record) for record in legacy_records],
             )
 
     def _record_values(self, record: dict[str, Any]) -> tuple[Any, ...]:

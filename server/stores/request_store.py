@@ -9,18 +9,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol
 
-from server.platform.paths import (
-    SERVICE_REQUEST_DB_FILE,
-    SERVICE_REQUEST_SHARD_DIR,
-    ensure_local_layout,
-)
+from server.platform.paths import SERVICE_REQUEST_DB_FILE, ensure_local_layout
 from server.platform.sqlite_store import connect_sqlite, describe_sqlite_target, row_to_dict
-from server.platform.storage import (
-    append_jsonl_record,
-    describe_storage_target,
-    load_jsonl_records_from_paths,
-    warn_if_store_capacity_exceeded,
-)
 
 ensure_local_layout()
 
@@ -73,106 +63,8 @@ class RequestAuditStore(Protocol):
     def describe(self) -> dict[str, Any]: ...
 
 
-class JSONLRequestAuditStore:
-    """File-backed request audit repository used by the serve layer."""
-
-    def __init__(self, shard_dir: Path) -> None:
-        self.shard_dir = shard_dir
-
-    def append_record(self, record: RequestAuditRecord) -> None:
-        shard_path = self.shard_dir / f"requests-{_month_key(record.created_at)}.jsonl"
-        append_jsonl_record(shard_path, asdict(record))
-        warn_if_store_capacity_exceeded(
-            store_name="request_store",
-            shard_dir=self.shard_dir,
-            shard_path=shard_path,
-        )
-
-    def list_records(
-        self,
-        tenant: str,
-        conversation_id: str | None = None,
-        claude_session_id: str | None = None,
-        route: str | None = None,
-        status: str | None = None,
-        limit: int = 20,
-        offset: int = 0,
-    ) -> list[dict[str, Any]]:
-        records = self._load_records_admin()
-        filtered: list[dict[str, Any]] = []
-        for record in records:
-            if record.get("tenant") != tenant:
-                continue
-            if conversation_id and record.get("conversation_id") != conversation_id:
-                continue
-            if claude_session_id and record.get("claude_session_id") != claude_session_id:
-                continue
-            if route and record.get("route") != route:
-                continue
-            if status and record.get("status") != status:
-                continue
-            filtered.append(record)
-        ordered = list(reversed(filtered))
-        return ordered[offset : offset + limit]
-
-    def get_record_by_request_id(
-        self,
-        request_id: str,
-        tenant: str,
-    ) -> dict[str, Any] | None:
-        records = self._load_records_admin()
-        for record in reversed(records):
-            if record.get("request_id") != request_id:
-                continue
-            if record.get("tenant") != tenant:
-                return None
-            return record
-        return None
-
-    def list_records_admin(
-        self,
-        conversation_id: str | None = None,
-        claude_session_id: str | None = None,
-        route: str | None = None,
-        status: str | None = None,
-        limit: int = 20,
-        offset: int = 0,
-    ) -> list[dict[str, Any]]:
-        records = self._load_records_admin()
-        filtered: list[dict[str, Any]] = []
-        for record in records:
-            if conversation_id and record.get("conversation_id") != conversation_id:
-                continue
-            if claude_session_id and record.get("claude_session_id") != claude_session_id:
-                continue
-            if route and record.get("route") != route:
-                continue
-            if status and record.get("status") != status:
-                continue
-            filtered.append(record)
-        ordered = list(reversed(filtered))
-        return ordered[offset : offset + limit]
-
-    def get_record_by_request_id_admin(self, request_id: str) -> dict[str, Any] | None:
-        for record in reversed(self._load_records_admin()):
-            if record.get("request_id") == request_id:
-                return record
-        return None
-
-    def describe(self) -> dict[str, Any]:
-        description = describe_storage_target(self.shard_dir)
-        description["backend"] = "jsonl-sharded"
-        return description
-
-    def _shard_paths(self) -> list[Path]:
-        return [item for item in sorted(self.shard_dir.glob("*.jsonl")) if item.is_file()]
-
-    def _load_records_admin(self) -> list[dict[str, Any]]:
-        return load_jsonl_records_from_paths(self._shard_paths())
-
-
 class SQLiteRequestAuditStore:
-    """SQLite-backed request query index that keeps JSONL request logs on disk."""
+    """SQLite-backed request audit index (the requests table in platform.sqlite3)."""
 
     COLUMNS = [
         "request_id",
@@ -196,21 +88,11 @@ class SQLiteRequestAuditStore:
         "error_detail",
     ]
 
-    def __init__(self, db_path: Path, shard_dir: Path | None) -> None:
+    def __init__(self, db_path: Path) -> None:
         self.db_path = db_path
-        self.shard_dir = shard_dir
         self._initialize_schema()
-        self._backfill_legacy_records()
 
     def append_record(self, record: RequestAuditRecord) -> None:
-        if self.shard_dir is not None:
-            shard_path = self.shard_dir / f"requests-{_month_key(record.created_at)}.jsonl"
-            append_jsonl_record(shard_path, asdict(record))
-            warn_if_store_capacity_exceeded(
-                store_name="request_store",
-                shard_dir=self.shard_dir,
-                shard_path=shard_path,
-            )
         with connect_sqlite(self.db_path) as connection:
             connection.execute(
                 """
@@ -307,9 +189,7 @@ class SQLiteRequestAuditStore:
         return self._row_to_dict(row) if row else None
 
     def describe(self) -> dict[str, Any]:
-        description = describe_sqlite_target(self.db_path, backend="sqlite+jsonl-logs")
-        description["legacy_shard_dir"] = str(self.shard_dir) if self.shard_dir else None
-        return description
+        return describe_sqlite_target(self.db_path, backend="sqlite")
 
     def _initialize_schema(self) -> None:
         with connect_sqlite(self.db_path) as connection:
@@ -347,26 +227,6 @@ class SQLiteRequestAuditStore:
                 """
             )
 
-    def _backfill_legacy_records(self) -> None:
-        if self.shard_dir is None:
-            return
-        shard_paths = [item for item in sorted(self.shard_dir.glob("*.jsonl")) if item.is_file()]
-        legacy_records = load_jsonl_records_from_paths(shard_paths)
-        if not legacy_records:
-            return
-        with connect_sqlite(self.db_path) as connection:
-            connection.executemany(
-                """
-                INSERT OR IGNORE INTO requests (
-                    request_id, route, method, status_code, status, duration_ms, created_at,
-                    tenant, conversation_id, claude_session_id, session_id, resume_session_id,
-                    fork_from_session_id, schema_name, prompt_preview, request_payload,
-                    session_log_file, result_file, error_detail
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                [self._record_values(record) for record in legacy_records],
-            )
-
     def _record_values(self, record: dict[str, Any]) -> tuple[Any, ...]:
         normalized = dict(record)
         request_payload = normalized.get("request_payload")
@@ -386,10 +246,7 @@ class SQLiteRequestAuditStore:
         return loaded
 
 
-REQUEST_AUDIT_STORE: RequestAuditStore = SQLiteRequestAuditStore(
-    SERVICE_REQUEST_DB_FILE,
-    SERVICE_REQUEST_SHARD_DIR,
-)
+REQUEST_AUDIT_STORE: RequestAuditStore = SQLiteRequestAuditStore(SERVICE_REQUEST_DB_FILE)
 
 
 def new_request_id() -> str:
@@ -455,9 +312,3 @@ def get_request_audit_by_request_id_admin(request_id: str) -> dict[str, Any] | N
 
 def describe_request_store() -> dict[str, Any]:
     return REQUEST_AUDIT_STORE.describe()
-
-
-def _month_key(timestamp: str | None) -> str:
-    if timestamp:
-        return datetime.fromisoformat(timestamp).strftime("%Y-%m")
-    return datetime.now(timezone.utc).strftime("%Y-%m")

@@ -4,14 +4,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from server.platform.paths import (
-    SESSION_INDEX_DB_FILE,
-    SESSION_INDEX_SHARD_DIR,
-)
+from server.platform.paths import SESSION_INDEX_DB_FILE
 from server.stores.session_records import SessionRecord, SessionStore
 from server.stores.session_sqlite_store import SQLiteSessionStore
 
-SESSION_STORE: SessionStore = SQLiteSessionStore(SESSION_INDEX_DB_FILE, SESSION_INDEX_SHARD_DIR)
+SESSION_STORE: SessionStore = SQLiteSessionStore(SESSION_INDEX_DB_FILE)
 
 
 def append_session_record(record: SessionRecord) -> None:
