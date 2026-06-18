@@ -10,8 +10,9 @@ by feature domains, never the other way around. Pure functions, no SDK import.
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from server.platform.paths import PROJECT_ROOT
 
@@ -134,60 +135,110 @@ def build_output_format(schema_name: str = DEFAULT_OUTPUT_SCHEMA_NAME) -> dict[s
     return {"type": "json_schema", "schema": load_output_schema(schema_name)}
 
 
+@dataclass(frozen=True)
+class SchemaProcessor:
+    """Per-schema output-conformance hooks (registry entry).
+
+    validate: raise JSONContractError when model output violates the contract.
+    enrich:   return a normalised/derived output (e.g. derive result from verdict).
+    """
+
+    validate: Callable[[StructuredJSON], None] | None = None
+    enrich: Callable[[StructuredJSON], StructuredJSON] | None = None
+
+
+_SCHEMA_PROCESSORS: dict[str, SchemaProcessor] = {}
+
+
+def register_schema_processor(
+    schema_name: str,
+    *,
+    validate: Callable[[StructuredJSON], None] | None = None,
+    enrich: Callable[[StructuredJSON], StructuredJSON] | None = None,
+) -> None:
+    """Register conformance hooks for a schema.
+
+    New schemas register here (from the owning module) instead of editing a central
+    if/elif — open for extension, closed for modification.
+    """
+    _SCHEMA_PROCESSORS[schema_name] = SchemaProcessor(validate=validate, enrich=enrich)
+
+
+def apply_schema_semantics(schema_name: str, structured_output: StructuredJSON) -> StructuredJSON:
+    """Run the registered validate + enrich for schema_name; unregistered ⇒ returned as-is.
+
+    This is the single entry the SDK bridge calls — it stays schema-name agnostic.
+    """
+    processor = _SCHEMA_PROCESSORS.get(schema_name)
+    if processor is None:
+        return structured_output
+    if processor.validate is not None:
+        processor.validate(structured_output)
+    if processor.enrich is not None:
+        structured_output = processor.enrich(structured_output)
+    return structured_output
+
+
 def validate_structured_output_semantics(
     schema_name: str,
     structured_output: StructuredJSON,
 ) -> None:
-    """Apply semantic validation rules that JSON Schema alone cannot express."""
-    if schema_name == DEFAULT_OUTPUT_SCHEMA_NAME:
-        if not isinstance(structured_output, dict):
-            raise JSONContractError("audit result structured output must be a JSON object.")
+    """Run only the registered validator for schema_name.
 
-        verdict = structured_output.get("verdict")
-        if verdict not in AUDIT_DECISION_DERIVATION:
-            raise JSONContractError("audit result returned an unknown verdict.")
+    Semantic rules JSON Schema alone cannot express. Stable entry point for callers
+    and tests; unregistered schemas are a no-op.
+    """
+    processor = _SCHEMA_PROCESSORS.get(schema_name)
+    if processor is not None and processor.validate is not None:
+        processor.validate(structured_output)
 
-        if not str(structured_output.get("explanation") or "").strip():
-            raise JSONContractError("audit result field `explanation` must be non-empty.")
 
-        if verdict == "manual_review":
-            reason = structured_output.get("manual_review_reason")
-            valid_reasons = {
-                "missing_approval",
-                "rule_gap",
-                "data_conflict",
-                "insufficient_evidence",
-                "budget_exceeded",
-                "invoice_invalid",
-                "pre_approval_mismatch",
-            }
-            if reason not in valid_reasons:
-                raise JSONContractError(
-                    "audit result with verdict=manual_review must include a valid manual_review_reason."
-                )
+def _validate_audit_result(structured_output: StructuredJSON) -> None:
+    if not isinstance(structured_output, dict):
+        raise JSONContractError("audit result structured output must be a JSON object.")
 
-        # risk_dimensions 是可选的风险元数据。网关模型（qwen 等）给的格式常不规范——
-        # 不规范就清洗/丢弃，绝不因为一个可选字段让整单审核失败（核心是 verdict/explanation）。
-        valid_dim_names = {"invoice", "amount", "approval", "budget", "anomaly"}
-        dimensions = structured_output.get("risk_dimensions")
-        if isinstance(dimensions, list):
-            structured_output["risk_dimensions"] = [
-                dim
-                for dim in dimensions
-                if isinstance(dim, dict)
-                and dim.get("name") in valid_dim_names
-                and isinstance(dim.get("score"), int)
-                and not isinstance(dim.get("score"), bool)
-                and 0 <= dim["score"] <= 10
-            ]
-        elif dimensions is not None:
-            structured_output.pop("risk_dimensions", None)
+    verdict = structured_output.get("verdict")
+    if verdict not in AUDIT_DECISION_DERIVATION:
+        raise JSONContractError("audit result returned an unknown verdict.")
 
-        return
+    if not str(structured_output.get("explanation") or "").strip():
+        raise JSONContractError("audit result field `explanation` must be non-empty.")
 
-    if schema_name != INIT_RULES_REPORT_SCHEMA_NAME:
-        return
+    if verdict == "manual_review":
+        reason = structured_output.get("manual_review_reason")
+        valid_reasons = {
+            "missing_approval",
+            "rule_gap",
+            "data_conflict",
+            "insufficient_evidence",
+            "budget_exceeded",
+            "invoice_invalid",
+            "pre_approval_mismatch",
+        }
+        if reason not in valid_reasons:
+            raise JSONContractError(
+                "audit result with verdict=manual_review must include a valid manual_review_reason."
+            )
 
+    # risk_dimensions 是可选的风险元数据。网关模型（qwen 等）给的格式常不规范——
+    # 不规范就清洗/丢弃，绝不因为一个可选字段让整单审核失败（核心是 verdict/explanation）。
+    valid_dim_names = {"invoice", "amount", "approval", "budget", "anomaly"}
+    dimensions = structured_output.get("risk_dimensions")
+    if isinstance(dimensions, list):
+        structured_output["risk_dimensions"] = [
+            dim
+            for dim in dimensions
+            if isinstance(dim, dict)
+            and dim.get("name") in valid_dim_names
+            and isinstance(dim.get("score"), int)
+            and not isinstance(dim.get("score"), bool)
+            and 0 <= dim["score"] <= 10
+        ]
+    elif dimensions is not None:
+        structured_output.pop("risk_dimensions", None)
+
+
+def _validate_init_rules_report(structured_output: StructuredJSON) -> None:
     if not isinstance(structured_output, dict):
         raise JSONContractError("init-rules structured output must be a JSON object.")
 
@@ -213,6 +264,19 @@ def validate_structured_output_semantics(
         raise JSONContractError(
             "init-rules cannot return status=initialized with extracted_rule_count <= 0."
         )
+
+
+# 内置平台契约：审核结果 + init-rules 报告。契约一致性属平台 common 职责；新业务域
+# 可从自己模块调 register_schema_processor 扩展，无需改动此处分发（OCP）。
+register_schema_processor(
+    DEFAULT_OUTPUT_SCHEMA_NAME,
+    validate=_validate_audit_result,
+    enrich=enrich_audit_decision,
+)
+register_schema_processor(
+    INIT_RULES_REPORT_SCHEMA_NAME,
+    validate=_validate_init_rules_report,
+)
 
 
 def _extract_json_object(text: str) -> dict[str, Any] | None:
