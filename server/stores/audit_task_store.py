@@ -101,7 +101,12 @@ def _backfill_legacy_tasks() -> None:
         for value in loaded.values():
             if not isinstance(value, dict) or "request_id" not in value:
                 continue
-            record = _coerce_record(value, existing=None)
+            try:
+                record = _coerce_record(value, existing=None)
+            except TypeError:
+                # 旧任务行缺必填字段（status/mode/case_path 等）→ 跳过，
+                # 绝不让坏数据在模块 import 时炸掉服务启动。
+                continue
             connection.execute(
                 f"INSERT OR IGNORE INTO audit_tasks ({_COLUMNS}) VALUES ({_PLACEHOLDERS})",
                 _record_values(record),

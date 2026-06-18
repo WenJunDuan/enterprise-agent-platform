@@ -42,9 +42,24 @@ class SQLiteMemoryStore:
     def __init__(self, db_path: Path, memory_root: Path) -> None:
         self.db_path = db_path
         self.memory_root = memory_root
+        self._last_signature: tuple[tuple[str, int, int], ...] | None = None
         self._initialize_schema()
 
-    def refresh_index(self) -> None:
+    def _memory_signature(self) -> tuple[tuple[str, int, int], ...]:
+        """memory 文件 (path, mtime_ns, size) 指纹；文件未变即可跳过重建。"""
+        if not self.memory_root.is_dir():
+            return ()
+        return tuple(
+            (str(path), path.stat().st_mtime_ns, path.stat().st_size)
+            for path in sorted(self.memory_root.rglob("*.json"))
+        )
+
+    def refresh_index(self, *, force: bool = False) -> None:
+        # memory index 是 knowledge/memory 文件的派生缓存。统一库下"每次读都 DELETE+重插"
+        # 会与 audit/请求写抢同一 SQLite writer，故用 mtime 指纹守卫：文件没变就不写库。
+        signature = self._memory_signature()
+        if not force and signature == self._last_signature:
+            return
         records = self._load_memory_files()
         with connect_sqlite(self.db_path) as connection:
             connection.execute("DELETE FROM memory_assets")
@@ -60,6 +75,7 @@ class SQLiteMemoryStore:
                 """,
                 [self._record_values(record) for record in records],
             )
+        self._last_signature = signature
 
     def list_records(
         self,
