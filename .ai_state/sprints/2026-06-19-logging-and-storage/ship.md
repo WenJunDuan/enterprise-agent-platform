@@ -72,8 +72,22 @@ knowledge/memory/（记忆产物，知识库归属）
   原子可加 `BEGIN IMMEDIATE`。
 - 迁移：表名固定白名单（无注入），幂等 INSERT OR IGNORE + payload 文件按指针读回。
 
+## E · 收尾清理（用户要求"能补全的全补、清废弃、清失效注释、低风险也改"）
+
+- **低风险已修**：`connect_sqlite` 加 `immediate`（BEGIN IMMEDIATE），audit_task upsert
+  读-改-写原子化，消除同 request_id 并发丢更新（替代旧 flock）。
+- **死代码清**：storage.py 删 step6 后变死的 4 个 JSONL 函数（load_jsonl_records/_from_paths/
+  list_jsonl_files/warn_if_store_capacity_exceeded）；config.py 删随之失效的
+  session_store_max_shard 配置；session_records 删死的 `_month_key`。
+- **失效注释清**：diagnostics storage_backend 标签 → `sqlite-unified+file-blobs`；
+  各 store docstring 去 "JSONL/legacy backfill" 残留。
+- **废弃目录清**：先跑 `migrate-storage` 并入数据，再删旧 `logs/{results,sessions,service,
+  review-deltas,knowledge}` + `data/` 旧空子目录。终态 `logs/` 只剩 app+runtime，
+  `data/` 只剩 db+sessions/events+submissions。
+- 自审：234 passed / ruff clean / 无循环导入。commit `e40c05f`、`86860d8`。
+
 ## 遗留 / 后续
 
 - C 合同库实现（随合同审计开工）。
 - 日志按天滚动 toggle（如需）。
-- audit_task upsert 如需严格原子：connect 加 `BEGIN IMMEDIATE`。
+- `prod/` → `deploy/prod/` 迁移是**预先存在的在途改动**（非本任务），未提交，留用户处置。
