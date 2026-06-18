@@ -18,10 +18,10 @@ data
 *.tar.sha256
 prod
 
-# Frontend sources & deps — only the prebuilt ui/dist is shipped
-ui/node_modules
-ui/src
-ui/.env.local
+# Frontend sources & deps — only the prebuilt agent-front/dist is shipped
+agent-front/node_modules
+agent-front/src
+agent-front/.env.local
 
 # Secrets — supplied at runtime via env_file, never baked into the image
 .env

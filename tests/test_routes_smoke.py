@@ -29,7 +29,7 @@ _BASELINE_ROUTES: list[tuple[str, tuple[str, ...]]] = [
 ]
 
 
-# SPA 兜底路由依赖环境：仅当 ui/dist 构建产物存在时才注册（见 server/api.py
+# SPA 兜底路由依赖环境：仅当 agent-front/dist 构建产物存在时才注册（见 server/api.py
 # `_ui_dist_dir`），开发机有 dist、CI/worktree 没有，故不纳入基线比对。
 _ENV_DEPENDENT_PATHS = {"/{spa_path:path}"}
 
