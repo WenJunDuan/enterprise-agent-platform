@@ -54,7 +54,7 @@ export default function ConnectionStatus() {
           <span>租户鉴权：{apiConfig.tenantTokenSource}</span>
           {!apiConfig.hasTenantToken && (
             <span className="basis-full text-red-700/80">
-              缺少租户 token，请在 `ui/.env.local` 配置 `VITE_TENANT_TOKEN`。
+              缺少租户 token，请在 `agent-front/.env.local` 配置 `VITE_TENANT_TOKEN`。
             </span>
           )}
           {state.status === 'error' && apiConfig.hasTenantToken && (

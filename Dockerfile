@@ -3,7 +3,7 @@
 # Build on a networked box (can reach pypi via proxy), then `docker save` the
 # image for offline transfer to an air-gapped target. The image is self-contained:
 # claude-agent-sdk ships its platform `claude` CLI inside the wheel, so no Node is
-# required at runtime. Frontend is the prebuilt ui/dist (served same-origin).
+# required at runtime. Frontend is the prebuilt agent-front/dist (served same-origin).
 #
 # The server resolves PROJECT_ROOT from the location of server/platform/paths.py,
 # so the app must run in-place from /app (deps installed, package NOT installed).
@@ -63,11 +63,11 @@ RUN groupadd --gid "${APP_GID}" app \
     && useradd --uid "${APP_UID}" --gid app --create-home --home-dir /home/app app
 
 # Application surface. .claude carries contracts/agents/hooks/skills/settings the
-# SDK reads via setting_sources=["project"]; ui/dist is the prebuilt frontend;
+# SDK reads via setting_sources=["project"]; agent-front/dist is the prebuilt frontend;
 # knowledge holds the audit rules (mounted volume overrides this baked default).
 COPY --chown=app:app server ./server
 COPY --chown=app:app .claude ./.claude
-COPY --chown=app:app ui/dist ./ui/dist
+COPY --chown=app:app agent-front/dist ./agent-front/dist
 COPY --chown=app:app knowledge ./knowledge
 COPY --chown=app:app pyproject.toml README.md ./
 COPY docker-entrypoint.sh ./docker-entrypoint.sh

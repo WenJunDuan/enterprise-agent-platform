@@ -29,7 +29,7 @@ export function getApiRuntimeConfig() {
 
 function authHeaders(): HeadersInit {
   if (!TENANT_TOKEN) {
-    throw new Error('缺少租户 token：请在 ui/.env.local 配置 VITE_TENANT_TOKEN')
+    throw new Error('缺少租户 token：请在 agent-front/.env.local 配置 VITE_TENANT_TOKEN')
   }
   const token = TENANT_TOKEN.startsWith('Bearer ') ? TENANT_TOKEN.slice('Bearer '.length).trim() : TENANT_TOKEN
   return { Authorization: `Bearer ${token}` }

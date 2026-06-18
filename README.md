@@ -5,12 +5,12 @@
 **运行链路**
 
 ```
-前端(ui/dist) ──┐
+前端(agent-front/dist) ──┐
                 ├─→ 后端 FastAPI(:9999) ──→ LiteLLM(:4000) ──→ Qwen / 任意 Anthropic 兼容模型
 浏览器/接口 ────┘     鉴权·归档·异步任务       Claude名映射·tool_use 翻译
 ```
 
-后端默认同源托管前端 `ui/dist`，无需单独前端服务。模型层用 LiteLLM 把 `claude-*` 名映射到 Qwen 并双向翻译工具调用（LiteLLM 由运维独立部署管理）。
+后端默认同源托管前端 `agent-front/dist`，无需单独前端服务。模型层用 LiteLLM 把 `claude-*` 名映射到 Qwen 并双向翻译工具调用（LiteLLM 由运维独立部署管理）。
 
 ---
 
@@ -26,8 +26,8 @@ uv run python -m server.cli serve         # 前台起后端（调试用）
 前端联调：
 
 ```bash
-cd ui && npm install
-# 创建 ui/.env.local（仓库不含模板）：
+cd agent-front && npm install
+# 创建 agent-front/.env.local（仓库不含模板）：
 #   VITE_API_BASE=/                               # 走 vite 代理，免跨域
 #   VITE_API_PROXY_TARGET=http://127.0.0.1:9999   # 后端地址
 #   VITE_TENANT_TOKEN=<后端 TENANT_KEYS 的某个 value>
@@ -78,7 +78,7 @@ TENANT_KEYS={"default":"sk-your-token"}        # HTTP API Bearer token 映射
 
 ### 方式 A · Docker Compose（推荐）
 
-镜像自包含 SDK 自带的 `claude` CLI（无需 node）与同源前端 `ui/dist`，模型层 LiteLLM
+镜像自包含 SDK 自带的 `claude` CLI（无需 node）与同源前端 `agent-front/dist`，模型层 LiteLLM
 与平台应用分成两个 compose 项目管理：
 
 - `/opt/application/litellm/`：LiteLLM 的 `docker-compose.yml`、`litellm_config.yaml`、`litellm.env`
@@ -86,7 +86,7 @@ TENANT_KEYS={"default":"sk-your-token"}        # HTTP API Bearer token 映射
 
 ```bash
 # 1) 前端产物与规则必须存在
-cd ui && npm install && npm run build && cd ..
+cd agent-front && npm install && npm run build && cd ..
 test -f knowledge/expense/travel.rules.json
 
 # 2) 目标机：准备共享网络
@@ -168,8 +168,8 @@ uv run app-server start                        # 后台常驻（开发期用；�
 #### 5. 构建前端（后端同源托管）
 
 ```bash
-cd ui && npm install && npm run build && cd .. # 产物 ui/dist
-uv run app-server restart                      # 后端默认 SERVE_UI_DIST=true，挂载 ui/dist
+cd agent-front && npm install && npm run build && cd .. # 产物 agent-front/dist
+uv run app-server restart                      # 后端默认 SERVE_UI_DIST=true，挂载 agent-front/dist
 # 访问 http://<服务器>:<端口>/ 即前端页面
 ```
 
@@ -395,7 +395,7 @@ data/           样例目录与上传落盘（gitignore）
 Dockerfile      审核后端+前端运行时镜像（含 SDK 自带 claude CLI，无需 node）
 docker-compose.yml / docker-entrypoint.sh / enterprise-agent.env.example   平台编排、入口与 env 模板（LiteLLM 由运维独立管理）
 server/         Python 服务外壳、CLI、平台层与 stores
-ui/             React 前端（npm run build → ui/dist）
+agent-front/    React 前端（npm run build → agent-front/dist）
 logs/           请求/结果/会话/runtime/review-delta 运行时归档（gitignore）
 ```
 

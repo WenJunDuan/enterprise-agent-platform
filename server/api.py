@@ -321,7 +321,7 @@ def _ui_dist_dir() -> Path | None:
         logger.info("ui_static_disabled", extra={"reason": "SERVE_UI_DIST=false"})
         return None
     raw = os.getenv("UI_DIST_DIR", "").strip()
-    candidate = Path(raw) if raw else (PROJECT_ROOT / "ui" / "dist")
+    candidate = Path(raw) if raw else (PROJECT_ROOT / "agent-front" / "dist")
     if not candidate.is_dir():
         logger.warning(
             "ui_static_dir_missing",

@@ -28,7 +28,7 @@
 
 | 内容 | 方式 | 改完怎么生效 |
 |---|---|---|
-| `server/`、`.claude/`、`ui/dist` | **烤进镜像** | 必须 `docker compose build` 重建 |
+| `server/`、`.claude/`、`agent-front/dist` | **烤进镜像** | 必须 `docker compose build` 重建 |
 | `knowledge/`、`data/`、`logs/` | **volume 挂载** | 同步到挂载目录即可，无需重建 |
 | `audit-agent.env`（env_file）| 挂载 | 改后 `docker compose up -d --force-recreate` |
 

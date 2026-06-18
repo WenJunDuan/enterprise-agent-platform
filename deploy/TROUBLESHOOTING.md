@@ -29,7 +29,7 @@
 ## B. 容器 / 网络 / 镜像
 
 ### B1. 改了代码但容器行为没变
-- **真因**：`server/` `.claude/` `ui/dist` **烤进镜像**，不重建不生效（`knowledge/`/`data/`/`logs/` 才是挂载）。
+- **真因**：`server/` `.claude/` `agent-front/dist` **烤进镜像**，不重建不生效（`knowledge/`/`data/`/`logs/` 才是挂载）。
 - **解法**：`docker compose build` 重建（必 bump 镜像标签）。规则文件改动则同步到挂载的 `knowledge/`。
 
 ### B2. `MODEL_BASE_URL` 没进容器 → CLI 退回 `api.anthropic.com`（内网 ConnectionRefused）
