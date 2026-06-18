@@ -37,7 +37,7 @@ OCR 对外 HTTP API + 前端接入 + 既有分诊缺陷修复。不改审核（a
 - ✅ extract-result schema 对齐（additionalProperties + 补字段 + kind enum + 一致性测试）
 - ✅ build_extraction_block 截断显式标记 + 上限可配（OCR_MAX_FILE_BLOCK_CHARS）
 - ✅ 代码已 commit（feat + docs + fix×4）
-- ⏳ 配线上 model key 验 /ocr/fill 真识别；扫描件验部署机 PaddleOCR-VL serving（环境依赖）
+- ✅ 生产真识别验证通过（mac mini 0618b4，7 文件全成功含扫描件 OCR）——见末尾段
 
 ## 遗漏修复 + codex 四轮交叉 review（2026-06-17 续）
 
@@ -54,3 +54,26 @@ OCR 对外 HTTP API + 前端接入 + 既有分诊缺陷修复。不改审核（a
 验收：测试 170→200，ruff / 前端 build 全过，6 个 commit（feat + docs + fix×4）。
 **注**：findings 趋势 5→2→4→3，**未收敛到 0**，且多个是修复前一轮引入的——交叉 review
 的修复本身需再 review，应按"连续一轮无 P0/P1/P2"收敛而非固定轮数（详见 compound 教训）。
+
+## 生产真识别验证 + engine.py PDF 渲染修复（2026-06-18）
+
+mac mini（Apple container，镜像 `audit-agent:0618b4`，PaddleOCR-VL serving 经 litellm
+`10.200.52.4:4000/v1`）上 `/ocr/extract` 实测 7 个文件**全部识别成功**（HTTP 200，0 error）：
+
+| 文件 | kind/route | 耗时 |
+|---|---|---|
+| 项目库.xlsx / 项目管理功能清单.xlsx | excel/native | 0.06–0.38s |
+| 备案证.pdf（文本层）| pdf_text/native | 0.01s |
+| 河道护栏 概算/标底/立项批复.pdf（扫描 1–2 页）| ocr/ocr | 2.7–5.7s |
+| 供电工程/金欣F外线.pdf（扫描 12 页）| ocr/ocr（12 页全识别）| 50.4s |
+
+性能：native 秒级；扫描件 ~3–5s/页（含网关往返）。多页大文档（市政 27 页 / 金欣F 136 页）
+按比例更久，同步调用须把客户端超时设足。
+
+**关键依赖修复（`2a7d2d5` engine.py，mac mini 回流并已汇入本仓库）**：远端 VLM（OpenAI
+兼容端点）不接受 `application/pdf` 会 400；改为 PyMuPDF 先把 PDF 每页渲染成 PNG、以
+`data:image/png` 调用。配套 `pymupdf` 依赖 + Dockerfile OCR 层 + `tests/test_ocr_engine.py`。
+两端不再分叉（原"mac mini 适配未回流 git"的债随此解决）。
+
+至此 OCR 对外能力（/ocr/extract 纯识别 + /ocr/fill 回填，502 已由 schema 驱动归一化修复）
+在生产环境端到端验证通过。
