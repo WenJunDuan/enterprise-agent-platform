@@ -16,6 +16,7 @@ from pydantic import BaseModel, ValidationError
 
 from server.core import enrich_audit_decision
 from server.routes.audit_worker import schedule_directory_audit_task
+from server.routes.deps import verify_tenant
 from server.routes.upload_helpers import (
     materialize_upload_submission,
     remove_submission_dir,
@@ -83,8 +84,6 @@ async def audit_submit(
     request: Request,
     authorization: str | None = Header(None),
 ) -> AuditSubmitAcceptedResponse:
-    from server.api import verify_tenant  # lazy import breaks import cycle api↔routes
-
     tenant = verify_tenant(authorization)
     request_id = new_request_id()
 
@@ -150,8 +149,6 @@ async def list_audit_tasks_endpoint(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
 ) -> list[AuditTaskStatusResponse]:
-    from server.api import verify_tenant
-
     tenant = verify_tenant(authorization)
     records = list_audit_tasks(tenant, status=status, limit=limit, offset=offset)
     return [_public_audit_task(r) for r in records]
@@ -162,8 +159,6 @@ async def audit_task_status(
     request_id: str,
     authorization: str | None = Header(None),
 ) -> AuditTaskStatusResponse:
-    from server.api import verify_tenant
-
     tenant = verify_tenant(authorization)
     record = get_audit_task(request_id, tenant=tenant)
     if record is None:
@@ -175,8 +170,6 @@ async def audit_task_status(
 async def audit_task_result(
     request_id: str, authorization: str | None = Header(None)
 ) -> dict[str, Any]:
-    from server.api import verify_tenant
-
     tenant = verify_tenant(authorization)
     record = get_audit_task(request_id, tenant=tenant)
     if record is None:
@@ -197,8 +190,6 @@ async def retry_audit_task(
     request_id: str,
     authorization: str | None = Header(None),
 ) -> AuditTaskStatusResponse:
-    from server.api import verify_tenant
-
     tenant = verify_tenant(authorization)
     record = get_audit_task(request_id, tenant=tenant)
     if record is None:
@@ -243,8 +234,6 @@ async def delete_audit_task_endpoint(
     request_id: str,
     authorization: str | None = Header(None),
 ) -> dict[str, Any]:
-    from server.api import verify_tenant
-
     tenant = verify_tenant(authorization)
     record = get_audit_task(request_id, tenant=tenant)
     if record is None:

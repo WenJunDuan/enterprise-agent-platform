@@ -27,15 +27,15 @@ class TestVerifyTenant:
 
     def _patch(self, monkeypatch, *, tenant_keys: dict[str, str], is_default: bool = False):
         """Patch tenant key config so tests don't depend on env-var state."""
-        monkeypatch.setattr("server.api.TENANT_KEYS", tenant_keys)
+        monkeypatch.setattr("server.routes.deps.TENANT_KEYS", tenant_keys)
         monkeypatch.setattr(
             "server.platform.config.tenant_keys_are_default",
             lambda raw=None: is_default,
         )
-        # Also patch the version imported directly into server.api
-        import server.api as api_module
+        # Also patch the version imported directly into server.routes.deps
+        import server.routes.deps as deps_module
 
-        monkeypatch.setattr(api_module, "tenant_keys_are_default", lambda: is_default)
+        monkeypatch.setattr(deps_module, "tenant_keys_are_default", lambda: is_default)
 
     # ── missing Authorization header ─────────────────────────────────────────
 

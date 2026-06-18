@@ -21,10 +21,11 @@ _AUTH = {"Authorization": f"Bearer {_TOKEN}"}
 @pytest.fixture
 def client(monkeypatch):
     """TestClient with a patched tenant key (no default-key 503 guard)."""
-    monkeypatch.setattr("server.api.TENANT_KEYS", {"acme": _TOKEN})
+    monkeypatch.setattr("server.routes.deps.TENANT_KEYS", {"acme": _TOKEN})
     import server.api as api_module
+    import server.routes.deps as deps_module
 
-    monkeypatch.setattr(api_module, "tenant_keys_are_default", lambda: False)
+    monkeypatch.setattr(deps_module, "tenant_keys_are_default", lambda: False)
     monkeypatch.setenv("ALLOW_INSECURE_DEFAULT_TENANT_KEY", "")
     return TestClient(api_module.app)
 

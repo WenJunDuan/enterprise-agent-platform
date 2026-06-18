@@ -23,6 +23,7 @@ from pydantic import BaseModel, ValidationError
 
 from server.ocr import OcrError
 from server.ocr.runner import map_extraction_to_form, run_doc_recognize
+from server.routes.deps import verify_tenant
 from server.routes.upload_helpers import (
     materialize_ocr_upload,
     remove_submission_dir,
@@ -74,8 +75,6 @@ async def ocr_extract(
     run_seal: bool = Query(False, description="是否对扫描件追加印章识别"),
 ) -> dict[str, Any]:
     """同步纯识别：upload（multipart）或 directory（data/ 下）→ {request_id, results, block}。"""
-    from server.api import verify_tenant  # lazy import breaks import cycle api↔routes
-
     verify_tenant(authorization)
     request_id = new_request_id()
 
@@ -147,8 +146,6 @@ async def ocr_fill(
     再 map_extraction_to_form（一次模型映射 → form-fill 契约）。需配好模型网关；扫描件
     需 OCR serving。一次响应同时给底稿（results/block，左栏）与回填（fill，右栏）。
     """
-    from server.api import verify_tenant  # lazy import breaks import cycle api↔routes
-
     tenant = verify_tenant(authorization)
     request_id = new_request_id()
 

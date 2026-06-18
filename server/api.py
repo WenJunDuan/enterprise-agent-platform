@@ -2,9 +2,9 @@
 
 Responsibilities:
 - App factory: FastAPI instance, middleware stack, lifespan, exception handlers.
-- Tenant authentication: ``verify_tenant`` and ``TENANT_KEYS`` (re-exported here so
-  external callers such as tests and route modules can import from a single stable
-  location without knowing the internal layout).
+- Tenant authentication: ``verify_tenant`` and ``TENANT_KEYS`` now live in
+  ``server.routes.deps`` and are re-exported here so external callers such as
+  tests can keep importing from this stable location.
 - Router wiring: delegates all HTTP route logic to ``server.routes.*``.
 
 Route implementations live in:
@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import logging
 import os
-import secrets
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -32,9 +31,10 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.routing import Match
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from server.platform.config import get_app_settings, load_tenant_keys, tenant_keys_are_default
+from server.platform.config import get_app_settings
 from server.platform.logging_setup import configure_logging, logging_context
 from server.platform.paths import PROJECT_ROOT
+from server.routes.deps import TENANT_KEYS, verify_tenant  # noqa: F401  re-export
 from server.stores.audit_task_store import recover_stale_audit_tasks
 
 configure_logging(
@@ -47,56 +47,6 @@ configure_logging(
     ),
 )
 logger = logging.getLogger(__name__)
-
-
-# ── tenant authentication ─────────────────────────────────────────────────────
-
-TENANT_KEYS = load_tenant_keys()
-
-
-def _authorization_error(detail: str) -> HTTPException:
-    return HTTPException(
-        status_code=401,
-        detail=detail,
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-
-
-def verify_tenant(authorization: str | None) -> str:
-    """Validate the Bearer token and return the matching tenant name.
-
-    Raises:
-        HTTPException: 401 when credentials are missing or invalid.
-        HTTPException: 503 when the server has not been configured with tenant keys.
-    """
-    allow_default = os.getenv("ALLOW_INSECURE_DEFAULT_TENANT_KEY", "").lower() in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
-    if tenant_keys_are_default():
-        if not allow_default:
-            raise HTTPException(
-                status_code=503,
-                detail=(
-                    "Server is not configured with tenant keys. "
-                    "Set the TENANT_KEYS environment variable."
-                ),
-            )
-    if not authorization:
-        # When running in insecure dev mode, skip auth header requirement entirely.
-        if allow_default:
-            return "default"
-        raise _authorization_error("Missing Authorization header")
-    scheme, _, credentials = authorization.strip().partition(" ")
-    if scheme.lower() != "bearer" or not credentials.strip():
-        raise _authorization_error("Authorization header must use Bearer token")
-    token = credentials.strip()
-    for tenant, key in TENANT_KEYS.items():
-        if secrets.compare_digest(key, token):
-            return tenant
-    raise _authorization_error("Invalid tenant token")
 
 
 # ── lifespan ──────────────────────────────────────────────────────────────────
