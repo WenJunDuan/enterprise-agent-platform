@@ -5,7 +5,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from server.core import run_agent_full, run_agent_json
+from server.common.agent_bridge import run_agent_full
+from server.common.json_bridge import run_agent_json
 
 def _serialize_command_argument(argument: str) -> str:
     normalized = str(argument).strip()
