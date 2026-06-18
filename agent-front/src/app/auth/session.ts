@@ -7,7 +7,6 @@ import {
   clearTenantToken,
   persistTenantToken,
   resolveTenantTokenByPin,
-  validateTenantToken,
 } from '@/features/audit/api'
 import { fetchCurrentUser, logoutCurrentUser } from './api'
 
@@ -41,7 +40,6 @@ export async function loginWithTenantToken(tenantToken: string) {
   authState.setBootstrapStatus('loading')
 
   try {
-    await validateTenantToken(token)
     persistTenantToken(token)
     return ensureTenantSession(token)
   } catch (error) {

@@ -56,7 +56,7 @@ function StatusBanner({ task }: { task: AuditTask }) {
     return (
       <Alert variant='destructive'>
         <AlertTitle>审核失败</AlertTitle>
-        <AlertDescription>{task.error_detail || '任务执行失败，请检查后端日志或重新审核。'}</AlertDescription>
+        <AlertDescription>{task.error_detail || '任务执行失败，请稍后重试。'}</AlertDescription>
       </Alert>
     )
   }
@@ -306,8 +306,8 @@ export function AuditTaskDetailPage({ taskId }: { taskId: string }) {
             {summary ? (
               <Card>
                 <CardHeader>
-                  <CardTitle>本机提交摘要</CardTitle>
-                  <CardDescription>来自 localStorage 的提交快照。</CardDescription>
+                  <CardTitle>提交摘要</CardTitle>
+                  <CardDescription>最近一次提交的信息。</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <pre className='max-h-[420px] overflow-auto rounded-md border bg-muted/30 p-4 text-xs'>

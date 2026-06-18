@@ -33,6 +33,10 @@ const formSchema = z.object({
     .max(pinLength, `请输入 ${pinLength} 位访问 PIN。`),
 })
 
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : '登录失败，请重试。'
+}
+
 type OtpFormProps = React.HTMLAttributes<HTMLFormElement> & {
   redirectTo?: string
 }
@@ -61,7 +65,9 @@ export function OtpForm({ className, redirectTo, ...props }: OtpFormProps) {
         replace: true,
       })
     } catch (error) {
+      const message = getErrorMessage(error)
       handleServerError(error)
+      form.setError('pin', { message })
       form.setValue('pin', '', {
         shouldDirty: true,
         shouldTouch: true,

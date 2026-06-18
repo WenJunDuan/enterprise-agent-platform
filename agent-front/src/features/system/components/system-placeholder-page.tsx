@@ -25,16 +25,14 @@ const placeholderIconMap: Record<string, LucideIcon> = {
 type SystemPlaceholderPageProps = {
   title: string
   description: string
-  backendComponent: string
-  routePath: string
+  backendComponent?: string
+  routePath?: string
   iconKey: keyof typeof placeholderIconMap
 }
 
 export function SystemPlaceholderPage({
   title,
   description,
-  backendComponent,
-  routePath,
   iconKey,
 }: SystemPlaceholderPageProps) {
   const Icon = placeholderIconMap[iconKey]
@@ -62,29 +60,18 @@ export function SystemPlaceholderPage({
               <Icon className='size-5 text-muted-foreground' />
             </div>
             <div className='space-y-1'>
-              <CardTitle>占位页面已创建</CardTitle>
+              <CardTitle>页面准备中</CardTitle>
               <p className='text-sm text-muted-foreground'>
-                当前页面已接入动态菜单与动态路由，后续可以直接在此补真实列表、表单和交互逻辑。
+                当前入口已保留，具体功能开放后会在这里使用。
               </p>
             </div>
           </CardHeader>
           <CardContent className='space-y-4 text-sm'>
-            <div className='rounded-lg border bg-muted/30 p-4'>
-              <p className='font-medium'>当前映射</p>
-              <p className='mt-2 text-muted-foreground'>
-                路由地址：<span className='font-mono text-foreground'>{routePath}</span>
-              </p>
-              <p className='mt-1 text-muted-foreground'>
-                后端组件：<span className='font-mono text-foreground'>{backendComponent}</span>
-              </p>
-            </div>
             <div className='rounded-lg border bg-background p-4'>
-              <p className='font-medium'>下一步建议</p>
+              <p className='font-medium'>统一提示</p>
               <p className='mt-2 text-muted-foreground'>
-                1. 接对应接口与权限码
+                当前功能暂未开放，请稍后再试。
               </p>
-              <p className='text-muted-foreground'>2. 落列表页与查询条件</p>
-              <p className='text-muted-foreground'>3. 补新增、编辑、删除等操作弹层</p>
             </div>
           </CardContent>
         </Card>

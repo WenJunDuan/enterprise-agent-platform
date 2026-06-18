@@ -206,9 +206,9 @@ export function AuditSubmitPage() {
       <Header fixed />
       <Main constrained className='space-y-5'>
         <div>
-          <h1 className='text-2xl font-semibold tracking-tight'>新建报销审核</h1>
+          <h1 className='text-2xl font-semibold tracking-tight'>新建发票审核</h1>
           <p className='text-sm text-muted-foreground'>
-            按步骤整理业务事实与附件，提交后由审核服务异步处理。
+            按步骤整理发票信息与附件，提交后进入审核流程。
           </p>
         </div>
 
@@ -224,7 +224,7 @@ export function AuditSubmitPage() {
           <Card>
             <CardHeader>
               <CardTitle>{steps[stepIndex].label}</CardTitle>
-              <CardDescription>表单字段保持旧版提交契约，展示层适配新后台框架。</CardDescription>
+              <CardDescription>按页面提示补充必要信息。</CardDescription>
             </CardHeader>
             <CardContent className='space-y-5'>
               {step === 'basic' ? (

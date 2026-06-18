@@ -26,12 +26,12 @@ uv run python -m server.cli serve         # 前台起后端（调试用）
 前端联调：
 
 ```bash
-cd agent-front && npm install
-# 创建 agent-front/.env.local（仓库不含模板）：
+cd agent-front && bun install
+# 前端只保留 agent-front/.env.dev 和 agent-front/.env.prod：
 #   VITE_API_BASE=/                               # 走 vite 代理，免跨域
 #   VITE_API_PROXY_TARGET=http://127.0.0.1:9999   # 后端地址
-#   VITE_TENANT_TOKEN=<后端 TENANT_KEYS 的某个 value>
-npm run dev                               # http://localhost:5173
+#   VITE_TENANT_PIN_KEYS={"123456":"<TENANT_KEYS value>"}
+bun run dev                               # http://localhost:5173
 ```
 
 > 前置：Python 3.12+、`uv`、Node 18+（构建前端 + Claude Agent SDK 自带的 CLI 运行时）。

@@ -131,7 +131,7 @@ const ICON_PRESET_NAMES: IconName[] = [
 ]
 
 const ICON_LABEL_OVERRIDES: Partial<Record<IconName, string>> = {
-  'layout-dashboard': '仪表盘',
+  'layout-dashboard': '看板',
   'layout-grid': '布局面板',
   blocks: '功能模块',
   house: '系统首页',

@@ -2,18 +2,41 @@
 version: "9.6.4-front"
 scope: "agent-front"
 path: "System"
-stage: "plan"
+stage: "ship"
 current_sprint_slug: "2026-06-18-front-framework-migration"
 current_roadmap_slug: ""
 source_ai_state: "../.ai_state"
 created_at: "2026-06-18"
-next_action: "design_front_framework_migration"
+next_action: ""
 ---
 
 # Agent Front State Index
 
-This `.ai_state` was created for `agent-front` by migrating frontend-relevant
-state from the parent `enterprise-agent-platform/.ai_state`.
+This `.ai_state` tracks the migrated `agent-front` frontend. It was created by
+migrating frontend-relevant state from the parent
+`enterprise-agent-platform/.ai_state`.
+
+## Latest Update: 2026-06-19
+
+The migrated frontend is now the active app shell on `main`.
+
+- Product name is `晓数智能云平台`.
+- Login uses configured PIN -> tenant key mapping from `VITE_TENANT_PIN_KEYS`;
+  a correct PIN enters the app without waiting for backend task validation.
+- Environment files are normalized to `.env.dev` and `.env.prod`; `.env.local`
+  is intentionally removed.
+- Old account/password, register, forgot-password, dashboard, and password
+  settings routes were removed from the frontend route tree.
+- Sidebar is static and business-oriented:
+  - group `发票审核` with entry `发票审核清单`
+  - group `OCR 识别` with entry `OCR 识别`
+  - group `合同审查` with entry `合同审查清单`
+- The header shows the existing layout/theme configuration drawer so users can
+  switch system/default, light, and dark modes.
+- User-facing frontend messages were simplified to avoid backend/proxy/HTTP
+  implementation wording.
+- Verification passed on 2026-06-19: `bun run lint`, `bun run build`, and
+  `bun run test`.
 
 ## Current Scope
 
@@ -72,8 +95,9 @@ frontend implementation until the migration design is written and confirmed.
 
 - Treat the target `quantum-front` as the new app shell and design language.
 - Port existing audit/OCR business capability into the target shell, not the old `Layout`.
-- Decide explicitly how authentication is handled:
-  - target shell has login/session and axios interceptors
-  - current audit UI uses `VITE_TENANT_TOKEN` and direct `/audit`/`/ocr` calls
+- Authentication is intentionally frontend-configured for now:
+  - target shell admin username/password auth is not used
+  - OTP/PIN login resolves a tenant key from `VITE_TENANT_PIN_KEYS`
+  - the resolved tenant key is persisted as the local session credential
 - Keep current backend endpoint contracts stable unless backend changes are explicitly requested.
 - Run build verification after implementation and inspect UI render behavior in browser.
