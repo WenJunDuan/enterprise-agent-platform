@@ -23,7 +23,7 @@ from server.common.agent_bridge import (
     _resolve_session_ids,
     build_options,
 )
-from server.audit.contract import (
+from server.common.contract import (
     DEFAULT_OUTPUT_SCHEMA_NAME,
     JSONContractError,
     StructuredJSON,
