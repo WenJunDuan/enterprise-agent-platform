@@ -93,7 +93,61 @@ ssh $J -i $KEY $H "cd $D \
 | `SECOND_REVIEW_ENABLED` | 关 | 二次 SDK 复核 | 耗时翻倍，慎开 |
 | `CLAUDE_CODE_MAX_OUTPUT_TOKENS` | CLI 默认 64000 | CLI 请求的最大输出 token | **本地 65536 上下文模型必须压低（如 16000）**，否则撞 400；大上下文云模型可留默认 |
 
-## 六、验证（部署后必做）
+## 六、OCR 文档识别（可选能力）
+
+OCR（`/ocr/extract` 纯识别 + `/ocr/fill` 识别+回填）默认**不装**，需显式开启。Excel /
+文本层 PDF / Word 等**原生直读不依赖引擎**；只有**扫描件**才需 PaddleOCR-VL serving。
+
+### 构建（装 OCR 依赖）
+
+```bash
+# 镜像默认精简（不含 paddleocr）；加 WITH_OCR=1 才装 paddleocr[doc-parser]
+docker compose build --build-arg WITH_OCR=1
+```
+
+镜像内已装 PaddleOCR 运行时系统库（`libgl1` / `libglib2.0-0` / `libgomp1`）。
+
+### env（写各机 `audit-agent.env`）
+
+| 开关 | 示例 / 默认 | 作用 |
+|---|---|---|
+| `OCR_VL_SERVER_URL` | `http://10.200.52.4:4000/v1` | PaddleOCR-VL 的 VLM 识别走的 litellm OpenAI 兼容端点；**未设则扫描件不可识别** |
+| `OCR_VL_MODEL_NAME` | litellm 注册的 model_name | 须与 litellm 配置**一字不差**，否则上游 `model does not exist`（`/v1/models` 查 id）|
+| `OCR_VL_USE_PADDLE_PIPELINE` | `0` | =0 直接走网关识别；=1 才启用本地 PP-DocLayoutV2 layout pipeline（部分 arm64 容器会崩，慎开）|
+| `MAX_CONCURRENT_OCR` | 2 | 并发识别上限（识别在信号量内跑到完成，无请求级超时）|
+| `OCR_FILL_TIMEOUT_SEC` | 180 | `/ocr/fill` 字段映射（调模型）超时 |
+| `OCR_MAX_FILE_BLOCK_CHARS` | 40000 | 单文件识别底稿截断上限（超长截断并显式标记）|
+
+> `/ocr/fill` 的字段映射调一次模型，走审核同一套 `MODEL_BASE_URL` 网关。
+
+### compose（缓存卷）
+
+PaddleX 模型缓存挂 volume 避免每次重下：
+
+```yaml
+    volumes:
+      - paddlex-cache:/home/app/.paddlex
+# 顶层
+volumes:
+  paddlex-cache:
+```
+
+> 仅 `OCR_VL_USE_PADDLE_PIPELINE=1` 时，PP-DocLayoutV2 版面权重首次运行联网下载（baidu
+> bcebos）；离线环境需预热（联网机跑一次填充 `paddlex-cache` 再搬运）。默认 `=0` 不需要。
+
+### 验证
+
+```bash
+# litellm 是否注册了 PaddleOCR-VL（/v1/models 应含 OCR_VL_MODEL_NAME）
+curl -s $OCR_VL_SERVER_URL/models -H "Authorization: Bearer <key>" | grep <model_name>
+# 上传扫描件试 /ocr/extract（kind 应为 ocr，非 error）
+curl -X POST http://127.0.0.1:9999/ocr/extract -H "Authorization: Bearer <token>" -F 'files=@scan.pdf'
+```
+
+> 未部署 serving 时：扫描件返回 `kind=error`，但 Excel / 文本层 PDF / Word 等原生直读
+> **不受影响**，OCR API 本身仍可用。
+
+## 七、验证（部署后必做）
 
 ```bash
 # 容器健康
