@@ -54,3 +54,22 @@ def test_platform_is_a_leaf_layer():
         (f, mod) for f, mod in _server_imports("platform") if mod.startswith(forbidden)
     ]
     assert not offenders, f"platform/ imports a higher layer (must stay a leaf): {offenders}"
+
+
+def test_common_does_not_import_feature_or_upper_layers():
+    """common/ is shared scaffolding — it must not depend on feature domains or above.
+
+    Contract conformance (server.common.contract) is shared, not audit-owned, so
+    nothing in common/ should import server.audit / server.ocr / routes / ops / api.
+    """
+    forbidden = ("server.audit", "server.ocr", "server.routes", "server.ops", "server.api")
+    offenders = [(f, mod) for f, mod in _server_imports("common") if mod.startswith(forbidden)]
+    assert not offenders, f"common/ imports a feature/upper layer: {offenders}"
+
+
+def test_feature_domains_do_not_import_each_other():
+    """Feature domains are siblings and must never import one another."""
+    audit_to_ocr = [(f, mod) for f, mod in _server_imports("audit") if mod.startswith("server.ocr")]
+    ocr_to_audit = [(f, mod) for f, mod in _server_imports("ocr") if mod.startswith("server.audit")]
+    assert not audit_to_ocr, f"audit/ imports ocr/: {audit_to_ocr}"
+    assert not ocr_to_audit, f"ocr/ imports audit/: {ocr_to_audit}"

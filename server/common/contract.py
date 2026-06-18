@@ -1,7 +1,10 @@
 """JSON contract helpers: schema loading, normalisation, and semantic validation.
 
-Pure functions with no SDK dependency — split from server/core.py so that
-callers that only need contract logic do not pull in the full SDK bridge.
+Shared platform scaffolding for *model-output conformance* — validating and
+normalising what Claude returns against the declared output schema. This is not
+business logic (the audit/tender/… decisions are made on the Claude side); it
+only enforces the output contract, so it lives in ``common`` and is depended on
+by feature domains, never the other way around. Pure functions, no SDK import.
 """
 
 from __future__ import annotations

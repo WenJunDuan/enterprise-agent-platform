@@ -3,7 +3,7 @@
 All names that were previously defined here are now implemented in sub-modules
 and re-exported for backwards compatibility:
 
-  server.audit.contract  — JSON contract helpers (schema, normalisation, validation)
+  server.common.contract — JSON contract helpers (schema, normalisation, validation)
   server.common.session_logging — SessionLogger, _log_cli_stderr, _log_bridge_failure
   server.common.agent_bridge    — build_options, run_agent, run_agent_full, run_agent_json,
                            ClaudeRuntimeError, AgentRunMeta
@@ -13,8 +13,8 @@ Import paths through server.core remain stable — do not change callers.
 
 from __future__ import annotations
 
-# ── audit contract helpers ────────────────────────────────────────────────────
-from server.audit.contract import (
+# ── contract helpers ──────────────────────────────────────────────────────────
+from server.common.contract import (
     AUDIT_DECISION_DERIVATION,
     CONTRACTS_DIR,
     DEFAULT_OUTPUT_SCHEMA_NAME,
