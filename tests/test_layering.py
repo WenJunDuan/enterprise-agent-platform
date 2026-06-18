@@ -62,7 +62,16 @@ def test_common_does_not_import_feature_or_upper_layers():
     Contract conformance (server.common.contract) is shared, not audit-owned, so
     nothing in common/ should import server.audit / server.ocr / routes / ops / api.
     """
-    forbidden = ("server.audit", "server.ocr", "server.routes", "server.ops", "server.api")
+    # server.core is the facade that re-exports common/* — importing it from within
+    # common/ creates a core↔common cycle; import the source module directly instead.
+    forbidden = (
+        "server.audit",
+        "server.ocr",
+        "server.routes",
+        "server.ops",
+        "server.api",
+        "server.core",
+    )
     offenders = [(f, mod) for f, mod in _server_imports("common") if mod.startswith(forbidden)]
     assert not offenders, f"common/ imports a feature/upper layer: {offenders}"
 
