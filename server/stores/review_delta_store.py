@@ -8,11 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from server.platform.paths import (
-    REVIEW_DELTA_BY_REQUEST_DIR,
-    REVIEW_DELTA_INDEX_DB_FILE,
-    ensure_local_layout,
-)
+from server.platform.paths import REVIEW_DELTA_INDEX_DB_FILE, ensure_local_layout
 from server.platform.sqlite_store import connect_sqlite, describe_sqlite_target, row_to_dict
 
 ensure_local_layout()
@@ -54,9 +50,8 @@ class SQLiteReviewDeltaStore:
         "reviewed_by",
     ]
 
-    def __init__(self, db_path: Path, archive_root: Path) -> None:
+    def __init__(self, db_path: Path) -> None:
         self.db_path = db_path
-        self.archive_root = archive_root
         self._initialize_schema()
 
     def archive_review_delta(self, record: ReviewDeltaRecord, payload: dict[str, Any]) -> None:
@@ -206,7 +201,7 @@ class SQLiteReviewDeltaStore:
                 connection.execute("ALTER TABLE review_deltas ADD COLUMN payload TEXT")
 
 
-REVIEW_DELTA_STORE = SQLiteReviewDeltaStore(REVIEW_DELTA_INDEX_DB_FILE, REVIEW_DELTA_BY_REQUEST_DIR)
+REVIEW_DELTA_STORE = SQLiteReviewDeltaStore(REVIEW_DELTA_INDEX_DB_FILE)
 
 
 def archive_review_delta_payload(
