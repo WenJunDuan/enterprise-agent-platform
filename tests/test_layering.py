@@ -42,3 +42,15 @@ def test_routes_do_not_import_app_module():
     assert not offenders, (
         "routes/ imports server.api (use server.routes.deps for shared deps): " f"{offenders}"
     )
+
+
+def test_platform_is_a_leaf_layer():
+    """platform/ is the foundation — it must not import from any higher layer.
+
+    Cross-store orchestration (diagnostics, maintenance) lives in server.ops.
+    """
+    forbidden = ("server.stores", "server.ops", "server.routes", "server.api", "server.core")
+    offenders = [
+        (f, mod) for f, mod in _server_imports("platform") if mod.startswith(forbidden)
+    ]
+    assert not offenders, f"platform/ imports a higher layer (must stay a leaf): {offenders}"

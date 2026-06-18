@@ -19,9 +19,9 @@ from server.core import (
     DEFAULT_OUTPUT_SCHEMA_NAME,
     run_agent_full,
 )
+from server.ops.maintenance import run_maintenance
 from server.platform import config as config_module
 from server.platform.asset_validation import validate_knowledge_assets
-from server.platform.maintenance import run_maintenance
 from server.platform.config import get_claude_runtime_report
 from server.platform.source_proxy import prepare_text_proxy
 from server.stores.memory_store import get_memory_record_by_id, list_memory_records

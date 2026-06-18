@@ -13,10 +13,10 @@ from pathlib import Path
 
 import typer
 
+from server.ops.diagnostics import collect_runtime_diagnostics
+from server.ops.maintenance import run_maintenance
 from server.platform.config import get_app_settings
-from server.platform.diagnostics import collect_runtime_diagnostics
 from server.platform.logging_setup import configure_logging
-from server.platform.maintenance import run_maintenance
 from server.platform.paths import (
     APP_SERVER_STDERR_LOG,
     APP_SERVER_STDOUT_LOG,
