@@ -81,7 +81,7 @@ def collect_runtime_diagnostics() -> dict[str, Any]:
     status = "ok" if all(check["ok"] for check in checks.values()) else "degraded"
     return {
         "status": status,
-        "storage_backend": "sqlite-index+json-archives+jsonl-logs",
+        "storage_backend": "sqlite-unified+file-blobs",
         "checks": checks,
         "advisories": advisories,
     }

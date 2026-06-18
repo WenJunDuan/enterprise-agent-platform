@@ -20,7 +20,6 @@ ensure_local_layout()
 from server.stores.session_records import (  # noqa: E402
     SessionRecord,
     SessionStore,
-    _month_key,
     new_conversation_id,
     new_request_id,
     utc_now,
@@ -59,7 +58,6 @@ __all__ = [
     # records / protocol
     "SessionRecord",
     "SessionStore",
-    "_month_key",
     "new_request_id",
     "new_conversation_id",
     "utc_now",

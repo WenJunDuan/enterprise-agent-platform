@@ -116,9 +116,3 @@ def new_conversation_id() -> str:
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
-
-
-def _month_key(timestamp: str | None) -> str:
-    if timestamp:
-        return datetime.fromisoformat(timestamp).strftime("%Y-%m")
-    return datetime.now(timezone.utc).strftime("%Y-%m")
