@@ -1,0 +1,146 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "tender_extract_result",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "claim_id": {
+      "type": ["string", "null"],
+      "description": "投标编号或投标人标识；找不到时填 null"
+    },
+    "source_path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "tender": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tender_no": { "type": ["string", "null"] },
+        "title": { "type": ["string", "null"] },
+        "tenderee": { "type": ["string", "null"] }
+      },
+      "required": ["tender_no", "title", "tenderee"]
+    },
+    "bidder": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": ["string", "null"] },
+        "credit_code": { "type": ["string", "null"] },
+        "legal_rep": { "type": ["string", "null"] }
+      },
+      "required": ["name", "credit_code", "legal_rep"]
+    },
+    "proposed_pm": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": ["string", "null"] },
+        "cert_no": { "type": ["string", "null"] },
+        "source_ref": { "type": ["string", "null"] }
+      },
+      "required": ["name", "cert_no", "source_ref"]
+    },
+    "bid_price": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "amount": { "type": ["number", "null"] },
+        "currency": { "type": ["string", "null"] }
+      },
+      "required": ["amount", "currency"]
+    },
+    "track_records": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "project_name": { "type": "string" },
+          "project_manager": { "type": ["string", "null"] },
+          "source_ref": { "type": ["string", "null"] }
+        },
+        "required": ["project_name", "project_manager", "source_ref"]
+      }
+    },
+    "chapters": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "chapter": { "type": "string" },
+          "title": { "type": "string" },
+          "file": { "type": "string" },
+          "pages": { "type": "string" }
+        },
+        "required": ["chapter", "title", "file", "pages"]
+      }
+    },
+    "attachments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string" },
+          "path": { "type": "string" },
+          "media_type": { "type": "string" },
+          "document_type": {
+            "type": "string",
+            "enum": [
+              "tender_doc",
+              "bid_letter",
+              "qualification",
+              "pm_resume",
+              "track_record",
+              "price_quote",
+              "technical_proposal",
+              "commitment_letter",
+              "credit_evidence",
+              "other"
+            ]
+          }
+        },
+        "required": ["name", "path", "media_type", "document_type"]
+      }
+    },
+    "extracted_fields": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "missing_fields": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "ambiguities": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "reviewed_by": {
+      "type": "string",
+      "const": "tender-extractor"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "claim_id",
+    "source_path",
+    "tender",
+    "bidder",
+    "proposed_pm",
+    "bid_price",
+    "track_records",
+    "chapters",
+    "attachments",
+    "extracted_fields",
+    "missing_fields",
+    "ambiguities",
+    "reviewed_by",
+    "timestamp"
+  ]
+}

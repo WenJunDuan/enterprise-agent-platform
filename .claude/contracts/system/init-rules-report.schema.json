@@ -10,7 +10,7 @@
     },
     "domain": {
       "type": "string",
-      "enum": ["expense", "hr", "legal"]
+      "enum": ["expense", "hr", "legal", "tender"]
     },
     "source_path": {
       "type": "string"

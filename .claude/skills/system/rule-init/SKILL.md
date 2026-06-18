@@ -36,3 +36,7 @@ description: Use when 需要把本地制度源文件初始化为结构化规则�
   - 工作餐（`南通高新区工作餐管理制度.docx`）→ `meal` → `knowledge/expense/meal.rules.json`
   - 接待（`南通高新区接待管理办法.docx`）→ `entertainment` → `knowledge/expense/entertainment.rules.json`
 - 若单个制度源覆盖多个类别，按类别拆分为多个目标文件，每个子任务只负责一个类别和一个目标文件。
+- `tender`（招投标评标）域分两层，`category` 轴用法特殊：
+  - 通则 / 法规（招标投标法、政府采购法、综合评分法通则等，置于 `knowledge/external/`）→ category 取 `statute` → `knowledge/tender/statute.rules.json`
+  - 单个项目招标文件第三章《评标办法》→ category 取**招标编号**（如 `r2024007`）→ `knowledge/tender/{招标编号}.rules.json`
+  - 评分项若属"单份投标文件无法判定"，须在该规则 `tags` 标注 `requires_live_event`（现场答辩）/ `requires_external_data`（外部信用等）/ `requires_cross_bid_comparison`（价格分需横向比较），并在 `notes` 说明所需外部输入。`rule_id` 用下划线，如 `tender_statute_001`、`tender_r2024007_004`。
