@@ -119,6 +119,44 @@ def test_coerce_confidence_words_and_numbers():
     assert _coerce_confidence("garbage", default=0.5) == 0.5
 
 
+def test_normalize_values_alias():
+    # 模型用 values 代替 fields（对象索引）→ 仍按 schema 收敛
+    raw = {"values": {"项目名称": {"value": "算力中心", "confidence": 0.9}}, "needs_review": False}
+    result = normalize_to_form_schema(raw, _FORM_SCHEMA)
+    _validate(result)
+    by_key = {f["key"]: f for f in result["fields"]}
+    assert by_key["项目名称"]["value"] == "算力中心"
+    assert len(result["fields"]) == 3  # schema 决定字段集
+
+
+def test_normalize_tables_alias():
+    # 模型用 tables 代替 sub_tables → 归一到契约 sub_tables
+    raw = {
+        "fields": [],
+        "tables": [{"key": "预测付款", "rows": [{"付款节点": "首付", "比例": "30%"}]}],
+        "needs_review": True,
+    }
+    result = normalize_to_form_schema(raw, _FORM_SCHEMA)
+    _validate(result)
+    assert result["sub_tables"][0]["key"] == "预测付款"
+    assert result["sub_tables"][0]["rows"] == [{"付款节点": "首付", "比例": "30%"}]
+
+
+def test_normalize_review_notes_and_unknown_keys_not_502():
+    # schema 外 review_notes 进 evidence；任意未知顶层键被丢弃但不致校验失败
+    raw = {
+        "fields": [{"key": "项目名称", "component": "single_line", "value": "x", "confidence": 0.9}],
+        "review_notes": "材料不全",
+        "随便一个未知键": {"foo": "bar"},
+        "needs_review": True,
+    }
+    result = normalize_to_form_schema(raw, _FORM_SCHEMA)
+    _validate(result)  # 不 502
+    assert any("材料不全" in e["finding"] for e in result.get("evidence", []))
+    assert "review_notes" not in result
+    assert "随便一个未知键" not in result
+
+
 async def test_map_extraction_recovers_malformed_output(monkeypatch):
     # 集成：模型吐现场那种异形 → map 第一次归一化即过，不重试、不 502
     import server.ocr.runner as runner_mod

@@ -91,6 +91,23 @@ _CONFIDENCE_WORDS = {
     "none": 0.0,
     "unknown": 0.3,
 }
+# 归一化已识别 / 消化的顶层键；其余未知键丢弃前记 warning（不致 502）。
+_KNOWN_TOP_KEYS = frozenset(
+    {
+        "form_id",
+        "fields",
+        "values",
+        "sub_tables",
+        "tables",
+        "low_confidence",
+        "low_confidence_fields",
+        "needs_review",
+        "evidence",
+        "analysis_summary",
+        "review_notes",
+        "summary",
+    }
+)
 
 
 def _coerce_confidence(value: Any, *, default: float) -> float:
@@ -220,9 +237,19 @@ def normalize_to_form_schema(raw: Any, form_schema: dict[str, Any]) -> dict[str,
         needs_review = True
     needs_review = needs_review or bool(low_confidence)
 
+    unknown_keys = set(obj) - _KNOWN_TOP_KEYS  # schema 外未知顶层键：丢弃但记 warning，不 502
+    if unknown_keys:
+        logger.warning(
+            "normalize_to_form_schema dropped unknown top-level keys: %s", sorted(unknown_keys)
+        )
+
+    raw_sub_tables = obj.get("sub_tables")
+    if raw_sub_tables is None:
+        raw_sub_tables = obj.get("tables")  # 别名兼容：模型可能用 tables 代替 sub_tables
+
     result: dict[str, Any] = {
         "fields": fields,
-        "sub_tables": _normalize_sub_tables(obj.get("sub_tables"), form_schema),
+        "sub_tables": _normalize_sub_tables(raw_sub_tables, form_schema),
         "needs_review": needs_review,
     }
     if low_confidence:
