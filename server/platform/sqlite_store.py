@@ -17,6 +17,8 @@ def connect_sqlite(db_path: Path) -> Iterator[sqlite3.Connection]:
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA busy_timeout=30000")
     connection.execute("PRAGMA synchronous=NORMAL")
+    # 统一单库 platform.sqlite3 多表共写：WAL 让读写不互相阻塞，提升并发。
+    connection.execute("PRAGMA journal_mode=WAL")
     try:
         yield connection
         connection.commit()
