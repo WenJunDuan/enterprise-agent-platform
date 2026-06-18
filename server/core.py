@@ -3,7 +3,8 @@
 All names that were previously defined here are now implemented in sub-modules
 and re-exported for backwards compatibility:
 
-  server.common.contract — JSON contract helpers (schema, normalisation, validation)
+  server.common.contract — 契约机制（schema 加载 / 注册表 / JSON 抽取）
+  server.common.output_contracts — 内置输出契约策略（audit-result enrich/validate、init-rules）
   server.common.session_logging — SessionLogger, _log_cli_stderr, _log_bridge_failure
   server.common.agent_bridge    — build_options, run_agent, run_agent_full, run_agent_json,
                            ClaudeRuntimeError, AgentRunMeta
@@ -13,23 +14,27 @@ Import paths through server.core remain stable — do not change callers.
 
 from __future__ import annotations
 
-# ── contract helpers ──────────────────────────────────────────────────────────
+# ── contract mechanism（registry / schema 加载 / JSON 抽取）───────────────────
 from server.common.contract import (
-    AUDIT_DECISION_DERIVATION,
     CONTRACTS_DIR,
     DEFAULT_OUTPUT_SCHEMA_NAME,
     INIT_RULES_REPORT_SCHEMA_NAME,
     JSONContractError,
     StructuredJSON,
-    _coerce_reason_to_str,
-    _coerce_risk_dimensions,
     _extract_json_object,
-    _scale_risk_dimension_score,
     build_output_format,
-    enrich_audit_decision,
     load_output_schema,
     resolve_output_schema_path,
     validate_structured_output_semantics,
+)
+
+# ── built-in 输出契约策略（audit-result / init-rules，import 触发注册）──────────
+from server.common.output_contracts import (
+    AUDIT_DECISION_DERIVATION,
+    _coerce_reason_to_str,
+    _coerce_risk_dimensions,
+    _scale_risk_dimension_score,
+    enrich_audit_decision,
 )
 
 # ── session logging helpers ───────────────────────────────────────────────────
