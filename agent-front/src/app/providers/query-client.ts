@@ -32,7 +32,7 @@ export function createAppQueryClient(getRouter: GetRouter) {
 
           if (error instanceof AxiosError) {
             if (error.response?.status === 304) {
-              toast.error('Content not modified!')
+              toast.error('内容未发生变化。')
             }
           }
         },
@@ -47,7 +47,7 @@ export function createAppQueryClient(getRouter: GetRouter) {
         const router = getRouter()
 
         if (error.response?.status === 401) {
-          toast.error('Session expired!')
+          toast.error('登录状态已失效，请重新输入 PIN。')
           useAuthStore.getState().reset()
 
           if (router) {
@@ -60,7 +60,7 @@ export function createAppQueryClient(getRouter: GetRouter) {
         }
 
         if (error.response?.status === 500) {
-          toast.error('Internal Server Error!')
+          toast.error('服务暂不可用，请稍后重试。')
 
           if (import.meta.env.PROD && router) {
             router.navigate({ to: '/500' })

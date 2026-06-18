@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
 import { Route as AuthenticatedOcrRouteImport } from './routes/_authenticated/ocr'
+import { Route as AuthenticatedContractsRouteImport } from './routes/_authenticated/contracts'
 import { Route as AuthenticatedAuditRouteImport } from './routes/_authenticated/audit'
 import { Route as errors503RouteImport } from './routes/(errors)/503'
 import { Route as errors500RouteImport } from './routes/(errors)/500'
@@ -43,6 +44,11 @@ const AuthenticatedIndexRoute = AuthenticatedIndexRouteImport.update({
 const AuthenticatedOcrRoute = AuthenticatedOcrRouteImport.update({
   id: '/ocr',
   path: '/ocr',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedContractsRoute = AuthenticatedContractsRouteImport.update({
+  id: '/contracts',
+  path: '/contracts',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedAuditRoute = AuthenticatedAuditRouteImport.update({
@@ -156,6 +162,7 @@ export interface FileRoutesByFullPath {
   '/500': typeof errors500Route
   '/503': typeof errors503Route
   '/audit': typeof AuthenticatedAuditRouteWithChildren
+  '/contracts': typeof AuthenticatedContractsRoute
   '/ocr': typeof AuthenticatedOcrRoute
   '/$section/$page': typeof AuthenticatedSectionPageRoute
   '/audit/submit': typeof AuthenticatedAuditSubmitRoute
@@ -175,6 +182,7 @@ export interface FileRoutesByTo {
   '/404': typeof errors404Route
   '/500': typeof errors500Route
   '/503': typeof errors503Route
+  '/contracts': typeof AuthenticatedContractsRoute
   '/ocr': typeof AuthenticatedOcrRoute
   '/': typeof AuthenticatedIndexRoute
   '/$section/$page': typeof AuthenticatedSectionPageRoute
@@ -199,6 +207,7 @@ export interface FileRoutesById {
   '/(errors)/500': typeof errors500Route
   '/(errors)/503': typeof errors503Route
   '/_authenticated/audit': typeof AuthenticatedAuditRouteWithChildren
+  '/_authenticated/contracts': typeof AuthenticatedContractsRoute
   '/_authenticated/ocr': typeof AuthenticatedOcrRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/_authenticated/$section/$page': typeof AuthenticatedSectionPageRoute
@@ -224,6 +233,7 @@ export interface FileRouteTypes {
     | '/500'
     | '/503'
     | '/audit'
+    | '/contracts'
     | '/ocr'
     | '/$section/$page'
     | '/audit/submit'
@@ -243,6 +253,7 @@ export interface FileRouteTypes {
     | '/404'
     | '/500'
     | '/503'
+    | '/contracts'
     | '/ocr'
     | '/'
     | '/$section/$page'
@@ -266,6 +277,7 @@ export interface FileRouteTypes {
     | '/(errors)/500'
     | '/(errors)/503'
     | '/_authenticated/audit'
+    | '/_authenticated/contracts'
     | '/_authenticated/ocr'
     | '/_authenticated/'
     | '/_authenticated/$section/$page'
@@ -311,6 +323,13 @@ declare module '@tanstack/react-router' {
       path: '/ocr'
       fullPath: '/ocr'
       preLoaderRoute: typeof AuthenticatedOcrRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/contracts': {
+      id: '/_authenticated/contracts'
+      path: '/contracts'
+      fullPath: '/contracts'
+      preLoaderRoute: typeof AuthenticatedContractsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/audit': {
@@ -483,6 +502,7 @@ const AuthenticatedAuditRouteWithChildren =
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedSettingsRouteRoute: typeof AuthenticatedSettingsRouteRouteWithChildren
   AuthenticatedAuditRoute: typeof AuthenticatedAuditRouteWithChildren
+  AuthenticatedContractsRoute: typeof AuthenticatedContractsRoute
   AuthenticatedOcrRoute: typeof AuthenticatedOcrRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
   AuthenticatedSectionPageRoute: typeof AuthenticatedSectionPageRoute
@@ -492,6 +512,7 @@ interface AuthenticatedRouteRouteChildren {
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedSettingsRouteRoute: AuthenticatedSettingsRouteRouteWithChildren,
   AuthenticatedAuditRoute: AuthenticatedAuditRouteWithChildren,
+  AuthenticatedContractsRoute: AuthenticatedContractsRoute,
   AuthenticatedOcrRoute: AuthenticatedOcrRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
   AuthenticatedSectionPageRoute: AuthenticatedSectionPageRoute,

@@ -1,41 +1,49 @@
-import { hasAccess } from '@/app/auth/access'
 import type { AuthUser } from '@/types/auth'
-import { FileText, LayoutDashboard } from 'lucide-react'
-import type { NavGroup, NavItem, NavLink } from '@/components/layout/types'
-import { normalizeBackendIconName } from './icon-registry'
-import {
-  getBackendPageByComponent,
-  getBackendPageByPath,
-} from './page-registry'
+import { ClipboardList, ScanText, ScrollText } from 'lucide-react'
+import type { NavGroup, NavItem } from '@/components/layout/types'
+import { getBackendPageByPath } from './page-registry'
 import type { BackendMenuRouter, BreadcrumbConfig } from './types'
 
 const DEFAULT_AVATAR = '/avatars/01.png'
 
-const MENU_GROUP_ORDER = ['总览', '业务'] as const
+const MENU_GROUP_ORDER = ['发票审核', 'OCR 识别', '合同审查'] as const
 
 const STATIC_BREADCRUMBS: Record<string, BreadcrumbConfig[]> = {
-  '/': [{ label: '仪表盘' }],
-  '/audit': [{ label: '审核工作台' }],
+  '/': [{ label: '发票审核' }, { label: '发票审核清单' }],
+  '/audit': [{ label: '发票审核' }, { label: '发票审核清单' }],
   '/audit/submit': [
-    { label: '审核工作台', href: '/audit' },
-    { label: '报销提交' },
+    { label: '发票审核' },
+    { label: '发票审核清单', href: '/audit' },
+    { label: '新建审核' },
   ],
-  '/ocr': [{ label: '文档识别' }],
+  '/ocr': [{ label: 'OCR 识别' }, { label: 'OCR 识别' }],
+  '/contracts': [{ label: '合同审查' }, { label: '合同审查清单' }],
   '/settings': [{ label: '系统管理' }, { label: '个人资料' }],
 }
 
-const LOCAL_BUSINESS_ITEMS: NavItem[] = [
-  {
-    title: '审核工作台',
-    url: '/audit',
-    icon: FileText,
-  },
-  {
-    title: '文档识别',
-    url: '/ocr',
-    icon: FileText,
-  },
-]
+const DOMAIN_NAV_GROUPS: Record<(typeof MENU_GROUP_ORDER)[number], NavItem[]> = {
+  发票审核: [
+    {
+      title: '发票审核清单',
+      url: '/audit',
+      icon: ClipboardList,
+    },
+  ],
+  'OCR 识别': [
+    {
+      title: 'OCR 识别',
+      url: '/ocr',
+      icon: ScanText,
+    },
+  ],
+  合同审查: [
+    {
+      title: '合同审查清单',
+      url: '/contracts',
+      icon: ScrollText,
+    },
+  ],
+}
 
 type BackendMenuMatch = {
   breadcrumbs: BreadcrumbConfig[]
@@ -70,54 +78,6 @@ function joinBackendPath(parentPath: string, currentPath: string) {
 
 function getMenuTitle(router: BackendMenuRouter) {
   return router.meta?.title || router.name || router.path
-}
-
-function resolveIcon(iconName?: string | null) {
-  return normalizeBackendIconName(iconName)
-}
-
-function matchesBackendAccess(
-  user: Pick<AuthUser, 'roles' | 'permissions'> | null | undefined,
-  router: BackendMenuRouter
-) {
-  return hasAccess(user, {
-    permissions: router.meta?.permission ? [router.meta.permission] : [],
-    roles: router.meta?.roles ?? [],
-  })
-}
-
-function buildBackendNavItems(
-  routers: BackendMenuRouter[],
-  user: Pick<AuthUser, 'roles' | 'permissions'> | null | undefined,
-  parentPath = '/'
-): NavLink[] {
-  return routers.flatMap((router): NavLink[] => {
-    if (router.hidden) {
-      return []
-    }
-
-    const fullPath = joinBackendPath(parentPath, router.path)
-    if (router.children?.length) {
-      return buildBackendNavItems(router.children, user, fullPath)
-    }
-
-    const pageDefinition = getBackendPageByComponent(router.component)
-    if (!pageDefinition || pageDefinition.fullPath !== fullPath) {
-      return []
-    }
-
-    if (!matchesBackendAccess(user, router)) {
-      return []
-    }
-
-    return [
-      {
-        title: getMenuTitle(router),
-        url: fullPath,
-        icon: resolveIcon(router.meta?.icon),
-      },
-    ]
-  })
 }
 
 function findBackendMenuMatch(
@@ -169,66 +129,12 @@ export function buildNavigationUser(user: AuthUser | null | undefined) {
 }
 
 export function buildNavigationGroups(
-  user: Pick<AuthUser, 'roles' | 'permissions'> | null | undefined,
-  routers?: BackendMenuRouter[]
+  _user: Pick<AuthUser, 'roles' | 'permissions'> | null | undefined,
+  _routers?: BackendMenuRouter[]
 ) {
-  const groups = new Map<(typeof MENU_GROUP_ORDER)[number], NavItem[]>()
-
-  groups.set('总览', [
-    {
-      title: '仪表盘',
-      url: '/',
-      icon: LayoutDashboard,
-    },
-  ])
-
-  const backendItems: NavItem[] =
-    routers?.flatMap((router): NavItem[] => {
-      if (router.hidden) {
-        return []
-      }
-
-      const fullPath = joinBackendPath('/', router.path)
-      const childItems = router.children?.length
-        ? buildBackendNavItems(router.children, user, fullPath)
-        : []
-
-      if (childItems.length > 0) {
-        return [
-          {
-            title: getMenuTitle(router),
-            icon: resolveIcon(router.meta?.icon),
-            items: childItems,
-          },
-        ]
-      }
-
-      const pageDefinition = getBackendPageByComponent(router.component)
-      if (!pageDefinition || pageDefinition.fullPath !== fullPath) {
-        return []
-      }
-
-      if (!matchesBackendAccess(user, router)) {
-        return []
-      }
-
-      return [
-        {
-          title: getMenuTitle(router),
-          url: fullPath,
-          icon: resolveIcon(router.meta?.icon),
-        },
-      ]
-    }) ?? []
-
-  const businessItems = [...LOCAL_BUSINESS_ITEMS, ...backendItems]
-  if (businessItems.length > 0) {
-    groups.set('业务', businessItems)
-  }
-
   return MENU_GROUP_ORDER.map<NavGroup>((groupTitle) => ({
     title: groupTitle,
-    items: groups.get(groupTitle) ?? [],
+    items: DOMAIN_NAV_GROUPS[groupTitle],
   })).filter((group) => group.items.length > 0)
 }
 
@@ -238,7 +144,11 @@ export function getBreadcrumbsForPath(
 ): BreadcrumbConfig[] {
   const normalizedPath = normalizePath(pathname)
   if (normalizedPath.startsWith('/audit/tasks/')) {
-    return [{ label: '审核工作台', href: '/audit' }, { label: '任务详情' }]
+    return [
+      { label: '发票审核' },
+      { label: '发票审核清单', href: '/audit' },
+      { label: '任务详情' },
+    ]
   }
 
   const staticBreadcrumbs = STATIC_BREADCRUMBS[normalizedPath]
@@ -253,7 +163,7 @@ export function getBreadcrumbsForPath(
     return backendMatch.breadcrumbs
   }
 
-  return [{ label: '仪表盘' }]
+  return [{ label: '发票审核' }]
 }
 
 export function findBackendRouteByPath(

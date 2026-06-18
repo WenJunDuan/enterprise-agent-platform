@@ -133,15 +133,15 @@ export function AuditTasksPage() {
       <Main constrained className='space-y-5'>
         <div className='flex flex-col gap-3 md:flex-row md:items-end md:justify-between'>
           <div>
-            <h1 className='text-2xl font-semibold tracking-tight'>审核工作台</h1>
+            <h1 className='text-2xl font-semibold tracking-tight'>发票审核清单</h1>
             <p className='text-sm text-muted-foreground'>
-              管理报销审核任务、跟踪状态，并查看自动审核结论。
+              管理发票审核任务、跟踪状态，并查看审核结论。
             </p>
           </div>
           <Button asChild>
             <Link to='/audit/submit'>
               <Plus className='size-4' />
-              新建报销
+              新建审核
             </Link>
           </Button>
         </div>
@@ -151,8 +151,8 @@ export function AuditTasksPage() {
         <Card>
           <CardHeader className='gap-3 md:flex-row md:items-center md:justify-between'>
             <div>
-              <CardTitle>任务列表</CardTitle>
-              <CardDescription>本机提交过的任务会叠加本地业务摘要。</CardDescription>
+              <CardTitle>发票审核记录</CardTitle>
+              <CardDescription>查看已提交的审核记录。</CardDescription>
             </div>
             <div className='flex flex-wrap gap-2'>
               <Button variant='outline' size='sm' onClick={() => tasksQuery.refetch()}>
@@ -164,7 +164,7 @@ export function AuditTasksPage() {
                 size='sm'
                 onClick={() => {
                   clearSubmissionSummaries()
-                  setNotice('已清空本机提交摘要')
+                  setNotice('已清空提交摘要')
                 }}
               >
                 清空摘要
@@ -223,7 +223,7 @@ export function AuditTasksPage() {
                 ) : rows.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={5} className='h-28 text-center text-muted-foreground'>
-                      暂无任务，可新建报销申请。
+                      暂无任务，可新建审核申请。
                     </TableCell>
                   </TableRow>
                 ) : (

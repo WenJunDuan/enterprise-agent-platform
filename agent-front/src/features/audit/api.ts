@@ -8,14 +8,8 @@ import type {
 } from './types'
 
 const RAW_BASE = (import.meta.env.VITE_API_BASE as string | undefined) || '/'
-const RAW_TENANT_TOKEN =
-  (import.meta.env.VITE_TENANT_TOKEN as string | undefined) || ''
-const RAW_LEGACY_API_KEY =
-  (import.meta.env.VITE_API_KEY as string | undefined) || ''
 const RAW_TENANT_PIN_KEYS =
-  (import.meta.env.VITE_TENANT_PIN_KEYS as string | undefined) ||
-  (import.meta.env.VITE_TENANT_KEY_MAP as string | undefined) ||
-  ''
+  (import.meta.env.VITE_TENANT_PIN_KEYS as string | undefined) || ''
 const BASE = RAW_BASE
 const TENANT_TOKEN_STORAGE_KEY = 'enterprise-audit:tenant-token:v1'
 
@@ -24,10 +18,6 @@ function normalizeTenantToken(token: string) {
   return trimmed.startsWith('Bearer ')
     ? trimmed.slice('Bearer '.length).trim()
     : trimmed
-}
-
-export function getConfiguredTenantToken() {
-  return normalizeTenantToken((RAW_TENANT_TOKEN || RAW_LEGACY_API_KEY).trim())
 }
 
 export function getConfiguredTenantPinKeys() {
@@ -70,7 +60,7 @@ export function getStoredTenantToken() {
 }
 
 export function getActiveTenantToken() {
-  return getStoredTenantToken() || getConfiguredTenantToken()
+  return getStoredTenantToken()
 }
 
 export function persistTenantToken(token: string) {
@@ -91,8 +81,6 @@ function getTenantTokenSource() {
   if (Object.keys(getConfiguredTenantPinKeys()).length > 0) {
     return 'VITE_TENANT_PIN_KEYS'
   }
-  if (RAW_TENANT_TOKEN) return 'VITE_TENANT_TOKEN'
-  if (RAW_LEGACY_API_KEY) return 'VITE_API_KEY（兼容旧名）'
   return '未配置'
 }
 
@@ -100,7 +88,7 @@ export function getApiRuntimeConfig() {
   const tenantToken = getActiveTenantToken()
   return {
     base: BASE,
-    displayBase: BASE === '/' ? 'Vite 代理 /' : BASE,
+    displayBase: BASE === '/' ? '当前服务' : BASE,
     hasTenantToken: Boolean(tenantToken),
     tenantTokenSource: getTenantTokenSource(),
   }
@@ -108,14 +96,22 @@ export function getApiRuntimeConfig() {
 
 function authHeaders(token = getActiveTenantToken()): HeadersInit {
   if (!token) {
-    throw new Error('缺少访问凭据：请检查前端配置')
+    throw new Error('登录状态已失效，请重新输入 PIN。')
   }
   return { Authorization: `Bearer ${normalizeTenantToken(token)}` }
 }
 
+function isGatewayError(status: number) {
+  return status === 502 || status === 503 || status === 504
+}
+
+function getGatewayErrorMessage() {
+  return '服务暂不可用，请稍后重试。'
+}
+
 async function handleResponse<T>(res: Response): Promise<T> {
   if (!res.ok) {
-    let message = `HTTP ${res.status}`
+    let message = '请求失败，请稍后重试。'
     const contentType = res.headers.get('content-type') || ''
     if (contentType.includes('application/json')) {
       const body = await res.json()
@@ -124,8 +120,11 @@ async function handleResponse<T>(res: Response): Promise<T> {
     } else {
       const text = await res.text()
       if (text.includes('Unable to connect') || text.includes('ECONNREFUSED')) {
-        message = `后端未启动或 Vite 代理目标不可达（HTTP ${res.status}）`
+        message = getGatewayErrorMessage()
       }
+    }
+    if (isGatewayError(res.status)) {
+      message = getGatewayErrorMessage()
     }
     throw new Error(message)
   }
@@ -135,31 +134,6 @@ async function handleResponse<T>(res: Response): Promise<T> {
 function url(path: string): string {
   const base = BASE.endsWith('/') ? BASE.slice(0, -1) : BASE
   return `${base}${path}`
-}
-
-export async function validateTenantToken(token: string): Promise<void> {
-  const res = await fetch(url('/audit/tasks?limit=1'), {
-    headers: authHeaders(token),
-  })
-
-  if (res.ok) return
-
-  let message = `HTTP ${res.status}`
-  try {
-    const body = await res.json()
-    if (typeof body?.detail === 'string') message = body.detail
-    else if (body?.error?.message) message = body.error.message
-  } catch {
-    // ignore non-JSON auth failures
-  }
-
-  if (res.status === 401) {
-    throw new Error('访问凭据校验失败')
-  }
-  if (res.status === 503) {
-    throw new Error(message || '后端访问凭据未配置')
-  }
-  throw new Error(message)
 }
 
 export async function listTasks(params?: {
@@ -184,8 +158,6 @@ export async function getHealth(): Promise<HealthResponse> {
     try {
       return (await res.json()) as HealthResponse
     } catch {
-      // 可达但响应非 JSON（如 /health 未被反代显式代理、回退到 SPA index.html）：
-      // 后端原点已经应答，视为可达，避免误报“离线”。
       return { status: res.status === 200 ? 'ok' : 'degraded' }
     }
   }
@@ -244,9 +216,7 @@ export async function deleteTask(id: string): Promise<void> {
 
 // ── OCR 纯识别（POST /ocr/extract，同步）────────────────────────────────
 //
-// 后端已实现「纯识别」端点：上传文档 → 同步返回结构化识别底稿（results + block）。
-// 注：此端点只做确定性识别，**不含表单回填（form-fill）**；OCR 页面右栏的回填结果
-// 目前仍是演示数据，需另接回填端点（后端暂未实现）。
+// 上传文档后同步返回结构化识别底稿（results + block）。
 
 /** 同步纯识别：上传文档 → 结构化识别底稿（每文件 results + 组装 block）。 */
 export async function extractOcr(

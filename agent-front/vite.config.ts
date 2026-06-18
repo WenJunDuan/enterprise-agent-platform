@@ -36,17 +36,10 @@ function loadEnvFile(envFile: string) {
 function loadCustomEnv(mode: string) {
   const envFileMap: Record<string, string> = {
     development: '.env.dev',
-    production: '.env.produce',
+    production: '.env.prod',
   }
   const envFile = envFileMap[mode]
-  const envFiles = [
-    '.env',
-    envFile,
-    '.env.local',
-    envFile ? `${envFile}.local` : '',
-  ]
-    .filter(Boolean)
-    .filter((file, index, files) => files.indexOf(file) === index)
+  const envFiles = envFile ? [envFile] : []
 
   return envFiles.reduce(
     (acc, file) => ({
@@ -96,10 +89,12 @@ export default defineConfig(({ mode }) => {
     string
   >
   const define = Object.fromEntries(
-    Object.entries(customEnv).map(([key, value]) => [
-      `import.meta.env.${key}`,
-      JSON.stringify(value),
-    ])
+    Object.entries(customEnv)
+      .filter(([key]) => key.startsWith('VITE_'))
+      .map(([key, value]) => [
+        `import.meta.env.${key}`,
+        JSON.stringify(value),
+      ])
   )
   const auditProxyTarget = resolveAuditProxyTarget(customEnv)
   const adminProxyTarget = resolveAdminProxyTarget(customEnv)

@@ -58,7 +58,7 @@ function UploadCard({
         <label className='flex min-h-40 cursor-pointer flex-col items-center justify-center gap-3 rounded-lg border border-dashed bg-muted/20 p-6 text-center'>
           <FileUp className='size-8 text-muted-foreground' />
           <span className='font-medium'>选择待识别文件</span>
-          <span className='text-sm text-muted-foreground'>真实识别会调用 /ocr/fill。</span>
+          <span className='text-sm text-muted-foreground'>选择文件后开始识别。</span>
           <input multiple type='file' className='hidden' onChange={(event) => onAddFiles(event.target.files)} />
         </label>
 
@@ -314,7 +314,7 @@ export function OcrWorkbenchPage() {
       <Header fixed />
       <Main className='space-y-5'>
         <div>
-          <h1 className='text-2xl font-semibold tracking-tight'>文档识别与表单回填</h1>
+          <h1 className='text-2xl font-semibold tracking-tight'>OCR 识别</h1>
           <p className='text-sm text-muted-foreground'>
             上传材料后生成识别底稿，并映射到目标业务表单。
           </p>

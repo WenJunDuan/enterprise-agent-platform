@@ -10,7 +10,7 @@ export function handleServerError(error: unknown) {
   // eslint-disable-next-line no-console
   console.log(error)
 
-  let errMsg = '操作失败，请稍后重试。'
+  let errMsg = '操作未完成，请稍后重试。'
 
   if (
     error &&
@@ -18,7 +18,7 @@ export function handleServerError(error: unknown) {
     'status' in error &&
     Number(error.status) === 204
   ) {
-    errMsg = 'Content not found.'
+    errMsg = '请求没有返回内容。'
   }
 
   if (error instanceof AxiosError) {

@@ -23,15 +23,15 @@
 - `/audit/submit` -> new expense submission
 - `/audit/tasks/$taskId` -> audit task detail
 - `/ocr` -> OCR recognition and form-fill workbench
+- `/contracts` -> contract review entry page
 
 ## Auth And Navigation
 
 Default mode uses PIN authorization instead of the target admin username/password
 login service. The frontend reads `VITE_TENANT_PIN_KEYS` as a JSON mapping from
-PIN to tenant key, validates the resolved tenant key against the audit API, and
-persists it as the local session credential. The legacy direct
-`VITE_TENANT_TOKEN` / `VITE_API_KEY` fallback is still supported by the audit API
-client.
+PIN to tenant key and persists the resolved tenant key as the local session
+credential. A correct PIN should enter the app even when the backend is not
+responding; business pages surface data request failures in context.
 
 Legacy account auth routes were removed from the route tree:
 
@@ -39,9 +39,18 @@ Legacy account auth routes were removed from the route tree:
 - `/sign-up`
 - `/forgot-password`
 
-The settings password route was also removed. Static sidebar navigation now only
-contains dashboard, audit workbench, and OCR entries; the expense submission
-entry remains available inside the audit workbench.
+The settings password route was also removed. Static sidebar navigation now
+contains three business domain groups:
+
+- `发票审核` -> `发票审核清单`
+- `OCR 识别` -> `OCR 识别`
+- `合同审查` -> `合同审查清单`
+
+Dashboard navigation is removed. The expense submission entry remains available
+inside the audit workbench.
+
+The shared header exposes the existing layout/theme configuration drawer so
+users can switch system/default, light, and dark modes.
 
 ## Verification
 
@@ -53,7 +62,9 @@ entry remains available inside the audit workbench.
   - PIN slots render as masked `*` characters
   - configured PIN resolves to the frontend tenant key and enters the app
   - `/sign-in`, `/sign-up`, and `/forgot-password` return 404
-  - sidebar links exclude `新建报销`
+  - sidebar links exclude dashboard and direct `新建报销`
+- `bun run lint`, `bun run build`, and `bun run test` passed again after the
+  2026-06-19 navigation, header, and copy updates.
 - Browser smoke checks passed for:
   - `/` rendering the audit workbench without redirecting to login
   - `/audit/submit` rendering the migrated stepped submission form

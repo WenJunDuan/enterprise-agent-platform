@@ -90,7 +90,7 @@ export function RolesMultiDeleteDialog<TData>({
           <p className='mb-2'>
             确认删除已选角色吗？
             <br />
-            若任意一个角色已被用户引用，后端会中止整个删除操作。
+            若任意一个角色仍被用户使用，请先解除关联后再删除。
           </p>
 
           <Label className='my-4 flex flex-col items-start gap-1.5'>

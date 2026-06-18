@@ -108,7 +108,7 @@ export function RolesDeleteDialog({
           <Alert variant='destructive'>
             <AlertTitle>警告</AlertTitle>
             <AlertDescription>
-              若该角色已被用户引用，后端会拦截删除并返回提示，请先解除引用。
+              若该角色仍被用户使用，请先解除关联后再删除。
             </AlertDescription>
           </Alert>
         </form>

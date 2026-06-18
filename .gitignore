@@ -15,11 +15,14 @@ enterprise-agent.env
 audit-agent.env
 # 部署时的真实环境文件 / prod 密钥，禁止入库
 *.env.prod
+!agent-front/.env.prod
 deploy/offline/app.env
 deploy/offline/litellm.env
 deploy/litellm/.env
 deploy/litellm/app.env
 deploy/litellm/litellm.env
+# LiteLLM 路由配置含后端真实 api_key，不入库；用 litellm_config.yaml.example 占位模板
+deploy/prod/litellm_config.yaml
 .data/*
 .ace-tool/
 .ai_state/.snapshots/
