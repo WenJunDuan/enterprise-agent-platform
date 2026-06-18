@@ -1,19 +1,24 @@
-"""Task-status persistence for async audit submissions."""
+"""Task-status persistence for async audit submissions (SQLite).
+
+One row per request_id in the shared platform DB. Replaces the earlier
+whole-file ``tasks.json`` rewrite: upserts are single-row ``INSERT OR REPLACE``
+with merge semantics, queries hit indexes, and concurrency is handled by SQLite
+(WAL + busy_timeout) instead of an flock around a JSON blob.
+"""
 
 from __future__ import annotations
 
-from contextlib import contextmanager
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, fields
 from datetime import datetime, timezone
 from typing import Any
 
-from server.platform.paths import AUDIT_TASK_FILE, ensure_local_layout
-from server.platform.storage import append_json_file, load_json_file
-
-try:  # pragma: no cover - Windows fallback is environment-dependent
-    import fcntl
-except ImportError:  # pragma: no cover - Windows fallback is environment-dependent
-    fcntl = None
+from server.platform.paths import (
+    LEGACY_AUDIT_TASK_FILE,
+    PLATFORM_DB_FILE,
+    ensure_local_layout,
+)
+from server.platform.sqlite_store import connect_sqlite
+from server.platform.storage import load_json_file
 
 ensure_local_layout()
 
@@ -37,47 +42,105 @@ class AuditTaskRecord:
     updated_at: str = ""
 
 
-def _load_task_map() -> dict[str, Any]:
-    loaded = load_json_file(AUDIT_TASK_FILE)
-    return loaded if loaded is not None else {}
+_FIELDS = [f.name for f in fields(AuditTaskRecord)]
+_COLUMNS = ", ".join(_FIELDS)
+_PLACEHOLDERS = ", ".join("?" for _ in _FIELDS)
+
+
+def _coerce_record(updates: dict[str, Any], existing: dict[str, Any] | None) -> AuditTaskRecord:
+    """Merge a partial update onto any existing row, mirroring the old dict-merge upsert."""
+    merged: dict[str, Any] = dict(existing) if existing else {}
+    merged.update(updates)
+    merged.setdefault("tenant", None)
+    merged.setdefault("session_id", None)
+    if "source_mode" not in merged and "mode" in merged:
+        merged["source_mode"] = merged["mode"]
+    return AuditTaskRecord(**{k: v for k, v in merged.items() if k in _FIELDS})
+
+
+def _record_values(record: AuditTaskRecord) -> tuple[Any, ...]:
+    data = asdict(record)
+    return tuple(data[name] for name in _FIELDS)
+
+
+def _initialize_schema() -> None:
+    with connect_sqlite(PLATFORM_DB_FILE) as connection:
+        connection.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS audit_tasks (
+                request_id TEXT PRIMARY KEY,
+                tenant TEXT,
+                session_id TEXT,
+                status TEXT NOT NULL,
+                mode TEXT NOT NULL,
+                source_mode TEXT NOT NULL,
+                case_path TEXT NOT NULL,
+                claim_id TEXT,
+                result_file TEXT,
+                error_detail TEXT,
+                progress_message TEXT,
+                submitted_at TEXT,
+                started_at TEXT,
+                finished_at TEXT,
+                updated_at TEXT NOT NULL DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_audit_tasks_tenant
+                ON audit_tasks (tenant, submitted_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_audit_tasks_status
+                ON audit_tasks (status);
+            """
+        )
+
+
+def _backfill_legacy_tasks() -> None:
+    """One-time import of the old tasks.json blob into the table (idempotent)."""
+    loaded = load_json_file(LEGACY_AUDIT_TASK_FILE)
+    if not isinstance(loaded, dict) or not loaded:
+        return
+    with connect_sqlite(PLATFORM_DB_FILE) as connection:
+        for value in loaded.values():
+            if not isinstance(value, dict) or "request_id" not in value:
+                continue
+            record = _coerce_record(value, existing=None)
+            connection.execute(
+                f"INSERT OR IGNORE INTO audit_tasks ({_COLUMNS}) VALUES ({_PLACEHOLDERS})",
+                _record_values(record),
+            )
+
+
+_initialize_schema()
+_backfill_legacy_tasks()
 
 
 def upsert_audit_task(record: dict[str, Any]) -> None:
-    with _task_file_lock():
-        payload = _load_task_map()
-        existing = payload.get(record["request_id"], {})
-        merged = {**existing, **record}
-        if "tenant" not in merged:
-            merged["tenant"] = None
-        if "session_id" not in merged:
-            merged["session_id"] = None
-        if "source_mode" not in merged and "mode" in merged:
-            merged["source_mode"] = merged["mode"]
-        task_record = AuditTaskRecord(**merged)
-        payload[task_record.request_id] = asdict(task_record)
-        append_json_file(AUDIT_TASK_FILE, payload)
+    with connect_sqlite(PLATFORM_DB_FILE) as connection:
+        existing = connection.execute(
+            "SELECT * FROM audit_tasks WHERE request_id = ?", (record["request_id"],)
+        ).fetchone()
+        merged = _coerce_record(record, dict(existing) if existing else None)
+        connection.execute(
+            f"INSERT OR REPLACE INTO audit_tasks ({_COLUMNS}) VALUES ({_PLACEHOLDERS})",
+            _record_values(merged),
+        )
 
 
 def delete_audit_task(request_id: str, tenant: str) -> bool:
     """Remove a task owned by `tenant`. Returns True when a record was deleted."""
-    with _task_file_lock():
-        payload = _load_task_map()
-        record = payload.get(request_id)
-        if not isinstance(record, dict) or record.get("tenant") != tenant:
-            return False
-        del payload[request_id]
-        append_json_file(AUDIT_TASK_FILE, payload)
-        return True
+    with connect_sqlite(PLATFORM_DB_FILE) as connection:
+        cursor = connection.execute(
+            "DELETE FROM audit_tasks WHERE request_id = ? AND tenant = ?",
+            (request_id, tenant),
+        )
+        return cursor.rowcount > 0
 
 
 def get_audit_task(request_id: str, tenant: str) -> dict[str, Any] | None:
-    payload = _load_task_map()
-    record = payload.get(request_id)
-    if not isinstance(record, dict):
-        return None
-    if record.get("tenant") != tenant:
-        return None
-    return record
+    with connect_sqlite(PLATFORM_DB_FILE) as connection:
+        row = connection.execute(
+            "SELECT * FROM audit_tasks WHERE request_id = ? AND tenant = ?",
+            (request_id, tenant),
+        ).fetchone()
+        return dict(row) if row else None
 
 
 def list_audit_tasks(
@@ -86,23 +149,28 @@ def list_audit_tasks(
     limit: int = 20,
     offset: int = 0,
 ) -> list[dict[str, Any]]:
-    payload = _load_task_map()
-    records = [v for v in payload.values() if isinstance(v, dict) and v.get("tenant") == tenant]
+    query = "SELECT * FROM audit_tasks WHERE tenant = ?"
+    params: list[Any] = [tenant]
     if status:
-        records = [r for r in records if r.get("status") == status]
-    records.sort(key=lambda r: str(r.get("submitted_at") or r.get("updated_at") or ""), reverse=True)
-    return records[offset : offset + limit]
+        query += " AND status = ?"
+        params.append(status)
+    query += " ORDER BY COALESCE(submitted_at, updated_at) DESC LIMIT ? OFFSET ?"
+    params.extend([limit, offset])
+    with connect_sqlite(PLATFORM_DB_FILE) as connection:
+        return [dict(row) for row in connection.execute(query, params).fetchall()]
 
 
 def get_audit_task_admin(request_id: str) -> dict[str, Any] | None:
-    payload = _load_task_map()
-    record = payload.get(request_id)
-    return record if isinstance(record, dict) else None
+    with connect_sqlite(PLATFORM_DB_FILE) as connection:
+        row = connection.execute(
+            "SELECT * FROM audit_tasks WHERE request_id = ?", (request_id,)
+        ).fetchone()
+        return dict(row) if row else None
 
 
 def list_audit_tasks_admin() -> list[dict[str, Any]]:
-    payload = _load_task_map()
-    return [value for value in payload.values() if isinstance(value, dict)]
+    with connect_sqlite(PLATFORM_DB_FILE) as connection:
+        return [dict(row) for row in connection.execute("SELECT * FROM audit_tasks").fetchall()]
 
 
 def recover_stale_audit_tasks(timeout_seconds: int, now: str | None = None) -> list[str]:
@@ -135,21 +203,3 @@ def _coerce_timestamp(value: str | None) -> datetime:
     if value:
         return datetime.fromisoformat(value)
     return datetime.now(timezone.utc)
-
-
-def _task_lock_path() -> Any:
-    return AUDIT_TASK_FILE.with_suffix(AUDIT_TASK_FILE.suffix + ".lock")
-
-
-@contextmanager
-def _task_file_lock():
-    lock_path = _task_lock_path()
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    with lock_path.open("a+", encoding="utf-8") as handle:
-        if fcntl is not None:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-        try:
-            yield
-        finally:
-            if fcntl is not None:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
