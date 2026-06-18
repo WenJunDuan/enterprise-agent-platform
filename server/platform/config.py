@@ -279,8 +279,6 @@ class AppSettings:
     api_host: str
     api_port: int
     allow_unscoped_continue_recent: bool
-    session_store_max_shard_bytes: int
-    session_store_max_shards: int
     session_archive_after_days: int
     audit_task_running_timeout_seconds: int
     submission_retention_days: int
@@ -297,8 +295,6 @@ def get_app_settings() -> AppSettings:
         api_host=os.getenv("APP_SERVER_HOST", "127.0.0.1"),
         api_port=_env_int("APP_SERVER_PORT", 8000),
         allow_unscoped_continue_recent=_env_bool("ALLOW_UNSCOPED_CONTINUE_RECENT", default=False),
-        session_store_max_shard_bytes=_env_int("SESSION_STORE_MAX_SHARD_BYTES", 50 * 1024 * 1024),
-        session_store_max_shards=_env_int("SESSION_STORE_MAX_SHARDS", 24),
         session_archive_after_days=_env_int("SESSION_ARCHIVE_AFTER_DAYS", 7),
         audit_task_running_timeout_seconds=_env_int("AUDIT_TASK_RUNNING_TIMEOUT_SECONDS", 600),
         submission_retention_days=_env_int("SUBMISSION_RETENTION_DAYS", 7),
@@ -397,8 +393,6 @@ def runtime_setting_snapshot() -> dict[str, Any]:
         "api_port": settings.api_port,
         "allow_unscoped_continue_recent": settings.allow_unscoped_continue_recent,
         "tenant_keys_are_default": tenant_keys_are_default(),
-        "session_store_max_shard_bytes": settings.session_store_max_shard_bytes,
-        "session_store_max_shards": settings.session_store_max_shards,
         "session_archive_after_days": settings.session_archive_after_days,
         "audit_task_running_timeout_seconds": settings.audit_task_running_timeout_seconds,
         "submission_retention_days": settings.submission_retention_days,

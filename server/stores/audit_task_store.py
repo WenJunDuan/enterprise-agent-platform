@@ -113,7 +113,8 @@ _backfill_legacy_tasks()
 
 
 def upsert_audit_task(record: dict[str, Any]) -> None:
-    with connect_sqlite(PLATFORM_DB_FILE) as connection:
+    # immediate=True：读现有行→合并→写 在一个原子事务内，防同一 request_id 并发丢更新。
+    with connect_sqlite(PLATFORM_DB_FILE, immediate=True) as connection:
         existing = connection.execute(
             "SELECT * FROM audit_tasks WHERE request_id = ?", (record["request_id"],)
         ).fetchone()
