@@ -37,20 +37,26 @@ RUN pip install \
       "uvicorn>=0.30.0"
 
 # 可选 OCR 依赖层（文档识别 multi-ocr）。仅 --build-arg WITH_OCR=1 时装：
-# - paddlepaddle + paddleocr[doc-parser]：版面分析(PP-DocLayoutV2)在容器内本地跑，
-#   VLM 识别走 litellm 网关（OCR_VL_SERVER_URL）；
+# - paddlepaddle + paddleocr[doc-parser]：保留完整 PaddleOCRVL pipeline 能力；
+#   默认识别走 litellm OpenAI 兼容网关（OCR_VL_SERVER_URL），避免本地 layout
+#   predictor 在部分 arm64 容器运行时崩溃；需完整 pipeline 时设 OCR_VL_USE_PADDLE_PIPELINE=1。
 # - openpyxl/python-docx/pypdf：原生直读 Excel/Word/文本层 PDF。
+# - pymupdf：远端 VLM 仅收图片时，把扫描 PDF 按页渲染为 PNG。
 # arm64 上 paddlepaddle wheel 可用性在构建时验证；失败则按官方索引指定 wheel 源。
 ARG WITH_OCR
 RUN if [ "$WITH_OCR" = "1" ]; then \
       pip install \
         paddlepaddle \
         "paddleocr[doc-parser]>=3.4.0" \
-        openpyxl python-docx pypdf ; \
+        openpyxl python-docx pymupdf pypdf ; \
     fi
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends gosu \
+    && apt-get install -y --no-install-recommends \
+      gosu \
+      libgl1 \
+      libglib2.0-0 \
+      libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
 RUN groupadd --gid "${APP_GID}" app \
