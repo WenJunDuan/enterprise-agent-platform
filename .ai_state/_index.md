@@ -4,9 +4,9 @@
 version: "9.6.4"
 
 # === PACE 路由状态 ===
-path: "Feature"                   # 最后一次活动: 2026-06-17 ocr-http-api (Feature)
-stage: "ship"                     # 最后停留阶段: 2026-06-17 ocr-http-api ship
-current_sprint_slug: "2026-06-17-ocr-http-api"
+path: "Feature"                   # 最后一次活动: 2026-06-18 tender-domain (Feature)
+stage: "ship"                     # 最后停留阶段: 2026-06-18 tender-domain ship
+current_sprint_slug: "2026-06-18-tender-domain"
 current_roadmap_slug: ""
 skip_polish: false
 skip_architecture_check: false
@@ -52,18 +52,18 @@ counts:
   reviews_count: 22
   cleanup_count: 0
   compound:
-    learning: 3
+    learning: 4
     trick: 0
-    decision: 0
+    decision: 1
     explore: 0
 # === Pointers (指向最新相关文件) ===
 pointers:
-  latest_design: "sprints/2026-06-17-ocr-http-api/design.md"
+  latest_design: "sprints/2026-06-18-tender-domain/design.md"
   latest_review: "sprints/legacy-2026-06-02-v962-merge/reviews/pass4.md"
   latest_cleanup: ""
   latest_brainstorm: ""
-  latest_decisions: []
-  latest_lessons: ["compound/2026-06-17-learning-cross-review-and-soft-timeout.md", "compound/2026-06-17-learning-classify-fix-exposes-latent-bug.md", "compound/2026-06-02-learning-legacy-v962-migration.md"]
+  latest_decisions: ["compound/2026-06-19-decision-agent-front-cc-out-of-scope.md"]
+  latest_lessons: ["compound/2026-06-18-learning-absence-is-not-zero.md", "compound/2026-06-17-learning-cross-review-and-soft-timeout.md", "compound/2026-06-17-learning-classify-fix-exposes-latent-bug.md", "compound/2026-06-02-learning-legacy-v962-migration.md"]
   latest_architecture_update: ""
 
 # === PACE 联动字段 (hook 自动维护) ===
@@ -104,6 +104,17 @@ fingerprint: ""
 
 ## 当前状态
 
+2026-06-18: Sprint `2026-06-18-tender-domain`（Feature, 对话驱动开发, 事后补档）已 ship。
+新增第 5 个业务域 `tender`（招投标评标）：三 agent（extractor/evaluator/reviewer，reviewer 默认关）、
+两契约（tender/extract-result + review-delta，audit-result 复用 common）、skill `tender-eval`、
+两层规则（statute 通则待生成 + 项目级 `{招标编号}.rules.json`）、CLAUDE.md 路由 + rule-init 接入、
+两处 domain enum 加 `tender`。核心：评分项命中 `requires_live_event/external_data/cross_bid_comparison`
+一律 `manual_review`，**绝不判 0**（纠正 DeepSeek 把答辩/信用/价格判 0 的范畴错误）。
+**零 `server/` 改动**（纯 `.claude/` + `knowledge/` 配置驱动）。验收：jsonschema 21/21 + 川姜花苑 dry-run。
+设计见 `sprints/2026-06-18-tender-domain/design.md`，交付见同目录 `ship.md`，
+教训见 `compound/2026-06-18-learning-absence-is-not-zero.md`。
+注：`knowledge/tender/*` 落盘但被 `.gitignore`（制度源不入库约定）；样例规则 confidence:medium 待核；代码尚未 commit。
+
 2026-06-17: Sprint `2026-06-17-ocr-http-api`（Feature, 对话驱动开发, 事后补档）已 ship。
 补齐 OCR 对外 HTTP API（`POST /ocr/extract` 纯识别 + `POST /ocr/fill` 识别+回填）、
 前端 OCR 页面（左右分割, 接入 /ocr/fill）、并修复 classify 文本层误判与 pipeline
@@ -127,6 +138,7 @@ slug 拆分为独立 sprint 目录；`lessons.md` 整体保留为
 - `docs/` — 项目参考文档 (开发指南 / 前端对接 / audit-skills)，非状态机文件
 
 ## 历史 (由 pace-continuator hook 自动追加, 最多保留近 10 条)
+- `2026-06-18 15:25:31`: stage=ship sprint=2026-06-18-tender-domain turn-end
 - `2026-06-17 10:00:43`: stage=ship sprint=2026-06-17-ocr-http-api turn-end
 - `2026-06-17 09:53:50`: stage=ship sprint=  turn-end
 - `2026-06-17 09:51:55`: stage=ship sprint=  turn-end
@@ -136,7 +148,6 @@ slug 拆分为独立 sprint 目录；`lessons.md` 整体保留为
 - `2026-06-17 08:51:45`: stage=ship sprint=  turn-end
 - `2026-06-17 08:40:42`: stage=ship sprint=  turn-end
 - `2026-06-17 07:39:01`: stage=ship sprint=  turn-end
-- `2026-06-17 07:17:47`: stage=ship sprint=  turn-end
 
 - 2026-06-02 [migrate] v9.6.2(legacy flat) → v9.6.4. 备份见 `.ai_state.backup-*`。
 
