@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -11,16 +12,10 @@ from server.platform.paths import (
     RESULT_BY_REQUEST_DIR,
     RESULT_INDEX_DB_FILE,
     RESULT_INDEX_SHARD_DIR,
-    build_result_archive_path,
     ensure_local_layout,
 )
 from server.platform.sqlite_store import connect_sqlite, describe_sqlite_target, row_to_dict
-from server.platform.storage import (
-    append_json_file,
-    describe_storage_target,
-    load_json_file,
-    load_jsonl_records_from_paths,
-)
+from server.platform.storage import load_jsonl_records_from_paths
 
 ensure_local_layout()
 
@@ -124,18 +119,14 @@ class SQLiteResultStore:
         self._backfill_legacy_records()
 
     def archive_result(self, record: ResultRecord, payload: dict[str, Any]) -> None:
-        append_json_file(self._result_path(record.result_file), payload)
+        # B1: 完整 payload 折叠进 payload TEXT 列（不再写 by-request 文件树）。
+        columns = [*self.COLUMNS, "payload"]
+        placeholders = ", ".join("?" for _ in columns)
+        values = (*self._record_values(asdict(record)), json.dumps(payload, ensure_ascii=False))
         with connect_sqlite(self.db_path) as connection:
             connection.execute(
-                """
-                INSERT OR REPLACE INTO results (
-                    request_id, created_at, conversation_id, request_mode, schema_name,
-                    result_file, tenant, claude_session_id, session_id, resume_session_id,
-                    fork_from_session_id, result_subtype, claim_id, verdict, manual_review_reason, cost_usd,
-                    prompt_preview
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                self._record_values(asdict(record)),
+                f"INSERT OR REPLACE INTO results ({', '.join(columns)}) VALUES ({placeholders})",
+                values,
             )
 
     def list_records(
@@ -185,10 +176,14 @@ class SQLiteResultStore:
         request_id: str,
         tenant: str,
     ) -> dict[str, Any] | None:
-        record = self.get_record_by_request_id(request_id=request_id, tenant=tenant)
-        if record is None:
+        with connect_sqlite(self.db_path) as connection:
+            row = connection.execute(
+                "SELECT payload FROM results WHERE request_id = ? AND tenant = ?",
+                (request_id, tenant),
+            ).fetchone()
+        if row is None or row["payload"] is None:
             return None
-        return load_json_file(self._result_path(str(record["result_file"])))
+        return json.loads(row["payload"])
 
     def list_records_admin(
         self,
@@ -231,24 +226,19 @@ class SQLiteResultStore:
         return row_to_dict(row)
 
     def get_payload_by_request_id_admin(self, request_id: str) -> dict[str, Any] | None:
-        record = self.get_record_by_request_id_admin(request_id)
-        if record is None:
+        with connect_sqlite(self.db_path) as connection:
+            row = connection.execute(
+                "SELECT payload FROM results WHERE request_id = ?",
+                (request_id,),
+            ).fetchone()
+        if row is None or row["payload"] is None:
             return None
-        return load_json_file(self._result_path(str(record["result_file"])))
+        return json.loads(row["payload"])
 
     def describe(self) -> dict[str, Any]:
-        description = describe_sqlite_target(self.db_path, backend="sqlite+json-files")
-        description["archive_dir"] = str(self.archive_root)
-        description["archive"] = describe_storage_target(self.archive_root)
+        description = describe_sqlite_target(self.db_path, backend="sqlite")
         description["legacy_shard_dir"] = str(self.legacy_shard_dir) if self.legacy_shard_dir else None
         return description
-
-    def _result_path(self, stored_path: str) -> Path:
-        path = (self.archive_root.parent.parent / stored_path).resolve()
-        root = self.archive_root.parent.parent.resolve()
-        if root not in path.parents and path != root:
-            raise ValueError(f"Result path escapes logs root: {stored_path}")
-        return path
 
     def _initialize_schema(self) -> None:
         with connect_sqlite(self.db_path) as connection:
@@ -271,7 +261,8 @@ class SQLiteResultStore:
                     verdict TEXT,
                     manual_review_reason TEXT,
                     cost_usd REAL NOT NULL DEFAULT 0,
-                    prompt_preview TEXT
+                    prompt_preview TEXT,
+                    payload TEXT
                 );
                 """
             )
@@ -283,6 +274,8 @@ class SQLiteResultStore:
                 connection.execute(
                     "ALTER TABLE results ADD COLUMN manual_review_reason TEXT"
                 )
+            if "payload" not in existing_columns:
+                connection.execute("ALTER TABLE results ADD COLUMN payload TEXT")
             connection.executescript(
                 """
                 CREATE INDEX IF NOT EXISTS idx_results_tenant_created
@@ -341,7 +334,6 @@ def archive_result_payload(
 ) -> ResultRecord:
     """Persist a structured result and return its metadata record."""
     created_at = created_at or datetime.now(timezone.utc).isoformat()
-    result_file_path = build_result_archive_path(request_id=request_id, timestamp=created_at)
     claim_id = response.get("claim_id") if isinstance(response, dict) else None
     verdict = response.get("verdict") if isinstance(response, dict) else None
     manual_review_reason = response.get("manual_review_reason") if isinstance(response, dict) else None
@@ -377,7 +369,7 @@ def archive_result_payload(
         cost_usd=cost_usd,
         prompt_preview=prompt_preview,
         created_at=created_at,
-        result_file=str(result_file_path.relative_to(RESULT_BY_REQUEST_DIR.parent.parent)),
+        result_file=f"{request_id}.json",
     )
     RESULT_STORE.archive_result(record, payload)
     return record
