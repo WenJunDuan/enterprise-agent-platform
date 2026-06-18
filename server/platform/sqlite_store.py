@@ -11,7 +11,12 @@ from server.platform.storage import describe_storage_target
 
 
 @contextmanager
-def connect_sqlite(db_path: Path) -> Iterator[sqlite3.Connection]:
+def connect_sqlite(db_path: Path, *, immediate: bool = False) -> Iterator[sqlite3.Connection]:
+    """Open a SQLite connection (WAL).
+
+    immediate=True 立即取写锁（BEGIN IMMEDIATE），让"读-改-写"在一个原子事务内完成，
+    避免同一行并发更新时的丢更新（用于 audit_tasks 的 upsert 合并）。
+    """
     db_path.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(db_path, timeout=30)
     connection.row_factory = sqlite3.Row
@@ -19,6 +24,8 @@ def connect_sqlite(db_path: Path) -> Iterator[sqlite3.Connection]:
     connection.execute("PRAGMA synchronous=NORMAL")
     # 统一单库 platform.sqlite3 多表共写：WAL 让读写不互相阻塞，提升并发。
     connection.execute("PRAGMA journal_mode=WAL")
+    if immediate:
+        connection.execute("BEGIN IMMEDIATE")
     try:
         yield connection
         connection.commit()
