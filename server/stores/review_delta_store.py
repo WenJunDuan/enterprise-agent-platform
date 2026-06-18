@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -10,11 +11,9 @@ from typing import Any
 from server.platform.paths import (
     REVIEW_DELTA_BY_REQUEST_DIR,
     REVIEW_DELTA_INDEX_DB_FILE,
-    build_review_delta_archive_path,
     ensure_local_layout,
 )
 from server.platform.sqlite_store import connect_sqlite, describe_sqlite_target, row_to_dict
-from server.platform.storage import append_json_file, describe_storage_target, load_json_file
 
 ensure_local_layout()
 
@@ -61,17 +60,17 @@ class SQLiteReviewDeltaStore:
         self._initialize_schema()
 
     def archive_review_delta(self, record: ReviewDeltaRecord, payload: dict[str, Any]) -> None:
-        append_json_file(self._archive_path(record.result_file), payload)
+        # B1: 完整 payload 折叠进 payload TEXT 列（不再写 by-request 文件树）。
+        columns = [*self.COLUMNS, "payload"]
+        placeholders = ", ".join("?" for _ in columns)
+        values = (
+            *(asdict(record).get(column) for column in self.COLUMNS),
+            json.dumps(payload, ensure_ascii=False),
+        )
         with connect_sqlite(self.db_path) as connection:
             connection.execute(
-                """
-                INSERT OR REPLACE INTO review_deltas (
-                    request_id, created_at, conversation_id, claude_session_id, result_file,
-                    tenant, claim_id, initial_verdict, reviewer_verdict, final_recommendation,
-                    agrees_with_initial, escalation_recommended, reviewed_by
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                tuple(asdict(record).get(column) for column in self.COLUMNS),
+                f"INSERT OR REPLACE INTO review_deltas ({', '.join(columns)}) VALUES ({placeholders})",
+                values,
             )
 
     def list_records(
@@ -113,10 +112,14 @@ class SQLiteReviewDeltaStore:
         return row_to_dict(row)
 
     def get_payload_by_request_id(self, request_id: str, tenant: str) -> dict[str, Any] | None:
-        record = self.get_record_by_request_id(request_id, tenant)
-        if record is None:
+        with connect_sqlite(self.db_path) as connection:
+            row = connection.execute(
+                "SELECT payload FROM review_deltas WHERE request_id = ? AND tenant = ?",
+                (request_id, tenant),
+            ).fetchone()
+        if row is None or row["payload"] is None:
             return None
-        return load_json_file(self._archive_path(str(record["result_file"])))
+        return json.loads(row["payload"])
 
     def list_records_admin(
         self,
@@ -155,16 +158,17 @@ class SQLiteReviewDeltaStore:
         return row_to_dict(row)
 
     def get_payload_by_request_id_admin(self, request_id: str) -> dict[str, Any] | None:
-        record = self.get_record_by_request_id_admin(request_id)
-        if record is None:
+        with connect_sqlite(self.db_path) as connection:
+            row = connection.execute(
+                "SELECT payload FROM review_deltas WHERE request_id = ?",
+                (request_id,),
+            ).fetchone()
+        if row is None or row["payload"] is None:
             return None
-        return load_json_file(self._archive_path(str(record["result_file"])))
+        return json.loads(row["payload"])
 
     def describe(self) -> dict[str, Any]:
-        description = describe_sqlite_target(self.db_path, backend="sqlite+json-files")
-        description["archive_dir"] = str(self.archive_root)
-        description["archive"] = describe_storage_target(self.archive_root)
-        return description
+        return describe_sqlite_target(self.db_path, backend="sqlite")
 
     def _initialize_schema(self) -> None:
         with connect_sqlite(self.db_path) as connection:
@@ -183,7 +187,8 @@ class SQLiteReviewDeltaStore:
                     final_recommendation TEXT,
                     agrees_with_initial INTEGER NOT NULL DEFAULT 0,
                     escalation_recommended INTEGER NOT NULL DEFAULT 0,
-                    reviewed_by TEXT
+                    reviewed_by TEXT,
+                    payload TEXT
                 );
                 CREATE INDEX IF NOT EXISTS idx_review_deltas_tenant_created
                     ON review_deltas (tenant, created_at DESC);
@@ -193,13 +198,12 @@ class SQLiteReviewDeltaStore:
                     ON review_deltas (tenant, final_recommendation, reviewer_verdict, created_at DESC);
                 """
             )
-
-    def _archive_path(self, stored_path: str) -> Path:
-        path = (self.archive_root.parent.parent / stored_path).resolve()
-        root = self.archive_root.parent.parent.resolve()
-        if root not in path.parents and path != root:
-            raise ValueError(f"Review delta path escapes logs root: {stored_path}")
-        return path
+            existing_columns = {
+                row["name"]
+                for row in connection.execute("PRAGMA table_info(review_deltas)").fetchall()
+            }
+            if "payload" not in existing_columns:
+                connection.execute("ALTER TABLE review_deltas ADD COLUMN payload TEXT")
 
 
 REVIEW_DELTA_STORE = SQLiteReviewDeltaStore(REVIEW_DELTA_INDEX_DB_FILE, REVIEW_DELTA_BY_REQUEST_DIR)
@@ -216,13 +220,12 @@ def archive_review_delta_payload(
     store: SQLiteReviewDeltaStore | None = None,
 ) -> ReviewDeltaRecord:
     created_at = created_at or datetime.now(timezone.utc).isoformat()
-    archive_path = build_review_delta_archive_path(request_id=request_id, timestamp=created_at)
     record = ReviewDeltaRecord(
         request_id=request_id,
         created_at=created_at,
         conversation_id=conversation_id,
         claude_session_id=claude_session_id,
-        result_file=str(archive_path.relative_to(REVIEW_DELTA_BY_REQUEST_DIR.parent.parent)),
+        result_file=f"{request_id}.json",
         tenant=tenant,
         claim_id=str(payload.get("claim_id") or "") or None,
         initial_verdict=str(payload.get("initial_verdict") or "") or None,
