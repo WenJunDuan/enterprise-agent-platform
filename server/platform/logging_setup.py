@@ -15,6 +15,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any, Iterator, Literal
 
+from server.platform.config import _env_int
 from server.platform.paths import APP_LOG_DIR
 
 # 运行日志文件 appender 默认值（log4j2 RollingFile 等价）。环境变量可覆盖。
@@ -151,16 +152,6 @@ def _build_rotating_file_handler(
     handler.rotator = _gzip_rotator
     handler.namer = _gzip_namer
     return handler
-
-
-def _env_int(name: str, default: int) -> int:
-    raw = os.getenv(name, "").strip()
-    if not raw:
-        return default
-    try:
-        return int(raw)
-    except ValueError:
-        return default
 
 
 def configure_logging(
