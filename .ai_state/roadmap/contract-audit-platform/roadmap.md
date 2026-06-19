@@ -74,6 +74,6 @@ tender 路由是 Phase 1 第一个新路由，故把该决策从原计划的 con
 ## 进度
 
 - [x] item0 review-backend-refactor — **completed**（3深度+1codex；de-scope 后修 4 项代码质量，241 passed）
-- [ ] item1 tender-ingestion — **next**（design/plan 就绪，stage=impl，从 T1 CLI 起；T4 e2e 卡用户材料）
-- [ ] item2 contract-audit-feature — pending（需 design；无硬依赖 tender，按定序排其后）
-- [ ] item3 contract-audit-api — pending（blocked_by contract-audit-feature；复用 Phase 1 路由模板）
+- [~] item1 tender-ingestion — **可写完成**（T1/T2/T2.5/T3 done，260 passed）；仅 T4 端到端卡用户真标
+- [x] item2 contract-audit-feature — **completed**（C1-C6 + 交叉审查 PASS 4.1/5.0；276 passed/ruff/layering）
+- [ ] item3 contract-audit-api — **next**（unblocked；HTTP /contract/review，复用 Phase 1 tender 异步路由模板，纯加法）

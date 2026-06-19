@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from pathlib import Path
 
 from server.stores.contract_store import (
@@ -130,8 +131,10 @@ def test_persist_stores_structure_links_request_and_copies_source(tmp_path):
     src.mkdir()
     (src / "main.pdf").write_text("合同正文", encoding="utf-8")
 
+    # 唯一 request_id 隔离共享 platform.sqlite3（避免跨运行累积 + 同秒排序不确定性）。
+    request_id = f"req-{uuid.uuid4().hex}"
     cid = persist_contract_from_result(
-        _result_with_contract(), request_id="req-c1", tenant="acme-persist", source_path=str(src)
+        _result_with_contract(), request_id=request_id, tenant="acme-persist", source_path=str(src)
     )
     assert cid
 
@@ -140,9 +143,9 @@ def test_persist_stores_structure_links_request_and_copies_source(tmp_path):
     assert record["title"] == "采购合同"
     assert record["amount"] == 99999.0
     assert record["payment_nodes"][0]["ratio"] == 0.3
-    assert record["request_id"] == "req-c1"
+    assert record["request_id"] == request_id
     # result↔contract 回链
-    by_req = get_contract_by_request_id_admin("req-c1")
+    by_req = get_contract_by_request_id_admin(request_id)
     assert by_req is not None and by_req["contract_id"] == cid
     # 原件已 copy 进合同库目录
     assert Path(record["source_path"]).exists()

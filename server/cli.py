@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Any
@@ -49,6 +50,7 @@ from server.stores.session_store import (
 )
 
 app = typer.Typer(help="Enterprise agent platform CLI.")
+logger = logging.getLogger(__name__)
 INIT_RULES_PROXY_DIR = Path("logs/service/init-rules")
 
 
@@ -254,10 +256,15 @@ def review_contract_json(
             schema_name=DEFAULT_OUTPUT_SCHEMA_NAME,
         )
         # 把审查抽取的合同结构落入合同库（无 extracted_data.contract 时静默跳过）。
+        # 落库是 best-effort 副作用：结论已由 run_command_json 归档 result_store，
+        # 即使原件 copy / 写库 IO 出错也不应让 CLI crash、吞掉已产出的结论。
         if isinstance(payload, dict):
-            persist_contract_from_result(
-                payload, request_id=meta.request_id, tenant=None, source_path=path
-            )
+            try:
+                persist_contract_from_result(
+                    payload, request_id=meta.request_id, tenant=None, source_path=path
+                )
+            except Exception as exc:
+                logger.warning("contract persistence failed (result already archived): %s", exc)
         return payload, meta
 
     _invoke_json_command(_run())
