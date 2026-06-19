@@ -38,18 +38,22 @@ items:
       (routes/health.py、ops/diagnostics.py、routes/audit.py) + 补 ops/stores 守卫(summary R2-F1/F3/F4 門禁#5)；
       tender 是后重构第一个新路由，只做一次，contract-api 复用。T4 端到端(真招标+投标)materials-gated，横切，
       用户给料随时插。Path=Feature。
+      进度(2026-06-19): T1/T2/T2.5/T3 全 done(260 passed/ruff/layering)；仅 T4 端到端卡用户真标。
+      可写工作已清；item2 contract-audit-feature 已并行启动 design。
 
   - slug: contract-audit-feature
     title: "Phase 2a · 合同审计功能完善优化"
-    status: pending
-    sprint_slug: ""
-    blocked_by: [review-backend-refactor]   # 与 tender-ingestion 无硬依赖；按用户定序串行排其后
+    status: in_progress            # design 已落 design.md，待用户确认进 impl（铁律[设计先行]）
+    sprint_slug: "2026-06-19-contract-audit-feature"
+    blocked_by: [review-backend-refactor]   # 与 tender-ingestion 无硬依赖；tender T4 卡材料时并行启动本项
     estimated_complexity: L
     notes: >
-      需独立 design 阶段(§C 只是占位)。预期: contract store(stores/contract_store.py +
-      data/contracts/<id>/ + evidence_chain 回链 contract_id) + 新建 .claude/contracts/legal/ 契约 schema +
-      legal/contract-reviewer 编排完善。Path 待 design 定(Feature/System)。
-      与 tender-ingestion 无硬依赖(不同域)，可并行；当前按用户定序排 tender 之后串行。
+      design 已定(2026-06-19，用户拍板)：范围=审查+合同库；驱动=内联 /review-contract；**Path=System**。
+      组件: 新建 .claude/contracts/legal/{extract-result,review-delta} schema + contract_store(sqlite contracts 表
+      入统一库 + data/contracts/<id>/ 源件) + /review-contract 内联命令 + CLI + Python 持久化(从
+      audit-result.extracted_data.contract 落库) + CLAUDE.md legal 段。结论复用 common/audit-result，
+      evidence_chain 回链 contract_id。跨域回链(expense 引用合同)留 v2。详见 sprint design.md。
+      硬约束: routes/audit|ocr|tender 零改; schema 只动新建 legal/*; contract store 入统一库新表。
 
   - slug: contract-audit-api
     title: "Phase 2b · 合同审计 API 接口(仿 ocr/audit/tender，纯加法)"
