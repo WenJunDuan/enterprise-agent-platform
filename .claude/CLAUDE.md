@@ -8,7 +8,7 @@
 | ------- | -------------------------------------------------------- | ---------------------------------------------------------------------------- |
 | expense | 报销、费用、发票、差旅、招待、借款                       | `/audit` 内联一次性审核（提取+判断同会话）；`expense-reviewer` 暂时关闭      |
 | hr      | 考勤、打卡、迟到、早退、缺勤、请假、调休                 | `attendance-checker` / `leave-auditor`                                       |
-| legal   | 合同、条款、协议、法务审查                               | `contract-reviewer`                                                          |
+| legal   | 合同、条款、协议、法务审查                               | `/review-contract` 内联审查（立案→规则→抽取→评判→汇总，AI 直读、同会话）；`contract-reviewer` 默认关闭 |
 | tender  | 招投标、评标、投标文件评分、资格审查、业绩核验、废标判定 | `/evaluate-bid` 内联五步评标（立案→计划→抽取→评判→汇总，AI 直读、同会话）；`tender-reviewer` 默认关闭 |
 | system  | 制度导入、规则初始化、政策更新、记忆沉淀                 | `system-rule-init` / `system-memory-distill`（skill，非 agent）              |
 
@@ -45,7 +45,9 @@
 
 ### legal
 
-- 合同、协议、条款审阅走 `contract-reviewer`。
+- 合同、协议、条款审阅默认走 **`/review-contract` 内联审查**：同一会话内 AI 直读合同（无 OCR），连续完成 S0 立案 → S1 规则计划 → S2 抽取（条款/付款节点）→ S3 风险/合规评判 → S4 汇总，对齐 expense/tender 的低延迟内联做法。结论符合 `common/audit-result`，并把合同结构写入 `extracted_data.contract` 供平台落入合同库（`stores/contract_store.py`，`data/contracts/<id>/source/` 留原件）。`contract-reviewer` agent 保留，供多域协同或需第二意见时按需 `Task` 调度（复核默认关闭）。
+- 规则来自本地 `knowledge/legal/*.rules.json`，缺失时按降级走 `manual_review`（`rule_gap`），不得现场编造规则。
+- 典型一致性风险：合同金额与付款节点合计不符、签约主体与发票/审批主体不一致、补充协议与主合同条款冲突 → 相关项 `manual_review`（`data_conflict`），证据链须同时引用冲突两处出处。
 - 当费用、采购或合作事项需要条款依据时，legal 域可作为辅助域参与。
 - 仅在以下条件触发 legal 辅助域：
   - 材料中存在合同、协议、条款、补充协议、付款约定等附件
