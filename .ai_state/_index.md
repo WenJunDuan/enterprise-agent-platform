@@ -54,7 +54,7 @@ counts:
   compound:
     learning: 4
     trick: 0
-    decision: 1
+    decision: 2
     explore: 0
 # === Pointers (指向最新相关文件) ===
 pointers:
@@ -62,12 +62,12 @@ pointers:
   latest_review: "sprints/2026-06-19-review-backend-refactor/reviews/summary.md"
   latest_cleanup: ""
   latest_brainstorm: ""
-  latest_decisions: ["compound/2026-06-19-decision-agent-front-cc-out-of-scope.md"]
+  latest_decisions: ["compound/2026-06-19-decision-ops-below-routes-layering.md", "compound/2026-06-19-decision-agent-front-cc-out-of-scope.md"]
   latest_lessons: ["compound/2026-06-18-learning-absence-is-not-zero.md", "compound/2026-06-17-learning-cross-review-and-soft-timeout.md", "compound/2026-06-17-learning-classify-fix-exposes-latent-bug.md", "compound/2026-06-02-learning-legacy-v962-migration.md"]
   latest_architecture_update: ""
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "impl:tender-ingestion:T2.5"
+next_action: "impl:tender-ingestion:T3"
 last_subagent: "generator"
 last_subagent_at: "2026-06-02T09:25:27.661Z"
 active_worktrees: []

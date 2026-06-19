@@ -6,7 +6,14 @@ the package grows. Target layering + rationale:
 
 Layers (a module may only import from a strictly lower layer):
 
-    app (api/app_server/cli) → ops → routes → features(audit|ocr) → common → stores → platform
+    app (api/app_server/cli) → routes → ops → features(audit|ocr) → core → common → stores → platform
+
+``ops`` (diagnostics/maintenance) is a *service* layer consumed by both app and
+routes; it depends only on core/stores/platform and never imports routes/app —
+hence it sits BELOW routes (2026-06-19 T2.5 correction; the earlier docstring
+mis-ordered ops above routes, which falsely flagged the legal health→ops import).
+``core`` is the facade re-exporting common/*; importing it downward from
+routes/ops is fine, but common/ must not import core (cycle).
 
 Feature domains (audit, ocr, …) are siblings and must never import each other.
 """
@@ -82,3 +89,31 @@ def test_feature_domains_do_not_import_each_other():
     ocr_to_audit = [(f, mod) for f, mod in _server_imports("ocr") if mod.startswith("server.audit")]
     assert not audit_to_ocr, f"audit/ imports ocr/: {audit_to_ocr}"
     assert not ocr_to_audit, f"ocr/ imports audit/: {ocr_to_audit}"
+
+
+def test_ops_does_not_import_routes_app_or_features():
+    """ops/ is a service layer BELOW routes — it may use core/stores/platform but
+    must never import routes, the app module, or feature domains. This is what lets
+    routes (e.g. health) legally depend on ops without creating a cycle.
+    """
+    forbidden = ("server.routes", "server.api", "server.audit", "server.ocr")
+    offenders = [(f, mod) for f, mod in _server_imports("ops") if mod.startswith(forbidden)]
+    assert not offenders, f"ops/ imports routes/app/feature (must stay below routes): {offenders}"
+
+
+def test_stores_only_import_platform():
+    """stores/ sit just above platform — they may only import platform (and sibling
+    stores). Importing common/core/ops/routes/api/features would invert the layering
+    (common/ is already allowed to import stores, so stores→common would be a cycle).
+    """
+    forbidden = (
+        "server.routes",
+        "server.api",
+        "server.ops",
+        "server.audit",
+        "server.ocr",
+        "server.common",
+        "server.core",
+    )
+    offenders = [(f, mod) for f, mod in _server_imports("stores") if mod.startswith(forbidden)]
+    assert not offenders, f"stores/ imports an upper layer (only platform allowed): {offenders}"
