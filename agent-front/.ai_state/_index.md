@@ -3,7 +3,7 @@ version: "9.6.4-front"
 scope: "agent-front"
 path: "System"
 stage: "ship"
-current_sprint_slug: "2026-06-18-front-framework-migration"
+current_sprint_slug: "2026-06-19-contract-tender-review-mock"
 current_roadmap_slug: ""
 source_ai_state: "../.ai_state"
 created_at: "2026-06-18"
@@ -17,6 +17,49 @@ migrating frontend-relevant state from the parent
 `enterprise-agent-platform/.ai_state`.
 
 ## Latest Update: 2026-06-19
+
+Active sprint: `2026-06-19-contract-tender-review-mock`.
+
+- User refined the tender domain: the sidebar exposes `项目管理` and `历史评审`
+  under `智能招投标审核`. Prototype detail screens may exist only as
+  button-driven internal mock flows.
+- Navigation is now:
+  - `智能报销审核` group with `报销审核`.
+  - `智能 OCR` group with `OCR 识别`.
+  - `智能招投标审核` group with `项目管理` and `历史评审`.
+- Sidebar child menu items are indented by `4ch` under each group label.
+- Old `合同审查清单` menu/page is removed. `/contracts` is retained only as a
+  compatibility redirect to `/contracts/tender-review`.
+- `TenderReviewScreen` is now `dashboard | create | history | analysis |
+  report`. `create` is opened by the `创建评审` button and remains mock-only;
+  `analysis` covers `分析中心` and `评分对比`; `report` covers `审核报告`. These
+  internal screens are not sidebar entries.
+- Mock data remains local in `features/contract/tender-review/mock-data.ts`;
+  dashboard/history derivation is isolated in `model.ts` for later API
+  replacement.
+- `项目管理` and `报销审核` now use the shared `DataTableToolbar` /
+  `DataTablePagination` design language for query, status, and pagination.
+  The reimbursement page no longer renders the refresh / clear-summary action
+  block. Tender UI no longer renders the English `AI` label.
+- 2026-06-19 UI refinement pass: remaining native `<select>` controls were
+  replaced with shared Select components; source scan shows no native select
+  markup. `历史评审` table headers are centered and row actions now expose only
+  `分析中心` and `审核报告`. OCR upload actions place `开始识别` and `加载示例`
+  on opposite sides. `项目管理` stats are shorter and the project query input is
+  widened. `创建评审` stepper is centered/wider, and tender/bidder file actions
+  now select real files (PDF, images, Office/text document formats) instead of
+  appending generated mock filenames.
+- Follow-up history refinement: `历史评审` no longer renders status filter chips
+  for `已完成` / `已归档`; history records are normalized to `已完成` only.
+- Vite proxy now bypasses HTML navigations for `/audit*` and `/ocr*`, so SPA
+  routes can load directly while API requests still proxy to the audit service.
+- Verification on 2026-06-19: `bun run lint`, `bun run test` (24 pass), and
+  `bun run build` passed. Dev server is running at
+  `http://127.0.0.1:5174/`; Edge/Playwright text/DOM verification confirmed
+  `/contracts/tender-review`, `创建评审`, and `/audit` query/status/pagination
+  behavior without saving screenshots.
+
+## Previous Update: 2026-06-19
 
 The migrated frontend is now the active app shell on `main`.
 

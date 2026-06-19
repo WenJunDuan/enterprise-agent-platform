@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { SelectDropdown } from '@/components/select-dropdown'
 import { uploadFile } from '../api'
 import { BIZ_TYPE_OPTIONS } from '../model'
 
@@ -140,18 +141,14 @@ export function FileUploadDialog({
         <div className='grid grid-cols-2 gap-3'>
           <div className='flex flex-col gap-1.5'>
             <Label htmlFor='bizType'>业务类型</Label>
-            <select
-              id='bizType'
-              className='h-9 rounded-md border bg-background px-3 text-sm'
+            <SelectDropdown
               value={bizType}
-              onChange={(e) => setBizType(e.target.value)}
-            >
-              {BIZ_TYPE_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
+              onValueChange={setBizType}
+              items={BIZ_TYPE_OPTIONS}
+              isControlled
+              withFormControl={false}
+              className='h-9'
+            />
           </div>
 
           <div className='flex flex-col gap-1.5'>

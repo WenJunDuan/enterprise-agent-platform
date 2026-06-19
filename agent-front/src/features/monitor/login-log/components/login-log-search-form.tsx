@@ -1,5 +1,6 @@
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { SelectDropdown } from '@/components/select-dropdown'
 
 export type LoginLogSearchFormState = {
   username: string
@@ -8,6 +9,8 @@ export type LoginLogSearchFormState = {
   beginTime: string
   endTime: string
 }
+
+const ALL_VALUE = '__all__'
 
 type Props = {
   value: LoginLogSearchFormState
@@ -36,15 +39,20 @@ export function LoginLogSearchForm({
         value={value.ipaddr}
         onChange={(e) => onChange({ ...value, ipaddr: e.target.value })}
       />
-      <select
-        className='h-9 rounded-md border bg-background px-3 text-sm'
-        value={value.status}
-        onChange={(e) => onChange({ ...value, status: e.target.value })}
-      >
-        <option value=''>全部状态</option>
-        <option value='0'>成功</option>
-        <option value='1'>失败</option>
-      </select>
+      <SelectDropdown
+        value={value.status || ALL_VALUE}
+        onValueChange={(next) =>
+          onChange({ ...value, status: next === ALL_VALUE ? '' : next })
+        }
+        items={[
+          { label: '全部状态', value: ALL_VALUE },
+          { label: '成功', value: '0' },
+          { label: '失败', value: '1' },
+        ]}
+        isControlled
+        withFormControl={false}
+        className='h-9 w-32'
+      />
       <Input
         type='datetime-local'
         className='w-52'

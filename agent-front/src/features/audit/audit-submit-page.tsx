@@ -17,6 +17,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
+import { SelectDropdown } from '@/components/select-dropdown'
 import { submitExpense } from './api'
 import {
   ATTACHMENT_CATEGORIES,
@@ -206,9 +207,9 @@ export function AuditSubmitPage() {
       <Header fixed />
       <Main constrained className='space-y-5'>
         <div>
-          <h1 className='text-2xl font-semibold tracking-tight'>新建发票审核</h1>
+          <h1 className='text-2xl font-semibold tracking-tight'>新建报销审核</h1>
           <p className='text-sm text-muted-foreground'>
-            按步骤整理发票信息与附件，提交后进入审核流程。
+            按步骤整理报销信息与附件，提交后进入审核流程。
           </p>
         </div>
 
@@ -240,17 +241,17 @@ export function AuditSubmitPage() {
                     ))}
                     <label className='grid gap-2'>
                       <span className='text-sm font-medium'>费用类型</span>
-                      <select
+                      <SelectDropdown
                         value={form.expense_type}
-                        onChange={(event) => updateText('expense_type', event.target.value)}
-                        className='h-9 rounded-md border bg-background px-3 text-sm outline-none focus:border-ring focus:ring-[3px] focus:ring-ring/20'
-                      >
-                        {EXPENSE_TYPES.map((type) => (
-                          <option key={type} value={type}>
-                            {type}
-                          </option>
-                        ))}
-                      </select>
+                        onValueChange={(value) => updateText('expense_type', value)}
+                        items={EXPENSE_TYPES.map((type) => ({
+                          label: type,
+                          value: type,
+                        }))}
+                        isControlled
+                        withFormControl={false}
+                        className='h-9'
+                      />
                     </label>
                   </div>
                   <label className='grid gap-2'>
@@ -336,22 +337,19 @@ export function AuditSubmitPage() {
                             <div className='text-xs text-muted-foreground'>{formatFileSize(item.file.size)}</div>
                           </div>
                           <div className='flex items-center gap-2'>
-                            <select
+                            <SelectDropdown
                               value={item.category}
-                              onChange={(event) =>
+                              onValueChange={(value) =>
                                 updateAttachmentCategory(
                                   item.id,
-                                  event.target.value as SelectedAttachment['category']
+                                  value as SelectedAttachment['category']
                                 )
                               }
-                              className='h-9 rounded-md border bg-background px-3 text-sm'
-                            >
-                              {ATTACHMENT_CATEGORIES.map((category) => (
-                                <option key={category.value} value={category.value}>
-                                  {category.label}
-                                </option>
-                              ))}
-                            </select>
+                              items={ATTACHMENT_CATEGORIES}
+                              isControlled
+                              withFormControl={false}
+                              className='h-9 w-32'
+                            />
                             <Button
                               type='button'
                               variant='ghost'

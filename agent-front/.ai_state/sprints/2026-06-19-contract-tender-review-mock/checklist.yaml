@@ -1,0 +1,93 @@
+sprint_slug: "2026-06-19-contract-tender-review-mock"
+updated: "2026-06-19"
+tasks:
+  - id: T1
+    title: "Rename reimbursement and tender navigation"
+    design_ref: "design.md AC1/AC2/AC5"
+    status: completed
+    evidence_tool_use_ids:
+      - "cmd:bun-run-test:24-pass"
+    files_changed:
+      - "agent-front/src/app/navigation/registry.ts"
+      - "agent-front/src/app/navigation/registry.test.ts"
+      - "agent-front/src/features/audit/audit-tasks-page.tsx"
+      - "agent-front/src/features/audit/audit-submit-page.tsx"
+    completed_at: "2026-06-19"
+    blocked_by: ""
+  - id: T2
+    title: "Remove old contract checklist entry and page"
+    design_ref: "design.md AC3/AC4"
+    status: completed
+    evidence_tool_use_ids:
+      - "cmd:bun-run-build:pass"
+      - "http:contracts-routes-200"
+    files_changed:
+      - "agent-front/src/features/contract/contract-review-page.tsx"
+      - "agent-front/src/routes/_authenticated/contracts/index.tsx"
+    completed_at: "2026-06-19"
+    blocked_by: ""
+  - id: T3
+    title: "Rework tender review feature to two menu entries with internal mock flows"
+    design_ref: "design.md AC6/AC7/AC8/AC9"
+    status: completed
+    evidence_tool_use_ids:
+      - "cmd:bun-run-test:24-pass"
+      - "cmd:bun-run-lint:pass"
+      - "scan:ui-refinement-select-history-actions-pass"
+    files_changed:
+      - "agent-front/src/features/contract/tender-review/mock-data.ts"
+      - "agent-front/src/features/contract/tender-review/model.ts"
+      - "agent-front/src/features/contract/tender-review/model.test.ts"
+      - "agent-front/src/features/contract/tender-review/types.ts"
+      - "agent-front/src/features/contract/tender-review/use-tender-review-page.ts"
+      - "agent-front/src/features/contract/tender-review/components/create-review-view.tsx"
+      - "agent-front/src/features/contract/tender-review/components/dashboard-view.tsx"
+      - "agent-front/src/features/contract/tender-review/components/history-view.tsx"
+      - "agent-front/src/features/contract/tender-review/components/analysis-workbench-view.tsx"
+      - "agent-front/src/features/contract/tender-review/components/report-view.tsx"
+      - "agent-front/src/features/contract/tender-review/components/metric-card.tsx"
+      - "agent-front/src/features/contract/tender-review/components/page-heading.tsx"
+      - "agent-front/src/features/contract/tender-review/components/screen-content.tsx"
+      - "agent-front/src/features/contract/tender-review/components/status-badge.tsx"
+      - "agent-front/src/routes/_authenticated/contracts/tender-review.tsx"
+      - "agent-front/src/routes/_authenticated/contracts/tender-review/index.tsx"
+      - "agent-front/src/routes/_authenticated/contracts/tender-review/history.tsx"
+    completed_at: "2026-06-19"
+    blocked_by: ""
+  - id: T5
+    title: "Fix history route separation, create width, and button flows"
+    design_ref: "design.md AC6/AC7/AC11/AC12"
+    status: completed
+    evidence_tool_use_ids:
+      - "cmd:bun-run-test:24-pass"
+      - "cmd:bun-run-lint:pass"
+      - "cmd:bun-run-build:pass"
+      - "browser:edge-history-route-separated"
+      - "browser:edge-create-flow-pass"
+      - "browser:edge-playwright-full-actions-pass"
+      - "scan:history-actions-two-buttons-pass"
+    files_changed:
+      - "agent-front/src/routes/_authenticated/contracts/tender-review.tsx"
+      - "agent-front/src/routes/_authenticated/contracts/tender-review/index.tsx"
+      - "agent-front/src/routes/_authenticated/contracts/tender-review/history.tsx"
+      - "agent-front/src/features/contract/tender-review/use-tender-review-page.ts"
+      - "agent-front/src/features/contract/tender-review/components/page-heading.tsx"
+      - "agent-front/src/features/contract/tender-review/components/history-view.tsx"
+      - "agent-front/src/features/contract/tender-review/components/create-review-view.tsx"
+      - "agent-front/src/features/contract/tender-review/components/analysis-workbench-view.tsx"
+      - "agent-front/src/features/contract/tender-review/components/report-view.tsx"
+    completed_at: "2026-06-19"
+    blocked_by: ""
+  - id: T4
+    title: "Run verification"
+    design_ref: "design.md AC10/AC11"
+    status: completed
+    evidence_tool_use_ids:
+      - "cmd:bun-run-test:24-pass"
+      - "cmd:bun-run-lint:pass"
+      - "cmd:bun-run-build:pass"
+      - "http:contracts-routes-200"
+      - "browser:edge-visual-pass"
+    files_changed: []
+    completed_at: "2026-06-19"
+    blocked_by: ""

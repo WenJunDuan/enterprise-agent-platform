@@ -1,6 +1,5 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { ContractReviewPage } from '@/features/contract/contract-review-page'
+import { Outlet, createFileRoute } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/_authenticated/contracts')({
-  component: ContractReviewPage,
+  component: Outlet,
 })
