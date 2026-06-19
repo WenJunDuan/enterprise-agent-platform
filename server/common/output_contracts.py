@@ -106,6 +106,32 @@ def enrich_audit_decision(structured_output: StructuredJSON) -> StructuredJSON:
     return structured_output
 
 
+_VALID_RISK_DIM_NAMES = {"invoice", "amount", "approval", "budget", "anomaly"}
+
+
+def _cleanse_risk_dimensions(output: dict[str, Any]) -> None:
+    """Filter ``risk_dimensions`` in-place, keeping only schema-compliant items.
+
+    risk_dimensions 是可选的风险元数据。网关模型（qwen 等）给的格式常不规范——
+    不规范就清洗/丢弃，绝不因为一个可选字段让整单审核失败（核心是 verdict/explanation）。
+
+    Side-effect: mutates *output* directly (removes or filters ``risk_dimensions``).
+    """
+    dimensions = output.get("risk_dimensions")
+    if isinstance(dimensions, list):
+        output["risk_dimensions"] = [
+            dim
+            for dim in dimensions
+            if isinstance(dim, dict)
+            and dim.get("name") in _VALID_RISK_DIM_NAMES
+            and isinstance(dim.get("score"), int)
+            and not isinstance(dim.get("score"), bool)
+            and 0 <= dim["score"] <= 10
+        ]
+    elif dimensions is not None:
+        output.pop("risk_dimensions", None)
+
+
 def _validate_audit_result(structured_output: StructuredJSON) -> None:
     if not isinstance(structured_output, dict):
         raise JSONContractError("audit result structured output must be a JSON object.")
@@ -133,22 +159,7 @@ def _validate_audit_result(structured_output: StructuredJSON) -> None:
                 "audit result with verdict=manual_review must include a valid manual_review_reason."
             )
 
-    # risk_dimensions 是可选的风险元数据。网关模型（qwen 等）给的格式常不规范——
-    # 不规范就清洗/丢弃，绝不因为一个可选字段让整单审核失败（核心是 verdict/explanation）。
-    valid_dim_names = {"invoice", "amount", "approval", "budget", "anomaly"}
-    dimensions = structured_output.get("risk_dimensions")
-    if isinstance(dimensions, list):
-        structured_output["risk_dimensions"] = [
-            dim
-            for dim in dimensions
-            if isinstance(dim, dict)
-            and dim.get("name") in valid_dim_names
-            and isinstance(dim.get("score"), int)
-            and not isinstance(dim.get("score"), bool)
-            and 0 <= dim["score"] <= 10
-        ]
-    elif dimensions is not None:
-        structured_output.pop("risk_dimensions", None)
+    _cleanse_risk_dimensions(structured_output)
 
 
 def _validate_init_rules_report(structured_output: StructuredJSON) -> None:
