@@ -1,0 +1,42 @@
+roadmap_slug: contract-audit-platform
+created: 2026-06-19
+total_items: 3
+# Goal: 合同审计功能平台化 —— 前置一轮既有后端重构质量复核(3深度+1codex)，
+# 再 PACE 完成合同审计功能完善 + 类 ocr/audit 的 API 接口。
+# 硬约束(全程): 不破坏既有接口(routes/audit.py,routes/ocr.py 零改);
+#   JSON schema 收紧只动新建 .claude/contracts/legal/*; 不碰 common/expense/tender/ocr schema;
+#   复用校验注册表 register_schema_processor; contract store 入统一库新表。
+items:
+  - slug: review-backend-refactor
+    title: "Phase 0 · 既有后端重构质量复核(3轮深度+1轮codex交叉)"
+    status: completed            # pending / in_progress / completed / blocked
+    sprint_slug: "2026-06-19-review-backend-refactor"
+    blocked_by: []
+    estimated_complexity: L
+    notes: >
+      完成。R1/R2/R3 均 CONCERNS + codex REWORK(C1迁移漏JSONL/C2 litellm暴露)。用户 de-scope:
+      demo阶段/内网无风险/key自轮替/litellm不用管 → 丢弃 C1/F1-key/C2，聚合回落 CONCERNS。
+      修了 4 项纯代码质量(commit 3222e8d/def90fe/afe060a/e0e3c87)：DRY _env_int、SRP 拆 _cleanse_risk_dimensions、
+      memory 单坏文件异常隔离、session 测试 patch 正确单例。241 passed/ruff clean。
+      延后(文档化在 reviews/summary.md)：架构分层守卫(需 ops/routes 层序决策，转 Phase 1)、API 脱敏、并发测试、migrate 可观测性、polish。
+
+  - slug: contract-audit-feature
+    title: "Phase 1a · 合同审计功能完善优化"
+    status: pending
+    sprint_slug: ""
+    blocked_by: [review-backend-refactor]
+    estimated_complexity: L
+    notes: >
+      需独立 design 阶段(§C 只是占位)。预期: contract store(stores/contract_store.py +
+      data/contracts/<id>/ + evidence_chain 回链 contract_id) + 新建 .claude/contracts/legal/ 契约 schema +
+      legal/contract-reviewer 编排完善。Path 待 design 定(Feature/System)。
+
+  - slug: contract-audit-api
+    title: "Phase 1b · 合同审计 API 接口(仿 ocr/audit，纯加法)"
+    status: pending
+    sprint_slug: ""
+    blocked_by: [contract-audit-feature]
+    estimated_complexity: M
+    notes: >
+      新增 server/routes/contract.py 并注册进 app。仿 routes/audit.py + routes/ocr.py 模式。
+      硬约束: 既有路由零改; schema 隔离; 仅加法。依赖 1a。

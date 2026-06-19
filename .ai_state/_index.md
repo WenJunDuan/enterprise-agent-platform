@@ -4,10 +4,10 @@
 version: "9.6.4"
 
 # === PACE 路由状态 ===
-path: "Feature"                   # 最后一次活动: 2026-06-18 tender-domain (Feature)
-stage: "ship"                     # 最后停留阶段: 2026-06-18 tender-domain ship
-current_sprint_slug: "2026-06-18-tender-domain"
-current_roadmap_slug: ""
+path: "System"                    # goal: contract-audit-platform (2026-06-19)
+stage: "review"                   # Phase 0 item0 review-backend-refactor
+current_sprint_slug: "2026-06-19-review-backend-refactor"
+current_roadmap_slug: "contract-audit-platform"
 skip_polish: false
 skip_architecture_check: false
 
@@ -49,7 +49,7 @@ counts:
   issues_count: 0
   refactors_count: 0
   systems_count: 0
-  reviews_count: 22
+  reviews_count: 27
   cleanup_count: 0
   compound:
     learning: 4
@@ -59,7 +59,7 @@ counts:
 # === Pointers (指向最新相关文件) ===
 pointers:
   latest_design: "sprints/2026-06-18-tender-domain/design.md"
-  latest_review: "sprints/legacy-2026-06-02-v962-merge/reviews/pass4.md"
+  latest_review: "sprints/2026-06-19-review-backend-refactor/reviews/summary.md"
   latest_cleanup: ""
   latest_brainstorm: ""
   latest_decisions: ["compound/2026-06-19-decision-agent-front-cc-out-of-scope.md"]
@@ -67,8 +67,8 @@ pointers:
   latest_architecture_update: ""
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: ""
-last_subagent: "unknown"
+next_action: "next_roadmap_item:contract-audit-feature"
+last_subagent: "generator"
 last_subagent_at: "2026-06-02T09:25:27.661Z"
 active_worktrees: []
 last_critic_round: 0
@@ -93,6 +93,8 @@ project:
     - "业务结论必须引用本地 policy_refs + evidence_chain，禁止训练记忆替代"
     - "distill-memory 只保留为 Claude command / CLI 工作流，不暴露 HTTP API"
     - "Python 只运行服务、获取外部输入并提交给 Claude；审核判断和记忆提炼都在 Claude 侧完成"
+    - ".claude/CLAUDE.md 是产品业务内容(会进生产 agent 系统提示)，勿往里写 CC 开发/工作约束"
+    - "agent-front/ 保持 git 追踪但 CC 默认 out-of-scope(改后端不联动改前端)，详见 compound/2026-06-19-decision-agent-front-cc-out-of-scope.md"
 
 # === Fingerprint (index-updater 用于 mtime 比对) ===
 fingerprint: ""
@@ -138,6 +140,7 @@ slug 拆分为独立 sprint 目录；`lessons.md` 整体保留为
 - `docs/` — 项目参考文档 (开发指南 / 前端对接 / audit-skills)，非状态机文件
 
 ## 历史 (由 pace-continuator hook 自动追加, 最多保留近 10 条)
+- `2026-06-19 01:40:10`: stage=review sprint=2026-06-19-review-backend-refactor turn-end
 - `2026-06-18 15:25:31`: stage=ship sprint=2026-06-18-tender-domain turn-end
 - `2026-06-17 10:00:43`: stage=ship sprint=2026-06-17-ocr-http-api turn-end
 - `2026-06-17 09:53:50`: stage=ship sprint=  turn-end
@@ -147,7 +150,6 @@ slug 拆分为独立 sprint 目录；`lessons.md` 整体保留为
 - `2026-06-17 09:13:44`: stage=ship sprint=  turn-end
 - `2026-06-17 08:51:45`: stage=ship sprint=  turn-end
 - `2026-06-17 08:40:42`: stage=ship sprint=  turn-end
-- `2026-06-17 07:39:01`: stage=ship sprint=  turn-end
 
 - 2026-06-02 [migrate] v9.6.2(legacy flat) → v9.6.4. 备份见 `.ai_state.backup-*`。
 
