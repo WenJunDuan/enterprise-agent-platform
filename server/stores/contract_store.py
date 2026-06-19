@@ -10,19 +10,22 @@
 from __future__ import annotations
 
 import json
+import shutil
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
-from server.platform.paths import PLATFORM_DB_FILE, ensure_local_layout
+from server.platform.paths import CONTRACTS_DATA_DIR, PLATFORM_DB_FILE, ensure_local_layout
 from server.platform.sqlite_store import connect_sqlite
 
 ensure_local_layout()
 
-# 列顺序（contract_id 为 PK）。
+# 列顺序（contract_id 为 PK；request_id 回链产生本合同的审查 run，便于 result↔contract 互查）。
 _COLUMNS = (
     "contract_id",
     "tenant",
+    "request_id",
     "title",
     "contract_no",
     "sign_date",
@@ -58,6 +61,7 @@ def _initialize_schema() -> None:
             CREATE TABLE IF NOT EXISTS contracts (
                 contract_id TEXT PRIMARY KEY,
                 tenant TEXT,
+                request_id TEXT,
                 title TEXT,
                 contract_no TEXT,
                 sign_date TEXT,
@@ -76,6 +80,18 @@ def _initialize_schema() -> None:
                 ON contracts (tenant, created_at DESC);
             """
         )
+        # request_id 为后加列：先对早于本版建好的库幂等补列（新库 CREATE 已含），
+        # 再建依赖该列的索引——顺序不能反，否则老表上建索引会因缺列报错。
+        _ensure_column(connection, "contracts", "request_id", "TEXT")
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_contracts_request_id ON contracts (request_id)"
+        )
+
+
+def _ensure_column(connection: Any, table: str, column: str, decl: str) -> None:
+    existing = {row["name"] for row in connection.execute(f"PRAGMA table_info({table})").fetchall()}
+    if column not in existing:
+        connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
 
 
 _initialize_schema()
@@ -165,3 +181,80 @@ def list_contracts(
             (tenant, limit, offset),
         ).fetchall()
         return [_decode(dict(row)) for row in rows]
+
+
+def get_contract_by_request_id_admin(request_id: str) -> dict[str, Any] | None:
+    """回链：由审查 run 的 request_id 找到落库的合同（admin，跨租户）。"""
+    with connect_sqlite(PLATFORM_DB_FILE) as connection:
+        row = connection.execute(
+            "SELECT * FROM contracts WHERE request_id = ? ORDER BY created_at DESC LIMIT 1",
+            (request_id,),
+        ).fetchone()
+        return _decode(dict(row)) if row else None
+
+
+def persist_contract_from_result(
+    result_payload: dict[str, Any],
+    *,
+    request_id: str,
+    tenant: str | None,
+    source_path: str,
+    copy_source: bool = True,
+) -> str | None:
+    """从 /review-contract 的 audit-result 落库合同结构 + 留原件。
+
+    读取 ``extracted_data.contract``（命令侧产出的合同结构），生成 contract_id 入库，
+    并把原件 copy 到 ``data/contracts/<contract_id>/source/``。无合同结构时返回 None（不落库）。
+
+    Args:
+        result_payload: 符合 common/audit-result 的结论 JSON。
+        request_id: 产生本结论的审查 run id（用于 result↔contract 回链）。
+        tenant: 租户；CLI 本地审查可为 None。
+        source_path: 原始合同目录或文件路径。
+        copy_source: 是否把原件复制进合同库目录（测试可关）。
+
+    Returns:
+        生成的 contract_id；若结论未带 ``extracted_data.contract`` 则 None。
+    """
+    extracted = result_payload.get("extracted_data")
+    contract = extracted.get("contract") if isinstance(extracted, dict) else None
+    if not isinstance(contract, dict) or not contract:
+        return None
+
+    contract_id = new_contract_id()
+    contract_meta = contract.get("contract_meta") if isinstance(contract.get("contract_meta"), dict) else {}
+    stored_source_path = source_path
+    if copy_source:
+        stored_source_path = str(_copy_source(source_path, CONTRACTS_DATA_DIR / contract_id / "source"))
+
+    upsert_contract(
+        {
+            "contract_id": contract_id,
+            "tenant": tenant,
+            "request_id": request_id,
+            "title": contract_meta.get("title"),
+            "contract_no": contract_meta.get("contract_no"),
+            "sign_date": contract_meta.get("sign_date"),
+            "amount": contract_meta.get("amount"),
+            "currency": contract_meta.get("currency"),
+            "term": contract_meta.get("term"),
+            "source_path": stored_source_path,
+            "parties": contract.get("parties") or [],
+            "clauses": contract.get("clauses") or [],
+            "payment_nodes": contract.get("payment_nodes") or [],
+            "meta": {"attachments": contract.get("attachments") or []},
+        }
+    )
+    return contract_id
+
+
+def _copy_source(source_path: str, dest_dir: Path) -> Path:
+    """Copy 原始合同文件/目录到合同库 source 目录，返回库内路径。"""
+    src = Path(source_path)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    if src.is_dir():
+        shutil.copytree(src, dest_dir, dirs_exist_ok=True)
+        return dest_dir
+    target = dest_dir / src.name
+    shutil.copy2(src, target)
+    return target

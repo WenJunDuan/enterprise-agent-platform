@@ -67,7 +67,7 @@ pointers:
   latest_architecture_update: ""
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "impl:contract-audit-feature:C4-cli-and-persistence"
+next_action: "polish:contract-audit-feature:C6-polish-and-architecture-doc"
 last_subagent: "generator"
 last_subagent_at: "2026-06-02T09:25:27.661Z"
 active_worktrees: []

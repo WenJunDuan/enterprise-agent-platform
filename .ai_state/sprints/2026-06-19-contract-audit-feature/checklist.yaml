@@ -40,12 +40,17 @@ tasks:
 
   - id: C4
     title: CLI review-contract(-json) + Python 持久化（extracted_data.contract→contract_store + 原件留文件）
-    status: todo
-    files: [server/cli.py, tests/test_cli_review_contract.py]
+    status: done
+    files:
+      - server/cli.py
+      - server/stores/contract_store.py   # 加 request_id 列(回链) + persist_contract_from_result + _copy_source
+      - tests/test_cli_review_contract.py
+      - tests/test_contract_store.py
     mirror: cli evaluate-bid / audit
     invoke: 'run_command_json("review-contract", path, schema_name="common/audit-result.schema.json")'
-    note: "run 后 thin 步骤从 audit-result.extracted_data.contract 取结构 upsert_contract + copy 原件到 data/contracts/<id>/source/"
+    note: "persist_contract_from_result：从 audit-result.extracted_data.contract 取结构 upsert_contract + copy 原件到 data/contracts/<id>/source/；request_id 列做 result↔contract 回链(get_contract_by_request_id_admin)"
     accept: "review-contract --help 可见；持久化路径单测(mock 命令)绿"
+    result: "11 用例(CRUD+持久化+回链+CLI注册/转发/落库)；276 passed/ruff/layering 过"
 
   - id: C5
     title: CLAUDE.md legal 段 + contract-reviewer 轻量
