@@ -1,9 +1,12 @@
 roadmap_slug: contract-audit-platform
 created: 2026-06-19
-total_items: 3
-# Goal: 合同审计功能平台化 —— 前置一轮既有后端重构质量复核(3深度+1codex)，
-# 再 PACE 完成合同审计功能完善 + 类 ocr/audit 的 API 接口。
-# 硬约束(全程): 不破坏既有接口(routes/audit.py,routes/ocr.py 零改);
+recast: 2026-06-19            # 折入 tender 路由 sprint，定序 tender 先行（用户拍板）
+total_items: 4
+# Goal: 合同审计功能平台化 —— 前置一轮既有后端重构质量复核(3深度+1codex，已完成)，
+#   再 PACE 完成合同审计功能完善 + 类 ocr/audit 的 API 接口。
+# 2026-06-19 重拍：把已就绪的 tender 评标路由 sprint 折入，tender 路由先行；
+#   item0 延后的 ops/routes 层序决策前移到 tender sprint（后重构第一个新路由），只做一次，contract-api 复用。
+# 硬约束(合同相关 item): 不破坏既有接口(routes/audit.py,routes/ocr.py,routes/tender.py 零改);
 #   JSON schema 收紧只动新建 .claude/contracts/legal/*; 不碰 common/expense/tender/ocr schema;
 #   复用校验注册表 register_schema_processor; contract store 入统一库新表。
 items:
@@ -18,25 +21,43 @@ items:
       demo阶段/内网无风险/key自轮替/litellm不用管 → 丢弃 C1/F1-key/C2，聚合回落 CONCERNS。
       修了 4 项纯代码质量(commit 3222e8d/def90fe/afe060a/e0e3c87)：DRY _env_int、SRP 拆 _cleanse_risk_dimensions、
       memory 单坏文件异常隔离、session 测试 patch 正确单例。241 passed/ruff clean。
-      延后(文档化在 reviews/summary.md)：架构分层守卫(需 ops/routes 层序决策，转 Phase 1)、API 脱敏、并发测试、migrate 可观测性、polish。
+      延后(文档化在 reviews/summary.md)：架构分层守卫(ops/routes 层序决策)已前移到 item1 tender 路由；
+      API 脱敏、并发测试、migrate 可观测性、polish 列 backlog。
+
+  - slug: tender-ingestion
+    title: "Phase 1 · tender 评标路由整合(CLI + HTTP /tender/evaluate + 测试 + 层序决策)"
+    status: in_progress          # design/plan/checklist 就绪，stage=impl，从 T1 起
+    sprint_slug: "2026-06-19-tender-ingestion-workflow"
+    blocked_by: [review-backend-refactor]
+    estimated_complexity: M
+    notes: >
+      design/plan/checklist 均就绪(本 sprint 早先完成)。本 item = 把 /evaluate-bid 命令接到 CLI+HTTP:
+      T1 server/cli.py evaluate-bid(+json); T2 server/routes/tender.py + tender_worker.py 异步路由
+      (镜像 audit_worker，优先复用 audit_task_store 以 mode=tender 区分); T3 tests/test_tender_routes.py
+      + 分层守卫回归。整合新增 T2.5: 关掉 item0 延后的 ops/routes 层序决策 + 修 3 处上向 import
+      (routes/health.py、ops/diagnostics.py、routes/audit.py) + 补 ops/stores 守卫(summary R2-F1/F3/F4 門禁#5)；
+      tender 是后重构第一个新路由，只做一次，contract-api 复用。T4 端到端(真招标+投标)materials-gated，横切，
+      用户给料随时插。Path=Feature。
 
   - slug: contract-audit-feature
-    title: "Phase 1a · 合同审计功能完善优化"
+    title: "Phase 2a · 合同审计功能完善优化"
     status: pending
     sprint_slug: ""
-    blocked_by: [review-backend-refactor]
+    blocked_by: [review-backend-refactor]   # 与 tender-ingestion 无硬依赖；按用户定序串行排其后
     estimated_complexity: L
     notes: >
       需独立 design 阶段(§C 只是占位)。预期: contract store(stores/contract_store.py +
       data/contracts/<id>/ + evidence_chain 回链 contract_id) + 新建 .claude/contracts/legal/ 契约 schema +
       legal/contract-reviewer 编排完善。Path 待 design 定(Feature/System)。
+      与 tender-ingestion 无硬依赖(不同域)，可并行；当前按用户定序排 tender 之后串行。
 
   - slug: contract-audit-api
-    title: "Phase 1b · 合同审计 API 接口(仿 ocr/audit，纯加法)"
+    title: "Phase 2b · 合同审计 API 接口(仿 ocr/audit/tender，纯加法)"
     status: pending
     sprint_slug: ""
-    blocked_by: [contract-audit-feature]
+    blocked_by: [contract-audit-feature]    # 硬依赖 feature；软依赖 tender-ingestion 的路由模板/层序
     estimated_complexity: M
     notes: >
-      新增 server/routes/contract.py 并注册进 app。仿 routes/audit.py + routes/ocr.py 模式。
-      硬约束: 既有路由零改; schema 隔离; 仅加法。依赖 1a。
+      新增 server/routes/contract.py 并注册进 app。仿 routes/audit.py + routes/ocr.py +
+      Phase 1 tender 立的异步路由模板。硬约束: 既有路由零改; schema 隔离; 仅加法。
+      层序守卫已在 Phase 1(tender T2.5)定稿，直接复用。依赖 contract-audit-feature。

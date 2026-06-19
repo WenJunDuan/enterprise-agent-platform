@@ -1,0 +1,91 @@
+sprint: 2026-06-19-tender-ingestion-workflow
+title: Tender 评标 Harness — 路由 + CLI + 端到端
+path: Feature
+owner: claude-code
+design: design.md
+plan: plan.md
+roadmap: contract-audit-platform            # 2026-06-19 重拍折入：Phase 1 / item1 tender-ingestion（tender 路由先行）
+
+done:
+  - 域 tender 注册（enum ×2 + CLAUDE.md 路由/调度/多域）
+  - agents：tender-extractor / tender-evaluator / tender-reviewer
+  - 契约：tender/extract-result + review-delta（audit-result 复用 common）
+  - skill：tender-eval；rule-init 加 tender 两层
+  - 命令：/evaluate-bid 五步内联 harness（已接线 + 校验）
+  - 规则：statute-evalmethod(13) + statute-regulation(8) + r2024007 样例(5)
+
+tasks:
+  - id: T1
+    title: CLI 子命令 evaluate-bid（+ evaluate-bid-json）
+    status: todo
+    files: [server/cli.py]
+    mirror: audit / audit-json 命令
+    accept: "python -m server.cli evaluate-bid --help 可见；ruff 过"
+
+  - id: T2
+    title: HTTP 路由 /tender/evaluate + worker（异步任务）
+    status: todo
+    files:
+      - server/routes/tender.py
+      - server/routes/tender_worker.py
+      - server/api.py
+      - server/stores/audit_task_store.py  # 优先复用；不够再新建 tender_task_store.py
+    mirror: server/routes/audit.py + audit_worker.py
+    layering: "route/worker 调 common.command_adapter + stores + platform；勿建 server/tender feature 模块"
+    invoke: 'run_command_json("evaluate-bid", case_path, schema_name="common/audit-result.schema.json")'
+    accept: "提交→accepted、查任务、查结果；test_layering 不退化"
+
+  - id: T2.5
+    title: 关掉 item0 延后的 ops/routes 层序决策 + 补守卫（整合项，roadmap 前移）
+    status: todo
+    files:
+      - server/routes/health.py
+      - server/ops/diagnostics.py
+      - server/routes/audit.py
+      - tests/test_layering.py
+      - design.md  # 层序定稿附注
+    source: "sprints/2026-06-19-review-backend-refactor/reviews/summary.md 延后段 + 門禁#5 (R2-F1/F3/F4)"
+    rationale: "tender 是后重构第一个新路由；层序决策只做一次，contract-api(Phase 2b)复用"
+    accept: "test_layering 全过 + ops/stores 守卫生效；无新增上向 import"
+
+  - id: T3
+    title: 测试与回归
+    status: todo
+    files: [tests/test_tender_routes.py]
+    mirror: tests/test_ocr_routes.py / test_routes_smoke.py
+    accept: "uv run pytest -q 绿；ruff 全过；test_layering 全过"
+
+  - id: T4
+    title: 端到端（需用户真招标文件 + 投标文件）
+    status: blocked
+    blocked_by: 用户提供材料
+    steps:
+      - "招标文件 PDF → knowledge/external/"
+      - "/init-rules <招标文件> tender → knowledge/tender/{招标编号}.rules.json（覆盖 r2024007 样例）"
+      - "投标文件目录 → /evaluate-bid（或 POST /tender/evaluate）"
+    accept:
+      - "产出符合 common/audit-result"
+      - "不可判定项 manual_review/score:null，非 0"
+      - "业绩 PM≠拟派 PM → data_conflict，evidence_chain 同引两处出处"
+      - "policy_refs 为命中的 rule_id"
+
+definition_of_done:
+  - "uv run pytest -q 绿（含 tender 路由 + 分层守卫）"
+  - "ops/routes 层序决策定稿 + 修 3 处上向 import + 补 ops/stores 守卫（T2.5，item0 延后项关闭）"
+  - "uv run ruff check . 全过"
+  - "/tender/evaluate 提交→轮询→取结果 跑通"
+  - "/evaluate-bid 真标端到端：manual_review 不判 0、一致性 data_conflict 成立"
+  - "无违反分层 import；不复活 meta.json/by-request 树"
+
+backlog:
+  - "余下 statute：statute-bidlaw（招标投标法顶层）、实施条例 ch4、govproc-law + govproc-87（政采）"
+  - "多投标人 S5：价格横比/排序/有效投标数"
+  - "程序合规 v2：资格审查/一票否决/串标围标识别"
+  - "小修：rule-init 第5步 rule_id 点号→下划线；risk_dimensions 加 tender 维度"
+
+gotchas:
+  - "feature(audit/ocr/tender) 互不 import；组合放上层"
+  - "结构化入 sqlite；勿复活 meta.json/by-request 文件树"
+  - "rule_id 用下划线 tender_{cat}_{seq}"
+  - "不可判定项一律 manual_review，禁止 0/空冒充判定"
+  - "措辞克制：禁用 硬伤/铁证/实锤；定性留余地"
