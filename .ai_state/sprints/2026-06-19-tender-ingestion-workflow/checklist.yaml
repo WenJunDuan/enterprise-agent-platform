@@ -17,10 +17,11 @@ done:
 tasks:
   - id: T1
     title: CLI 子命令 evaluate-bid（+ evaluate-bid-json）
-    status: todo
-    files: [server/cli.py]
+    status: done
+    files: [server/cli.py, tests/test_cli_evaluate_bid.py]
     mirror: audit / audit-json 命令
     accept: "python -m server.cli evaluate-bid --help 可见；ruff 过"
+    result: "TDD 3 用例(注册+转发命令名+schema=common/audit-result)；244 passed/ruff clean"
 
   - id: T2
     title: HTTP 路由 /tender/evaluate + worker（异步任务）
