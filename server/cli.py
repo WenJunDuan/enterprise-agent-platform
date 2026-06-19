@@ -173,8 +173,8 @@ def audit_json(
     _invoke_json_command(_run())
 
 
-@app.command("tender-evaluate-bid")
-def tender_evaluate_bid(
+@app.command("tender-evaluate")
+def tender_evaluate(
     path: str = typer.Argument(..., help="Path to a tender case directory or file."),
     conversation_id: str = typer.Option("", help="Application conversation id."),
     resume_session_id: str = typer.Option("", help="Resume a specific Claude session id."),
@@ -184,7 +184,7 @@ def tender_evaluate_bid(
     _ensure_cli_runtime()
     _invoke_text_command(
         run_command_full(
-            "tender-evaluate-bid",
+            "tender-evaluate",
             path,
             conversation_id=conversation_id or new_conversation_id(),
             resume_session_id=resume_session_id or None,
@@ -193,8 +193,8 @@ def tender_evaluate_bid(
     )
 
 
-@app.command("tender-evaluate-bid-json")
-def tender_evaluate_bid_json(
+@app.command("tender-evaluate-json")
+def tender_evaluate_json(
     path: str = typer.Argument(..., help="Path to a tender case directory or file."),
     conversation_id: str = typer.Option("", help="Application conversation id."),
     resume_session_id: str = typer.Option("", help="Resume a specific Claude session id."),
@@ -205,7 +205,7 @@ def tender_evaluate_bid_json(
 
     async def _run() -> tuple[dict | list, AgentRunMeta]:
         return await run_command_json(
-            "tender-evaluate-bid",
+            "tender-evaluate",
             path,
             conversation_id=conversation_id or new_conversation_id(),
             resume_session_id=resume_session_id or None,

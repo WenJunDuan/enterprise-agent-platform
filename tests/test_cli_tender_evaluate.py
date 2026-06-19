@@ -1,4 +1,4 @@
-"""CLI 测试：tender-evaluate-bid / tender-evaluate-bid-json 子命令（镜像 audit / audit-json）。
+"""CLI 测试：tender-evaluate / tender-evaluate-json 子命令（镜像 audit / audit-json）。
 
 只验证命令注册 + 正确转发到 command_adapter（命令名、schema），不触发真实 Claude 运行。
 """
@@ -39,8 +39,8 @@ def _make_meta(conversation_id: str) -> AgentRunMeta:
 
 
 def test_evaluate_bid_commands_registered() -> None:
-    assert runner.invoke(cli.app, ["tender-evaluate-bid", "--help"]).exit_code == 0
-    assert runner.invoke(cli.app, ["tender-evaluate-bid-json", "--help"]).exit_code == 0
+    assert runner.invoke(cli.app, ["tender-evaluate", "--help"]).exit_code == 0
+    assert runner.invoke(cli.app, ["tender-evaluate-json", "--help"]).exit_code == 0
 
 
 def test_evaluate_bid_forwards_to_command_adapter(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -54,14 +54,14 @@ def test_evaluate_bid_forwards_to_command_adapter(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(cli, "run_command_full", fake_full)
 
     result = runner.invoke(
-        cli.app, ["tender-evaluate-bid", "cases/r2024007", "--conversation-id", "conv-eval"]
+        cli.app, ["tender-evaluate", "cases/r2024007", "--conversation-id", "conv-eval"]
     )
 
     assert result.exit_code == 0, result.output
     assert "EVAL_TEXT_OK" in result.output
     assert len(calls) == 1
     command_name, arguments, opts = calls[0]
-    assert command_name == "tender-evaluate-bid"
+    assert command_name == "tender-evaluate"
     assert arguments == ("cases/r2024007",)
     assert opts["conversation_id"] == "conv-eval"
 
@@ -78,13 +78,13 @@ def test_evaluate_bid_json_uses_audit_result_schema(monkeypatch: pytest.MonkeyPa
 
     result = runner.invoke(
         cli.app,
-        ["tender-evaluate-bid-json", "cases/r2024007", "--conversation-id", "conv-eval-json"],
+        ["tender-evaluate-json", "cases/r2024007", "--conversation-id", "conv-eval-json"],
     )
 
     assert result.exit_code == 0, result.output
     assert len(calls) == 1
     command_name, arguments, schema_name, opts = calls[0]
-    assert command_name == "tender-evaluate-bid"
+    assert command_name == "tender-evaluate"
     assert arguments == ("cases/r2024007",)
     assert schema_name == EVAL_SCHEMA
     assert opts["conversation_id"] == "conv-eval-json"
