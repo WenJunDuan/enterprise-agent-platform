@@ -170,6 +170,49 @@ def audit_json(
     _invoke_json_command(_run())
 
 
+@app.command("evaluate-bid")
+def evaluate_bid(
+    path: str = typer.Argument(..., help="Path to a tender case directory or file."),
+    conversation_id: str = typer.Option("", help="Application conversation id."),
+    resume_session_id: str = typer.Option("", help="Resume a specific Claude session id."),
+    fork_from_session_id: str = typer.Option("", help="Fork from a previous Claude session."),
+) -> None:
+    """Run the five-step tender bid evaluation harness for a case path."""
+    _ensure_cli_runtime()
+    _invoke_text_command(
+        run_command_full(
+            "evaluate-bid",
+            path,
+            conversation_id=conversation_id or new_conversation_id(),
+            resume_session_id=resume_session_id or None,
+            fork_from_session_id=fork_from_session_id or None,
+        )
+    )
+
+
+@app.command("evaluate-bid-json")
+def evaluate_bid_json(
+    path: str = typer.Argument(..., help="Path to a tender case directory or file."),
+    conversation_id: str = typer.Option("", help="Application conversation id."),
+    resume_session_id: str = typer.Option("", help="Resume a specific Claude session id."),
+    fork_from_session_id: str = typer.Option("", help="Fork from a previous Claude session."),
+) -> None:
+    """Run tender bid evaluation with structured audit-result output and print metadata."""
+    _ensure_cli_runtime()
+
+    async def _run() -> tuple[dict | list, AgentRunMeta]:
+        return await run_command_json(
+            "evaluate-bid",
+            path,
+            conversation_id=conversation_id or new_conversation_id(),
+            resume_session_id=resume_session_id or None,
+            fork_from_session_id=fork_from_session_id or None,
+            schema_name=DEFAULT_OUTPUT_SCHEMA_NAME,
+        )
+
+    _invoke_json_command(_run())
+
+
 @app.command("init-rules")
 def init_rules(
     source: str = typer.Argument(..., help="Path to a source policy document."),
