@@ -1,0 +1,14 @@
+sprint_slug: 2026-06-19-tender-ingestion-workflow
+collected_evidence:
+  - tool_use_id: "toolu_01FRHLZy5tJDg4kuHA1LNrgb"
+    tool: "Edit"
+    file: "/Users/mi_manchi/workspace/enterprise-agent-platform/.ai_state/_index.md"
+    timestamp: "2026-06-19T08:32:57.202Z"
+  - tool_use_id: "toolu_01JFehqFskfHu1nK5t6xLvBM"
+    tool: "Edit"
+    file: "/Users/mi_manchi/workspace/enterprise-agent-platform/.ai_state/_index.md"
+    timestamp: "2026-06-19T08:33:01.389Z"
+  - tool_use_id: "toolu_018XimicFYAt51uWCjnsY8Jp"
+    tool: "Edit"
+    file: "/Users/mi_manchi/workspace/enterprise-agent-platform/.ai_state/_index.md"
+    timestamp: "2026-06-19T08:33:11.760Z"

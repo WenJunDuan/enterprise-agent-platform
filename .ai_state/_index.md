@@ -4,9 +4,9 @@
 version: "9.6.4"
 
 # === PACE 路由状态 ===
-path: "System"                    # goal: contract-audit-platform (2026-06-19)
-stage: "review"                   # Phase 0 item0 review-backend-refactor
-current_sprint_slug: "2026-06-19-review-backend-refactor"
+path: "Feature"                   # 活动 sprint=tender-ingestion(Feature); goal contract-audit-platform 整体偏 System，按 item 切
+stage: "impl"                     # item1 tender-ingestion design/plan/checklist 就绪，从 T1 起；contract items(2a/2b)待后续
+current_sprint_slug: "2026-06-19-tender-ingestion-workflow"
 current_roadmap_slug: "contract-audit-platform"
 skip_polish: false
 skip_architecture_check: false
@@ -45,7 +45,7 @@ tools_available:
 
 # === 进度计数 (index-updater hook 自动维护, 不手填) ===
 counts:
-  features_count: 0
+  features_count: 1
   issues_count: 0
   refactors_count: 0
   systems_count: 0
@@ -58,7 +58,7 @@ counts:
     explore: 0
 # === Pointers (指向最新相关文件) ===
 pointers:
-  latest_design: "sprints/2026-06-18-tender-domain/design.md"
+  latest_design: "sprints/2026-06-19-tender-ingestion-workflow/design.md"
   latest_review: "sprints/2026-06-19-review-backend-refactor/reviews/summary.md"
   latest_cleanup: ""
   latest_brainstorm: ""
@@ -67,7 +67,7 @@ pointers:
   latest_architecture_update: ""
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "next_roadmap_item:contract-audit-feature"
+next_action: "impl:tender-ingestion:T1"
 last_subagent: "generator"
 last_subagent_at: "2026-06-02T09:25:27.661Z"
 active_worktrees: []
@@ -106,6 +106,32 @@ fingerprint: ""
 
 ## 当前状态
 
+2026-06-19（重拍 Sprint 节点）: 梳理整合「进 item1 design」与「先做 tender 路由」两条流，用户拍板
+**tender 路由先行**。roadmap `contract-audit-platform` 折入已就绪的 tender sprint，执行序重排为
+**Phase 1 `tender-ingestion`（route+CLI+测试+层序决策）→ Phase 2a `contract-audit-feature` → Phase 2b
+`contract-audit-api`**。关键整合：item0 延后的「ops/routes 层序决策 + 补守卫」从原计划的 contract-api 处
+**前移到 tender sprint（T2.5）**——tender 路由是后重构第一个新路由，只做一次，contract-api 复用；T2 立的
+「镜像 audit 的异步路由」模板供 contract-api 照抄；tender T4 端到端 materials-gated 横切（卡用户真标）。
+active sprint 切到 `2026-06-19-tender-ingestion-workflow`（Feature, stage=impl, design/plan/checklist 就绪，
+从 T1 CLI 起）。详见 `roadmap/contract-audit-platform/{roadmap.md,items.yaml}` + 该 sprint 的 plan.md/checklist.yaml。
+
+2026-06-19: Roadmap `contract-audit-platform` **item0 `review-backend-refactor` 已收口（completed）**。
+3 轮深度 review（R1/R2/R3 均 CONCERNS）+ 1 轮 codex 交叉（原判 REWORK：C1 迁移漏 JSONL / C2 litellm 暴露）。
+用户 de-scope（demo 阶段 / 内网无风险 / key 自轮替 / litellm 不管）→ 丢弃 C1·F1-key·C2，聚合回落 CONCERNS。
+落地 4 项纯代码质量修复（commit `3222e8d`/`def90fe`/`afe060a`/`e0e3c87`）：DRY `_env_int`、SRP 拆
+`_cleanse_risk_dimensions`、memory 单坏文件异常隔离、session 测试 patch 正确单例。**241 passed / ruff clean**。
+延后项已文档化于 `sprints/2026-06-19-review-backend-refactor/reviews/summary.md`（架构分层守卫需 ops/routes
+层序决策转 Phase 1、API 脱敏、并发测试、migrate 可观测性、全部 polish）。运维遗留：litellm key 轮换（仅运维可做，
+见 `pending-actions.md`）。**下一项 item1 `contract-audit-feature` 待 design 阶段启动（next_action 已指向）**；
+主线方向（item1 合同审计 vs 并行 tender-ingestion sprint）待用户拍板，本次仅收尾 item0 状态。
+
+2026-06-19: Sprint `2026-06-19-tender-ingestion-workflow`（Feature）**计划就绪，待开工**（PACE
+current_sprint 仍指 review-backend-refactor，未抢占）。tender 评标 harness 最终定为 **AI 直读、无 OCR、
+单 agent 内联五步**（早期 OCR 流水线方案作废）。已落地：`/evaluate-bid` 五步命令 + 域配置 + 契约 + skill +
+statute 规则两部（evalmethod 13 / regulation 8）+ 项目样例 r2024007。待 Claude Code 执行：CLI 子命令、
+HTTP 路由 `/tender/evaluate`+worker、测试、真标端到端。执行清单见
+`sprints/2026-06-19-tender-ingestion-workflow/plan.md` + `checklist.yaml`，设计见同目录 `design.md`。
+
 2026-06-18: Sprint `2026-06-18-tender-domain`（Feature, 对话驱动开发, 事后补档）已 ship。
 新增第 5 个业务域 `tender`（招投标评标）：三 agent（extractor/evaluator/reviewer，reviewer 默认关）、
 两契约（tender/extract-result + review-delta，audit-result 复用 common）、skill `tender-eval`、
@@ -140,6 +166,8 @@ slug 拆分为独立 sprint 目录；`lessons.md` 整体保留为
 - `docs/` — 项目参考文档 (开发指南 / 前端对接 / audit-skills)，非状态机文件
 
 ## 历史 (由 pace-continuator hook 自动追加, 最多保留近 10 条)
+- `2026-06-19 08:33:33`: stage=impl sprint=2026-06-19-tender-ingestion-workflow turn-end
+- `2026-06-19 08:18:16`: stage=ship sprint=2026-06-19-review-backend-refactor turn-end
 - `2026-06-19 01:40:10`: stage=review sprint=2026-06-19-review-backend-refactor turn-end
 - `2026-06-18 15:25:31`: stage=ship sprint=2026-06-18-tender-domain turn-end
 - `2026-06-17 10:00:43`: stage=ship sprint=2026-06-17-ocr-http-api turn-end
@@ -148,8 +176,6 @@ slug 拆分为独立 sprint 目录；`lessons.md` 整体保留为
 - `2026-06-17 09:48:22`: stage=ship sprint=  turn-end
 - `2026-06-17 09:31:54`: stage=ship sprint=  turn-end
 - `2026-06-17 09:13:44`: stage=ship sprint=  turn-end
-- `2026-06-17 08:51:45`: stage=ship sprint=  turn-end
-- `2026-06-17 08:40:42`: stage=ship sprint=  turn-end
 
 - 2026-06-02 [migrate] v9.6.2(legacy flat) → v9.6.4. 备份见 `.ai_state.backup-*`。
 
