@@ -79,7 +79,11 @@ Python 侧把抽取出的合同结构持久化到 sqlite 新表 `contracts`，�
 - [ ] `uv run pytest -q` 全绿 + `ruff` 全过 + `test_layering` 6 守卫不退化。
 - [ ] System path：polish + 新建 `architecture/system-contract-audit.md`（ship 前）。
 
-## 开放项（impl 前确认）
+## 开放项 → 已决议（2026-06-19 核 schema 后定）
 
-1. **evidence_chain 回链形态**：先核 common/audit-result 的 evidence_chain schema 是否容 contract_id；不够则回链放 extracted_data。
-2. **contract_id 生成**：用 request_id 派生 vs 合同编号抽取 vs UUID —— 倾向 UUID（合同编号不可靠），impl 时定。
+1. **evidence_chain 回链形态**：已核 `common/audit-result` evidence_chain item = `{source, finding,
+   conclusion}` 且 `additionalProperties:false` → **不能加 contract_id 字段**（且硬约束禁改 common schema）。
+   **决议**：contract_id 编进 `evidence_chain[].source` 字符串（如 `contract:<id>#clause-3 p.4`）+ 规范 id 放
+   `extracted_data.contract.contract_id`（`extracted_data` 为 `additionalProperties:true`，自由）。零改 common。
+2. **contract_id 生成**：**决议** = UUID（合同编号不可靠），每次审查生成；同合同去重留 v2。
+3. **reviewed_by**：legal/extract-result 用 const `"contract-extractor"`（镜像 expense/tender 底稿命名约定）。

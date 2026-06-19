@@ -5,7 +5,7 @@ version: "9.6.4"
 
 # === PACE 路由状态 ===
 path: "System"                    # 活动 sprint=contract-audit-feature(System,新子系统); tender-ingestion 可写完成、T4 卡材料并行挂着
-stage: "design"                   # item2 contract-audit-feature 设计已落 design.md，待用户确认后进 impl（铁律[设计先行]）
+stage: "impl"                     # item2 contract-audit-feature：design 确认(用户"继续跑")，C1 legal schema 已落，impl 进行中
 current_sprint_slug: "2026-06-19-contract-audit-feature"
 current_roadmap_slug: "contract-audit-platform"
 skip_polish: false
@@ -67,7 +67,7 @@ pointers:
   latest_architecture_update: ""
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "await-design-confirm:contract-audit-feature"
+next_action: "impl:contract-audit-feature:C2-contract-store"
 last_subagent: "generator"
 last_subagent_at: "2026-06-02T09:25:27.661Z"
 active_worktrees: []
