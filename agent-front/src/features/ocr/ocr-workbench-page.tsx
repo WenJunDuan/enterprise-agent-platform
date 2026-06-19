@@ -62,7 +62,7 @@ function UploadCard({
           <input multiple type='file' className='hidden' onChange={(event) => onAddFiles(event.target.files)} />
         </label>
 
-        <div className='flex flex-wrap gap-2'>
+        <div className='flex items-center justify-between gap-3'>
           <Button disabled={phase === 'recognizing'} onClick={onRecognize}>
             <Play className='size-4' />
             {phase === 'recognizing' ? '识别中' : '开始识别'}

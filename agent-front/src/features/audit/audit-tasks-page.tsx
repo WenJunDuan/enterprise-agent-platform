@@ -1,11 +1,28 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { FileText, Plus, RotateCcw, Trash2 } from 'lucide-react'
+import {
+  type ColumnDef,
+  type ColumnFiltersState,
+  flexRender,
+  getCoreRowModel,
+  getFacetedRowModel,
+  getFacetedUniqueValues,
+  getFilteredRowModel,
+  type OnChangeFn,
+  type PaginationState,
+  type Row,
+  useReactTable,
+  type VisibilityState,
+} from '@tanstack/react-table'
+import { FileText, Plus, Trash2 } from 'lucide-react'
+import { toast } from 'sonner'
+import { cn } from '@/lib/utils'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import { DataTablePagination, DataTableToolbar } from '@/components/data-table'
 import {
   Card,
   CardContent,
@@ -21,34 +38,42 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { deleteTask, listTasks, retryTask } from './api'
-import { formatDate, truncateId } from './format'
+import { formatDate, taskStatusLabels, truncateId } from './format'
 import { formatAmount } from './lib/reimbursement-labels'
-import {
-  clearSubmissionSummaries,
-  readSubmissionSummaries,
-} from './lib/submission-summary'
+import { readSubmissionSummaries } from './lib/submission-summary'
 import { TaskStatusBadge } from './status-badge'
-import type { AuditTask } from './types'
+import type { AuditTask, SubmissionSummary, TaskStatus } from './types'
 
-const LIMIT = 20
+const DEFAULT_PAGE_SIZE = 20
 
-const statusTabs = [
-  { value: 'all', label: '全部' },
-  { value: 'accepted', label: '已接收' },
-  { value: 'running', label: '审核中' },
-  { value: 'completed', label: '已完成' },
-  { value: 'failed', label: '失败' },
+const taskStatusOptions = [
+  { value: 'accepted', label: taskStatusLabels.accepted },
+  { value: 'running', label: taskStatusLabels.running },
+  { value: 'completed', label: taskStatusLabels.completed },
+  { value: 'failed', label: taskStatusLabels.failed },
 ]
+
+type AuditTaskRow = {
+  task: AuditTask
+  summary?: SubmissionSummary
+  searchText: string
+  displayId: string
+  amountText: string
+  submittedAtText: string
+  status: TaskStatus
+}
 
 function TaskStats({ tasks }: { tasks: AuditTask[] }) {
   const stats = useMemo(() => {
     const total = tasks.length
-    const active = tasks.filter((task) => task.status === 'accepted' || task.status === 'running').length
+    const active = tasks.filter(
+      (task) => task.status === 'accepted' || task.status === 'running'
+    ).length
     const completed = tasks.filter((task) => task.status === 'completed').length
     const failed = tasks.filter((task) => task.status === 'failed').length
-    const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0
+    const completionRate =
+      total > 0 ? Math.round((completed / total) * 100) : 0
     return { total, active, completed, failed, completionRate }
   }, [tasks])
 
@@ -63,13 +88,17 @@ function TaskStats({ tasks }: { tasks: AuditTask[] }) {
       <Card>
         <CardHeader className='pb-2'>
           <CardDescription>待处理</CardDescription>
-          <CardTitle className='text-2xl text-amber-600'>{stats.active}</CardTitle>
+          <CardTitle className='text-2xl text-amber-600'>
+            {stats.active}
+          </CardTitle>
         </CardHeader>
       </Card>
       <Card>
         <CardHeader className='pb-2'>
           <CardDescription>已完成</CardDescription>
-          <CardTitle className='text-2xl text-emerald-600'>{stats.completed}</CardTitle>
+          <CardTitle className='text-2xl text-emerald-600'>
+            {stats.completed}
+          </CardTitle>
         </CardHeader>
       </Card>
       <Card>
@@ -85,47 +114,231 @@ function TaskStats({ tasks }: { tasks: AuditTask[] }) {
 }
 
 export function AuditTasksPage() {
-  const [status, setStatus] = useState('all')
-  const [offset, setOffset] = useState(0)
-  const [notice, setNotice] = useState<string | null>(null)
+  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
+  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({
+    searchText: false,
+  })
+  const [pagination, setPagination] = useState<PaginationState>({
+    pageIndex: 0,
+    pageSize: DEFAULT_PAGE_SIZE,
+  })
   const [actionId, setActionId] = useState<string | null>(null)
   const summaries = readSubmissionSummaries()
+  const selectedStatuses = getSelectedStatuses(columnFilters)
+  const serverStatus =
+    selectedStatuses.length === 1 ? selectedStatuses[0] : undefined
+  const offset = pagination.pageIndex * pagination.pageSize
 
   const tasksQuery = useQuery({
-    queryKey: ['audit-tasks', status, offset],
+    queryKey: [
+      'audit-tasks',
+      serverStatus,
+      pagination.pageIndex,
+      pagination.pageSize,
+      offset,
+    ],
     queryFn: () =>
       listTasks({
-        status: status === 'all' ? undefined : status,
-        limit: LIMIT,
+        status: serverStatus,
+        limit: pagination.pageSize + 1,
         offset,
       }),
   })
 
-  const rows = useMemo(
+  const pageTasks = useMemo(
+    () => (tasksQuery.data ?? []).slice(0, pagination.pageSize),
+    [pagination.pageSize, tasksQuery.data]
+  )
+  const hasNextPage = (tasksQuery.data?.length ?? 0) > pagination.pageSize
+  const rows = useMemo<AuditTaskRow[]>(
     () =>
-      (tasksQuery.data ?? []).map((task) => ({
-        task,
-        summary: summaries[task.request_id],
-      })),
-    [summaries, tasksQuery.data]
+      pageTasks.map((task) => {
+        const summary = summaries[task.request_id]
+        const displayId = summary?.form.case_id ?? task.claim_id ?? '-'
+        const amountText = summary
+          ? formatAmount(summary.form.total_amount, summary.form.currency)
+          : '-'
+        const submittedAtText = formatDate(task.submitted_at)
+        return {
+          task,
+          summary,
+          searchText: [
+            displayId,
+            task.request_id,
+            amountText,
+            task.progress_message,
+            task.error_detail,
+          ]
+            .filter(Boolean)
+            .join(' '),
+          displayId,
+          amountText,
+          submittedAtText,
+          status: task.status,
+        }
+      }),
+    [pageTasks, summaries]
   )
 
-  async function runAction(id: string, kind: 'retry' | 'delete') {
-    setActionId(id)
-    setNotice(null)
-    try {
-      if (kind === 'retry') {
-        await retryTask(id)
-        setNotice('已触发重新审核')
-      } else {
-        await deleteTask(id)
-        setNotice('已删除任务')
+  const refetchTasks = tasksQuery.refetch
+  const runAction = useCallback(
+    async (id: string, kind: 'retry' | 'delete') => {
+      setActionId(id)
+      try {
+        if (kind === 'retry') {
+          await retryTask(id)
+          toast.success('已触发重新审核')
+        } else {
+          await deleteTask(id)
+          toast.success('已删除任务')
+        }
+        await refetchTasks()
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : '操作失败，请重试。')
+      } finally {
+        setActionId(null)
       }
-      await tasksQuery.refetch()
-    } finally {
-      setActionId(null)
-    }
+    },
+    [refetchTasks]
+  )
+
+  const columns = useMemo<ColumnDef<AuditTaskRow>[]>(
+    () => [
+      {
+        id: 'searchText',
+        accessorKey: 'searchText',
+        header: '查询',
+        enableHiding: false,
+        filterFn: 'includesString',
+      },
+      {
+        id: 'identity',
+        accessorKey: 'displayId',
+        header: '单号 / 请求 ID',
+        cell: ({ row }) => {
+          const { task, displayId } = row.original
+          return (
+            <div className='flex min-w-0 items-center gap-3'>
+              <div className='rounded-md border bg-muted/40 p-2'>
+                <FileText className='size-4 text-muted-foreground' />
+              </div>
+              <div className='min-w-0'>
+                <div className='truncate font-medium'>{displayId}</div>
+                <div className='font-mono text-xs text-muted-foreground'>
+                  {truncateId(task.request_id)}
+                </div>
+              </div>
+            </div>
+          )
+        },
+        meta: { label: '单号' },
+      },
+      {
+        accessorKey: 'status',
+        header: '状态',
+        cell: ({ row }) => <TaskStatusBadge status={row.original.status} />,
+        filterFn: matchesSelectedValues,
+        meta: { label: '状态' },
+      },
+      {
+        accessorKey: 'amountText',
+        header: '金额概要',
+        cell: ({ row }) => (
+          <span className='text-muted-foreground'>
+            {row.original.amountText}
+          </span>
+        ),
+        meta: { label: '金额概要' },
+      },
+      {
+        accessorKey: 'submittedAtText',
+        header: '提交时间',
+        cell: ({ row }) => (
+          <span className='text-muted-foreground'>
+            {row.original.submittedAtText}
+          </span>
+        ),
+        meta: { label: '提交时间' },
+      },
+      {
+        id: 'actions',
+        header: () => <div className='text-right'>操作</div>,
+        cell: ({ row }) => {
+          const task = row.original.task
+          return (
+            <div className='flex justify-end gap-2'>
+              <Button variant='ghost' size='sm' asChild>
+                <Link
+                  to='/audit/tasks/$taskId'
+                  params={{ taskId: task.request_id }}
+                >
+                  详情
+                </Link>
+              </Button>
+              {task.status === 'failed' ? (
+                <Button
+                  variant='outline'
+                  size='sm'
+                  disabled={actionId === task.request_id}
+                  onClick={() => runAction(task.request_id, 'retry')}
+                >
+                  重审
+                </Button>
+              ) : null}
+              <Button
+                variant='ghost'
+                size='icon'
+                disabled={actionId === task.request_id}
+                onClick={() => runAction(task.request_id, 'delete')}
+                aria-label='删除任务'
+              >
+                <Trash2 className='size-4' />
+              </Button>
+            </div>
+          )
+        },
+        enableHiding: false,
+      },
+    ],
+    [actionId, runAction]
+  )
+
+  const rowCount = estimateRowCount({
+    pageIndex: pagination.pageIndex,
+    pageSize: pagination.pageSize,
+    loadedCount: pageTasks.length,
+    hasNextPage,
+  })
+
+  const handleColumnFiltersChange: OnChangeFn<ColumnFiltersState> = (
+    updater
+  ) => {
+    setColumnFilters((current) =>
+      typeof updater === 'function' ? updater(current) : updater
+    )
+    setPagination((current) => ({ ...current, pageIndex: 0 }))
   }
+
+  // eslint-disable-next-line react-hooks/incompatible-library
+  const table = useReactTable({
+    data: rows,
+    columns,
+    state: {
+      columnFilters,
+      columnVisibility,
+      pagination,
+    },
+    manualPagination: true,
+    pageCount: Math.max(1, Math.ceil(rowCount / pagination.pageSize)),
+    rowCount,
+    onColumnFiltersChange: handleColumnFiltersChange,
+    onColumnVisibilityChange: setColumnVisibility,
+    onPaginationChange: setPagination,
+    getCoreRowModel: getCoreRowModel(),
+    getFilteredRowModel: getFilteredRowModel(),
+    getFacetedRowModel: getFacetedRowModel(),
+    getFacetedUniqueValues: getFacetedUniqueValues(),
+  })
 
   return (
     <>
@@ -133,178 +346,162 @@ export function AuditTasksPage() {
       <Main constrained className='space-y-5'>
         <div className='flex flex-col gap-3 md:flex-row md:items-end md:justify-between'>
           <div>
-            <h1 className='text-2xl font-semibold tracking-tight'>发票审核清单</h1>
+            <h1 className='text-2xl font-semibold tracking-tight'>报销审核</h1>
             <p className='text-sm text-muted-foreground'>
-              管理发票审核任务、跟踪状态，并查看审核结论。
+              管理报销审核任务、跟踪状态，并查看审核结论。
             </p>
           </div>
           <Button asChild>
             <Link to='/audit/submit'>
               <Plus className='size-4' />
-              新建审核
+              新建报销审核
             </Link>
           </Button>
         </div>
 
-        <TaskStats tasks={tasksQuery.data ?? []} />
+        <TaskStats tasks={pageTasks} />
 
         <Card>
-          <CardHeader className='gap-3 md:flex-row md:items-center md:justify-between'>
-            <div>
-              <CardTitle>发票审核记录</CardTitle>
-              <CardDescription>查看已提交的审核记录。</CardDescription>
-            </div>
-            <div className='flex flex-wrap gap-2'>
-              <Button variant='outline' size='sm' onClick={() => tasksQuery.refetch()}>
-                <RotateCcw className='size-4' />
-                刷新
-              </Button>
-              <Button
-                variant='outline'
-                size='sm'
-                onClick={() => {
-                  clearSubmissionSummaries()
-                  setNotice('已清空提交摘要')
-                }}
-              >
-                清空摘要
-              </Button>
-            </div>
+          <CardHeader>
+            <CardTitle>报销审核记录</CardTitle>
+            <CardDescription>查看已提交的审核记录。</CardDescription>
           </CardHeader>
           <CardContent className='space-y-4'>
-            <Tabs
-              value={status}
-              onValueChange={(value) => {
-                setStatus(value)
-                setOffset(0)
-              }}
-            >
-              <TabsList className='overflow-x-auto'>
-                {statusTabs.map((tab) => (
-                  <TabsTrigger key={tab.value} value={tab.value}>
-                    {tab.label}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-            </Tabs>
-
-            {notice ? (
-              <Alert>
-                <AlertDescription>{notice}</AlertDescription>
-              </Alert>
-            ) : null}
+            <DataTableToolbar
+              table={table}
+              searchKey='searchText'
+              searchPlaceholder='查询单号、请求 ID 或审核摘要...'
+              filters={[
+                {
+                  columnId: 'status',
+                  title: '状态',
+                  options: taskStatusOptions,
+                },
+              ]}
+            />
             {tasksQuery.error ? (
               <Alert variant='destructive'>
                 <AlertDescription>
-                  {tasksQuery.error instanceof Error ? tasksQuery.error.message : '加载失败'}
+                  {tasksQuery.error instanceof Error
+                    ? tasksQuery.error.message
+                    : '加载失败'}
                 </AlertDescription>
               </Alert>
             ) : null}
 
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>单号 / 请求 ID</TableHead>
-                  <TableHead>状态</TableHead>
-                  <TableHead>金额概要</TableHead>
-                  <TableHead>提交时间</TableHead>
-                  <TableHead className='text-right'>操作</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {tasksQuery.isLoading ? (
-                  Array.from({ length: 5 }).map((_, index) => (
-                    <TableRow key={index}>
-                      <TableCell colSpan={5}>
-                        <div className='h-8 animate-pulse rounded-md bg-muted' />
+            <div className='overflow-hidden rounded-md border'>
+              <Table>
+                <TableHeader>
+                  {table.getHeaderGroups().map((headerGroup) => (
+                    <TableRow key={headerGroup.id} className='group/row'>
+                      {headerGroup.headers.map((header) => (
+                        <TableHead
+                          key={header.id}
+                          colSpan={header.colSpan}
+                          className={cn(
+                            'bg-background group-hover/row:bg-muted',
+                            header.column.columnDef.meta?.className,
+                            header.column.columnDef.meta?.thClassName
+                          )}
+                        >
+                          {header.isPlaceholder
+                            ? null
+                            : flexRender(
+                                header.column.columnDef.header,
+                                header.getContext()
+                              )}
+                        </TableHead>
+                      ))}
+                    </TableRow>
+                  ))}
+                </TableHeader>
+                <TableBody>
+                  {tasksQuery.isLoading ? (
+                    <TableRow>
+                      <TableCell
+                        colSpan={table.getVisibleLeafColumns().length}
+                        className='h-24 text-center text-muted-foreground'
+                      >
+                        报销审核记录加载中...
                       </TableCell>
                     </TableRow>
-                  ))
-                ) : rows.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={5} className='h-28 text-center text-muted-foreground'>
-                      暂无任务，可新建审核申请。
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  rows.map(({ task, summary }) => (
-                    <TableRow key={task.request_id}>
-                      <TableCell>
-                        <div className='flex min-w-0 items-center gap-3'>
-                          <div className='rounded-md border bg-muted/40 p-2'>
-                            <FileText className='size-4 text-muted-foreground' />
-                          </div>
-                          <div className='min-w-0'>
-                            <div className='font-medium'>{summary?.form.case_id ?? task.claim_id ?? '-'}</div>
-                            <div className='font-mono text-xs text-muted-foreground'>
-                              {truncateId(task.request_id)}
-                            </div>
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <TaskStatusBadge status={task.status} />
-                      </TableCell>
-                      <TableCell>
-                        {summary ? formatAmount(summary.form.total_amount, summary.form.currency) : '-'}
-                      </TableCell>
-                      <TableCell>{formatDate(task.submitted_at)}</TableCell>
-                      <TableCell>
-                        <div className='flex justify-end gap-2'>
-                          <Button variant='ghost' size='sm' asChild>
-                            <Link to='/audit/tasks/$taskId' params={{ taskId: task.request_id }}>
-                              详情
-                            </Link>
-                          </Button>
-                          {task.status === 'failed' ? (
-                            <Button
-                              variant='outline'
-                              size='sm'
-                              disabled={actionId === task.request_id}
-                              onClick={() => runAction(task.request_id, 'retry')}
-                            >
-                              重审
-                            </Button>
-                          ) : null}
-                          <Button
-                            variant='ghost'
-                            size='icon'
-                            disabled={actionId === task.request_id}
-                            onClick={() => runAction(task.request_id, 'delete')}
-                            aria-label='删除任务'
+                  ) : table.getRowModel().rows.length > 0 ? (
+                    table.getRowModel().rows.map((row) => (
+                      <TableRow key={row.id} className='group/row'>
+                        {row.getVisibleCells().map((cell) => (
+                          <TableCell
+                            key={cell.id}
+                            className={cn(
+                              'bg-background group-hover/row:bg-muted',
+                              cell.column.columnDef.meta?.className,
+                              cell.column.columnDef.meta?.tdClassName
+                            )}
                           >
-                            <Trash2 className='size-4' />
-                          </Button>
-                        </div>
+                            {flexRender(
+                              cell.column.columnDef.cell,
+                              cell.getContext()
+                            )}
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell
+                        colSpan={table.getVisibleLeafColumns().length}
+                        className='h-28 text-center text-muted-foreground'
+                      >
+                        暂无任务，可新建报销审核申请。
                       </TableCell>
                     </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-
-            <div className='flex items-center justify-between'>
-              <Button
-                variant='outline'
-                size='sm'
-                disabled={offset === 0}
-                onClick={() => setOffset((value) => Math.max(0, value - LIMIT))}
-              >
-                上一页
-              </Button>
-              <span className='text-sm text-muted-foreground'>Offset {offset}</span>
-              <Button
-                variant='outline'
-                size='sm'
-                disabled={(tasksQuery.data?.length ?? 0) < LIMIT}
-                onClick={() => setOffset((value) => value + LIMIT)}
-              >
-                下一页
-              </Button>
+                  )}
+                </TableBody>
+              </Table>
             </div>
+            <DataTablePagination table={table} />
           </CardContent>
         </Card>
       </Main>
     </>
   )
+}
+
+function getSelectedStatuses(filters: ColumnFiltersState): TaskStatus[] {
+  const value = filters.find((filter) => filter.id === 'status')?.value
+  if (!Array.isArray(value)) return []
+  return value.filter(isTaskStatus)
+}
+
+function isTaskStatus(value: unknown): value is TaskStatus {
+  return (
+    value === 'accepted' ||
+    value === 'running' ||
+    value === 'completed' ||
+    value === 'failed'
+  )
+}
+
+function matchesSelectedValues<TData>(
+  row: Row<TData>,
+  columnId: string,
+  filterValue: unknown
+) {
+  const selected = Array.isArray(filterValue) ? filterValue : []
+  return selected.length === 0 || selected.includes(row.getValue(columnId))
+}
+
+function estimateRowCount({
+  pageIndex,
+  pageSize,
+  loadedCount,
+  hasNextPage,
+}: {
+  pageIndex: number
+  pageSize: number
+  loadedCount: number
+  hasNextPage: boolean
+}) {
+  const loadedThroughCurrentPage = pageIndex * pageSize + loadedCount
+  if (hasNextPage) return loadedThroughCurrentPage + pageSize
+  return Math.max(loadedThroughCurrentPage, 0)
 }

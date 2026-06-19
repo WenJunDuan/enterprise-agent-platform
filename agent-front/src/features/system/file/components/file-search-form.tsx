@@ -1,5 +1,6 @@
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { SelectDropdown } from '@/components/select-dropdown'
 import { BIZ_TYPE_OPTIONS } from '../model'
 
 export type FileSearchState = {
@@ -7,6 +8,8 @@ export type FileSearchState = {
   extension: string
   bizType: string
 }
+
+const ALL_VALUE = '__all__'
 
 type Props = {
   value: FileSearchState
@@ -32,18 +35,19 @@ export function FileSearchForm({ value, onChange, onSubmit, onReset }: Props) {
           onChange({ ...value, extension: e.target.value.toLowerCase() })
         }
       />
-      <select
-        className='h-9 rounded-md border bg-background px-3 text-sm'
-        value={value.bizType}
-        onChange={(e) => onChange({ ...value, bizType: e.target.value })}
-      >
-        <option value=''>全部业务类型</option>
-        {BIZ_TYPE_OPTIONS.map((opt) => (
-          <option key={opt.value} value={opt.value}>
-            {opt.label}
-          </option>
-        ))}
-      </select>
+      <SelectDropdown
+        value={value.bizType || ALL_VALUE}
+        onValueChange={(next) =>
+          onChange({ ...value, bizType: next === ALL_VALUE ? '' : next })
+        }
+        items={[
+          { label: '全部业务类型', value: ALL_VALUE },
+          ...BIZ_TYPE_OPTIONS,
+        ]}
+        isControlled
+        withFormControl={false}
+        className='h-9 w-40'
+      />
       <Button size='sm' onClick={onSubmit}>
         查询
       </Button>

@@ -1,49 +1,63 @@
 import type { AuthUser } from '@/types/auth'
-import { ClipboardList, ScanText, ScrollText } from 'lucide-react'
+import { ClipboardList, FileSearch, History, ScanText } from 'lucide-react'
 import type { NavGroup, NavItem } from '@/components/layout/types'
 import { getBackendPageByPath } from './page-registry'
 import type { BackendMenuRouter, BreadcrumbConfig } from './types'
 
 const DEFAULT_AVATAR = '/avatars/01.png'
 
-const MENU_GROUP_ORDER = ['发票审核', 'OCR 识别', '合同审查'] as const
+const MENU_GROUP_ORDER = ['智能报销审核', '智能 OCR', '智能招投标审核'] as const
 
 const STATIC_BREADCRUMBS: Record<string, BreadcrumbConfig[]> = {
-  '/': [{ label: '发票审核' }, { label: '发票审核清单' }],
-  '/audit': [{ label: '发票审核' }, { label: '发票审核清单' }],
+  '/': [{ label: '智能报销审核' }, { label: '报销审核' }],
+  '/audit': [{ label: '智能报销审核' }, { label: '报销审核' }],
   '/audit/submit': [
-    { label: '发票审核' },
-    { label: '发票审核清单', href: '/audit' },
-    { label: '新建审核' },
+    { label: '智能报销审核' },
+    { label: '报销审核', href: '/audit' },
+    { label: '新建报销审核' },
   ],
-  '/ocr': [{ label: 'OCR 识别' }, { label: 'OCR 识别' }],
-  '/contracts': [{ label: '合同审查' }, { label: '合同审查清单' }],
+  '/ocr': [{ label: '智能 OCR' }, { label: 'OCR 识别' }],
+  '/contracts': [{ label: '智能招投标审核' }, { label: '项目管理' }],
+  '/contracts/tender-review': [
+    { label: '智能招投标审核' },
+    { label: '项目管理' },
+  ],
+  '/contracts/tender-review/history': [
+    { label: '智能招投标审核' },
+    { label: '历史评审' },
+  ],
   '/settings': [{ label: '系统管理' }, { label: '个人资料' }],
 }
 
-const DOMAIN_NAV_GROUPS: Record<(typeof MENU_GROUP_ORDER)[number], NavItem[]> = {
-  发票审核: [
-    {
-      title: '发票审核清单',
-      url: '/audit',
-      icon: ClipboardList,
-    },
-  ],
-  'OCR 识别': [
-    {
-      title: 'OCR 识别',
-      url: '/ocr',
-      icon: ScanText,
-    },
-  ],
-  合同审查: [
-    {
-      title: '合同审查清单',
-      url: '/contracts',
-      icon: ScrollText,
-    },
-  ],
-}
+const DOMAIN_NAV_GROUPS: Record<(typeof MENU_GROUP_ORDER)[number], NavItem[]> =
+  {
+    智能报销审核: [
+      {
+        title: '报销审核',
+        url: '/audit',
+        icon: ClipboardList,
+      },
+    ],
+    '智能 OCR': [
+      {
+        title: 'OCR 识别',
+        url: '/ocr',
+        icon: ScanText,
+      },
+    ],
+    智能招投标审核: [
+      {
+        title: '项目管理',
+        url: '/contracts/tender-review',
+        icon: FileSearch,
+      },
+      {
+        title: '历史评审',
+        url: '/contracts/tender-review/history',
+        icon: History,
+      },
+    ],
+  }
 
 type BackendMenuMatch = {
   breadcrumbs: BreadcrumbConfig[]
@@ -145,8 +159,8 @@ export function getBreadcrumbsForPath(
   const normalizedPath = normalizePath(pathname)
   if (normalizedPath.startsWith('/audit/tasks/')) {
     return [
-      { label: '发票审核' },
-      { label: '发票审核清单', href: '/audit' },
+      { label: '智能报销审核' },
+      { label: '报销审核', href: '/audit' },
       { label: '任务详情' },
     ]
   }
@@ -163,7 +177,7 @@ export function getBreadcrumbsForPath(
     return backendMatch.breadcrumbs
   }
 
-  return [{ label: '发票审核' }]
+  return [{ label: '智能报销审核' }]
 }
 
 export function findBackendRouteByPath(

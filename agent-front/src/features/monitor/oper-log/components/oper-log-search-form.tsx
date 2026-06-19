@@ -1,5 +1,6 @@
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { SelectDropdown } from '@/components/select-dropdown'
 import { BUSINESS_TYPE_OPTIONS } from '../data/business-type'
 
 export type OperLogSearchFormState = {
@@ -10,6 +11,8 @@ export type OperLogSearchFormState = {
   beginTime: string
   endTime: string
 }
+
+const ALL_VALUE = '__all__'
 
 type Props = {
   value: OperLogSearchFormState
@@ -33,27 +36,36 @@ export function OperLogSearchForm({ value, onChange, onSubmit, onReset }: Props)
         value={value.operName}
         onChange={(e) => onChange({ ...value, operName: e.target.value })}
       />
-      <select
-        className='h-9 rounded-md border bg-background px-3 text-sm'
-        value={value.businessType}
-        onChange={(e) => onChange({ ...value, businessType: e.target.value })}
-      >
-        <option value=''>全部业务类型</option>
-        {BUSINESS_TYPE_OPTIONS.map((opt) => (
-          <option key={opt.value} value={opt.value}>
-            {opt.label}
-          </option>
-        ))}
-      </select>
-      <select
-        className='h-9 rounded-md border bg-background px-3 text-sm'
-        value={value.status}
-        onChange={(e) => onChange({ ...value, status: e.target.value })}
-      >
-        <option value=''>全部状态</option>
-        <option value='0'>正常</option>
-        <option value='1'>异常</option>
-      </select>
+      <SelectDropdown
+        value={value.businessType || ALL_VALUE}
+        onValueChange={(next) =>
+          onChange({ ...value, businessType: next === ALL_VALUE ? '' : next })
+        }
+        items={[
+          { label: '全部业务类型', value: ALL_VALUE },
+          ...BUSINESS_TYPE_OPTIONS.map((option) => ({
+            label: option.label,
+            value: String(option.value),
+          })),
+        ]}
+        isControlled
+        withFormControl={false}
+        className='h-9 w-40'
+      />
+      <SelectDropdown
+        value={value.status || ALL_VALUE}
+        onValueChange={(next) =>
+          onChange({ ...value, status: next === ALL_VALUE ? '' : next })
+        }
+        items={[
+          { label: '全部状态', value: ALL_VALUE },
+          { label: '正常', value: '0' },
+          { label: '异常', value: '1' },
+        ]}
+        isControlled
+        withFormControl={false}
+        className='h-9 w-32'
+      />
       <Input
         type='datetime-local'
         className='w-52'

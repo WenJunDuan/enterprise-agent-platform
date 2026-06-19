@@ -41,7 +41,7 @@ export function NavGroup({ title, items }: NavGroupProps) {
   return (
     <SidebarGroup className='px-2 py-1 first:pt-0.5 last:pb-0.5'>
       <SidebarGroupLabel>{title}</SidebarGroupLabel>
-      <SidebarMenu className='gap-0.5'>
+      <SidebarMenu className='gap-0.5 ps-[4ch] group-data-[collapsible=icon]:ps-0'>
         {items.map((item) => {
           const key = `${item.title}-${item.url}`
 

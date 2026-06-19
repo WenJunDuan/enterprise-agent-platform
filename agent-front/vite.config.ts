@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { tanstackRouter } from '@tanstack/router-plugin/vite'
 import { existsSync, readFileSync } from 'node:fs'
+import type { IncomingMessage } from 'node:http'
 import { resolve } from 'node:path'
 import { fileURLToPath, URL } from 'node:url'
 
@@ -83,6 +84,13 @@ function resolveAdminProxyTarget(env: Record<string, string>) {
   return ''
 }
 
+function bypassSpaNavigation(req: IncomingMessage) {
+  const accept = req.headers.accept || ''
+  if (req.method === 'GET' && accept.includes('text/html')) {
+    return '/index.html'
+  }
+}
+
 export default defineConfig(({ mode }) => {
   const customEnv = { ...process.env, ...loadCustomEnv(mode) } as Record<
     string,
@@ -111,10 +119,12 @@ export default defineConfig(({ mode }) => {
     '/audit': {
       target: auditProxyTarget,
       changeOrigin: true,
+      bypass: bypassSpaNavigation,
     },
     '/ocr': {
       target: auditProxyTarget,
       changeOrigin: true,
+      bypass: bypassSpaNavigation,
     },
     '/health': {
       target: auditProxyTarget,
