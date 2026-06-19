@@ -244,10 +244,14 @@ def _env_bool(name: str, default: bool = False) -> bool:
 
 
 def _env_int(name: str, default: int) -> int:
-    value = os.getenv(name)
-    if value is None:
+    """Read an integer from the environment, returning *default* on missing or invalid values."""
+    raw = os.getenv(name, "").strip()
+    if not raw:
         return default
-    return int(value)
+    try:
+        return int(raw)
+    except ValueError:
+        return default
 
 
 def load_tenant_keys() -> dict[str, str]:
