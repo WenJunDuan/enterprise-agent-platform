@@ -48,7 +48,7 @@ counts:
   features_count: 1
   issues_count: 0
   refactors_count: 0
-  systems_count: 0
+  systems_count: 1
   reviews_count: 27
   cleanup_count: 0
   compound:
@@ -67,7 +67,7 @@ pointers:
   latest_architecture_update: ""
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "impl:contract-audit-feature:C2-contract-store"
+next_action: "impl:contract-audit-feature:C3-review-contract-command"
 last_subagent: "generator"
 last_subagent_at: "2026-06-02T09:25:27.661Z"
 active_worktrees: []
@@ -166,6 +166,7 @@ slug 拆分为独立 sprint 目录；`lessons.md` 整体保留为
 - `docs/` — 项目参考文档 (开发指南 / 前端对接 / audit-skills)，非状态机文件
 
 ## 历史 (由 pace-continuator hook 自动追加, 最多保留近 10 条)
+- `2026-06-19 10:20:54`: stage=impl sprint=2026-06-19-contract-audit-feature turn-end
 - `2026-06-19 08:33:33`: stage=impl sprint=2026-06-19-tender-ingestion-workflow turn-end
 - `2026-06-19 08:18:16`: stage=ship sprint=2026-06-19-review-backend-refactor turn-end
 - `2026-06-19 01:40:10`: stage=review sprint=2026-06-19-review-backend-refactor turn-end
@@ -175,7 +176,6 @@ slug 拆分为独立 sprint 目录；`lessons.md` 整体保留为
 - `2026-06-17 09:51:55`: stage=ship sprint=  turn-end
 - `2026-06-17 09:48:22`: stage=ship sprint=  turn-end
 - `2026-06-17 09:31:54`: stage=ship sprint=  turn-end
-- `2026-06-17 09:13:44`: stage=ship sprint=  turn-end
 
 - 2026-06-02 [migrate] v9.6.2(legacy flat) → v9.6.4. 备份见 `.ai_state.backup-*`。
 

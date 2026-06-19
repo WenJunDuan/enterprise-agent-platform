@@ -1,0 +1,70 @@
+sprint: 2026-06-19-contract-audit-feature
+title: Contract 审查 + 合同库（Phase 2a）
+path: System
+owner: claude-code
+design: design.md
+roadmap: contract-audit-platform            # item2 / Phase 2a
+decisions:
+  - "范围=审查+合同库；驱动=内联 /review-contract；Path=System（用户拍板 2026-06-19）"
+  - "evidence_chain 回链 contract_id 走 source 字符串 + extracted_data.contract（零改 common schema）"
+  - "contract_id=UUID；同合同去重留 v2；reviewed_by const=contract-extractor"
+
+tasks:
+  - id: C1
+    title: legal 契约 schema（extract-result + review-delta）+ 结构测试
+    status: done
+    files:
+      - .claude/contracts/legal/extract-result.schema.json
+      - .claude/contracts/legal/review-delta.schema.json
+      - tests/test_legal_contracts.py
+    result: "5 结构用例(加载+manual_review_reason枚举+合同结构字段)；265 passed"
+
+  - id: C2
+    title: contract_store（sqlite contracts 表入统一库 + CONTRACTS_DATA_DIR + CRUD）
+    status: done
+    files:
+      - server/stores/contract_store.py
+      - server/platform/paths.py           # 加 CONTRACTS_DATA_DIR
+      - tests/test_contract_store.py
+    layering: "只依赖 platform；test_stores_only_import_platform 不退化"
+    result: "6 用例(CRUD+JSON列往返+租户隔离+created_at保留)；271 passed/layering 过"
+
+  - id: C3
+    title: /review-contract 内联命令（五步，对齐 tender /evaluate-bid）
+    status: todo
+    files: [.claude/commands/review-contract.md]
+    mirror: .claude/commands/evaluate-bid.md
+    accept: "命令存在且与 CLAUDE.md legal 段接线；结构校验通过"
+
+  - id: C4
+    title: CLI review-contract(-json) + Python 持久化（extracted_data.contract→contract_store + 原件留文件）
+    status: todo
+    files: [server/cli.py, tests/test_cli_review_contract.py]
+    mirror: cli evaluate-bid / audit
+    invoke: 'run_command_json("review-contract", path, schema_name="common/audit-result.schema.json")'
+    note: "run 后 thin 步骤从 audit-result.extracted_data.contract 取结构 upsert_contract + copy 原件到 data/contracts/<id>/source/"
+    accept: "review-contract --help 可见；持久化路径单测(mock 命令)绿"
+
+  - id: C5
+    title: CLAUDE.md legal 段 + contract-reviewer 轻量
+    status: todo
+    files: [.claude/CLAUDE.md, .claude/agents/legal/contract-reviewer.md]
+    accept: "legal 段默认走 /review-contract 内联；contract-reviewer 保留特殊场景"
+
+  - id: C6
+    title: polish + architecture/system-contract-audit.md（System path 强制）
+    status: todo
+    note: "铁律[Polish强制]+[架构现状即真相]：System path ship 前强制"
+
+definition_of_done:
+  - "uv run pytest -q 全绿 + ruff 全过 + test_layering 6 守卫不退化"
+  - "legal 两契约可载 + 枚举一致（C1 结构测试）"
+  - "contract_store CRUD 入统一库 contracts 表（C2）"
+  - "review-contract 产 audit-result + 持久化 extracted_data.contract→contract_store + 原件留文件"
+  - "routes/audit|ocr|tender 零改；schema 只动新建 legal/*"
+  - "polish + architecture/system-contract-audit.md"
+
+backlog:
+  - "跨域回链：expense 审核引用 contract 条款/付款节点（改 expense 侧编排）—— v2"
+  - "同合同去重（contract_no/指纹）—— v2"
+  - "item3 contract-audit-api：HTTP /contract/review 路由（复用 tender 异步路由模板）"
