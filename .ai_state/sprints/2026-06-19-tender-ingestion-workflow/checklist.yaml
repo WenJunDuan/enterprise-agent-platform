@@ -41,16 +41,14 @@ tasks:
 
   - id: T2.5
     title: 关掉 item0 延后的 ops/routes 层序决策 + 补守卫（整合项，roadmap 前移）
-    status: todo
+    status: done
+    decision: "方案A——ops 下沉到 routes 之下(真实依赖决定)；core facade 清理跳过(非真违规+audit.py零改)。见 compound/2026-06-19-decision-ops-below-routes-layering.md"
     files:
-      - server/routes/health.py
-      - server/ops/diagnostics.py
-      - server/routes/audit.py
-      - tests/test_layering.py
-      - design.md  # 层序定稿附注
+      - tests/test_layering.py  # 修正 docstring 顺序 app→routes→ops→...；加 ops/stores 2 条守卫
     source: "sprints/2026-06-19-review-backend-refactor/reviews/summary.md 延后段 + 門禁#5 (R2-F1/F3/F4)"
     rationale: "tender 是后重构第一个新路由；层序决策只做一次，contract-api(Phase 2b)复用"
     accept: "test_layering 全过 + ops/stores 守卫生效；无新增上向 import"
+    result: "真实违规数=0(文档顺序反了非代码错)；6 条守卫(4旧+2新)全过；255 passed/ruff clean；零生产代码改动"
 
   - id: T3
     title: 测试与回归
