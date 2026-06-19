@@ -67,7 +67,7 @@ pointers:
   latest_architecture_update: ""
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "impl:tender-ingestion:T3"
+next_action: "blocked:tender-ingestion:T4:awaiting-user-materials"
 last_subagent: "generator"
 last_subagent_at: "2026-06-02T09:25:27.661Z"
 active_worktrees: []

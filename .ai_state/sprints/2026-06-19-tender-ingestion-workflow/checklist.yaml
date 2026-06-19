@@ -52,10 +52,14 @@ tasks:
 
   - id: T3
     title: 测试与回归
-    status: todo
-    files: [tests/test_tender_routes.py]
+    status: done
+    files:
+      - tests/test_tender_routes.py        # 路由测试(随 T2 TDD 完成)
+      - tests/test_tender_contracts.py     # 结构校验：契约可载 + manual_review_reason 枚举一致
+      - tests/test_routes_smoke.py         # 路由基线纳入 tender(随 T2)
     mirror: tests/test_ocr_routes.py / test_routes_smoke.py
     accept: "uv run pytest -q 绿；ruff 全过；test_layering 全过"
+    result: "结构测试 5 用例(3 契约加载 + manual_review_reason/verdict 枚举)；260 passed/ruff/layering 全过"
 
   - id: T4
     title: 端到端（需用户真招标文件 + 投标文件）
