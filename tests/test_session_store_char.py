@@ -109,18 +109,24 @@ class TestAppendAndResolveSessionRecord:
     """Covers append_session_record + resolve_latest_session_id (tenant) together."""
 
     def _patch_store(self, monkeypatch, tmp_path: Path):
-        """Redirect SESSION_STORE to a fresh SQLite DB in tmp_path."""
-        import server.stores.session_store as ss
+        """Redirect SESSION_STORE to a fresh SQLite DB in tmp_path.
+
+        Patches server.stores.session_queries.SESSION_STORE — the module that owns the
+        singleton used by all delegating functions (append_session_record, etc.).
+        Patching only the facade (session_store.SESSION_STORE) is insufficient because
+        the delegating functions look up SESSION_STORE in session_queries's namespace.
+        """
+        import server.stores.session_queries as sq
 
         from server.stores.session_store import SQLiteSessionStore
 
         db_path = tmp_path / "sessions.db"
         fresh_store = SQLiteSessionStore(db_path)
-        monkeypatch.setattr(ss, "SESSION_STORE", fresh_store)
+        monkeypatch.setattr(sq, "SESSION_STORE", fresh_store)
         return fresh_store
 
     def test_appended_record_is_retrievable(self, tmp_path, monkeypatch):
-        self._patch_store(monkeypatch, tmp_path)
+        fresh_store = self._patch_store(monkeypatch, tmp_path)
         from server.stores.session_store import (
             append_session_record,
             get_session_record_by_request_id,
@@ -136,6 +142,9 @@ class TestAppendAndResolveSessionRecord:
         assert result is not None
         assert result["request_id"] == "req-001"
         assert result["claude_session_id"] == "sess-abc"
+        # Verify writes landed in tmp_path DB, not the real platform.sqlite3
+        assert fresh_store.db_path == tmp_path / "sessions.db"
+        assert fresh_store.db_path.exists()
 
     def test_resolve_latest_session_id_returns_most_recent(self, tmp_path, monkeypatch):
         self._patch_store(monkeypatch, tmp_path)
@@ -215,12 +224,12 @@ class TestAppendAndResolveSessionRecord:
 
 class TestResolveLatestSessionIdAdmin:
     def _patch_store(self, monkeypatch, tmp_path: Path):
-        import server.stores.session_store as ss
+        import server.stores.session_queries as sq
         from server.stores.session_store import SQLiteSessionStore
 
         db_path = tmp_path / "sessions.db"
         fresh_store = SQLiteSessionStore(db_path)
-        monkeypatch.setattr(ss, "SESSION_STORE", fresh_store)
+        monkeypatch.setattr(sq, "SESSION_STORE", fresh_store)
 
     def test_admin_sees_across_tenants(self, tmp_path, monkeypatch):
         self._patch_store(monkeypatch, tmp_path)
