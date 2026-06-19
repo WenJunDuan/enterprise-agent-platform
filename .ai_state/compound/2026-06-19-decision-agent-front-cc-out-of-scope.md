@@ -25,13 +25,18 @@ out-of-scope 区域**：
   `106b55d`），**已回退**。agent-front 必须保持 tracked。
 - 正确语义：git 照常追踪；"忽略"只针对 **CC 的工作范围**，不是 git。
 
-## 生效范围说明
+## 生效范围说明 / 落点（2026-06-19 最终）
 
-本 compound doc 是决策留痕。若要让**每个 CC 会话自动遵守**该范围约束，需把约束写进
-SessionStart 会注入的入口（`.claude/CLAUDE.md` 或 `.ai_state/_index.md` 的 project.gotchas）。
-当前仅记于此档，待用户确认是否上提到常驻入口。
+用户拍板：**只留本 `.ai_state` 决策档，不追求"自动注入"**。约束靠「索引先行」兜底——
+`_index.md` 的 `pointers.latest_decisions` 已指向本档，CC 每个新会话起手读 `_index.md` 时带到。
+
+⚠️ **不可放的落点（已踩坑）**：`.claude/CLAUDE.md` 是产品业务内容（业务调度中枢 prompt），
+**会被加载进生产审核 agent 的系统提示**，绝不能往里写 CC 开发/工作约束（会污染产品行为）。
+曾误写一段「工作范围(CC scope)」被用户回退。`.ai_state/_index.md` 本会话也未被 SessionStart
+自动注入，故不依赖任何自动注入渠道，统一以本决策档为准。
 
 ## 关联
 
 - ui→agent-front 改名 + 引用修复：commit `bbf40ac`。
-- `.agents/ .codex/ AGENTS.md` 是 Athena CX 平台镜像（非本任务产物），是否追踪待用户定。
+- `.agents/ .codex/ AGENTS.md`（Athena CX 平台镜像）：用户 2026-06-19 拍板**不入库**，已加入 `.gitignore`
+  （三条均原本 untracked，无需 `git rm --cached`）。

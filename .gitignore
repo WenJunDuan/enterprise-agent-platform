@@ -8,6 +8,10 @@ __pycache__/
 .cunzhi-memory/
 logs/
 data/
+!agent-front/src/features/monitor/oper-log/data/
+!agent-front/src/features/monitor/oper-log/data/**
+!agent-front/src/features/system/user/data/
+!agent-front/src/features/system/user/data/**
 knowledge/
 .ace-tool/*
 .env
@@ -26,3 +30,7 @@ deploy/prod/litellm_config.yaml
 .data/*
 .ace-tool/
 .ai_state/.snapshots/
+# Athena CX 平台镜像（非本仓产物），不入库
+.agents/
+.codex/
+AGENTS.md
