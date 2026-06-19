@@ -25,16 +25,19 @@ tasks:
 
   - id: T2
     title: HTTP 路由 /tender/evaluate + worker（异步任务）
-    status: todo
+    status: done
+    decision: "方案A 新建 tender_task_store(域隔离，非复用 audit 表)；见 t2-microdesign.md"
     files:
+      - server/stores/tender_task_store.py   # 新建(方案A)；mode=directory/upload 非域标识，故不复用 audit 表
       - server/routes/tender.py
       - server/routes/tender_worker.py
-      - server/api.py
-      - server/stores/audit_task_store.py  # 优先复用；不够再新建 tender_task_store.py
+      - server/api.py                         # include_router(/tender) + lifespan recover_stale_tender_tasks
+      - tests/test_routes_smoke.py            # 路由基线纳入 3 个 tender 路由
     mirror: server/routes/audit.py + audit_worker.py
-    layering: "route/worker 调 common.command_adapter + stores + platform；勿建 server/tender feature 模块"
+    layering: "route/worker 调 common.command_adapter + stores + platform；未建 server/tender feature 模块"
     invoke: 'run_command_json("evaluate-bid", case_path, schema_name="common/audit-result.schema.json")'
     accept: "提交→accepted、查任务、查结果；test_layering 不退化"
+    result: "结果归档复用 run_agent_json 内部 archive(透传 request_id/tenant)，零新表；253 passed/ruff clean/layering 过"
 
   - id: T2.5
     title: 关掉 item0 延后的 ops/routes 层序决策 + 补守卫（整合项，roadmap 前移）
