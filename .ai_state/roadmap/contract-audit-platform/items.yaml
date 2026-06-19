@@ -43,7 +43,7 @@ items:
 
   - slug: contract-audit-feature
     title: "Phase 2a · 合同审计功能完善优化"
-    status: in_progress            # design 已落 design.md，待用户确认进 impl（铁律[设计先行]）
+    status: completed              # C1-C6 全 done + 交叉审查 PASS(4.1/5.0)；276 passed/ruff/layering
     sprint_slug: "2026-06-19-contract-audit-feature"
     blocked_by: [review-backend-refactor]   # 与 tender-ingestion 无硬依赖；tender T4 卡材料时并行启动本项
     estimated_complexity: L
