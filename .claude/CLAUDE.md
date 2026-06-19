@@ -4,13 +4,13 @@
 
 ## 支持的业务域
 
-| 业务域  | 典型场景                                 | 调度入口                                                     |
-| ------- | ---------------------------------------- | ------------------------------------------------------------ |
-| expense | 报销、费用、发票、差旅、招待、借款       | `/audit` 内联一次性审核（提取+判断同会话）；`expense-reviewer` 暂时关闭 |
-| hr      | 考勤、打卡、迟到、早退、缺勤、请假、调休 | `attendance-checker` / `leave-auditor`                       |
-| legal   | 合同、条款、协议、法务审查               | `contract-reviewer`                                          |
-| tender  | 招投标、评标、投标文件评分、资格审查、业绩核验、废标判定 | `tender-evaluator`（提取→评分→判定，一次性内联）；`tender-reviewer` 默认关闭 |
-| system  | 制度导入、规则初始化、政策更新、记忆沉淀 | `system-rule-init` / `system-memory-distill`（skill，非 agent） |
+| 业务域  | 典型场景                                                 | 调度入口                                                                     |
+| ------- | -------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| expense | 报销、费用、发票、差旅、招待、借款                       | `/audit` 内联一次性审核（提取+判断同会话）；`expense-reviewer` 暂时关闭      |
+| hr      | 考勤、打卡、迟到、早退、缺勤、请假、调休                 | `attendance-checker` / `leave-auditor`                                       |
+| legal   | 合同、条款、协议、法务审查                               | `contract-reviewer`                                                          |
+| tender  | 招投标、评标、投标文件评分、资格审查、业绩核验、废标判定 | `/evaluate-bid` 内联五步评标（立案→计划→抽取→评判→汇总，AI 直读、同会话）；`tender-reviewer` 默认关闭 |
+| system  | 制度导入、规则初始化、政策更新、记忆沉淀                 | `system-rule-init` / `system-memory-distill`（skill，非 agent）              |
 
 ## 路由原则
 
@@ -55,8 +55,8 @@
 ### tender
 
 - 适用于招投标、评标、投标文件评分、资格审查、业绩核验、废标判定。
-- 默认走 **`tender-evaluator` 一次性内联评标**：同一会话内完成"事实提取 + 逐项评分 + 判定 + 输出"，对齐 expense 的低延迟做法。`tender-extractor` / `tender-reviewer` 保留，供多域协同或需要第二意见时按需调度（复核默认关闭）。
-- 规则**两层**：通则层 `knowledge/tender/statute.rules.json`（招标投标法 / 政府采购法等，跨项目稳定）+ 项目层 `knowledge/tender/{招标编号}.rules.json`（该项目招标文件第三章评标办法）。两层都由 `/init-rules <源文件> tender` 生成，缺失时按降级走 `manual_review`（`rule_gap`），不得现场编造规则。
+- 默认走 **`/evaluate-bid` 内联五步评标**：同一会话内 AI 直读文件（无 OCR），连续完成 S0 立案 → S1 评分计划 → S2 事实抽取 → S3 逐项评判 → S4 汇总，对齐 expense 的低延迟内联做法。底层 agent `tender-extractor`（S2）/ `tender-evaluator`（S3-4）/ `tender-reviewer` 保留，仅在投标章节过多需并行抽取、或需第二意见时按需 `Task` 调度（复核默认关闭）。
+- 规则**两层**：通则层 `knowledge/tender/statute-*.rules.json`（一法一文件：`statute-evalmethod` 评标方法暂行规定、`statute-regulation` 实施条例 …，跨项目稳定）+ 项目层 `knowledge/tender/{招标编号}.rules.json`（该项目招标文件第三章评标办法）。均由 `/init-rules <源文件> tender` 生成，缺失时按降级走 `manual_review`（`rule_gap`），不得现场编造规则。
 - **不可判定项绝不判 0**：评分项命中 `requires_live_event`（现场答辩）、`requires_external_data`（企业信用等外部数据）、`requires_cross_bid_comparison`（价格分需横向比较）时，该项 `manual_review` 且 `score: null`，并写清需要什么外部输入。把"文档里没有"当成"客观 0 分"是范畴错误。
 - 评分明细写入 `extracted_data.scoring`（`{item, max, score, status, basis}`）；最终结论仍符合 `.claude/contracts/common/audit-result.schema.json`。
 - 典型一致性风险：拟派项目负责人与所报业绩的项目经理不一致、或姓名在不同文件写法不一致 → 该业绩项不得分或 `manual_review`（`data_conflict`），证据链须同时引用两处出处。
