@@ -31,10 +31,12 @@ tasks:
 
   - id: C3
     title: /review-contract 内联命令（五步，对齐 tender /evaluate-bid）
-    status: todo
+    status: done
     files: [.claude/commands/review-contract.md]
     mirror: .claude/commands/evaluate-bid.md
     accept: "命令存在且与 CLAUDE.md legal 段接线；结构校验通过"
+    result: "五步内联命令(S0清点→S1规则→S2抽取条款/付款节点→S3评判→S4汇总)；已注册可见"
+    note: "与 C5 同提交(命令需 CLAUDE.md 接线才生效)"
 
   - id: C4
     title: CLI review-contract(-json) + Python 持久化（extracted_data.contract→contract_store + 原件留文件）
@@ -47,9 +49,10 @@ tasks:
 
   - id: C5
     title: CLAUDE.md legal 段 + contract-reviewer 轻量
-    status: todo
+    status: done
     files: [.claude/CLAUDE.md, .claude/agents/legal/contract-reviewer.md]
     accept: "legal 段默认走 /review-contract 内联；contract-reviewer 保留特殊场景"
+    result: "legal 表格行+段落改 /review-contract 内联+合同库说明；agent 标第二意见+引 legal schema"
 
   - id: C6
     title: polish + architecture/system-contract-audit.md（System path 强制）
