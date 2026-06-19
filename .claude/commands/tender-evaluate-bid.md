@@ -62,4 +62,4 @@ allowed-tools: Read, Glob, Skill, Task
 - v1 仅评单个投标人；价格横比、有效投标数等 `requires_cross_bid_comparison` 项保持 `manual_review`，留多投标人阶段统一落定。
 
 参数: $ARGUMENTS
-用法: /evaluate-bid data/tenders/r2024007
+用法: /tender-evaluate-bid data/tenders/r2024007
