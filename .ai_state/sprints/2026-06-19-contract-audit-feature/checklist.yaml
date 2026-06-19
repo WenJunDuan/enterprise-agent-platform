@@ -61,8 +61,13 @@ tasks:
 
   - id: C6
     title: polish + architecture/system-contract-audit.md（System path 强制）
-    status: todo
-    note: "铁律[Polish强制]+[架构现状即真相]：System path ship 前强制"
+    status: done
+    files:
+      - .ai_state/sprints/2026-06-19-contract-audit-feature/cleanup-pass.md
+      - .ai_state/architecture/system-contract-audit.md
+      - .ai_state/architecture/ARCHITECTURE.md
+      - server/cli.py   # polish: docstring 规范化
+    result: "polish: P0 全过, P2 docstring 已修, DRY CLI三元/symlink 记 backlog；架构子系统档+总入口已建"
 
 definition_of_done:
   - "uv run pytest -q 全绿 + ruff 全过 + test_layering 6 守卫不退化"

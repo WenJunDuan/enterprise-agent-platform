@@ -5,7 +5,7 @@ version: "9.6.4"
 
 # === PACE 路由状态 ===
 path: "System"                    # 活动 sprint=contract-audit-feature(System,新子系统); tender-ingestion 可写完成、T4 卡材料并行挂着
-stage: "impl"                     # item2 contract-audit-feature：design 确认(用户"继续跑")，C1 legal schema 已落，impl 进行中
+stage: "review"                   # item2 contract-audit-feature：C1-C6 全 done(276 passed)；下一门禁=铁律[Review强制]交叉审查(需 spawn 子 agent，待用户授权)
 current_sprint_slug: "2026-06-19-contract-audit-feature"
 current_roadmap_slug: "contract-audit-platform"
 skip_polish: false
@@ -50,7 +50,7 @@ counts:
   refactors_count: 0
   systems_count: 1
   reviews_count: 27
-  cleanup_count: 0
+  cleanup_count: 1
   compound:
     learning: 4
     trick: 0
@@ -64,10 +64,10 @@ pointers:
   latest_brainstorm: ""
   latest_decisions: ["compound/2026-06-19-decision-ops-below-routes-layering.md", "compound/2026-06-19-decision-agent-front-cc-out-of-scope.md"]
   latest_lessons: ["compound/2026-06-18-learning-absence-is-not-zero.md", "compound/2026-06-17-learning-cross-review-and-soft-timeout.md", "compound/2026-06-17-learning-classify-fix-exposes-latent-bug.md", "compound/2026-06-02-learning-legacy-v962-migration.md"]
-  latest_architecture_update: ""
+  latest_architecture_update: "2026-06-19T10:35:39.441Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "polish:contract-audit-feature:C6-polish-and-architecture-doc"
+next_action: "review:contract-audit-feature:cross-review-gate"
 last_subagent: "generator"
 last_subagent_at: "2026-06-02T09:25:27.661Z"
 active_worktrees: []
