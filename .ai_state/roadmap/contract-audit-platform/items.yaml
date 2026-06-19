@@ -57,8 +57,8 @@ items:
 
   - slug: contract-audit-api
     title: "Phase 2b · 合同审计 API 接口(仿 ocr/audit/tender，纯加法)"
-    status: pending
-    sprint_slug: ""
+    status: in_progress            # design 已落；镜像 tender T2 异步路由模板 + 复用 contract 持久化
+    sprint_slug: "2026-06-19-contract-audit-api"
     blocked_by: [contract-audit-feature]    # 硬依赖 feature；软依赖 tender-ingestion 的路由模板/层序
     estimated_complexity: M
     notes: >

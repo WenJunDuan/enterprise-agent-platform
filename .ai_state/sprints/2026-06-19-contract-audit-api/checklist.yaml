@@ -1,0 +1,38 @@
+sprint: 2026-06-19-contract-audit-api
+title: Contract 审查 HTTP API（Phase 2b / item3）
+path: Feature
+owner: claude-code
+design: design.md
+roadmap: contract-audit-platform            # item3 / Phase 2b
+decisions:
+  - "镜像 tender T2 异步路由模板；contract_review_tasks 表(任务状态)独立于 contracts 表(合同数据)"
+  - "worker 成功后复用 persist_contract_from_result 落库合同结构(best-effort)"
+
+tasks:
+  - id: A1
+    title: contract_task_store（contract_review_tasks 表，镜像 tender_task_store）
+    status: done
+    files: [server/stores/contract_task_store.py]
+    result: "域隔离任务状态表；只依赖 platform(layering 不退化)"
+
+  - id: A2
+    title: routes/contract.py + contract_worker.py（POST /contract/review + GET tasks；worker 调 review-contract + 落库）
+    status: done
+    files: [server/routes/contract.py, server/routes/contract_worker.py, server/api.py]
+    mirror: routes/tender.py + tender_worker.py
+    result: "include_router(/contract) + lifespan recover_stale_contract_tasks"
+
+  - id: A3
+    title: 测试与回归
+    status: done
+    files: [tests/test_contract_routes.py, tests/test_routes_smoke.py]
+    result: "7 用例(提交→accepted/查任务/结果409→200/auth/404/415/worker转发+落库)；路由基线纳入 contract；283 passed/ruff/layering 过"
+
+definition_of_done:
+  - "test_contract_routes 绿(提交→轮询→取结果 + worker 落库)"
+  - "uv run pytest -q 全绿 + ruff + test_layering 6 守卫不退化 + 路由基线纳入 contract"
+  - "既有路由(audit/ocr/tender)零改；schema 不动；不复活 meta.json/by-request 树"
+
+backlog:
+  - "retry/delete/list 端点(plan 只要 review+查任务+结果三个)"
+  - "前端合同审查页面(agent-front，CC out-of-scope)"
