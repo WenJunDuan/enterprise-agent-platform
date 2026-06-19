@@ -1,12 +1,16 @@
-"""contract_store CRUD + JSON 列往返 + 租户隔离 + created_at 保留测试。"""
+"""contract_store CRUD + JSON 列往返 + 租户隔离 + created_at 保留 + 持久化/回链测试。"""
 
 from __future__ import annotations
+
+from pathlib import Path
 
 from server.stores.contract_store import (
     get_contract,
     get_contract_admin,
+    get_contract_by_request_id_admin,
     list_contracts,
     new_contract_id,
+    persist_contract_from_result,
     upsert_contract,
 )
 
@@ -87,3 +91,68 @@ def test_list_contracts_returns_tenant_rows():
     upsert_contract(_sample(contract_id=cid, tenant="acme-list"))
     rows = list_contracts("acme-list")
     assert any(r["contract_id"] == cid for r in rows)
+
+
+def _result_with_contract() -> dict:
+    return {
+        "verdict": "approved",
+        "extracted_data": {
+            "contract": {
+                "contract_meta": {
+                    "title": "采购合同",
+                    "contract_no": "HT-9",
+                    "amount": 99999.0,
+                    "currency": "CNY",
+                    "sign_date": "2026-03-01",
+                    "term": "1 年",
+                },
+                "parties": [{"name": "甲", "role": "甲方"}],
+                "clauses": [{"clause_id": "1", "type": "付款", "text": "...", "page": 1}],
+                "payment_nodes": [
+                    {
+                        "node_id": "n1",
+                        "name": "预付",
+                        "amount": 30000.0,
+                        "ratio": 0.3,
+                        "due_condition": "签约",
+                        "due_date": "2026-03-15",
+                        "page": 1,
+                    }
+                ],
+                "attachments": [],
+            }
+        },
+    }
+
+
+def test_persist_stores_structure_links_request_and_copies_source(tmp_path):
+    src = tmp_path / "contract-case"
+    src.mkdir()
+    (src / "main.pdf").write_text("合同正文", encoding="utf-8")
+
+    cid = persist_contract_from_result(
+        _result_with_contract(), request_id="req-c1", tenant="acme-persist", source_path=str(src)
+    )
+    assert cid
+
+    record = get_contract(cid, tenant="acme-persist")
+    assert record is not None
+    assert record["title"] == "采购合同"
+    assert record["amount"] == 99999.0
+    assert record["payment_nodes"][0]["ratio"] == 0.3
+    assert record["request_id"] == "req-c1"
+    # result↔contract 回链
+    by_req = get_contract_by_request_id_admin("req-c1")
+    assert by_req is not None and by_req["contract_id"] == cid
+    # 原件已 copy 进合同库目录
+    assert Path(record["source_path"]).exists()
+
+
+def test_persist_skips_when_no_contract_structure():
+    payload = {"verdict": "manual_review", "extracted_data": {}}
+    assert (
+        persist_contract_from_result(
+            payload, request_id="req-x", tenant=None, source_path="/nonexistent", copy_source=False
+        )
+        is None
+    )

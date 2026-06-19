@@ -25,6 +25,7 @@ from server.platform import config as config_module
 from server.platform.asset_validation import validate_knowledge_assets
 from server.platform.config import get_claude_runtime_report
 from server.platform.source_proxy import prepare_text_proxy
+from server.stores.contract_store import persist_contract_from_result
 from server.stores.memory_store import get_memory_record_by_id, list_memory_records
 from server.stores.request_store import (
     get_request_audit_by_request_id_admin,
@@ -209,6 +210,55 @@ def evaluate_bid_json(
             fork_from_session_id=fork_from_session_id or None,
             schema_name=DEFAULT_OUTPUT_SCHEMA_NAME,
         )
+
+    _invoke_json_command(_run())
+
+
+@app.command("review-contract")
+def review_contract(
+    path: str = typer.Argument(..., help="Path to a contract directory or file."),
+    conversation_id: str = typer.Option("", help="Application conversation id."),
+    resume_session_id: str = typer.Option("", help="Resume a specific Claude session id."),
+    fork_from_session_id: str = typer.Option("", help="Fork from a previous Claude session."),
+) -> None:
+    """Run the inline contract review harness for a contract path."""
+    _ensure_cli_runtime()
+    _invoke_text_command(
+        run_command_full(
+            "review-contract",
+            path,
+            conversation_id=conversation_id or new_conversation_id(),
+            resume_session_id=resume_session_id or None,
+            fork_from_session_id=fork_from_session_id or None,
+        )
+    )
+
+
+@app.command("review-contract-json")
+def review_contract_json(
+    path: str = typer.Argument(..., help="Path to a contract directory or file."),
+    conversation_id: str = typer.Option("", help="Application conversation id."),
+    resume_session_id: str = typer.Option("", help="Resume a specific Claude session id."),
+    fork_from_session_id: str = typer.Option("", help="Fork from a previous Claude session."),
+) -> None:
+    """Run contract review with structured audit-result output, persist the contract to the库."""
+    _ensure_cli_runtime()
+
+    async def _run() -> tuple[dict | list, AgentRunMeta]:
+        payload, meta = await run_command_json(
+            "review-contract",
+            path,
+            conversation_id=conversation_id or new_conversation_id(),
+            resume_session_id=resume_session_id or None,
+            fork_from_session_id=fork_from_session_id or None,
+            schema_name=DEFAULT_OUTPUT_SCHEMA_NAME,
+        )
+        # 把审查抽取的合同结构落入合同库（无 extracted_data.contract 时静默跳过）。
+        if isinstance(payload, dict):
+            persist_contract_from_result(
+                payload, request_id=meta.request_id, tenant=None, source_path=path
+            )
+        return payload, meta
 
     _invoke_json_command(_run())
 
