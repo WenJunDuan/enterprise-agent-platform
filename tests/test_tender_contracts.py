@@ -1,4 +1,4 @@
-"""结构校验：/tender-evaluate-bid 依赖的契约 schema 存在可载 + manual_review_reason 枚举一致。
+"""结构校验：/tender-evaluate 依赖的契约 schema 存在可载 + manual_review_reason 枚举一致。
 
 只断言已入库的 .claude/contracts/* 契约；knowledge/tender/* 规则被 gitignore，
 不在此断言（否则 clean checkout / CI 会误挂）。经真实 loader（load_output_schema）
@@ -11,7 +11,7 @@ import pytest
 
 from server.common.contract import DEFAULT_OUTPUT_SCHEMA_NAME, load_output_schema
 
-# tender-evaluate-bid 五步 harness 声明依赖的契约（均已入库）：
+# tender-evaluate 五步 harness 声明依赖的契约（均已入库）：
 # - 最终结论复用 common/audit-result（= DEFAULT_OUTPUT_SCHEMA_NAME）
 # - S2 事实底稿语义 tender/extract-result；reviewer(默认关) tender/review-delta
 _TENDER_CONTRACTS = [

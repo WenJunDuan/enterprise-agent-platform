@@ -1,4 +1,4 @@
-"""CLI 测试：review-contract / review-contract-json（镜像 tender-evaluate-bid + 落库持久化）。
+"""CLI 测试：review-contract / review-contract-json（镜像 tender-evaluate + 落库持久化）。
 
 验证命令注册 + 转发到 command_adapter（命令名 review-contract、schema=audit-result），
 以及 -json 变体在 run 后调 persist_contract_from_result 落库，不触发真实 Claude。

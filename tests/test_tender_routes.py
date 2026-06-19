@@ -193,7 +193,7 @@ def test_worker_forwards_to_evaluate_bid_and_persists(monkeypatch):
         )
     )
 
-    assert calls["command_name"] == "tender-evaluate-bid"
+    assert calls["command_name"] == "tender-evaluate"
     assert calls["schema_name"] == EVAL_SCHEMA
     assert calls["arguments"] == (str(ALLOWED_DIRECTORY_ROOT),)
     assert calls["opts"]["request_id"] == request_id

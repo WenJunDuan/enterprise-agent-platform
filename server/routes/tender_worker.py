@@ -1,7 +1,7 @@
 """Background task execution for tender bid evaluation.
 
 镜像 ``audit_worker``：信号量限并发 + 硬超时 + 任务状态机更新。区别是调
-``/tender-evaluate-bid`` 五步内联命令（而非 inline audit runner）。结果归档由
+``/tender-evaluate`` 五步内联命令（而非 inline audit runner）。结果归档由
 ``run_command_json → run_agent_json`` 内部的 ``archive_result_payload`` 完成，
 故必须透传 ``request_id`` / ``tenant``，GET 结果端点才能取到。
 """
@@ -31,7 +31,7 @@ _TENDER_SEMAPHORE = asyncio.Semaphore(MAX_CONCURRENT_TENDER)
 
 async def _run_evaluation(*, request_id: str, tenant: str, directory_path: str):
     return await run_command_json(
-        "tender-evaluate-bid",
+        "tender-evaluate",
         directory_path,
         schema_name=DEFAULT_OUTPUT_SCHEMA_NAME,
         request_id=request_id,
