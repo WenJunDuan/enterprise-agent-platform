@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
 from server.platform.paths import MEMORY_INDEX_DB_FILE, PROJECT_ROOT
 from server.platform.sqlite_store import connect_sqlite, describe_sqlite_target, row_to_dict
+
+logger = logging.getLogger(__name__)
 
 
 KNOWLEDGE_MEMORY_ROOT = PROJECT_ROOT / "knowledge" / "memory"
@@ -169,7 +172,11 @@ class SQLiteMemoryStore:
     def _load_memory_files(self) -> list[dict[str, Any]]:
         records: list[dict[str, Any]] = []
         for path in sorted(self.memory_root.rglob("*.json")):
-            payload = json.loads(path.read_text(encoding="utf-8"))
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError) as exc:
+                logger.warning("corrupt/unreadable memory file %s, skipping: %s", path, exc)
+                continue
             try:
                 payload["_file_path"] = str(path.relative_to(PROJECT_ROOT))
             except ValueError:
