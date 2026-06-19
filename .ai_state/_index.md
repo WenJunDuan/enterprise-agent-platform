@@ -5,7 +5,7 @@ version: "9.6.4"
 
 # === PACE 路由状态 ===
 path: "Feature"                   # 活动 sprint=contract-audit-api(Feature,纯加法暴露 contract 子系统); item2 已 completed
-stage: "review"                   # item3 contract-audit-api：impl 全 done(283 passed)；下一门禁=铁律[Review强制]交叉审查(Feature+；纯镜像可轻量，需用户授权 spawn)
+stage: "ship"                     # item3 contract-audit-api 交叉审查 PASS，F1/F2/F3 已修，completed；roadmap contract-audit-platform 主体达成(仅 tender T4 materials-gated 悬挂)
 current_sprint_slug: "2026-06-19-contract-audit-api"
 current_roadmap_slug: "contract-audit-platform"
 skip_polish: false
@@ -49,7 +49,7 @@ counts:
   issues_count: 0
   refactors_count: 0
   systems_count: 1
-  reviews_count: 28
+  reviews_count: 29
   cleanup_count: 1
   compound:
     learning: 4
@@ -67,7 +67,7 @@ pointers:
   latest_architecture_update: "2026-06-19T10:35:39.441Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "review:contract-audit-api:cross-review-gate"
+next_action: "roadmap-complete:contract-audit-platform (仅 tender T4 materials-gated 悬挂)"
 last_subagent: "generator"
 last_subagent_at: "2026-06-02T09:25:27.661Z"
 active_worktrees: []
