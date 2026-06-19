@@ -140,6 +140,7 @@ def test_worker_forwards_to_review_contract_and_persists(monkeypatch, tmp_path):
 
     async def fake_json(command_name, *arguments, schema_name, **opts):
         calls["command_name"] = command_name
+        calls["arguments"] = arguments
         calls["schema_name"] = schema_name
         calls["opts"] = opts
         meta = AgentRunMeta(
@@ -160,6 +161,20 @@ def test_worker_forwards_to_review_contract_and_persists(monkeypatch, tmp_path):
 
     monkeypatch.setattr(worker, "run_command_json", fake_json)
 
+    # 落库走真实 persist 但关掉文件 copy，避免测试往 data/contracts/ 累积真实目录。
+    import server.stores.contract_store as contract_store_module
+
+    def _persist_no_copy(payload, *, request_id, tenant, source_path):
+        return contract_store_module.persist_contract_from_result(
+            payload,
+            request_id=request_id,
+            tenant=tenant,
+            source_path=source_path,
+            copy_source=False,
+        )
+
+    monkeypatch.setattr(worker, "persist_contract_from_result", _persist_no_copy)
+
     asyncio.run(
         worker.execute_contract_review_task(
             request_id=request_id, tenant="acme", directory_path=str(case), source_mode="directory"
@@ -167,8 +182,10 @@ def test_worker_forwards_to_review_contract_and_persists(monkeypatch, tmp_path):
     )
 
     assert calls["command_name"] == "review-contract"
+    assert calls["arguments"] == (str(case),)
     assert calls["schema_name"] == EVAL_SCHEMA
     assert calls["opts"]["request_id"] == request_id
+    assert calls["opts"]["tenant"] == "acme"
     # 任务完成
     record = get_contract_task_admin(request_id)
     assert record is not None and record["status"] == "completed"
