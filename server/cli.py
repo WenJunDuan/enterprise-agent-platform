@@ -241,7 +241,7 @@ def review_contract_json(
     resume_session_id: str = typer.Option("", help="Resume a specific Claude session id."),
     fork_from_session_id: str = typer.Option("", help="Fork from a previous Claude session."),
 ) -> None:
-    """Run contract review with structured audit-result output, persist the contract to the库."""
+    """Run contract review with structured output and persist the contract to the local store."""
     _ensure_cli_runtime()
 
     async def _run() -> tuple[dict | list, AgentRunMeta]:
