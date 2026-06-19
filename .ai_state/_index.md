@@ -4,9 +4,9 @@
 version: "9.6.4"
 
 # === PACE 路由状态 ===
-path: "Feature"                   # 活动 sprint=tender-ingestion(Feature); goal contract-audit-platform 整体偏 System，按 item 切
-stage: "impl"                     # item1 tender-ingestion design/plan/checklist 就绪，从 T1 起；contract items(2a/2b)待后续
-current_sprint_slug: "2026-06-19-tender-ingestion-workflow"
+path: "System"                    # 活动 sprint=contract-audit-feature(System,新子系统); tender-ingestion 可写完成、T4 卡材料并行挂着
+stage: "design"                   # item2 contract-audit-feature 设计已落 design.md，待用户确认后进 impl（铁律[设计先行]）
+current_sprint_slug: "2026-06-19-contract-audit-feature"
 current_roadmap_slug: "contract-audit-platform"
 skip_polish: false
 skip_architecture_check: false
@@ -67,7 +67,7 @@ pointers:
   latest_architecture_update: ""
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "blocked:tender-ingestion:T4:awaiting-user-materials"
+next_action: "await-design-confirm:contract-audit-feature"
 last_subagent: "generator"
 last_subagent_at: "2026-06-02T09:25:27.661Z"
 active_worktrees: []

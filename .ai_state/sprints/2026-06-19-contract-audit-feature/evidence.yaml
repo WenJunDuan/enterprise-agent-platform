@@ -1,0 +1,18 @@
+sprint_slug: 2026-06-19-contract-audit-feature
+collected_evidence:
+  - tool_use_id: "toolu_01AkfjjH1LPHY7Cp5iZeeaFM"
+    tool: "Edit"
+    file: "/Users/mi_manchi/workspace/enterprise-agent-platform/.ai_state/_index.md"
+    timestamp: "2026-06-19T10:15:39.095Z"
+  - tool_use_id: "toolu_0134Dh67K7z2NXajHf5RS5ko"
+    tool: "Edit"
+    file: "/Users/mi_manchi/workspace/enterprise-agent-platform/.ai_state/_index.md"
+    timestamp: "2026-06-19T10:15:45.268Z"
+  - tool_use_id: "toolu_01Rkx9NSHhDsAL9qow1VBpQ2"
+    tool: "Edit"
+    file: "/Users/mi_manchi/workspace/enterprise-agent-platform/.ai_state/roadmap/contract-audit-platform/items.yaml"
+    timestamp: "2026-06-19T10:16:05.301Z"
+  - tool_use_id: "toolu_01UP5jAueVWLZEF5sMS2tBfW"
+    tool: "Edit"
+    file: "/Users/mi_manchi/workspace/enterprise-agent-platform/.ai_state/roadmap/contract-audit-platform/items.yaml"
+    timestamp: "2026-06-19T10:16:21.514Z"
