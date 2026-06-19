@@ -36,6 +36,7 @@ from server.platform.logging_setup import configure_logging, logging_context
 from server.platform.paths import PROJECT_ROOT
 from server.routes.deps import TENANT_KEYS, verify_tenant  # noqa: F401  re-export
 from server.stores.audit_task_store import recover_stale_audit_tasks
+from server.stores.contract_task_store import recover_stale_contract_tasks
 from server.stores.tender_task_store import recover_stale_tender_tasks
 
 configure_logging(
@@ -58,6 +59,7 @@ async def app_lifespan(_: FastAPI):
     settings = get_app_settings()
     recover_stale_audit_tasks(settings.audit_task_running_timeout_seconds)
     recover_stale_tender_tasks(settings.audit_task_running_timeout_seconds)
+    recover_stale_contract_tasks(settings.audit_task_running_timeout_seconds)
     yield
 
 
@@ -256,6 +258,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 # ── route registration ────────────────────────────────────────────────────────
 
 from server.routes import audit as _audit_routes  # noqa: E402
+from server.routes import contract as _contract_routes  # noqa: E402
 from server.routes import health as _health_routes  # noqa: E402
 from server.routes import ocr as _ocr_routes  # noqa: E402
 from server.routes import tender as _tender_routes  # noqa: E402
@@ -263,6 +266,7 @@ from server.routes import tender as _tender_routes  # noqa: E402
 app.include_router(_audit_routes.router, prefix="/audit")
 app.include_router(_ocr_routes.router, prefix="/ocr")
 app.include_router(_tender_routes.router, prefix="/tender")
+app.include_router(_contract_routes.router, prefix="/contract")
 app.include_router(_health_routes.router)
 
 
