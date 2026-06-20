@@ -16,14 +16,17 @@ decisions:
 tasks:
   - id: G1
     title: 验证闸最便宜三件（schema 校验 + 引用解析器 + 算术重算）
-    status: todo
+    status: in_progress      # G1a schema 校验 done；G1b-lite policy_refs 非空 done；G1b-full/G1c 延后
     files:
-      - server/common/contract.py            # apply_schema_semantics 内加 jsonschema.validate
-      - server/common/output_contracts.py    # policy_refs⊆规则集 + evidence_chain 出处解析
-      - server/audit/runner.py               # 把命中规则 ID 集合传入校验器
-      - tests/test_core_pure.py              # 伪造 refs / 缺字段 → 拒/降级 用例
+      - server/common/contract.py            # apply_schema_semantics 内加 jsonschema.validate [done]
+      - server/common/output_contracts.py    # approved/rejected 须引 ≥1 policy_ref [done]
+      - tests/test_contract_registry.py       # 验证闸用例(缺字段/多余/类型/枚举/空refs → 拒) [done]
+      - tests/test_core_pure.py               # _ok helper 补 policy_refs [done]
     accept: "缺 policy_refs/evidence_chain/risk_score 或引用不解析 → JSONContractError 或 manual_review；既有重试环接住"
-    note: "杠杆最高的一刀；同时关闭 round4 F1（BLOCKER）"
+    result_g1a: "jsonschema.validate 在 enrich 前对所有模型输出跑(text/structured 两路)；缺 required/多余字段/类型错/枚举错全拒；265 passed"
+    result_g1b: "approved/rejected 空 policy_refs → 拒(无依据判决)。直击 round4「approved 无 refs 也通过」"
+    g1_deferred: "G1b-full(policy_refs ⊆ 已注入 rule_id 集) 需 domain→rules 管线(规则在 Claude 侧读,Python 不知注入集)；G1c 算术重算 需 OCR 确定性数+比较逻辑。两者列 backlog"
+    note: "杠杆最高的一刀；同时关闭 round4 F1（BLOCKER）的核心"
 
   - id: G2
     title: PLAN 产出类型化任务图（过 schema，替代散文计划）

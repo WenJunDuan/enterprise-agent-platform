@@ -321,7 +321,7 @@ class TestValidateAuditSchema:
             "verdict": "approved",
             "explanation": "合规",
             "reasons": [],
-            "policy_refs": [],
+            "policy_refs": ["EXPENSE-TRAVEL-001"],  # G1b：approved 须引 ≥1 规则
         }
         if extra:
             base.update(extra)

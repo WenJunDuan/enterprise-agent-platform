@@ -159,6 +159,15 @@ def _validate_audit_result(structured_output: StructuredJSON) -> None:
                 "audit result with verdict=manual_review must include a valid manual_review_reason."
             )
 
+    # G1b（round4 F1 幻觉闸）：approved/rejected 是承重结论，必须至少引一条规则依据。
+    # 空 policy_refs 的"通过/拒绝"是无依据判决——schema 只能要求字段存在(可空)，这里补语义闸。
+    if verdict in {"approved", "rejected"}:
+        policy_refs = structured_output.get("policy_refs")
+        if not isinstance(policy_refs, list) or not policy_refs:
+            raise JSONContractError(
+                f"audit result with verdict={verdict} must cite at least one policy_ref."
+            )
+
     _cleanse_risk_dimensions(structured_output)
 
 
