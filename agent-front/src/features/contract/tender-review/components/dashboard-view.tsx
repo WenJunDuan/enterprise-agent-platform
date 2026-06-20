@@ -65,7 +65,7 @@ export function DashboardView({
 }: {
   summary: DashboardSummary
   projects: TenderProject[]
-  onOpenProject: () => void
+  onOpenProject: (projectId: string) => void
 }) {
   return (
     <div className='space-y-4'>
@@ -100,7 +100,7 @@ function ProjectTable({
   onOpenProject,
 }: {
   projects: TenderProject[]
-  onOpenProject: () => void
+  onOpenProject: (projectId: string) => void
 }) {
   const columns = useMemo<ColumnDef<TenderProject>[]>(
     () => [
@@ -124,7 +124,7 @@ function ProjectTable({
               <button
                 type='button'
                 className='min-w-0 text-left'
-                onClick={onOpenProject}
+                onClick={() => onOpenProject(project.id)}
               >
                 <div className='truncate font-medium'>{project.name}</div>
                 <div className='mt-1 truncate text-xs text-muted-foreground'>
@@ -199,7 +199,11 @@ function ProjectTable({
         header: () => <div className='text-right'>操作</div>,
         cell: ({ row }) => (
           <div className='text-right'>
-            <Button variant='outline' size='sm' onClick={onOpenProject}>
+            <Button
+              variant='outline'
+              size='sm'
+              onClick={() => onOpenProject(row.original.id)}
+            >
               {getProjectActionLabel(row.original.status)}
             </Button>
           </div>

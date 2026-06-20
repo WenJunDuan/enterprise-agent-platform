@@ -6,7 +6,7 @@ import type { BackendMenuRouter, BreadcrumbConfig } from './types'
 
 const DEFAULT_AVATAR = '/avatars/01.png'
 
-const MENU_GROUP_ORDER = ['智能报销审核', '智能 OCR', '智能招投标审核'] as const
+const MENU_GROUP_ORDER = ['智能招投标审核', '智能报销审核', '智能 OCR'] as const
 
 const STATIC_BREADCRUMBS: Record<string, BreadcrumbConfig[]> = {
   '/': [{ label: '智能报销审核' }, { label: '报销审核' }],

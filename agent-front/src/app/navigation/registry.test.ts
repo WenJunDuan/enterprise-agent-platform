@@ -2,6 +2,16 @@ import { describe, expect, test } from 'bun:test'
 import { buildNavigationGroups, getBreadcrumbsForPath } from './registry'
 
 describe('navigation registry', () => {
+  test('orders tender audit before reimbursement and OCR menus', () => {
+    const groups = buildNavigationGroups(null)
+
+    expect(groups.map((group) => group.title)).toEqual([
+      '智能招投标审核',
+      '智能报销审核',
+      '智能 OCR',
+    ])
+  })
+
   test('renames reimbursement audit group and entry', () => {
     const groups = buildNavigationGroups(null)
     const reimbursementGroup = groups.find(

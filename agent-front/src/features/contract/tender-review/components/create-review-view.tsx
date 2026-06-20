@@ -43,6 +43,7 @@ type CreateReviewViewProps = {
   progress: number
   isAnalyzing: boolean
   uploadError: boolean
+  submitError: string
   canStart: boolean
   onStart: () => void
   onCancel: () => void
@@ -63,6 +64,7 @@ export function CreateReviewView(props: CreateReviewViewProps) {
       <UploadFilesCard {...props} />
       {props.isAnalyzing ? <AnalyzingCard progress={props.progress} /> : null}
       {props.uploadError ? <UploadError /> : null}
+      {props.submitError ? <SubmitError message={props.submitError} /> : null}
       <div className='flex justify-end gap-3'>
         <Button type='button' variant='outline' onClick={props.onCancel}>
           取消
@@ -447,6 +449,15 @@ function UploadError() {
       <AlertDescription>
         请至少上传 1 个招标文件，并为至少一家投标单位上传文件后再开始分析。
       </AlertDescription>
+    </Alert>
+  )
+}
+
+function SubmitError({ message }: { message: string }) {
+  return (
+    <Alert variant='destructive'>
+      <AlertCircle className='size-4' />
+      <AlertDescription>{message}</AlertDescription>
     </Alert>
   )
 }

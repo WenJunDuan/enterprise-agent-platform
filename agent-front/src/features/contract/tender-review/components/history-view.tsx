@@ -20,8 +20,8 @@ type HistoryViewProps = {
   history: TenderProject[]
   onQuery: (value: string) => void
   onTimeRange: (value: HistoryTimeRange) => void
-  onAnalysis: () => void
-  onReport: () => void
+  onAnalysis: (projectId: string) => void
+  onReport: (projectId: string) => void
 }
 
 const historyGrid =
@@ -106,8 +106,8 @@ function HistoryTable({
   onReport,
 }: {
   history: TenderProject[]
-  onAnalysis: () => void
-  onReport: () => void
+  onAnalysis: (projectId: string) => void
+  onReport: (projectId: string) => void
 }) {
   return (
     <Card className='overflow-hidden'>
@@ -156,14 +156,18 @@ function HistoryRow({
   onReport,
 }: {
   item: TenderProject
-  onAnalysis: () => void
-  onReport: () => void
+  onAnalysis: (projectId: string) => void
+  onReport: (projectId: string) => void
 }) {
   return (
     <div
       className={`grid ${historyGrid} items-center border-t text-sm transition-colors hover:bg-muted/30`}
     >
-      <button type='button' className='min-w-0 px-5 py-4 text-left' onClick={onAnalysis}>
+      <button
+        type='button'
+        className='min-w-0 px-5 py-4 text-left'
+        onClick={() => onAnalysis(item.id)}
+      >
         <div className='truncate font-medium'>{item.name}</div>
         <div className='mt-1 truncate text-xs text-muted-foreground'>
           {item.code}
@@ -181,8 +185,8 @@ function HistoryRow({
         <StatusBadge status={item.status} />
       </div>
       <div className='flex justify-center gap-2 px-4 py-3'>
-        <HistoryAction label='分析中心' onClick={onAnalysis} />
-        <HistoryAction label='审核报告' primary onClick={onReport} />
+        <HistoryAction label='分析中心' onClick={() => onAnalysis(item.id)} />
+        <HistoryAction label='审核报告' primary onClick={() => onReport(item.id)} />
       </div>
     </div>
   )

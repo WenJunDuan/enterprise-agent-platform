@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test'
 import { tenderReviewMockData } from './mock-data'
-import { buildDashboardSummary, filterReviewHistory } from './model'
+import {
+  buildDashboardSummary,
+  buildTenderReviewData,
+  filterReviewHistory,
+  mapTenderProject,
+} from './model'
 import type { TenderReviewMockData } from './types'
 
 describe('contract tender review model', () => {
@@ -77,5 +82,213 @@ describe('contract tender review model', () => {
       'BJ-2026-ZB-006',
     ])
     expect(weekItems).toEqual([])
+  })
+
+  test('mapTenderProject derives tender-review project fields from backend detail and compare', () => {
+    const project = mapTenderProject(
+      {
+        project_id: 'project-1',
+        tender_no: 'WX-2026-001',
+        title: '无锡市政管廊施工项目',
+        tenderee: '无锡城投',
+        method: '综合评估法',
+        control_price: '120000000',
+        funding_type: 'state_funded',
+        status: 'done',
+        created_at: '2026-06-20T02:30:00+00:00',
+        updated_at: '2026-06-20T06:30:00+00:00',
+        bidder_count: 2,
+        bids: [
+          {
+            request_id: 'req-a',
+            claim_id: '中建一局',
+            status: 'completed',
+            verdict: 'approved',
+          },
+          {
+            request_id: 'req-b',
+            claim_id: '中铁二局',
+            status: 'completed',
+            verdict: 'manual_review',
+          },
+        ],
+        recommended_bidder: '中建一局',
+        compare_stale: false,
+      },
+      {
+        project_id: 'project-1',
+        result: {
+          project_id: 'project-1',
+          bidders: [
+            {
+              claim_id: '中建一局',
+              price_score: 38,
+              other_score: 51,
+              total_score: 89,
+              rank: 1,
+              status: 'scored',
+            },
+          ],
+          recommended: '中建一局',
+          provisional: false,
+          warnings: [],
+          explanation: '推荐排名第一投标人。',
+          policy_refs: [],
+        },
+        stale: false,
+        computed_at: '2026-06-20T07:00:00+00:00',
+        input_result_ids: ['req-a', 'req-b'],
+      }
+    )
+
+    expect(project).toEqual({
+      id: 'project-1',
+      name: '无锡市政管廊施工项目',
+      code: 'WX-2026-001',
+      method: '综合评估法',
+      bidderCount: 2,
+      score: '89',
+      date: '2026-06-20',
+      status: 'done',
+      stage: '已完成',
+      progress: 100,
+      riskCount: 1,
+      recommendedBidder: '中建一局',
+    })
+  })
+
+  test('buildTenderReviewData maps backend result and compare payloads into analysis/report data', () => {
+    const data = buildTenderReviewData({
+      project: {
+        project_id: 'project-1',
+        tender_no: 'WX-2026-001',
+        title: '无锡市政管廊施工项目',
+        tenderee: null,
+        method: '综合评估法',
+        control_price: '120000000',
+        funding_type: 'state_funded',
+        status: 'done',
+        created_at: '2026-06-20T02:30:00+00:00',
+        updated_at: '2026-06-20T06:30:00+00:00',
+        bidder_count: 2,
+        bids: [
+          {
+            request_id: 'req-a',
+            claim_id: '中建一局',
+            status: 'completed',
+            verdict: 'approved',
+          },
+          {
+            request_id: 'req-b',
+            claim_id: '中铁二局',
+            status: 'completed',
+            verdict: 'approved',
+          },
+        ],
+        recommended_bidder: '中建一局',
+        compare_stale: false,
+      },
+      resultSummaries: [
+        {
+          request_id: 'req-a',
+          claim_id: '中建一局',
+          verdict: 'approved',
+          manual_review_reason: null,
+          created_at: '2026-06-20T06:00:00+00:00',
+        },
+      ],
+      selectedResult: {
+        claim_id: '中建一局',
+        verdict: 'approved',
+        explanation: '资格和技术响应满足招标要求。',
+        extracted_data: {
+          criteria: {
+            method: '综合评估法',
+            items: [
+              {
+                item: '技术方案',
+                max: 30,
+                scoring_rule: '按技术方案完整性评分。',
+                source_ref: '招标文件 p.18',
+                tag: 'scored',
+              },
+            ],
+          },
+          scoring: [
+            {
+              item: '技术方案',
+              max: 30,
+              score: 27,
+              status: 'scored',
+              basis: '施工组织设计完整。',
+            },
+          ],
+        },
+        evidence_chain: [
+          {
+            source: '投标文件 p.20',
+            finding: '施工组织设计覆盖关键工序。',
+            conclusion: '技术方案可得分。',
+          },
+        ],
+      },
+      compare: {
+        project_id: 'project-1',
+        result: {
+          project_id: 'project-1',
+          bidders: [
+            {
+              claim_id: '中建一局',
+              price_score: 38,
+              other_score: 51,
+              total_score: 89,
+              rank: 1,
+              status: 'scored',
+            },
+            {
+              claim_id: '中铁二局',
+              price_score: 36,
+              other_score: 50,
+              total_score: 86,
+              rank: 2,
+              status: 'scored',
+            },
+          ],
+          recommended: '中建一局',
+          provisional: false,
+          warnings: ['有效投标人数量为 2，建议复核竞争性。'],
+          explanation: '中建一局综合排名第一。',
+          policy_refs: ['tender_evalmethod_004'],
+        },
+        stale: false,
+        computed_at: '2026-06-20T07:00:00+00:00',
+        input_result_ids: ['req-a', 'req-b'],
+      },
+    })
+
+    expect(data.projectInfo).toMatchObject({
+      name: '无锡市政管廊施工项目',
+      code: 'WX-2026-001',
+      method: '综合评估法',
+      controlPrice: '120000000',
+    })
+    expect(data.reviewBidders.map((bidder) => [bidder.name, bidder.total])).toEqual([
+      ['中建一局', 89],
+      ['中铁二局', 86],
+    ])
+    expect(data.categories[0]?.items[0]).toMatchObject({
+      title: '技术方案',
+      got: 27,
+      max: 30,
+      status: 'pass',
+    })
+    expect(data.paragraphs[0]?.text).toContain('施工组织设计覆盖关键工序')
+    expect(data.compareGroups[0]?.rows.map((row) => row.cells)).toEqual([
+      [38, 36],
+      [51, 50],
+    ])
+    expect(data.compareNotice?.warnings).toEqual([
+      '有效投标人数量为 2，建议复核竞争性。',
+    ])
   })
 })
