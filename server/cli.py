@@ -456,5 +456,38 @@ def migrate_storage_command() -> None:
     _echo_json(migrate_storage())
 
 
+@app.command("credit-check")
+def credit_check(
+    company: str = typer.Argument(..., help="企业名称或统一社会信用代码。"),
+) -> None:
+    """查询企业信用（外部 API，G3）。
+
+    需配置 CREDIT_API_URL / CREDIT_API_KEY；未配置或查询失败时提示转人工审核
+    （评分项保持 manual_review，绝不臆造信用结论）。
+    """
+    from server.ops.credit_api import credit_api_available, lookup_company_credit
+
+    if not credit_api_available():
+        _echo_json(
+            {
+                "status": "not_configured",
+                "company": company,
+                "detail": "未配置 CREDIT_API_URL/CREDIT_API_KEY；该项需人工审核（manual_review）",
+            }
+        )
+        return
+    result = _run_cli(lookup_company_credit(company))
+    if result is None:
+        _echo_json(
+            {
+                "status": "unavailable",
+                "company": company,
+                "detail": "查询失败或结果未通过契约校验，转人工审核",
+            }
+        )
+        return
+    _echo_json({"status": "ok", "company": company, "credit": result})
+
+
 if __name__ == "__main__":
     app()

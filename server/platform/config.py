@@ -310,6 +310,33 @@ def get_app_settings() -> AppSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class CreditApiSettings:
+    """外部企业信用查询 API 配置（G3 工具契约化）。
+
+    未配置（``url``/``key`` 任一为空）→ 工具跳过、评分项保持 ``manual_review``（人工）。
+    配置后（填 ``CREDIT_API_URL`` + ``CREDIT_API_KEY``）→ 自动调用，无需改代码。
+    不缓存：每次读 env，便于在部署机上填好 url/key 后无需重启即生效。
+    """
+
+    url: str
+    key: str
+    timeout_seconds: float
+
+    @property
+    def configured(self) -> bool:
+        return bool(self.url.strip()) and bool(self.key.strip())
+
+
+def get_credit_api_settings() -> CreditApiSettings:
+    """Read external credit-API settings from env (uncached)."""
+    return CreditApiSettings(
+        url=os.getenv("CREDIT_API_URL", "").strip(),
+        key=os.getenv("CREDIT_API_KEY", "").strip(),
+        timeout_seconds=float(os.getenv("CREDIT_API_TIMEOUT_SECONDS", "10")),
+    )
+
+
+@dataclass(frozen=True, slots=True)
 class AuditSettings:
     """内联审核行为开关。
 

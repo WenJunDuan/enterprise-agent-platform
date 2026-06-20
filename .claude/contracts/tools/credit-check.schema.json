@@ -1,0 +1,56 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "company_credit_check_result",
+  "description": "外部企业信用查询 API 的结果契约（G3）。工具拿到原始响应后先按本 schema 校验，校验不过则丢弃→评分项保持 manual_review。接入真实 API 时，若其原始字段名不同，在工具里加一层映射规范成本 schema 即可。",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "query": {
+      "type": "string",
+      "description": "查询输入（企业名称或统一社会信用代码）"
+    },
+    "company_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "unified_social_credit_code": {
+      "type": "string",
+      "minLength": 1,
+      "description": "统一社会信用代码"
+    },
+    "operating_status": {
+      "type": "string",
+      "enum": ["在营", "存续", "注销", "吊销", "迁出", "停业", "经营异常", "未知"]
+    },
+    "is_abnormal": {
+      "type": "boolean",
+      "description": "是否被列入经营异常名录"
+    },
+    "risk_flags": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "风险标签，如 严重违法失信 / 失信被执行人 / 重大税收违法"
+    },
+    "administrative_penalties": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "date": { "type": "string" },
+          "authority": { "type": "string" },
+          "reason": { "type": "string" }
+        }
+      }
+    },
+    "source": {
+      "type": "string",
+      "description": "数据来源标识，如 国家企业信用信息公示系统 / 天眼查 / 企查查"
+    },
+    "queried_at": {
+      "type": "string",
+      "description": "查询时间（ISO 8601）"
+    }
+  },
+  "required": ["company_name", "unified_social_credit_code", "operating_status"]
+}
