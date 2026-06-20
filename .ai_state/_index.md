@@ -4,9 +4,9 @@
 version: "9.6.4"
 
 # === PACE 路由状态 ===
-path: "System" # 活动 sprint=2026-06-20-tender-criteria-from-bid-doc(System,tender 评标改造)；backend-hardening 已 ship
-stage: "design" # tender-criteria 设计已落档(下会话实现 T1-T5)；上个 backend-hardening 已 ship(6项+review PASS,301 passed,8 commits)
-current_sprint_slug: "2026-06-20-tender-criteria-from-bid-doc"
+path: "System" # tender-criteria + tender-task-api-parity 两 sprint 本会话均实现完成(319 passed)；下一步=前端 tender 页对接(新 sprint)
+stage: "review" # tender-criteria: impl+cc-review PASS(codex BLOCKED 待网关恢复)；tender-task-api-parity: impl+测试 done。两者已 commit/全绿
+current_sprint_slug: "2026-06-20-tender-task-api-parity"
 current_roadmap_slug: "" # 跨切面 goal，非单一 roadmap item
 skip_polish: false
 skip_architecture_check: false
@@ -49,7 +49,7 @@ counts:
   issues_count: 0
   refactors_count: 0
   systems_count: 4
-  reviews_count: 35
+  reviews_count: 37
   cleanup_count: 1
   compound:
     learning: 4
@@ -58,8 +58,8 @@ counts:
     explore: 0
 # === Pointers (指向最新相关文件) ===
 pointers:
-  latest_design: "sprints/2026-06-20-tender-criteria-from-bid-doc/design.md"
-  latest_review: "sprints/2026-06-19-contract-audit-api/reviews/summary.md"
+  latest_design: "sprints/2026-06-20-tender-task-api-parity/design.md"
+  latest_review: "sprints/2026-06-20-tender-criteria-from-bid-doc/reviews/cc-review.md"
   latest_cleanup: "sprints/2026-06-19-contract-audit-feature/cleanup-pass.md"
   latest_brainstorm: ""
   latest_decisions:
@@ -78,7 +78,7 @@ pointers:
   latest_architecture_update: "2026-06-20T01:29:08.936Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "下会话实现 tender 评标改造：读 sprints/2026-06-20-tender-criteria-from-bid-doc/{design.md,checklist.yaml}，按 T1→T5 实现(System 路径,impl 后走 review)。前置已做:删 r2024007 样例。上个 backend-hardening 已 ship(backlog 见其 checklist)"
+next_action: "tender-criteria(评标改造 T1-T5+优化) 与 tender-task-api-parity(tender 路由对齐 audit) 两 sprint 本会话均实现完成并 commit(319 passed/ruff)。下一步(用户定下个 sprint)=前后端对接：建 agent-front 的 tender 页(features/tender/)消费已就绪的 /tender 全套接口。待用户决:是否加 GET /{域}/results 历史端点(删任务不丢结论回看)。补跑 codex review --base 13d58a7(网关恢复后,见 tender-criteria/reviews/codex-review.md)"
 last_subagent: "generator"
 last_subagent_at: "2026-06-02T09:25:27.661Z"
 active_worktrees: []
@@ -117,6 +117,18 @@ fingerprint: ""
 > 本文件由 Athena 自动维护. 不要手工修改 frontmatter 字段以外的部分除非你知道你在做什么.
 
 ## 当前状态
+
+2026-06-20（深夜 · tender 评标改造 + server API 对等，两 sprint 落地）: **`tender-criteria-from-bid-doc`
+实现完成**(T1-T5)——评标标准改为直读招标文件第三章《评标办法》出会话 `criteria`(新契约
+`contracts/tender/criteria.schema.json` + `extracted_data.criteria` 随结论落 SQLite)，翻护栏(直读=权威)，
+承重 `policy_refs` 引通则层真实 rule_id / criteria 走 `evidence_chain`(对齐 H1 真伪闸)，清 statute/项目层死引用；
++ 用户运营模型优化(单投标人边界 / 捕获横比数据 / claim_id 稳定化 / criteria 跨标人一致)。cc-review **PASS**
+(3 非阻塞 CONCERNS)，codex review **BLOCKED**(gpt-5.5 网关 3 次 stream disconnected，指令固化待恢复补跑)。
+**`tender-task-api-parity` 实现完成**——tender 路由补齐 list/retry/delete + 准入闸 + worker F4/F5 加固，与
+audit 完全对等(数据回看链路 submit→list→get result 两域可用；store 层泛型 TaskStore + result_store 早已共用)。
+**319 passed/ruff**，本会话 6 commits。下一步=前端 tender 页对接(新 sprint，前端 features/tender/ 待建)。
+注:删无用记忆 project_model_gateway；tracked tool-trace.jsonl 已 gitignore(防 key 片段入库)。待用户决:是否加
+`GET /{域}/results` 历史端点(删任务后仍可回看结论)。
 
 2026-06-20（晚 · 两个新 sprint）: **`backend-hardening` 已 ship** — 收口 round4/round5 两轮一致认定的
 基础设施/正确性债（H1 真伪闸默认开+F3 / H2 F6 原子化 / H3 F4·F5 async / H4 F2 租户子树隔离），交叉审查
@@ -205,6 +217,7 @@ slug 拆分为独立 sprint 目录；`lessons.md` 整体保留为
 - `docs/` — 项目参考文档 (开发指南 / 前端对接 / audit-skills)，非状态机文件
 
 ## 历史 (由 pace-continuator hook 自动追加, 最多保留近 10 条)
+- `2026-06-20 06:53:12`: stage=design sprint=2026-06-20-tender-criteria-from-bid-doc turn-end
 
 - `2026-06-20 02:49:56`: stage=ship sprint=2026-06-20-agent-capability-redesign turn-end
 - `2026-06-20 01:47:27`: stage=impl sprint=2026-06-20-agent-capability-redesign turn-end
@@ -215,6 +228,5 @@ slug 拆分为独立 sprint 目录；`lessons.md` 整体保留为
 - `2026-06-19 01:40:10`: stage=review sprint=2026-06-19-review-backend-refactor turn-end
 - `2026-06-18 15:25:31`: stage=ship sprint=2026-06-18-tender-domain turn-end
 - `2026-06-17 10:00:43`: stage=ship sprint=2026-06-17-ocr-http-api turn-end
-- `2026-06-17 09:53:50`: stage=ship sprint= turn-end
 
 - 2026-06-02 [migrate] v9.6.2(legacy flat) → v9.6.4. 备份见 `.ai_state.backup-*`。
