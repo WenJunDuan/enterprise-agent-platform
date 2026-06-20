@@ -77,13 +77,19 @@ tasks:
 
   - id: G4
     title: 记忆三层 + 衰减 + 规则版本绑定（先修 tender 枚举）
-    status: todo
+    status: partial          # tracked 行为核心(SKILL)done；schema 字段在 gitignored，用户侧应用
     files:
-      - knowledge/_schema/case-memory.schema.json   # 加 tender 域枚举 + valid_until/superseded_by/decided_under_rule_version
-      - server/stores/memory_store.py
-      - .claude/skills/common/memory-query/SKILL.md  # 召回须按当前规则复检
+      - .claude/skills/common/memory-query/SKILL.md  # done：加三层(制度>案例>工作)+规则版本复检+衰减+陈旧标记
+    result_tracked: >
+      memory-query SKILL 已写入 G4 核心行为：三层记忆优先级(制度=ground truth>案例=仅建议>工作)、
+      案例记忆 decided_under_rule_version 低于当前规则版本须复检、superseded_by/valid_until 陈旧标记、
+      置信衰减、人工否决先例只提示不自动判。memory_store(sqlite)domain 为自由 TEXT 不卡 enum，
+      tender 记忆本就能进索引(F12 的"存不进"仅卡 Claude 侧 distill 的 schema 校验)。
+    user_todo_gitignored: >
+      以下在 gitignored knowledge/_schema/case-memory.schema.json，需你在部署侧改(CC 不入库)：
+      ① domain enum ["expense","hr","legal"] → ["expense","tender","ocr"](去死域 hr/legal,加 tender,修 F12)；
+      ② 加字段 valid_until / superseded_by / decided_under_rule_version(支撑上面 SKILL 的复检/衰减)。
     accept: "tender 记忆可存可校验；召回带衰减；规则升版后旧版本记忆自动标陈旧"
-    note: "现状 case-memory.schema.json 域枚举缺 tender，tender 记忆存不进（round4 F12）"
 
   - id: G5
     title: 人工否决 → 案例记忆 回路（唯一复利反馈）
