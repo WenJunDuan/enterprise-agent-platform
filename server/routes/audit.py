@@ -15,7 +15,7 @@ from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, ValidationError
 
 from server.core import enrich_audit_decision
-from server.routes.audit_worker import schedule_directory_audit_task
+from server.routes.audit_worker import admission_available, schedule_directory_audit_task
 from server.routes.deps import verify_tenant
 from server.routes.upload_helpers import (
     materialize_upload_submission,
@@ -86,6 +86,9 @@ async def audit_submit(
     authorization: str | None = Header(None),
 ) -> AuditSubmitAcceptedResponse:
     tenant = verify_tenant(authorization)
+    # round4 F5：准入闸——在途任务满则早拒（在写上传文件/建任务记录之前），不再无界接单。
+    if not admission_available():
+        raise HTTPException(status_code=503, detail="审核队列已满，请稍后重试")
     request_id = new_request_id()
 
     content_type = request.headers.get("content-type", "")
@@ -199,6 +202,9 @@ async def retry_audit_task(
     if not case_path:
         raise HTTPException(status_code=400, detail="Audit task has no source path to re-audit")
     mode = str(record.get("mode") or "directory")
+    # round4 F5：准入闸——在途任务满则拒，不在转移为 running 之前先把队列撑爆。
+    if not admission_available():
+        raise HTTPException(status_code=503, detail="审核队列已满，请稍后重试")
     started_at = utc_now()
     # round4 F6：原子状态转移替代"读 status→判→写"。仅当当前非 running 时占位为 running；
     # 并发两次 retry 只有一次成功，另一次回 409，杜绝双重排程/双重成本。
