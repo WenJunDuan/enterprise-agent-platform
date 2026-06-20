@@ -99,5 +99,5 @@ tasks:
     deleted: "contract.py/contract_worker.py/contract_store.py/contract_task_store.py + review-contract.md + agents/legal/ + agents/hr/ + contracts/legal/ + 4 contract 测试 + system-contract-audit.md (15 文件)"
     accept: "死域从路由与 plumbing 移除；task store/route/worker 收敛为泛型 TaskPipeline"
     result_g0a: "死域删除完成；260 passed/ruff clean；无残留死域引用(contract schema 系统 server/common/contract.py 保留，与 legal 域无关)"
-    g0b_deferred: "泛型化 TaskPipeline 延后：删 contract 后仅剩 audit/tender 2 份副本(非3)，价值降；触及 working audit 路径有风险；按 round4 优先级(F7/F8=P5 < F1=P1)让位 G1。列 backlog"
+    g0b_done: "泛型化完成：新 server/stores/task_store.py(TaskStore，表名白名单校验) 收敛 audit/tender 两 store 的 96% 雷同逻辑；audit_task_store/tender_task_store 退化为薄包装(绑表名+导出同名函数,调用方零改)；audit 保留 legacy backfill。15 store 测试+272 全量+6 守卫全过,零回归。worker/route 层(80%/72% 雷同)未泛型化(域差异更多,留 backlog)"
     note: "round4 F7+F8；先减熵后抽象，先于 G2/G3"
