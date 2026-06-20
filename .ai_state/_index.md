@@ -4,9 +4,9 @@
 version: "9.6.4"
 
 # === PACE 路由状态 ===
-path: "System" # 活动 sprint=agent-capability-redesign(System,跨切面架构); contract-audit-platform 主体已达成
-stage: "ship" # agent-capability-redesign G0-G5 全触达+两批交叉审查PASS+287passed+pushed；backlog/用户TODO 在其 checklist.yaml(backlog:/user_todo: 段)。新会话=干净起点
-current_sprint_slug: "2026-06-20-agent-capability-redesign"
+path: "System" # 活动 sprint=2026-06-20-tender-criteria-from-bid-doc(System,tender 评标改造)；backend-hardening 已 ship
+stage: "design" # tender-criteria 设计已落档(下会话实现 T1-T5)；上个 backend-hardening 已 ship(6项+review PASS,301 passed,8 commits)
+current_sprint_slug: "2026-06-20-tender-criteria-from-bid-doc"
 current_roadmap_slug: "" # 跨切面 goal，非单一 roadmap item
 skip_polish: false
 skip_architecture_check: false
@@ -48,8 +48,8 @@ counts:
   features_count: 2
   issues_count: 0
   refactors_count: 0
-  systems_count: 2
-  reviews_count: 34
+  systems_count: 4
+  reviews_count: 35
   cleanup_count: 1
   compound:
     learning: 4
@@ -58,7 +58,7 @@ counts:
     explore: 0
 # === Pointers (指向最新相关文件) ===
 pointers:
-  latest_design: "sprints/2026-06-19-contract-audit-api/design.md"
+  latest_design: "sprints/2026-06-20-tender-criteria-from-bid-doc/design.md"
   latest_review: "sprints/2026-06-19-contract-audit-api/reviews/summary.md"
   latest_cleanup: "sprints/2026-06-19-contract-audit-feature/cleanup-pass.md"
   latest_brainstorm: ""
@@ -78,7 +78,7 @@ pointers:
   latest_architecture_update: "2026-06-20T01:29:08.936Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "idle:agent-capability-redesign 完成。backlog/用户TODO 归各 sprint checklist.yaml(本 sprint backlog:/user_todo: 段;litellm key 见 review-backend-refactor/summary.md;存储项见 logging-and-storage/ship.md)。新会话听用户新方向"
+next_action: "下会话实现 tender 评标改造：读 sprints/2026-06-20-tender-criteria-from-bid-doc/{design.md,checklist.yaml}，按 T1→T5 实现(System 路径,impl 后走 review)。前置已做:删 r2024007 样例。上个 backend-hardening 已 ship(backlog 见其 checklist)"
 last_subagent: "generator"
 last_subagent_at: "2026-06-02T09:25:27.661Z"
 active_worktrees: []
@@ -117,6 +117,13 @@ fingerprint: ""
 > 本文件由 Athena 自动维护. 不要手工修改 frontmatter 字段以外的部分除非你知道你在做什么.
 
 ## 当前状态
+
+2026-06-20（晚 · 两个新 sprint）: **`backend-hardening` 已 ship** — 收口 round4/round5 两轮一致认定的
+基础设施/正确性债（H1 真伪闸默认开+F3 / H2 F6 原子化 / H3 F4·F5 async / H4 F2 租户子树隔离），交叉审查
+REWORK→修(M1/F1/F4/E2)→**301 passed/ruff**，8 commits。**`tender-criteria-from-bid-doc` 设计就绪待实现**
+（下会话）：评标标准改为从招标文件第三章直读(=会话项目规则)，删预建项目层 `{编号}.rules.json`（已删 r2024007
+样例），翻护栏，与 H1 真伪闸对齐(policy_refs 引法规 / criteria 走 evidence_chain)。详见两 sprint 的 design.md/checklist.yaml。
+注：`tender_worker` 未吃到 backend-hardening 的 async 加固（另案 backlog）。
 
 2026-06-20（agent-capability-redesign goal **完成**）: 用户驱动的跨切面架构 sprint（依据
 `sprints/2026-06-19-review-backend-refactor/reviews/round4-fullstack-review.md`）。五诉求收敛为
