@@ -1,0 +1,19 @@
+sprint: 2026-06-20-storage-restructure
+title: 存储结构改造 — submissions 域命名空间 + tender 项目层级
+path: System
+status: done                  # 清死数据+设计+codex review+实施+代码交叉审查 全完成;357 passed/ruff
+
+result: >
+  data/submissions/<tenant>/<domain>/[<project_id>/]<request_id>/ 新结构落地。
+  死数据已清(data/contracts 死合同域 + smoke 测试目录)。audit→audit/ ocr→ocr/ tender→tender/<project>/。
+  H4 租户隔离保持(tenant 最外层) + 新增跨域拒绝 + symlink 逃逸防护 + maintenance 适配新叶子结构。
+
+review:
+  codex_design: "APPROVE-WITH-CHANGES(4 P1 全纳入:unbound sentinel/build_case_dir 复用 tenant 白名单/validate 加 domain/maintenance 递归)。reviews/codex-design-review.md"
+  codex_impl: "REWORK→fixed:P1 orphan symlink 逃逸 + P2 domain 拓扑/测试。reviews/codex-impl-review.md"
+  cc_impl: "PASS(无安全漏洞,1 行为变更须文档化)。reviews/cc-impl-review.md"
+
+behavior_change:
+  - "directory 模式外部调用方现须把文件放 <tenant>/<domain>/[<project>/]<rid>/(旧为 <tenant>/<rid>/);upload 模式自动落新结构,前端不受影响"
+
+next: "用户需求 #29:查上传方式(directory+upload 两种)+ 加全地址读取模式(对外友好);#30 前端调整后再联调。directory 模式新结构约定在 #29 一并明确"
