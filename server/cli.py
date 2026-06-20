@@ -489,5 +489,33 @@ def credit_check(
     _echo_json({"status": "ok", "company": company, "credit": result})
 
 
+@app.command("override-result")
+def override_result(
+    request_id: str = typer.Argument(..., help="被否决/改判的审核 request_id。"),
+    human_verdict: str = typer.Argument(..., help="人工判定：approved / rejected / manual_review。"),
+    reason: str = typer.Option("", help="否决/改判理由（高价值，供 distill 提炼）。"),
+) -> None:
+    """记录人工对某审核结论的否决/改判（G5 复利反馈回路）。
+
+    据此由 distill-memory 提炼成高置信案例记忆；下次同型案件经 memory-query 召回为风险提示
+    （仍按当前规则复检，不自动判）。
+    """
+    from server.stores.override_store import record_override
+
+    record = get_result_record_by_request_id_admin(request_id=request_id)
+    original = record.get("verdict") if isinstance(record, dict) else None
+    record_override(
+        request_id, human_verdict=human_verdict, original_verdict=original, reason=reason or None
+    )
+    _echo_json(
+        {
+            "status": "recorded",
+            "request_id": request_id,
+            "original_verdict": original,
+            "human_verdict": human_verdict,
+        }
+    )
+
+
 if __name__ == "__main__":
     app()
