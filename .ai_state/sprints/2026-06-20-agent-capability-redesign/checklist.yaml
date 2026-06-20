@@ -40,7 +40,16 @@ tasks:
 
   - id: G3
     title: 工具契约化（外部 API 一个强 I/O 契约 + 结果过闸）
-    status: todo             # 用户改定(2026-06-20)：建全部代码+env，按 config 门控；无接口时跳过→人工
+    status: done             # 脚手架全建好+env配好+CLI可用；未配置→跳过人工，填url+key即用
+    result: >
+      config.CreditApiSettings(CREDIT_API_URL/KEY/TIMEOUT,不缓存,env改即生效) +
+      ops/credit_api.py(httpx 工具,未配置→None,配置→调用+结果过 credit-check 契约校验,任何失败优雅降级→None) +
+      contracts/tools/credit-check.schema.json(结果强契约) + .env.example(占位+接入说明) +
+      cli credit-check(可直接运行的调用点) + 5 测试(未配置/成功/坏响应/HTTP错/available)。272 passed。
+      → 用户后续只需填 CREDIT_API_URL+CREDIT_API_KEY 进 env，credit-check 即用，无需改代码。
+    followup: >
+      «自动在评标内联流程中调用»未接：投标人企业名在命令执行中途才抽出(鸡生蛋)，需两遍流程或
+      把工具暴露成 Claude 可调 skill。当前 CLI 是直接可用面；流程内自动注入留 backlog。
     spec: >
       用户(2026-06-20)：目前没有企业信用/发票查验接口，后面去争取。现在审核遇 requires_external_data
       直接跳过→人工审核(manual_review)。但代码全部做好、环境变量也配好——后面只要复制 api url+key
