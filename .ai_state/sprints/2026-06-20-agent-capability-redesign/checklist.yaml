@@ -60,7 +60,7 @@ tasks:
     result: >
       config.CreditApiSettings(CREDIT_API_URL/KEY/TIMEOUT,不缓存,env改即生效) +
       ops/credit_api.py(httpx 工具,未配置→None,配置→调用+结果过 credit-check 契约校验,任何失败优雅降级→None) +
-      contracts/tools/credit-check.schema.json(结果强契约) + .env.example(占位+接入说明) +
+      contracts/tools/credit-check.schema.json(结果强契约) + enterprise-agent.env.example(并入 credit 段,占位+接入说明) +
       cli credit-check(可直接运行的调用点) + 5 测试(未配置/成功/坏响应/HTTP错/available)。272 passed。
       → 用户后续只需填 CREDIT_API_URL+CREDIT_API_KEY 进 env，credit-check 即用，无需改代码。
     followup: >
@@ -74,7 +74,7 @@ tasks:
       - server/platform/config.py            # 加 CREDIT_API_URL/CREDIT_API_KEY env + credit_api_configured 标志
       - server/common/external_tools.py      # 新：企业信用查询工具(httpx)；未配置→None(跳过)；配置→调用+结果过 schema
       - .claude/contracts/tools/credit-check.schema.json  # 新：外部 API 结果 I/O 契约
-      - .env.example                          # 新：占位 CREDIT_API_URL= / CREDIT_API_KEY=
+      - enterprise-agent.env.example          # 并入 credit 段(CREDIT_API_URL/KEY/TIMEOUT)；不再单建 .env.example
       - tests/test_external_tools.py          # 已配置(mock 成功)/未配置→跳过/坏响应→拒
     accept: >
       代码+env 全做好；未配置(无 URL/KEY)→工具返 None→评分项保持 manual_review(人工)；
