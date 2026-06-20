@@ -1,0 +1,64 @@
+sprint: 2026-06-20-tender-data-model
+title: Tender 数据模型优化 — 招标项目实体 + 多投标人追加 + 回看
+path: System
+owner: claude-code
+design: design.md
+status: in_progress              # 设计 + codex review(APPROVE-WITH-CHANGES) 完成；Phase 1 实施中
+goal: true                       # 用户 2026-06-20「设为 goal 开始实施」
+
+review_design:
+  codex: "APPROVE-WITH-CHANGES — 5 findings 全纳入(名册合并/幂等建/archive 显式参数/group_id 不泄漏/API 收敛)。见 reviews/codex-design-review.md"
+  frontend_align: "agent-front tender-review/types.ts TenderProject 作 schema 金标准(code/method/status/controlPrice/rank/compare)"
+
+phase1_tasks:
+  - id: P1-T1
+    title: tender_project_store.py — projects 实体 CRUD + get-or-create 幂等
+    status: planned
+    files: [server/stores/tender_project_store.py]
+    accept: "建表(project_id/tenant/tender_no/title/tenderee/method/control_price/status/时间戳)+UNIQUE(tenant,tender_no) WHERE tender_no NOT NULL;get_or_create 幂等;list/get(tenant 隔离)"
+
+  - id: P1-T2
+    title: 泛型 TaskStore 加 group_id 列 + tender wrapper
+    status: planned
+    files: [server/stores/task_store.py, server/stores/tender_task_store.py]
+    accept: "TaskRecord 加 group_id;CREATE+幂等 ALTER+索引(tenant,group_id);list 加 group_id 过滤;tender 导出 list_tender_tasks_by_project;group_id 不进 tender 路由 DTO(只 project_id)"
+
+  - id: P1-T3
+    title: results 加 project_id + archive 显式参数透传
+    status: planned
+    files: [server/stores/result_store.py, server/common/json_bridge.py, server/common/command_adapter.py]
+    accept: "results 加 project_id 列+幂等 ALTER+索引;archive_result_payload/run_agent_json 加显式可选 project_id 参数(非**opts);get_results_by_project(tenant,project_id);audit 不传零影响"
+    depends_on: [P1-T1]
+
+  - id: P1-T4
+    title: tender 路由 5 端点 + worker 透传 project_id
+    status: planned
+    files: [server/routes/tender.py, server/routes/tender_worker.py]
+    accept: >
+      POST/GET /tender/projects(幂等建/列)、GET /projects/{id}(详情+名册合并 results∪活跃 tasks)、
+      POST /projects/{id}/evaluate(挂 project)、GET /projects/{id}/results(走 results.project_id 回看)；
+      worker 透传 project_id 进 run_command_json;旧 /tender/evaluate 挂 NULL 不自动建。
+    depends_on: [P1-T1, P1-T2, P1-T3]
+
+  - id: P1-T5
+    title: .claude 命令钉 extracted_data.tender_project_id
+    status: planned
+    files: [.claude/commands/tender-evaluate.md]
+    accept: "把散文'招标项目标识留 extracted_data'改为钉 extracted_data.tender_project_id(招标编号优先)"
+
+  - id: P1-T6
+    title: 测试 + 验收
+    status: planned
+    files: [tests/]
+    accept: >
+      project store(CRUD+幂等重复建返回同一 id)+路由(5 端点)+名册合并+回看独立于任务删除(P1.1 回归)+
+      向后兼容(旧 evaluate/tasks 不破)+迁移幂等。uv run pytest -q 全绿+ruff+路由表基线更新。
+    depends_on: [P1-T1, P1-T2, P1-T3, P1-T4, P1-T5]
+
+phase2_backlog:
+  - "价格横比/排名/recommendedBidder 聚合 + POST /projects/{id}/compare(requires_cross_bid_comparison 项到齐后统一算)"
+  - "tender_bids 投影表(若 §3.5 合并查询变重)承载 bidder/status/request_id/result_id + rank"
+  - "project status 流转(doing→review→done→archived)自动化 + 定标"
+  - "前端 features/contract/tender-review 接真实 /tender/projects API(下 sprint 前后端对接)"
+
+next_session_entry: "Phase 1 实施中:读 design.md(终版)+本 checklist,按 P1-T1→T6 实现(System,impl 后交叉审查)。codex 设计评审已 APPROVE-WITH-CHANGES"
