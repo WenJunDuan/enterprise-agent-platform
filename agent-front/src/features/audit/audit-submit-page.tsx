@@ -8,14 +8,13 @@ import { Button } from '@/components/ui/button'
 import {
   Card,
   CardContent,
-  CardDescription,
   CardFooter,
   CardHeader,
   CardTitle,
+  CardDescription,
 } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { SelectDropdown } from '@/components/select-dropdown'
 import { submitExpense } from './api'
@@ -102,7 +101,17 @@ function InputField({
   )
 }
 
-function Stepper({ current }: { current: StepId }) {
+/**
+ * C①: Clickable top stepper — replaces the old non-clickable Stepper + hidden Tabs in footer.
+ * Clicking a step directly navigates to that step.
+ */
+function ClickableStepper({
+  current,
+  onStepClick,
+}: {
+  current: StepId
+  onStepClick: (stepId: StepId) => void
+}) {
   const currentIndex = steps.findIndex((step) => step.id === current)
   return (
     <div className='grid gap-2 md:grid-cols-4'>
@@ -110,11 +119,18 @@ function Stepper({ current }: { current: StepId }) {
         const active = step.id === current
         const done = index < currentIndex
         return (
-          <div
+          <button
             key={step.id}
-            className={`rounded-md border px-3 py-2 text-sm ${
-              active ? 'border-primary bg-primary/5 text-primary' : done ? 'bg-muted/60' : 'text-muted-foreground'
+            type='button'
+            aria-current={active ? 'step' : undefined}
+            className={`rounded-md border px-3 py-2 text-left text-sm transition-colors ${
+              active
+                ? 'border-primary bg-primary/5 text-primary'
+                : done
+                  ? 'cursor-pointer bg-muted/60 hover:bg-muted'
+                  : 'cursor-pointer text-muted-foreground hover:bg-muted/40'
             }`}
+            onClick={() => onStepClick(step.id)}
           >
             <div className='flex items-center gap-2'>
               <span className='inline-flex size-5 items-center justify-center rounded-full border text-xs'>
@@ -122,7 +138,7 @@ function Stepper({ current }: { current: StepId }) {
               </span>
               {step.label}
             </div>
-          </div>
+          </button>
         )
       })}
     </div>
@@ -213,7 +229,8 @@ export function AuditSubmitPage() {
           </p>
         </div>
 
-        <Stepper current={step} />
+        {/* C①: 顶部步骤条可点击跳步，无左侧冗余步骤列表 */}
+        <ClickableStepper current={step} onStepClick={setStep} />
 
         {error ? (
           <Alert variant='destructive'>
@@ -370,24 +387,19 @@ export function AuditSubmitPage() {
               ) : null}
 
               {step === 'preview' ? (
-                <div className='grid gap-4 lg:grid-cols-[1fr_1.2fr]'>
-                  <div className='space-y-3 rounded-md border p-4'>
-                    <div>
-                      <div className='text-sm text-muted-foreground'>报销单</div>
-                      <div className='text-lg font-semibold'>{form.case_id}</div>
-                    </div>
-                    <div className='grid gap-3 text-sm md:grid-cols-2'>
-                      <div>申请人：{form.applicant_name}</div>
-                      <div>部门：{form.department}</div>
-                      <div>费用类型：{form.expense_type}</div>
-                      <div>金额：{form.currency} {form.total_amount}</div>
-                      <div>附件：{attachments.length} 个</div>
-                      <div>异常标签：{form.scenario_flags.length} 个</div>
-                    </div>
+                <div className='space-y-3 rounded-md border p-4'>
+                  <div>
+                    <div className='text-sm text-muted-foreground'>报销单</div>
+                    <div className='text-lg font-semibold'>{form.case_id}</div>
                   </div>
-                  <pre className='max-h-[420px] overflow-auto rounded-md border bg-muted/30 p-4 text-xs'>
-                    {JSON.stringify({ ...form, attachment_summaries: attachmentSummaries }, null, 2)}
-                  </pre>
+                  <div className='grid gap-3 text-sm md:grid-cols-2'>
+                    <div>申请人：{form.applicant_name}</div>
+                    <div>部门：{form.department}</div>
+                    <div>费用类型：{form.expense_type}</div>
+                    <div>金额：{form.currency} {form.total_amount}</div>
+                    <div>附件：{attachments.length} 个</div>
+                    <div>异常标签：{form.scenario_flags.length} 个</div>
+                  </div>
                 </div>
               ) : null}
             </CardContent>
@@ -400,27 +412,16 @@ export function AuditSubmitPage() {
               >
                 上一步
               </Button>
-              <div className='flex gap-2'>
-                <Tabs value={step} onValueChange={(value) => setStep(value as StepId)}>
-                  <TabsList className='hidden md:inline-flex'>
-                    {steps.map((item) => (
-                      <TabsTrigger key={item.id} value={item.id}>
-                        {item.label}
-                      </TabsTrigger>
-                    ))}
-                  </TabsList>
-                </Tabs>
-                <Button disabled={submitting} type='submit'>
-                  {stepIndex === steps.length - 1 ? (
-                    <>
-                      <Send className='size-4' />
-                      {submitting ? '提交中' : '提交审核'}
-                    </>
-                  ) : (
-                    '下一步'
-                  )}
-                </Button>
-              </div>
+              <Button disabled={submitting} type='submit'>
+                {stepIndex === steps.length - 1 ? (
+                  <>
+                    <Send className='size-4' />
+                    {submitting ? '提交中' : '提交审核'}
+                  </>
+                ) : (
+                  '下一步'
+                )}
+              </Button>
             </CardFooter>
           </Card>
         </form>

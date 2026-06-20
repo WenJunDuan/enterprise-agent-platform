@@ -1,4 +1,4 @@
-import { ArrowLeft, Plus } from 'lucide-react'
+import { ArrowLeft } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { TenderReviewScreen } from '../types'
 
@@ -28,13 +28,11 @@ const headingCopy: Record<TenderReviewScreen, { title: string; desc: string }> =
 
 type PageHeadingProps = {
   activeScreen: TenderReviewScreen
-  onCreate: () => void
   onBack: () => void
 }
 
 export function PageHeading({
   activeScreen,
-  onCreate,
   onBack,
 }: PageHeadingProps) {
   const copy = headingCopy[activeScreen]
@@ -49,11 +47,6 @@ export function PageHeading({
         <Button variant='outline' onClick={onBack}>
           <ArrowLeft className='size-4' />
           返回
-        </Button>
-      ) : activeScreen === 'dashboard' ? (
-        <Button onClick={onCreate}>
-          <Plus className='size-4' />
-          创建评审
         </Button>
       ) : null}
     </div>

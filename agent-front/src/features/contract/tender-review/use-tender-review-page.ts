@@ -2,12 +2,14 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   createTenderProject,
+  deleteTenderTask,
   evaluateTenderProjectUpload,
   getTenderCompareOrNull,
   getTenderProject,
   getTenderProjectResult,
   listTenderProjectResults,
   listTenderProjects,
+  retryTenderTask,
   triggerTenderCompare,
   waitForTenderCompare,
   waitForTenderTask,
@@ -27,9 +29,22 @@ import type {
   TenderReviewMode,
   UploadBidder,
 } from './types'
+import type { ProjectFormData } from './components/create-review-view'
 
 const TENDER_PROJECTS_QUERY_KEY = ['tender-projects'] as const
-const EMPTY_PROJECT_TITLE = '新建招投标项目'
+
+/** Default project form — all fields blank so user fills in what they need */
+function createDefaultProjectForm(): ProjectFormData {
+  return {
+    tender_no: '',
+    title: '',
+    tenderee: '',
+    method: '',
+    control_price: '',
+    funding_type: 'unknown',
+  }
+}
+
 const DEFAULT_UPLOAD_BIDDER: UploadBidder = {
   id: 1,
   name: '投标单位 1',
@@ -69,6 +84,11 @@ export function useTenderReviewPage(
     DEFAULT_UPLOAD_BIDDER,
   ])
   const [nextBidderId, setNextBidderId] = useState(2)
+
+  // A①: editable project form state
+  const [projectForm, setProjectForm] = useState<ProjectFormData>(
+    createDefaultProjectForm
+  )
 
   const projectsQuery = useQuery({
     queryKey: TENDER_PROJECTS_QUERY_KEY,
@@ -219,6 +239,16 @@ export function useTenderReviewPage(
     setScreen('report')
   }
 
+  /** A①: update a single field in the project creation form */
+  function updateProjectForm(field: keyof ProjectFormData, value: string) {
+    setProjectForm((current) => ({ ...current, [field]: value }))
+  }
+
+  /** A①/F5: reset the create form to blank (e.g. after the user cancels). */
+  function resetProjectForm() {
+    setProjectForm(createDefaultProjectForm())
+  }
+
   function addTenderFile(files: FileList | null) {
     const nextFiles = toTenderFiles(files)
     if (nextFiles.length === 0) return
@@ -317,7 +347,10 @@ export function useTenderReviewPage(
     }
 
     setProgress(4)
-    const project = await createTenderProject(buildCreateProjectBody(nativeTenderFiles[0]))
+    // A①: pass all 6 user-supplied project fields into createTenderProject body
+    const project = await createTenderProject(
+      buildCreateProjectBody(projectForm, nativeTenderFiles[0])
+    )
     setProgress(10)
 
     const acceptedTasks = []
@@ -362,6 +395,66 @@ export function useTenderReviewPage(
     return { projectId: project.project_id, hasCompare }
   }
 
+  /**
+   * B⑤: Resolve every bid task request_id under the selected projects.
+   *
+   * The list endpoint (`GET /tender/projects`) does NOT return bids, so we fetch
+   * each project's detail (reusing the react-query cache when already loaded) and
+   * flatten its `bids[].request_id`. Projects with no bids contribute nothing.
+   */
+  async function collectBidRequestIds(projectIds: string[]): Promise<string[]> {
+    const details = await Promise.all(
+      projectIds.map((id) =>
+        queryClient.fetchQuery({
+          queryKey: ['tender-project', id],
+          queryFn: () => getTenderProject(id),
+        })
+      )
+    )
+    return details.flatMap((detail) => (detail.bids ?? []).map((bid) => bid.request_id))
+  }
+
+  /** B⑤: Batch delete — delete every bid task under each selected project. */
+  async function batchDeleteProjects(projectIds: string[]) {
+    const requestIds = await collectBidRequestIds(projectIds)
+    if (requestIds.length === 0) return
+    const results = await Promise.allSettled(
+      requestIds.map((id) => deleteTenderTask(id))
+    )
+    await queryClient.invalidateQueries({ queryKey: TENDER_PROJECTS_QUERY_KEY })
+    reportBatchFailures(results, requestIds.length, '删除')
+  }
+
+  /** B⑤: Batch retry — re-run every bid task under each selected project. */
+  async function batchRetryProjects(projectIds: string[]) {
+    const requestIds = await collectBidRequestIds(projectIds)
+    if (requestIds.length === 0) return
+    const results = await Promise.allSettled(
+      requestIds.map((id) => retryTenderTask(id))
+    )
+    await queryClient.invalidateQueries({ queryKey: TENDER_PROJECTS_QUERY_KEY })
+    reportBatchFailures(results, requestIds.length, '重新审核')
+  }
+
+  /**
+   * B⑥: Append a new bidder to an existing project.
+   * Calls POST /tender/projects/{id}/evaluate with mode=upload.
+   */
+  async function appendBidder(
+    projectId: string,
+    bidderName: string | undefined,
+    tenderFiles: File[],
+    bidderFiles: File[]
+  ) {
+    await evaluateTenderProjectUpload(projectId, {
+      bidderName,
+      tenderFiles,
+      bidderFiles,
+    })
+    await queryClient.invalidateQueries({ queryKey: TENDER_PROJECTS_QUERY_KEY })
+    await queryClient.invalidateQueries({ queryKey: ['tender-project', projectId] })
+  }
+
   return {
     screen,
     setScreen,
@@ -381,10 +474,13 @@ export function useTenderReviewPage(
     isAnalyzing: startReviewMutation.isPending,
     uploadError,
     submitError,
+    projectForm,
     tenderFiles,
     uploadBidders,
     canStartReview,
     startReview,
+    updateProjectForm,
+    resetProjectForm,
     addTenderFile,
     removeTenderFile,
     addBidder,
@@ -394,6 +490,9 @@ export function useTenderReviewPage(
     removeBidderFile,
     openAnalysis,
     openReport,
+    batchDeleteProjects,
+    batchRetryProjects,
+    appendBidder,
     viewModel: {
       summary,
       history,
@@ -409,13 +508,26 @@ export function useTenderReviewPage(
   }
 }
 
-function buildCreateProjectBody(file: File): TenderProjectCreateRequest {
-  const title = stripExtension(file.name) || EMPTY_PROJECT_TITLE
+/**
+ * A①: Build the project creation body from the user-supplied form.
+ * All 6 fields are passed through; a fallback title is derived from the
+ * first tender file name only when the user left title blank.
+ */
+function buildCreateProjectBody(
+  form: ProjectFormData,
+  firstTenderFile: File
+): TenderProjectCreateRequest {
+  const title =
+    form.title?.trim() || stripExtension(firstTenderFile.name) || '新建招投标项目'
+  const tender_no =
+    form.tender_no?.trim() || deriveTenderNo(firstTenderFile.name)
   return {
-    tender_no: deriveTenderNo(file.name),
+    tender_no,
     title,
-    method: '综合评估法',
-    funding_type: 'unknown',
+    tenderee: form.tenderee?.trim() || undefined,
+    method: form.method?.trim() || undefined,
+    control_price: form.control_price?.trim() || undefined,
+    funding_type: form.funding_type || 'unknown',
   }
 }
 
@@ -436,4 +548,16 @@ function deriveTenderNo(fileName: string) {
 
 function stripExtension(fileName: string) {
   return fileName.replace(/\.[^.]+$/u, '').trim()
+}
+
+/** B⑤: Throw a single user-facing error if any batched task operation failed. */
+function reportBatchFailures(
+  results: PromiseSettledResult<unknown>[],
+  total: number,
+  action: string
+): void {
+  const failed = results.filter((result) => result.status === 'rejected').length
+  if (failed > 0) {
+    throw new Error(`${failed}/${total} 个任务${action}失败，请稍后重试。`)
+  }
 }

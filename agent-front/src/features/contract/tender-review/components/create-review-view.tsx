@@ -16,7 +16,16 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import type { ProjectInfo, TenderFile, UploadBidder } from '../types'
+import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import type { TenderFile, UploadBidder } from '../types'
+import type { TenderProjectCreateRequest } from '../api'
 
 const ACCEPTED_REVIEW_FILE_TYPES = [
   '.pdf',
@@ -36,8 +45,24 @@ const ACCEPTED_REVIEW_FILE_TYPES = [
   'application/pdf',
 ].join(',')
 
+/** funding_type 下拉选项 */
+const FUNDING_TYPE_OPTIONS: Array<{
+  value: 'state_funded' | 'other' | 'unknown'
+  label: string
+}> = [
+  { value: 'state_funded', label: '国资' },
+  { value: 'other', label: '其他' },
+  { value: 'unknown', label: '未知' },
+]
+
+/** A①: 可编辑的项目基本信息 */
+export type ProjectFormData = Pick<
+  TenderProjectCreateRequest,
+  'tender_no' | 'title' | 'tenderee' | 'method' | 'control_price' | 'funding_type'
+>
+
 type CreateReviewViewProps = {
-  projectInfo: ProjectInfo
+  projectForm: ProjectFormData
   tenderFiles: TenderFile[]
   uploadBidders: UploadBidder[]
   progress: number
@@ -47,6 +72,7 @@ type CreateReviewViewProps = {
   canStart: boolean
   onStart: () => void
   onCancel: () => void
+  onUpdateProjectForm: (field: keyof ProjectFormData, value: string) => void
   onAddTenderFile: (files: FileList | null) => void
   onRemoveTenderFile: (index: number) => void
   onAddBidder: () => void
@@ -59,8 +85,15 @@ type CreateReviewViewProps = {
 export function CreateReviewView(props: CreateReviewViewProps) {
   return (
     <div className='space-y-4'>
-      <StepBar analyzing={props.isAnalyzing} />
-      <ProjectInfoCard projectInfo={props.projectInfo} />
+      <StepBar
+        analyzing={props.isAnalyzing}
+        currentStep={props.isAnalyzing ? 'analyze' : 'files'}
+      />
+      <ProjectInfoFormCard
+        form={props.projectForm}
+        onUpdate={props.onUpdateProjectForm}
+        disabled={props.isAnalyzing}
+      />
       <UploadFilesCard {...props} />
       {props.isAnalyzing ? <AnalyzingCard progress={props.progress} /> : null}
       {props.uploadError ? <UploadError /> : null}
@@ -83,52 +116,179 @@ export function CreateReviewView(props: CreateReviewViewProps) {
   )
 }
 
-function StepBar({ analyzing }: { analyzing: boolean }) {
-  const steps = [
-    { label: '项目信息', active: true },
-    { label: '上传文件', active: true },
-    { label: '开始分析', active: analyzing },
-  ]
+const TENDER_STEPS = [
+  { id: 'project', label: '项目信息' },
+  { id: 'files', label: '上传文件' },
+  { id: 'analyze', label: '开始分析' },
+] as const
+
+type TenderStepId = (typeof TENDER_STEPS)[number]['id']
+
+/**
+ * D①: 顶部步骤条 — 与报销审核 ClickableStepper 统一样式，按钮形式可点击。
+ * 招投标创建页是单页表单，currentStep 控制高亮，onStepClick 为可选跳步回调。
+ */
+function StepBar({
+  analyzing,
+  currentStep = 'project',
+  onStepClick,
+}: {
+  analyzing: boolean
+  currentStep?: TenderStepId
+  onStepClick?: (stepId: TenderStepId) => void
+}) {
+  const activeStep: TenderStepId = analyzing ? 'analyze' : currentStep
+  const activeIndex = TENDER_STEPS.findIndex((step) => step.id === activeStep)
+  const clickable = Boolean(onStepClick)
 
   return (
-    <div className='flex justify-center'>
-      <div className='flex w-full max-w-4xl flex-wrap items-center justify-center gap-4 rounded-lg border bg-muted/20 px-6 py-3'>
-        {steps.map((step, index) => (
-          <div key={step.label} className='flex items-center gap-3'>
-            <span
-              className={`flex size-8 items-center justify-center rounded-full border text-sm font-semibold ${
-                step.active
-                  ? 'border-primary bg-primary text-primary-foreground'
-                  : 'border-primary bg-background text-primary'
-              }`}
-            >
+    <div className='grid gap-2 md:grid-cols-3'>
+      {TENDER_STEPS.map((step, index) => {
+        const active = step.id === activeStep
+        const done = index < activeIndex
+        // F7/D①: 单页创建表单没有真正的跳步导航 → 无 onStepClick 时渲染为非交互
+        // 指示器（保留与报销 ClickableStepper 一致的视觉，但不伪装可点击）。
+        const stateClass = active
+          ? 'border-primary bg-primary/5 text-primary'
+          : done
+            ? 'bg-muted/60 text-foreground'
+            : 'text-muted-foreground'
+        const className = `rounded-md border px-3 py-2 text-left text-sm transition-colors ${stateClass} ${
+          clickable ? 'cursor-pointer hover:bg-muted' : 'cursor-default'
+        }`
+        const inner = (
+          <div className='flex items-center gap-2'>
+            <span className='inline-flex size-5 items-center justify-center rounded-full border text-xs'>
               {index + 1}
             </span>
-            <span className='text-sm font-medium'>{step.label}</span>
-            {index < steps.length - 1 ? (
-              <span className='h-px w-16 bg-border md:w-24' />
-            ) : null}
+            {step.label}
           </div>
-        ))}
-      </div>
+        )
+        return clickable ? (
+          <button
+            key={step.id}
+            type='button'
+            aria-current={active ? 'step' : undefined}
+            className={className}
+            onClick={() => onStepClick?.(step.id)}
+          >
+            {inner}
+          </button>
+        ) : (
+          <div
+            key={step.id}
+            aria-current={active ? 'step' : undefined}
+            className={className}
+          >
+            {inner}
+          </div>
+        )
+      })}
     </div>
   )
 }
 
-function ProjectInfoCard({ projectInfo }: { projectInfo: ProjectInfo }) {
+/**
+ * A①: 项目信息表单 — 暴露全部 6 个字段，均为 optional。
+ * 允许只填部分，先建后补。
+ */
+function ProjectInfoFormCard({
+  form,
+  onUpdate,
+  disabled,
+}: {
+  form: ProjectFormData
+  onUpdate: (field: keyof ProjectFormData, value: string) => void
+  disabled: boolean
+}) {
   return (
     <Card>
       <CardHeader>
         <CardTitle>项目信息</CardTitle>
+        <CardDescription>所有字段均为选填，允许先建后补。</CardDescription>
       </CardHeader>
       <CardContent className='grid gap-4 md:grid-cols-2'>
-        <ReadonlyField
-          className='md:col-span-2'
-          label='项目名称'
-          value={projectInfo.name}
-        />
-        <ReadonlyField label='招标编号' value={projectInfo.code} />
-        <ReadonlyField label='评标办法' value={projectInfo.method} />
+        <div className='md:col-span-2'>
+          <Label htmlFor='project-title' className='mb-2 block text-sm font-medium'>
+            项目名称
+          </Label>
+          <Input
+            id='project-title'
+            value={form.title ?? ''}
+            onChange={(event) => onUpdate('title', event.target.value)}
+            placeholder='如：无锡市政管廊施工项目'
+            disabled={disabled}
+          />
+        </div>
+        <div>
+          <Label htmlFor='project-tender-no' className='mb-2 block text-sm font-medium'>
+            招标编号
+          </Label>
+          <Input
+            id='project-tender-no'
+            value={form.tender_no ?? ''}
+            onChange={(event) => onUpdate('tender_no', event.target.value)}
+            placeholder='如：WX-2026-001'
+            disabled={disabled}
+          />
+        </div>
+        <div>
+          <Label htmlFor='project-tenderee' className='mb-2 block text-sm font-medium'>
+            招标人
+          </Label>
+          <Input
+            id='project-tenderee'
+            value={form.tenderee ?? ''}
+            onChange={(event) => onUpdate('tenderee', event.target.value)}
+            placeholder='如：无锡城投集团'
+            disabled={disabled}
+          />
+        </div>
+        <div>
+          <Label htmlFor='project-method' className='mb-2 block text-sm font-medium'>
+            评标方法
+          </Label>
+          <Input
+            id='project-method'
+            value={form.method ?? ''}
+            onChange={(event) => onUpdate('method', event.target.value)}
+            placeholder='如：综合评估法'
+            disabled={disabled}
+          />
+        </div>
+        <div>
+          <Label htmlFor='project-control-price' className='mb-2 block text-sm font-medium'>
+            标底 / 控制价
+          </Label>
+          <Input
+            id='project-control-price'
+            value={form.control_price ?? ''}
+            onChange={(event) => onUpdate('control_price', event.target.value)}
+            placeholder='如：120000000'
+            disabled={disabled}
+          />
+        </div>
+        <div>
+          <Label htmlFor='project-funding-type' className='mb-2 block text-sm font-medium'>
+            资金来源
+          </Label>
+          <Select
+            value={form.funding_type ?? 'unknown'}
+            onValueChange={(value) => onUpdate('funding_type', value)}
+            disabled={disabled}
+          >
+            <SelectTrigger id='project-funding-type'>
+              <SelectValue placeholder='请选择资金来源' />
+            </SelectTrigger>
+            <SelectContent>
+              {FUNDING_TYPE_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </CardContent>
     </Card>
   )
@@ -342,27 +502,6 @@ function SectionTitle({
         必传
       </span>
       <span className='text-xs text-muted-foreground'>{desc}</span>
-    </div>
-  )
-}
-
-function ReadonlyField({
-  label,
-  value,
-  className,
-}: {
-  label: string
-  value: string
-  className?: string
-}) {
-  return (
-    <div className={className}>
-      <div className='mb-2 text-sm font-medium text-muted-foreground'>
-        {label}
-      </div>
-      <div className='rounded-lg border bg-muted/30 px-3 py-2 text-sm'>
-        {value}
-      </div>
     </div>
   )
 }
