@@ -60,6 +60,12 @@ phase1_tasks:
       向后兼容(旧 evaluate/tasks 不破)+迁移幂等。uv run pytest -q 全绿+ruff+路由表基线更新。
     depends_on: [P1-T1, P1-T2, P1-T3, P1-T4, P1-T5]
 
+phase2_result: "实现完成+代码评审(codex REWORK→fixed 2P1+2P2 / cc CONCERNS→fixed C1+C2)+architecture 档。344 passed/ruff。/tender-compare 命令(Claude 侧横比)+compare-result 契约+tender_compare_{results,tasks} 表+archive_to_results 开关+2 端点+detail 联动+funding_type。codex 落实确认 P1.1/P1.2/P1.3 设计 findings 全到位。"
+phase2_review:
+  codex_design: "APPROVE-WITH-CHANGES(6 findings 全纳入)。reviews/codex-phase2-design-review.md"
+  codex_impl: "REWORK→fixed:P1.1 criteria 一致性只 hash 第一份/P1.2 provisional 缺失当终局/P2.3 污染测试假绿/P2.4 payload project_id 未校验。reviews/codex-phase2-impl-review.md"
+  cc_impl: "CONCERNS→fixed:C1 compare 防重/C2 criteria 一致性(=codex P1.1)。reviews/cc-phase2-impl-review.md"
+
 phase2_backlog:
   - "价格横比/排名/recommendedBidder 聚合 + POST /projects/{id}/compare(requires_cross_bid_comparison 项到齐后统一算)"
   - "tender_bids 投影表(若 §3.5 合并查询变重)承载 bidder/status/request_id/result_id + rank"
