@@ -1,14 +1,14 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "tender_criteria",
-  "description": "会话项目评分标准：从该项目招标文件第三章《评标办法》直读解析得到，作为本次评标的项目规则，随结论写入 extracted_data.criteria 持久化。区别于通则层 knowledge/tender/{evalmethod,regulation}.rules.json（国家法规，跨项目稳定）。",
+  "description": "会话项目评分标准：从该项目招标文件载明的评标办法（评分标准）直读解析得到，作为本次评标的项目规则，随结论写入 extracted_data.criteria 持久化。评标办法的章节位置与标题因标书而异（不预设固定在第三章），以实际招标文件为准。区别于通则层 knowledge/tender/{evalmethod,regulation}.rules.json（国家法规，跨项目稳定）。",
   "type": "object",
   "additionalProperties": false,
   "properties": {
     "source_ref": {
       "type": "string",
       "minLength": 1,
-      "description": "评分标准出处：招标文件第三章《评标办法》的文件名 + 页码，如 '烛照-标段一v3.pdf 第三章 p.18'。"
+      "description": "评分标准出处：评标办法在本招标文件的实际位置（文件名 + 章节/标题 + 页码）。示例（仅示例，实际以本标书为准）：'XX项目招标文件.pdf 评标办法 p.18'。"
     },
     "method": {
       "type": "string",
@@ -23,7 +23,7 @@
     "items": {
       "type": "array",
       "minItems": 1,
-      "description": "逐评分项标准，来自招标文件第三章。每项的具体分值/权重是项目专属，法定来源 tender_evalmethod_003（需量化因素及权重应在招标文件中明确规定）。",
+      "description": "逐评分项标准，来自招标文件载明的评标办法。每项的具体分值/权重是项目专属，法定来源 tender_evalmethod_003（需量化因素及权重应在招标文件中明确规定）。",
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -47,7 +47,7 @@
           "source_ref": {
             "type": "string",
             "minLength": 1,
-            "description": "该项标准在招标文件第三章的出处（文件+页）。"
+            "description": "该项标准在招标文件评标办法中的出处（文件+章节/标题+页）。"
           },
           "tag": {
             "type": "string",

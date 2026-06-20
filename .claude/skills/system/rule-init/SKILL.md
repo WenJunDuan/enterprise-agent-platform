@@ -40,5 +40,5 @@ description: Use when 需要把本地制度源文件初始化为结构化规则�
   - 《评标委员会和评标方法暂行规定》→ category 取 `evalmethod` → `knowledge/tender/evalmethod.rules.json`
   - 《招标投标法实施条例》→ category 取 `regulation` → `knowledge/tender/regulation.rules.json`
   - `rule_id` 用下划线，如 `tender_evalmethod_001` / `tender_regulation_003`。
-  - **项目评分标准不在此初始化**：单个项目的评分项 / 分值就在它自己的招标文件第三章《评标办法》里，由 `/tender-evaluate`（S1）评标时**直读解析为会话 `criteria`**，不预建 `{招标编号}.rules.json`。
+  - **项目评分标准不在此初始化**：单个项目的评分项 / 分值就在它自己的招标文件载明的评标办法里（章节 / 标题因标书而异），由 `/tender-evaluate`（S1）评标时**定位并直读解析为会话 `criteria`**，不预建 `{招标编号}.rules.json`。
   - 通则层法规中若有"单份投标文件无法判定"的条款，可在该规则 `tags` 标注 `requires_live_event`（现场答辩）/ `requires_external_data`（外部信用等）/ `requires_cross_bid_comparison`（价格分需横向比较），并在 `notes` 说明所需外部输入。

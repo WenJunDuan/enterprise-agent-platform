@@ -11,14 +11,14 @@ description: Use when 评标、招投标评分、投标文件合规审查，需�
   - `knowledge/tender/evalmethod.rules.json` ←《评标委员会和评标方法暂行规定》（发改委12号令）
   - `knowledge/tender/regulation.rules.json` ←《招标投标法实施条例》
   - 由 `/init-rules <法规源文件> tender` 生成；管废标 / 资格 / 一致性 / 程序的法定依据，**不含**具体项目的分值权重。
-- **会话项目评分标准（criteria）**（每标一份，**不预建**）：本项目评分项 / 满分 / 评分规则就在**它自己的招标文件第三章《评标办法》**里，评标时由 `/tender-evaluate` 在 S1 **直读招标文件**解析为 `extracted_data.criteria`（对齐 `.claude/contracts/tender/criteria.schema.json`），随结论持久化作本次会话规则。
+- **会话项目评分标准（criteria）**（每标一份，**不预建**）：本项目评分项 / 满分 / 评分规则就在**它自己的招标文件载明的评标办法**里（标题与章节位置因标书而异，不预设第三章），评标时由 `/tender-evaluate` 在 S1 **定位并直读招标文件**解析为 `extracted_data.criteria`（对齐 `.claude/contracts/tender/criteria.schema.json`），随结论持久化作本次会话规则。
 
-> 通则层 `rule_id` 形如 `tender_evalmethod_001` / `tender_regulation_003`（下划线连接），可作 `policy_refs`。criteria 来自招标文件第三章、**无 `rule_id`**，其标准与命中写入 `evidence_chain`。
+> 通则层 `rule_id` 形如 `tender_evalmethod_001` / `tender_regulation_003`（下划线连接），可作 `policy_refs`。criteria 来自招标文件评标办法、**无 `rule_id`**，其标准与命中写入 `evidence_chain`。
 
 ## 执行顺序（一次性，少往返）
 
 1. 优先消费 `tender-extractor` 输出的结构化事实；若当前只有原始材料，不要直接猜字段，先回到提取阶段。
-2. `Read` 招标文件第三章《评标办法》直读解析为 `extracted_data.criteria`（招标文件**没写的标准不臆造补充**）；并读通则层 `evalmethod` / `regulation` 法规作法律底座，读取顶层 `source_path` / `source_version` 作为追溯。
+2. `Read` 招标文件、**定位其中的评标办法（评分标准）**（标题 / 章节以实际标书为准，不预设第三章）直读解析为 `extracted_data.criteria`（招标文件**没写的标准不臆造补充**）；并读通则层 `evalmethod` / `regulation` 法规作法律底座，读取顶层 `source_path` / `source_version` 作为追溯。
 3. 读取 `knowledge/memory/tender/` 中的相似案例 / 异常记忆作为 `memory:` 辅助证据（不能替代结构化规则）。
 4. **对照 `criteria` 逐评分项判定**，写入 `extracted_data.scoring`，每项 `{item, max, score, status, basis}`；承重 `policy_refs` 只引通则层真实 `rule_id`，criteria 命中写 `evidence_chain`；一次产出契约结果。
 
@@ -40,4 +40,4 @@ description: Use when 评标、招投标评分、投标文件合规审查，需�
 - 关键字段缺失：投标报价、拟派项目负责人、业绩项目经理、资格证明
 - 拟派项目负责人与业绩 / 承诺书中的姓名不一致或归属冲突（`data_conflict`）
 - 多份材料互相冲突且无法唯一解释
-- 缺招标文件 / 读不出第三章《评标办法》（无法取本项目 `criteria`），或通则层法规存在覆盖缺口（后者可用 `system-rule-init` 补齐）
+- 缺招标文件 / 招标文件里定位不到评标办法（无法取本项目 `criteria`），或通则层法规存在覆盖缺口（后者可用 `system-rule-init` 补齐）
