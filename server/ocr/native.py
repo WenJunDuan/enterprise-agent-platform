@@ -54,9 +54,29 @@ def read_word(path: Path) -> dict:
 
 
 def read_pdf_text(path: Path) -> dict:
-    pypdf = _require("pypdf", "pypdf")
-    reader = pypdf.PdfReader(str(path))
-    return {"kind": "pdf_text", "blocks": [(page.extract_text() or "") for page in reader.pages]}
+    """文本层 PDF 直读：pymupdf 阅读顺序文本 + ``find_tables`` 抽表。
+
+    比 pypdf 的 ``extract_text``（按 PDF 流顺序拼字符）强在**阅读顺序 / 多栏 / 表格**——
+    发票、合同、招标评分表的命门正在这里（pypdf 把表格揉碎、多栏错序）。
+    """
+    fitz = _require("fitz", "pymupdf")
+    blocks: list[str] = []
+    tables: list[dict] = []
+    with fitz.open(str(path)) as document:
+        for page in document:
+            blocks.append(page.get_text("text", sort=True) or "")
+            try:
+                found = page.find_tables()
+            except Exception:  # 个别畸形页 find_tables 可能抛错，单页失败不毁整篇
+                continue
+            for table in getattr(found, "tables", []) or []:
+                rows = [
+                    ["" if cell is None else str(cell) for cell in row]
+                    for row in table.extract()
+                ]
+                if any(any(cell.strip() for cell in row) for row in rows):
+                    tables.append({"rows": rows})
+    return {"kind": "pdf_text", "blocks": blocks, "tables": tables}
 
 
 def read_text(path: Path) -> dict:

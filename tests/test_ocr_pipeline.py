@@ -132,3 +132,114 @@ def test_extract_one_font_only_pdf_falls_back_to_ocr(tmp_path, monkeypatch):
     result = pipeline_mod.extract_one(tmp_path / "x.pdf")
     assert state["recognize_called"]  # native 抽空确实回退到 OCR
     assert result["kind"] == "error"  # 本机无引擎 → 归一 error（per-file 隔离）
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# P1：pymupdf read_pdf_text + _render_body 同时渲染 blocks 和 tables
+# ═════════════════════════════════════════════════════════════════════════════
+
+
+def test_render_body_pdf_text_renders_both_blocks_and_tables():
+    # 回归锁：pdf_text/word 同时有正文+表时，旧逻辑 tables 分支吃掉 blocks 丢正文（发票命门）。
+    results = [
+        {
+            "path": "inv.pdf",
+            "kind": "pdf_text",
+            "route": "native",
+            "blocks": ["发票正文说明"],
+            "tables": [{"rows": [["项目", "金额"], ["住宿", "1200"]]}],
+        }
+    ]
+    block = build_extraction_block(results)
+    assert "发票正文说明" in block  # 正文不再被丢
+    assert "项目" in block and "1200" in block  # 表也在
+
+
+def test_read_pdf_text_uses_pymupdf(tmp_path):
+    import fitz  # pymupdf
+
+    from server.ocr.native import read_pdf_text
+
+    pdf = tmp_path / "hello.pdf"
+    doc = fitz.open()
+    doc.new_page().insert_text((72, 72), "发票号码 12345")
+    doc.save(str(pdf))
+    doc.close()
+
+    result = read_pdf_text(pdf)
+    assert result["kind"] == "pdf_text"
+    assert any("12345" in b for b in result["blocks"])
+    assert "tables" in result  # find_tables 字段存在（本例无表 → 空列表）
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# P2：file_clarity 置信度信号 + 底稿清晰度标注
+# ═════════════════════════════════════════════════════════════════════════════
+
+
+def test_file_clarity_native_is_clear():
+    from server.ocr.pipeline import file_clarity
+
+    assert file_clarity({"kind": "pdf_text", "route": "native", "blocks": ["x"]}) == "clear"
+
+
+def test_file_clarity_error_is_failed():
+    from server.ocr.pipeline import file_clarity
+
+    assert file_clarity({"kind": "error", "error": "boom"}) == "failed"
+
+
+def test_file_clarity_ocr_low_below_threshold():
+    from server.ocr.pipeline import file_clarity
+
+    result = {"kind": "ocr", "pages": [{"markdown": "糊", "confidence": 0.3}]}
+    assert file_clarity(result, threshold=0.6) == "low"
+
+
+def test_file_clarity_ocr_clear_above_threshold():
+    from server.ocr.pipeline import file_clarity
+
+    result = {"kind": "ocr", "pages": [{"markdown": "清", "confidence": 0.95}]}
+    assert file_clarity(result, threshold=0.6) == "clear"
+
+
+def test_file_clarity_ocr_unknown_without_confidence():
+    # VLM 端点路径 pages 无 confidence → unknown（无法评估，不能当 clear 蒙混）。
+    from server.ocr.pipeline import file_clarity
+
+    result = {"kind": "ocr", "pages": [{"markdown": "x", "layout": []}]}
+    assert file_clarity(result) == "unknown"
+
+
+def test_build_block_marks_low_clarity():
+    results = [
+        {
+            "path": "scan.pdf",
+            "kind": "ocr",
+            "route": "ocr",
+            "pages": [{"markdown": "糊文本", "confidence": 0.2}],
+        }
+    ]
+    block = build_extraction_block(results)
+    assert "清晰度低" in block
+    assert "needs_review" in block
+
+
+def test_build_block_no_clarity_note_for_clear_native():
+    results = [{"path": "n.txt", "kind": "text", "route": "native", "blocks": ["清晰"]}]
+    block = build_extraction_block(results)
+    assert "清晰度低" not in block
+    assert "清晰度未知" not in block
+
+
+def test_page_confidence_takes_min_block_score():
+    from server.ocr.engine import _page_confidence
+
+    assert _page_confidence([{"score": 0.9}, {"score": 0.4}, {"score": 0.8}]) == 0.4
+
+
+def test_page_confidence_none_without_scores():
+    from server.ocr.engine import _page_confidence
+
+    assert _page_confidence([]) is None
+    assert _page_confidence([{"text": "x"}]) is None

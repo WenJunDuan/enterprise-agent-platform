@@ -19,6 +19,15 @@ logger = logging.getLogger(__name__)
 # 单文件底稿截断上限，防超大扫描件撑爆映射 prompt。可经 env 调大（部署机 136 页合同场景）。
 MAX_FILE_BLOCK_CHARS = int(os.getenv("OCR_MAX_FILE_BLOCK_CHARS", "40000"))
 
+# P2 置信度门控：OCR 逐块 score 低于此阈值 → 文件标 low（依赖字段须人工复核）。可经 env 调。
+OCR_CLARITY_MIN_CONFIDENCE = float(os.getenv("OCR_CLARITY_MIN_CONFIDENCE", "0.6"))
+
+# 低置信/未知清晰度的底稿提示——把"识别不清晰"从事后靠模型猜变成事前显式标注。
+_CLARITY_NOTE = {
+    "low": " [⚠清晰度低：OCR 部分文本置信度低，依赖本文件的关键字段(金额/日期/单位)请标 needs_review]",
+    "unknown": " [清晰度未知：本文件经图像 OCR 但无逐块置信度信号，关键字段请人工抽查]",
+}
+
 
 def _iter_files(case_dir: str) -> list[Path]:
     base = Path(case_dir)
@@ -106,11 +115,40 @@ def _render_body(result: dict) -> str:
     pages = result.get("pages")
     if isinstance(pages, list) and pages:
         return "\n".join(page.get("markdown", "") for page in pages)
-    if result.get("tables"):
-        return _render_tables(result["tables"])
+    # native：blocks(正文) 与 tables(表) 可并存（pdf_text/word 两者都有）→ **都渲染**。
+    # 旧逻辑 tables 分支吃掉 blocks 会丢正文；P1 给 pdf_text 加了 find_tables 后更明显，故合并。
+    segments: list[str] = []
     if result.get("blocks"):
-        return "\n".join(result["blocks"])
-    return ""
+        segments.append("\n".join(result["blocks"]))
+    if result.get("tables"):
+        segments.append(_render_tables(result["tables"]))
+    return "\n\n".join(seg for seg in segments if seg.strip())
+
+
+def file_clarity(result: dict, *, threshold: float = OCR_CLARITY_MIN_CONFIDENCE) -> str:
+    """文件级清晰度信号（确定性，不调模型）：clear / low / unknown / failed。
+
+    - error / kind=error → failed
+    - OCR 产物：任一页 confidence < threshold → low；全无置信度信号（VLM 端点路径）→ unknown
+    - native 直读（数字文件，零 OCR 误差）→ clear
+
+    这是"识别不清晰"的**检测**原语：底稿据此显式标注，下游不再拿糊文本当真。
+    """
+    if result.get("error") or result.get("kind") == "error":
+        return "failed"
+    pages = result.get("pages")
+    if isinstance(pages, list) and pages:
+        confidences = [
+            page["confidence"]
+            for page in pages
+            if isinstance(page, dict)
+            and isinstance(page.get("confidence"), (int, float))
+            and not isinstance(page.get("confidence"), bool)
+        ]
+        if not confidences:
+            return "unknown"
+        return "low" if min(confidences) < threshold else "clear"
+    return "clear"
 
 
 def build_extraction_block(results: list[dict]) -> str:
@@ -134,5 +172,6 @@ def build_extraction_block(results: list[dict]) -> str:
         seals = result.get("seals")
         if seals:
             head += f" [检出印章 {len(seals)} 枚]"
+        head += _CLARITY_NOTE.get(file_clarity(result), "")
         parts.append(f"{head}\n{body}".rstrip())
     return "\n\n".join(parts) or "（无识别内容）"

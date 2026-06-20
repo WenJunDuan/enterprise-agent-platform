@@ -213,16 +213,35 @@ def _recognize_via_openai_compatible(path: Path) -> dict:
     }
 
 
+def _page_confidence(layout: list) -> float | None:
+    """从 PaddleOCR-VL 版面块的逐块 ``score`` 聚合页置信度（取**最低块**=页内最糊处）。
+
+    P2：这些 score 此前落在 ``page["layout"]`` 里从未被 surfaced（``build_extraction_block``
+    只读 markdown）。layout 项形如 ``{"score"/"confidence": float, ...}``，字段名随 PaddleX
+    版本浮动，故宽松扫 ``score|confidence``。无任何 score（如 VLM 端点路径 layout=[]）→ None。
+    """
+    scores: list[float] = []
+    for item in layout if isinstance(layout, list) else []:
+        if not isinstance(item, dict):
+            continue
+        value = item.get("score", item.get("confidence"))
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            scores.append(float(value))
+    return min(scores) if scores else None
+
+
 def _recognize_via_paddle_pipeline(path: Path) -> dict:
-    """扫描件 → 每页 markdown + 版面（PaddleOCR-VL 完整 pipeline）。"""
+    """扫描件 → 每页 markdown + 版面 + 置信度（PaddleOCR-VL 完整 pipeline）。"""
     results = _build_vl_pipeline().predict(str(path))
     pages = []
     for res in results:
         data = res.json if hasattr(res, "json") else {}
+        layout = data.get("parsing_res_list", data.get("layout", []))
         pages.append(
             {
                 "markdown": _page_markdown(res),
-                "layout": data.get("parsing_res_list", data.get("layout", [])),
+                "layout": layout,
+                "confidence": _page_confidence(layout),
             }
         )
     return {"kind": "ocr", "pipeline_version": OCR_VL_PIPELINE_VERSION, "pages": pages}
