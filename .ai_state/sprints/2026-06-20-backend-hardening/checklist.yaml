@@ -1,0 +1,61 @@
+sprint: 2026-06-20-backend-hardening
+title: 后端加固 — 收口 round4/round5 两轮审查一致认定的基础设施/正确性债
+path: System
+owner: claude-code
+design: design.md
+status: in_progress                # 落档完成；H1 起步本地实测中
+baseline: "287 passed / ruff clean (2026-06-20 sprint 起点)"
+
+decisions:
+  - "四类债按 成本×价值×风险 排序 H1→H4：先摘低垂果实(真伪闸+F3)，async/租户重活靠后"
+  - "不改模型/LiteLLM 层(anyrouter 路由另案)；不重开全量二审；不引向量库"
+  - "F3 statute 文件在 gitignored knowledge/，属部署侧编辑，验收以 validate-assets 转 ok 为准(非 git diff)"
+
+tasks:
+  - id: H1
+    title: 真伪闸默认开 + F3 statute 自检
+    status: done                  # 真伪闸 ON + F3 rename(option A) → 288 green / ruff / validate-assets ok
+    files:
+      - server/common/output_contracts.py        # RULE_REF_CHECK 默认 OFF→ON
+      - knowledge/tender/statute-evalmethod.rules.json   # 部署侧：category/rule_id 对齐文件名
+      - knowledge/tender/statute-regulation.rules.json   # 部署侧：同上
+      - tests/test_contract_registry.py           # 默认开行为 + 任何假 ref fixture 修真
+    accept: >
+      RULE_REF_CHECK 不设时即生效(假规则号 approved 被拒，空集跳过)；validate-assets 对 tender 转 ok；
+      全量绿 + ruff clean。注入规则集==knowledge 规则集 已确认。
+    sub:
+      - "真伪闸：output_contracts.py:41 默认 '' → '1'；本地全量回归审 fixture"
+      - "F3：两 statute 文件 category→statute-*、rule_id 前缀→tender_statute-*_(部署侧 knowledge/)"
+
+  - id: H2
+    title: F6 retry/delete 原子化（消除并发双执行/双成本）
+    status: done                  # try_transition + delete_if_idle 原子 CAS;294 green(含 8-线程单赢家测试)/ruff
+    files:
+      - server/stores/audit_task_store.py         # 新 try_transition(原子 CAS 状态转移)
+      - server/routes/audit.py                    # retry/delete 用 try_transition 替读-判-写
+      - tests/test_audit_task_store.py            # 并发 retry 仅一个成功
+    accept: "并发两 retry 仅一个 schedule；delete 与 running 竞态被守住"
+    depends_on: [H1]
+
+  - id: H3
+    title: F4 to_thread + F5 任务生命周期（异步正确性）
+    status: planned
+    files:
+      - server/routes/audit_worker.py             # F4: 4处 upsert 包 to_thread；F5: task 引用集/准入上限/超时杀子进程
+      - server/audit/runner.py                    # F5: runner 暴露取消/kill(若需)
+      - tests/test_audit_worker.py
+    accept: "孤儿任务不被 GC；超额准入返 503；超时后无残留 claude CLI 子进程(做不动则降级记录+告警)"
+    depends_on: [H1]
+
+  - id: H4
+    title: F2 directory 模式租户隔离（数据边界）
+    status: blocked                # 等用户决策 a/b + 是否本 sprint 做
+    files:
+      - server/routes/upload_helpers.py           # validate_directory_case_path 加租户归属/或移除 directory 外部口
+      - server/routes/audit.py
+      - tests/test_routes_smoke.py
+    accept: "directory 模式不可读 data/db、data/sessions、跨租户 submissions；upload 模式不受影响"
+    depends_on: [H1]
+
+user_decision:
+  - "H4/F2：demo/内网单组织阶段是否本 sprint 做？做的话走 (a) 对外仅 upload 模式 / 还是 (b) 每租户 data/submissions/<tenant>/ 子树？未定前不动 F2 代码"
