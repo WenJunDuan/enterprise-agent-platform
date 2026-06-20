@@ -431,3 +431,118 @@ def test_results_recall_survives_task_deletion(client):
         assert "BID-X" in [b["claim_id"] for b in detail["bids"]]
     finally:
         shutil.rmtree(case, ignore_errors=True)
+
+
+def test_project_result_detail_survives_task_deletion(client):
+    """cc-impl-review P1 修复：删任务后仍能取该招标下**完整**结论（不依赖 tender_tasks）。"""
+    from server.stores.result_store import archive_result_payload
+
+    case = _make_dir_case("test-proj-detail-recall")
+    try:
+        pid = _create_project(client, tender_no=f"R-{uuid.uuid4().hex[:8]}")["project_id"]
+        rid = client.post(
+            f"/tender/projects/{pid}/evaluate",
+            json={"mode": "directory", "directory_path": str(case)},
+            headers=_AUTH,
+        ).json()["request_id"]
+        archive_result_payload(
+            request_id=rid,
+            tenant="acme",
+            project_id=pid,
+            conversation_id="c1",
+            claude_session_id=None,
+            resume_session_id=None,
+            fork_from_session_id=None,
+            schema_name=EVAL_SCHEMA,
+            request_mode="structured",
+            result_subtype="success",
+            cost_usd=0.0,
+            prompt_preview="x",
+            response={"verdict": "manual_review", "claim_id": "BID-Y", "extracted_data": {"scoring": []}},
+        )
+        assert client.delete(f"/tender/tasks/{rid}", headers=_AUTH).status_code == 200
+        # 旧 /tasks/{id}/result 删任务后 404（已知）；新 project 详情端点仍取得完整结论。
+        assert client.get(f"/tender/tasks/{rid}/result", headers=_AUTH).status_code == 404
+        detail = client.get(f"/tender/projects/{pid}/results/{rid}", headers=_AUTH)
+        assert detail.status_code == 200, detail.text
+        assert detail.json()["verdict"] == "manual_review"
+    finally:
+        shutil.rmtree(case, ignore_errors=True)
+
+
+def test_cross_tenant_project_denied(client):
+    """跨租户隔离：acme 不能访问其他租户的招标项目（404）。"""
+    from server.stores.tender_project_store import get_or_create_project
+
+    other = get_or_create_project(tenant="other-co", tender_no=f"R-{uuid.uuid4().hex[:8]}")
+    pid = other["project_id"]
+    assert client.get(f"/tender/projects/{pid}", headers=_AUTH).status_code == 404
+    assert client.get(f"/tender/projects/{pid}/results", headers=_AUTH).status_code == 404
+
+
+def test_worker_threads_project_id(monkeypatch):
+    """codex P1.3 透传链：worker 把 project_id 传给 run_command_json（端到端透传未断）。"""
+    import server.routes.tender_worker as worker
+
+    calls: dict = {}
+
+    async def fake_json(command_name, *arguments, schema_name, **opts):
+        calls["opts"] = opts
+        meta = AgentRunMeta(
+            request_id=opts["request_id"],
+            conversation_id="c",
+            claude_session_id="s",
+            resume_session_id=None,
+            fork_from_session_id=None,
+            schema_name=schema_name,
+            log_file="l",
+            result_file="r",
+            result_subtype="success",
+            cost_usd=0.0,
+            finished_at=None,
+        )
+        return {"verdict": "manual_review", "claim_id": "T-2"}, meta
+
+    monkeypatch.setattr(worker, "run_command_json", fake_json)
+    asyncio.run(
+        worker.execute_tender_evaluation_task(
+            request_id="rid-pid-thread",
+            tenant="acme",
+            directory_path=str(_CASE_ROOT),
+            source_mode="directory",
+            project_id="tp-thread-test",
+        )
+    )
+    assert calls["opts"]["project_id"] == "tp-thread-test"
+
+
+def test_evaluate_and_retry_pass_project_id_to_schedule(client, monkeypatch):
+    """codex P1.1 回归：/projects/{id}/evaluate 与 retry 都把 project_id 传给 schedule
+    （retry 丢 project_id 会让 worker 以 None 归档，覆盖原 project-scoped 结论）。"""
+    calls: list = []
+    monkeypatch.setattr(
+        "server.routes.tender.schedule_tender_evaluation_task",
+        lambda **kw: calls.append(kw),
+    )
+    case = _make_dir_case("test-proj-schedule-spy")
+    try:
+        pid = _create_project(client, tender_no=f"R-{uuid.uuid4().hex[:8]}")["project_id"]
+        rid = client.post(
+            f"/tender/projects/{pid}/evaluate",
+            json={"mode": "directory", "directory_path": str(case)},
+            headers=_AUTH,
+        ).json()["request_id"]
+        assert calls[-1]["project_id"] == pid  # evaluate 透传 project_id
+        client.post(f"/tender/tasks/{rid}/retry", headers=_AUTH)
+        assert calls[-1]["project_id"] == pid  # retry 保留 project_id（codex P1.1）
+    finally:
+        shutil.rmtree(case, ignore_errors=True)
+
+
+def test_create_project_blank_tender_no_anonymous(client):
+    """codex P1.2 回归：空 / 空白 tender_no 当匿名处理，重复提交不 500（各自新建）。"""
+    p1 = client.post("/tender/projects", json={"tender_no": "", "title": "匿名1"}, headers=_AUTH)
+    p2 = client.post("/tender/projects", json={"tender_no": "  ", "title": "匿名2"}, headers=_AUTH)
+    assert p1.status_code == 200 and p2.status_code == 200, (p1.text, p2.text)
+    assert p1.json()["project_id"] != p2.json()["project_id"]  # 匿名允许多条
+    assert p1.json()["tender_no"] is None  # 空串归一为 None
