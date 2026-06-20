@@ -93,11 +93,17 @@ tasks:
 
   - id: G5
     title: 人工否决 → 案例记忆 回路（唯一复利反馈）
-    status: todo
+    status: done            # 记录机制(store+CLI)+distill 消费文档 done；全自动闭环 backlog
     files:
-      - server/routes/audit.py               # 人工 override 入口
-      - server/stores/memory_store.py
-      - .claude/hooks/review-output.py        # 二次复核维持 gated（不改默认关闭）
+      - server/stores/override_store.py      # 新：human_overrides 表(记录人工否决/改判,distilled 标志)
+      - server/cli.py                        # 新：override-result 命令(记录反馈,回填 original_verdict)
+      - .claude/commands/distill-memory.md   # 加 G5:优先把人工否决沉淀为高置信负样本+记 rule_version
+      - tests/test_override_store.py          # 记录/查询/pending/mark_distilled
+    result: >
+      Python 侧记录复利信号(gotcha:提炼在 Claude 侧)：override_store 记人工否决;CLI override-result 写入;
+      distill-memory 命令文档化「优先把人工否决沉淀为高置信案例记忆(负样本)+decided_under_rule_version」;
+      memory-query(G4)召回为风险提示(按当前规则复检)。284 全量/ruff/layering;override_store 只依赖 platform。
+    backlog: "全自动闭环(distill 自动读 list_pending_overrides→写案例记忆→mark_distilled)跨 Python/Claude 边界+gitignored memory,需导出呈现机制,留 backlog"
     accept: "人否决一次产出一条高置信案例记忆；下次同型案件召回为建议"
     depends_on: [G4]
 
