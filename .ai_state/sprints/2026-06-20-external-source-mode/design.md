@@ -25,8 +25,15 @@
   - 大小/数量限制：复用 `max_upload_file_bytes` + 文件数上限，防超大目录拷爆磁盘。
   - 拷贝时 sanitize 文件名（`sanitize_upload_name`），扁平化（不递归保留任意深层结构，或限定深度）。
 
-### Phase 2（留后）：URL 拉取
-`{mode:"external", source_url:"https://..."}` —— fetch 远程文件落盘。更复杂：host allowlist、auth、超时、content-type/size 校验、SSRF 防护（拒内网地址/metadata 端点）。单独立项。
+### Phase 1b：URL 拉取（用户实际需求 — 公网可直接打开的 PDF）
+`{mode:"external", source_url:"https://host/x.pdf"}` —— server fetch 远程文件落盘 → 拷入租户子树。
+**SSRF 是硬约束（核心风险）**：调用方给的 URL 是让 server 发请求，"浏览器能打开"≠"server 能安全拉"。本项目暴露面：litellm `127.0.0.1:4000`、API 自身 `127.0.0.1:8000`、云元数据 `169.254.169.254`(偷凭证)、内网主机。必须：
+- **host allowlist**（env `EXTERNAL_SOURCE_URL_HOSTS`，不在白名单的域拒；空=URL 模式关闭）。
+- **拒私有/内网 IP**：解析域名 → 校验**解析到的 IP** 不在 `127/8`、`10/8`、`172.16/12`、`192.168/16`、`169.254/16`(metadata)、`::1`；**每跳重定向重新校验**（防 DNS rebinding / 重定向绕过）。
+- **不跟随重定向**（或每跳校验目标 IP）。
+- content-type 白名单（PDF/允许类型）+ 大小上限（`max_upload_file_bytes`）+ 超时。
+- 下载落租户子树后处理，下游同 upload（继承隔离/retention/新结构）。
+- 用 `httpx`（已在依赖）；不把含 token 的 URL 进日志（脱敏）。
 
 ## 3. 影响范围（Phase 1）
 
@@ -48,7 +55,7 @@
 - `uv run pytest -q` 全绿 + ruff + codex/cc 交叉审查（System + 安全敏感）。
 
 ## 6. 待 codex review 决策点
-1. Phase 1 只做本地绝对路径（allowlist）是否够，URL 是否该一期一起。
+1. **URL 模式（用户实际需求）已纳入一期（Phase 1b）**——SSRF 防护（host allowlist + 拒内网/metadata IP + 重定向校验 + content-type/size）是硬约束，请重点评 SSRF 设计是否有漏洞。
 2. external 模式**拷入** vs **就地读**——拷入(推荐,继承隔离/retention) vs 就地(省拷贝但破子树模型)。
 3. allowlist 粒度：全局 `EXTERNAL_SOURCE_ROOTS` vs 按租户 `EXTERNAL_SOURCE_ROOTS_<tenant>`（多租户场景外部根是否该隔离）。
 4. 请求模型：mode union 扩展 vs 独立 external 端点。
