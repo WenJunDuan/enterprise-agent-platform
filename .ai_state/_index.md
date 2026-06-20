@@ -67,7 +67,7 @@ pointers:
   latest_architecture_update: "2026-06-20T01:29:08.936Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "goal:agent-capability-redesign:resume-G0b/G1c/G2/G4/G5 (G3 blocked:无外部API凭证)"
+next_action: "goal:agent-capability-redesign:G0/G1/G3 done+pushed；剩 G2(latent)/G4(enum gitignored+3层)/G5(substantial)/G0b/G1c"
 last_subagent: "generator"
 last_subagent_at: "2026-06-02T09:25:27.661Z"
 active_worktrees: []
@@ -166,6 +166,7 @@ slug 拆分为独立 sprint 目录；`lessons.md` 整体保留为
 - `docs/` — 项目参考文档 (开发指南 / 前端对接 / audit-skills)，非状态机文件
 
 ## 历史 (由 pace-continuator hook 自动追加, 最多保留近 10 条)
+- `2026-06-20 01:47:27`: stage=impl sprint=2026-06-20-agent-capability-redesign turn-end
 - `2026-06-19 12:07:21`: stage=ship sprint=2026-06-19-contract-audit-api turn-end
 - `2026-06-19 10:20:54`: stage=impl sprint=2026-06-19-contract-audit-feature turn-end
 - `2026-06-19 08:33:33`: stage=impl sprint=2026-06-19-tender-ingestion-workflow turn-end
@@ -175,7 +176,6 @@ slug 拆分为独立 sprint 目录；`lessons.md` 整体保留为
 - `2026-06-17 10:00:43`: stage=ship sprint=2026-06-17-ocr-http-api turn-end
 - `2026-06-17 09:53:50`: stage=ship sprint=  turn-end
 - `2026-06-17 09:51:55`: stage=ship sprint=  turn-end
-- `2026-06-17 09:48:22`: stage=ship sprint=  turn-end
 
 - 2026-06-02 [migrate] v9.6.2(legacy flat) → v9.6.4. 备份见 `.ai_state.backup-*`。
 
