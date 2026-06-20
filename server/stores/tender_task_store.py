@@ -13,6 +13,8 @@ _STORE = TaskStore("tender_tasks")
 
 upsert_tender_task = _STORE.upsert
 delete_tender_task = _STORE.delete
+try_transition_tender_task = _STORE.try_transition       # round4 F6：原子 retry 占位
+delete_tender_task_if_idle = _STORE.delete_if_idle        # round4 F6：原子守卫删除
 get_tender_task = _STORE.get
 list_tender_tasks = _STORE.list
 get_tender_task_admin = _STORE.get_admin
