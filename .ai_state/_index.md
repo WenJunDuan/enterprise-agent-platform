@@ -49,7 +49,7 @@ counts:
   issues_count: 0
   refactors_count: 0
   systems_count: 2
-  reviews_count: 32
+  reviews_count: 33
   cleanup_count: 1
   compound:
     learning: 4
@@ -67,7 +67,7 @@ pointers:
   latest_architecture_update: "2026-06-20T01:29:08.936Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "goal:agent-capability-redesign:G0/G1/G3 done+pushed；剩 G2(latent)/G4(enum gitignored+3层)/G5(substantial)/G0b/G1c"
+next_action: "goal:agent-capability-redesign G0-G5 全触达+交叉审查PASS+pushed；backlog:evidence_chain解析/算术重算/worker-route泛型化/G3自动注入/全自动闭环 + G4 schema(gitignored,用户侧)"
 last_subagent: "generator"
 last_subagent_at: "2026-06-02T09:25:27.661Z"
 active_worktrees: []
