@@ -49,7 +49,7 @@ counts:
   issues_count: 0
   refactors_count: 0
   systems_count: 2
-  reviews_count: 30
+  reviews_count: 32
   cleanup_count: 1
   compound:
     learning: 4
@@ -64,7 +64,7 @@ pointers:
   latest_brainstorm: ""
   latest_decisions: ["compound/2026-06-19-decision-ops-below-routes-layering.md", "compound/2026-06-19-decision-agent-front-cc-out-of-scope.md"]
   latest_lessons: ["compound/2026-06-18-learning-absence-is-not-zero.md", "compound/2026-06-17-learning-cross-review-and-soft-timeout.md", "compound/2026-06-17-learning-classify-fix-exposes-latent-bug.md", "compound/2026-06-02-learning-legacy-v962-migration.md"]
-  latest_architecture_update: "2026-06-19T10:35:39.441Z"
+  latest_architecture_update: "2026-06-20T01:29:08.936Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
 next_action: "goal:agent-capability-redesign:G0-delete-dead-domains"
