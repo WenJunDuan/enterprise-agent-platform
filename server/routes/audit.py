@@ -7,6 +7,7 @@ All paths here are relative to the /audit prefix applied when the router is incl
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any, Literal
 
@@ -114,7 +115,9 @@ async def audit_submit(
         raise HTTPException(status_code=415, detail="Unsupported Content-Type")
 
     submitted_at = utc_now()
-    upsert_audit_task(
+    # round4 F4：与 worker 一致，同步 SQLite 写经 to_thread 移出事件循环（不阻塞 async 路由）。
+    await asyncio.to_thread(
+        upsert_audit_task,
         {
             "request_id": request_id,
             "tenant": tenant,
@@ -131,7 +134,7 @@ async def audit_submit(
             "started_at": None,
             "finished_at": None,
             "updated_at": submitted_at,
-        }
+        },
     )
     schedule_directory_audit_task(
         request_id=request_id,

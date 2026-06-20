@@ -119,6 +119,16 @@ def test_extract_directory_cross_tenant_rejected(client):
         shutil.rmtree(other, ignore_errors=True)
 
 
+def test_tenant_submission_root_rejects_traversal_names():
+    # review F1：含 / 或 .. / 空的 tenant 名不得让 resolve 逃出 submissions 根。
+    from fastapi import HTTPException
+
+    for bad in ["../etc", "a/b", "..", "", "x" * 65]:
+        with pytest.raises(HTTPException):
+            tenant_submission_root(bad)
+    assert tenant_submission_root("acme").name == "acme"  # 合法名通过
+
+
 def test_extract_unsupported_content_type(client):
     resp = client.post(
         "/ocr/extract",

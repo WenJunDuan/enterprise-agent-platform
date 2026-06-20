@@ -148,6 +148,22 @@ def test_directory_outside_root_rejected(client):
     assert resp.status_code == 400
 
 
+def test_evaluate_directory_cross_tenant_rejected(client):
+    # round4 F2 / approach b 核心：acme 不能 directory-读其他租户的提交子树。
+    other = tenant_submission_root("other-tenant") / "case"
+    other.mkdir(parents=True, exist_ok=True)
+    (other / "bid.txt").write_text("OTHER TENANT BID", encoding="utf-8")
+    try:
+        resp = client.post(
+            "/tender/evaluate",
+            json={"mode": "directory", "directory_path": str(other)},
+            headers=_AUTH,
+        )
+        assert resp.status_code == 400  # 跨租户子树被拒
+    finally:
+        shutil.rmtree(other, ignore_errors=True)
+
+
 def test_unsupported_content_type(client):
     resp = client.post(
         "/tender/evaluate",

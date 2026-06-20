@@ -207,7 +207,7 @@ def _validate_audit_result(structured_output: StructuredJSON) -> None:
                 f"audit result with verdict={verdict} must cite at least one policy_ref."
             )
         # G1b-full（env-gated）：policy_refs 必须是真实存在的 rule_id，防模型编造规则号。
-        # 这是「验证而非判断」——只查引用真伪，verdict 仍由 Claude 判。默认关(见 _rule_ref_check_enabled)。
+        # 这是「验证而非判断」——只查引用真伪，verdict 仍由 Claude 判。默认开(见 _rule_ref_check_enabled)。
         if _rule_ref_check_enabled():
             known = _load_known_rule_ids()
             if known:  # 加载到规则才校验；无 knowledge/ → 跳过(向后兼容)
