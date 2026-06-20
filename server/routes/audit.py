@@ -23,9 +23,10 @@ from server.routes.upload_helpers import (
     validate_directory_case_path,
 )
 from server.stores.audit_task_store import (
-    delete_audit_task,
+    delete_audit_task_if_idle,
     get_audit_task,
     list_audit_tasks,
+    try_transition_audit_task,
     upsert_audit_task,
 )
 from server.stores.request_store import new_request_id, utc_now
@@ -194,21 +195,18 @@ async def retry_audit_task(
     record = get_audit_task(request_id, tenant=tenant)
     if record is None:
         raise HTTPException(status_code=404, detail="Audit task not found")
-    if record.get("status") == "running":
-        raise HTTPException(status_code=409, detail="Audit task is still running")
     case_path = str(record.get("case_path") or "").strip()
     if not case_path:
         raise HTTPException(status_code=400, detail="Audit task has no source path to re-audit")
     mode = str(record.get("mode") or "directory")
     started_at = utc_now()
-    upsert_audit_task(
-        {
-            "request_id": request_id,
-            "tenant": tenant,
+    # round4 F6：原子状态转移替代"读 status→判→写"。仅当当前非 running 时占位为 running；
+    # 并发两次 retry 只有一次成功，另一次回 409，杜绝双重排程/双重成本。
+    claimed = try_transition_audit_task(
+        request_id,
+        tenant,
+        updates={
             "status": "running",
-            "mode": mode,
-            "source_mode": mode,
-            "case_path": case_path,
             "claim_id": None,
             "result_file": None,
             "session_id": None,
@@ -217,8 +215,10 @@ async def retry_audit_task(
             "started_at": started_at,
             "finished_at": None,
             "updated_at": started_at,
-        }
+        },
     )
+    if not claimed:
+        raise HTTPException(status_code=409, detail="Audit task is still running")
     schedule_directory_audit_task(
         request_id=request_id,
         tenant=tenant,
@@ -238,8 +238,9 @@ async def delete_audit_task_endpoint(
     record = get_audit_task(request_id, tenant=tenant)
     if record is None:
         raise HTTPException(status_code=404, detail="Audit task not found")
-    if record.get("status") == "running":
+    # round4 F6：原子守卫删除替代"读 status→判→删"。running 时删不动（回 409），
+    # 避免与并发 retry 竞态把正在跑的任务连库带文件一起删。
+    if not delete_audit_task_if_idle(request_id, tenant):
         raise HTTPException(status_code=409, detail="Cannot delete a running audit task")
     remove_submission_dir(record.get("case_path"))
-    delete_audit_task(request_id, tenant=tenant)
     return {"request_id": request_id, "status": "deleted"}

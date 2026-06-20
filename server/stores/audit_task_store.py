@@ -14,6 +14,8 @@ _STORE = TaskStore("audit_tasks", legacy_file=LEGACY_AUDIT_TASK_FILE)
 
 upsert_audit_task = _STORE.upsert
 delete_audit_task = _STORE.delete
+try_transition_audit_task = _STORE.try_transition       # round4 F6：原子 retry 占位
+delete_audit_task_if_idle = _STORE.delete_if_idle        # round4 F6：原子守卫删除
 get_audit_task = _STORE.get
 list_audit_tasks = _STORE.list
 get_audit_task_admin = _STORE.get_admin
