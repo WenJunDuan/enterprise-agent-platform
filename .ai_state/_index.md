@@ -4,9 +4,9 @@
 version: "9.6.4"
 
 # === PACE 路由状态 ===
-path: "System" # tender-data-model goal **已 ship**(Phase1+2,344 passed,双审 REWORK→fixed→PASS)；下个 sprint=前端 tender 对接
-stage: "ship" # tender-data-model shipped(2026-06-20);下一 sprint 待启=agent-front tender-review 接真实 /tender API
-current_sprint_slug: "2026-06-20-tender-data-model"
+path: "System" # storage-restructure 已 ship(357 passed,codex REWORK→fixed symlink逃逸);前端集成已提交待用户测;external 模式设计待实现
+stage: "ship" # 多 sprint 已收口;新会话起点:①实现 external 全地址读取(本地路径+URL,SSRF 防护,设计就绪) ②前端联调
+current_sprint_slug: "2026-06-20-external-source-mode"
 current_roadmap_slug: "" # 跨切面 goal，非单一 roadmap item
 skip_polish: false
 skip_architecture_check: false
@@ -48,8 +48,8 @@ counts:
   features_count: 2
   issues_count: 0
   refactors_count: 0
-  systems_count: 5
-  reviews_count: 44
+  systems_count: 6
+  reviews_count: 47
   cleanup_count: 1
   compound:
     learning: 4
@@ -78,7 +78,7 @@ pointers:
   latest_architecture_update: "2026-06-20T10:04:38.538Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "tender-data-model goal **Phase1+Phase2 全完成**(344 passed/ruff)。Phase2 价格横比:Claude 侧 /tender-compare 算价格分/排名/推荐中标人,compare 不污染 results(archive_to_results=False)/独立 task 表/criteria 全量 hash+stale/推荐终局护栏。codex 设计 APPROVE-WITH-CHANGES + 代码 REWORK→fixed(4 项);cc CONCERNS→fixed(2 项);architecture 档已更新。多投标人比选闭环完整(招标项目→追加 N 家→各自评标→横比排名→推荐)。下一步候选(待用户定):①ship(收尾) ②前端 features/contract/tender-review 接真实 /tender/projects+compare API。另:tender-criteria codex review 仍待网关补跑(codex review --base 13d58a7)"
+next_action: "本会话(2026-06-20 深夜)收尾,358 passed/ruff,已 push origin/main(后端+state);前端集成已 commit 未 push(待用户测)。完成:tender-data-model goal ship + tender-task-api-parity + 第三章硬编码修 + 存储改造(submissions 域命名空间+tender 项目层级,codex REWORK→fixed symlink逃逸)+ 单 file 字段上传(URL 外读废弃-SSRF)+ 前端 tender-review 接真实 API(codex 集成)。**新会话起点**:①用户端到端测前端(需先把 .env 第 11 行 MODEL_BASE_URL=127.0.0.1:4000 删掉,让 line4 anyrouter 生效;后端 serve+前端 dev,proxy 已配 /tender)有问题就修 ②前端联调若 OK 则 push agent-front。遗留:tender-criteria codex review 待补(codex review --base 13d58a7);dependabot 10 漏洞(依赖,另议)"
 last_subagent: "generator"
 last_subagent_at: "2026-06-02T09:25:27.661Z"
 active_worktrees: []
@@ -117,6 +117,13 @@ fingerprint: ""
 > 本文件由 Athena 自动维护. 不要手工修改 frontmatter 字段以外的部分除非你知道你在做什么.
 
 ## 当前状态
+
+2026-06-20（深夜末 · 收尾会话，三候选 + 存储改造 + 前端集成）: 多块连续交付，**358 passed/ruff，36+ commit 已 push origin/main**。
+- **tender 评标改造链**(早段)：criteria 直读招标文件第三章→后改为"评标办法位置以实际标书为准"(删第三章硬编码) + tender 任务三件套对齐 audit + tender-data-model goal(招标项目实体+多投标人追加+回看+价格横比 Phase1/2) **已 ship**。
+- **存储结构改造** `sprints/2026-06-20-storage-restructure/`：`data/submissions/<tenant>/<domain>/[<project_id>/]<request_id>/`(域命名空间+tender 项目层级)。死数据已清(data/contracts 死合同域+smoke)。codex 设计 APPROVE-WITH-CHANGES + 代码 **REWORK→fixed(symlink 逃逸 P1)**;H4 隔离保持+跨域拒绝+maintenance 适配。
+- **上传方式** `sprints/2026-06-20-external-source-mode/`(部分**废弃**)：URL/外部路径全地址读取**砍掉**(SSRF 风险)；改为现有 multipart upload + **新增单 `file` 字段**(besides files[])。两种都客户端推字节,无 SSRF。
+- **前端集成** `sprints/2026-06-20-tender-frontend-integration/`：CC 出对接契约 → codex 集成 tender-review 接真实 /tender API(api.ts/use-tender-review-page/组件,lint/test/build 过)。**已 commit 未 push,待用户端到端测**(需 .env 改用 anyrouter)。
+- 交叉审查模式固化：每块 codex 设计评审 + codex/cc 代码评审,REWORK→fixed。codex 屡次抓到 cc 漏的真 bug(provisional 缺失/symlink 逃逸/retry 丢 project_id)。
 
 2026-06-20（深夜 · tender 数据模型优化 goal Phase1）: 用户要求"数据模型详细设计 → codex review → 设为 goal
 实施"。**设计 + codex 评审 + Phase1 实现全完成**。设计 `sprints/2026-06-20-tender-data-model/design.md`：把
@@ -228,6 +235,7 @@ slug 拆分为独立 sprint 目录；`lessons.md` 整体保留为
 - `docs/` — 项目参考文档 (开发指南 / 前端对接 / audit-skills)，非状态机文件
 
 ## 历史 (由 pace-continuator hook 自动追加, 最多保留近 10 条)
+- `2026-06-20 10:49:49`: stage=ship sprint=2026-06-20-tender-data-model turn-end
 - `2026-06-20 08:32:52`: stage=impl sprint=2026-06-20-tender-data-model turn-end
 - `2026-06-20 07:57:58`: stage=review sprint=2026-06-20-tender-task-api-parity turn-end
 - `2026-06-20 06:53:12`: stage=design sprint=2026-06-20-tender-criteria-from-bid-doc turn-end
@@ -238,6 +246,5 @@ slug 拆分为独立 sprint 目录；`lessons.md` 整体保留为
 - `2026-06-19 10:20:54`: stage=impl sprint=2026-06-19-contract-audit-feature turn-end
 - `2026-06-19 08:33:33`: stage=impl sprint=2026-06-19-tender-ingestion-workflow turn-end
 - `2026-06-19 08:18:16`: stage=ship sprint=2026-06-19-review-backend-refactor turn-end
-- `2026-06-19 01:40:10`: stage=review sprint=2026-06-19-review-backend-refactor turn-end
 
 - 2026-06-02 [migrate] v9.6.2(legacy flat) → v9.6.4. 备份见 `.ai_state.backup-*`。
