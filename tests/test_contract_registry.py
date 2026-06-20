@@ -175,6 +175,30 @@ def test_scoring_consistency_allows_valid_score():
     assert out["result"] is True
 
 
+# ── G2 类型化任务计划（extracted_data.plan 可选，产出则校验形）──────────────
+
+
+def test_plan_present_valid_passes():
+    ok = _valid_audit_result(
+        extracted_data={"plan": {"nodes": [{"step": 0, "intent": "清点文件", "tag": "sequential"}]}}
+    )
+    out = apply_schema_semantics(DEFAULT_OUTPUT_SCHEMA_NAME, ok)
+    assert out["result"] is True
+
+
+def test_plan_present_malformed_rejected():
+    # 节点缺 required intent → plan 契约校验拒。
+    bad = _valid_audit_result(extracted_data={"plan": {"nodes": [{"step": 0}]}})
+    with pytest.raises(JSONContractError):
+        apply_schema_semantics(DEFAULT_OUTPUT_SCHEMA_NAME, bad)
+
+
+def test_no_plan_skips_plan_check():
+    # 未产出 plan（内联散文计划）→ 跳过，不报错。
+    out = apply_schema_semantics(DEFAULT_OUTPUT_SCHEMA_NAME, _valid_audit_result())
+    assert out["result"] is True
+
+
 def test_register_new_schema_takes_effect_without_editing_dispatcher():
     schema = "test/widget.schema.json"
     calls: list[str] = []

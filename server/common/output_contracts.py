@@ -18,14 +18,19 @@ import json
 import os
 from typing import Any
 
+import jsonschema
+
 from server.common.contract import (
     DEFAULT_OUTPUT_SCHEMA_NAME,
     INIT_RULES_REPORT_SCHEMA_NAME,
     JSONContractError,
     StructuredJSON,
+    load_output_schema,
     register_schema_processor,
 )
 from server.platform.paths import PROJECT_ROOT
+
+PLAN_SCHEMA_NAME = "common/plan.schema.json"
 
 _KNOWLEDGE_DIR = PROJECT_ROOT / "knowledge"
 
@@ -212,7 +217,28 @@ def _validate_audit_result(structured_output: StructuredJSON) -> None:
                     )
 
     _verify_scoring_consistency(structured_output)
+    _verify_plan_shape(structured_output)
     _cleanse_risk_dimensions(structured_output)
+
+
+def _verify_plan_shape(structured_output: dict[str, Any]) -> None:
+    """G2：若命令把 S1 计划升级为结构化 ``extracted_data.plan``，校验其满足 plan 契约。
+
+    可选——未产出 plan（散文计划/内联单 agent 流）则跳过；产出了就必须类型正确
+    （每节点 step/intent + 可选 reads/tools/produces/tag）。
+    """
+    extracted = structured_output.get("extracted_data")
+    if not isinstance(extracted, dict):
+        return
+    plan = extracted.get("plan")
+    if plan is None:
+        return
+    try:
+        jsonschema.validate(plan, load_output_schema(PLAN_SCHEMA_NAME))
+    except (jsonschema.ValidationError, jsonschema.SchemaError) as exc:
+        raise JSONContractError(
+            f"extracted_data.plan 不满足 plan 契约: {exc.message}"
+        ) from exc
 
 
 def _verify_scoring_consistency(structured_output: dict[str, Any]) -> None:

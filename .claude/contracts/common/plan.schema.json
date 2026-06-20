@@ -1,0 +1,48 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "task_plan",
+  "description": "类型化任务计划（G2）。命令 S1 可把散文计划升级为结构化节点写入 extracted_data.plan；平台据此校验形（每节点声明意图/输入/工具/产物/调度标签）。仅当真需要任务拆解(如 tender 多章节并行)时才有多节点；内联单 agent 流通常一个 sequential 节点即可。",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "nodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["step", "intent"],
+        "properties": {
+          "step": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "intent": {
+            "type": "string",
+            "minLength": 1,
+            "description": "本节点要达成什么"
+          },
+          "reads": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "需读取的输入（文件/章节/规则）"
+          },
+          "tools": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "本节点用到的工具（如 Read/Glob/credit-check）"
+          },
+          "produces": {
+            "type": "string",
+            "description": "产物（如 extract-result / scoring / audit-result）"
+          },
+          "tag": {
+            "type": "string",
+            "enum": ["sequential", "parallel", "external_data", "manual_review"],
+            "description": "调度标签：sequential 串行；parallel 可并行拆子任务；external_data 需外部数据(可能 manual_review)；manual_review 不可自动判定"
+          }
+        }
+      }
+    }
+  },
+  "required": ["nodes"]
+}

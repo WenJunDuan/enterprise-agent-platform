@@ -18,6 +18,7 @@ allowed-tools: Read, Glob, Skill, Task
   - 项目层：`knowledge/tender/{招标编号}.rules.json`（该项目第三章评标办法的分值/权重）
   - 通则层：`knowledge/tender/statute-*.rules.json`（招标投标法实施条例、评标方法暂行规定等）
 - 把评分办法逐项展开为评分计划：每项记 `{item, max, rule_ids, 需读章节, tag}`。
+- （可选 · G2 类型化计划）把计划同时以结构化节点写入 `extracted_data.plan`，满足 `.claude/contracts/common/plan.schema.json`（每节点 `{step, intent, reads, tools, produces, tag}`，tag ∈ sequential/parallel/external_data/manual_review）。平台会校验其形；便于审计与（未来）按 `parallel` 节点并行拆分。
 - 项目层规则缺失时，对相关评分项按降级走 `manual_review`（`rule_gap`），**不要现场从招标文件 PDF 编造评分规则**。
 
 ### S2 事实抽取（把大文件压成小底稿）

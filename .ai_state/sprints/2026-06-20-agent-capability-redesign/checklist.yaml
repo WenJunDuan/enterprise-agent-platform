@@ -35,12 +35,17 @@ tasks:
 
   - id: G2
     title: PLAN 产出类型化任务图（过 schema，替代散文计划）
-    status: todo
+    status: done
     files:
-      - .claude/contracts/common/            # 新增 plan.schema.json
-      - .claude/commands/audit.md
-      - .claude/commands/tender-evaluate.md
+      - .claude/contracts/common/plan.schema.json   # 新：类型化任务计划契约(nodes[{step,intent,reads,tools,produces,tag}])
+      - server/common/output_contracts.py           # _verify_plan_shape：extracted_data.plan 存在则校验形
+      - tests/test_contract_registry.py             # plan 合法/畸形/缺省 用例
+      - .claude/commands/tender-evaluate.md         # S1 加可选「类型化 plan」说明(活化)
     accept: "命令 S1 产出可过 schema 的结构化 plan；每节点声明 inputs/tools/output-contract"
+    result: >
+      plan 契约 + 校验机制 done(extracted_data.plan 可选产出，产出则过 plan.schema 校验形)；
+      tender-evaluate S1 文档活化。22 contract_registry 用例;282 全量绿。
+      注:内联单 agent 流无真并行,plan 价值偏地基(为未来 parallel 拆分铺路);audit.md 未强制(可选)
     depends_on: [G1]
 
   - id: G3
