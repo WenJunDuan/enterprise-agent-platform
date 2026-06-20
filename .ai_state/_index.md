@@ -4,10 +4,10 @@
 version: "9.6.4"
 
 # === PACE 路由状态 ===
-path: "System"                    # 活动 sprint=agent-capability-redesign(System,跨切面架构); contract-audit-platform 主体已达成
-stage: "ship"                     # agent-capability-redesign G0-G5 全触达+两批交叉审查PASS+287passed+pushed(7eb656a)；backlog/用户TODO 见 pending-actions.md。新会话=干净起点
+path: "System" # 活动 sprint=agent-capability-redesign(System,跨切面架构); contract-audit-platform 主体已达成
+stage: "ship" # agent-capability-redesign G0-G5 全触达+两批交叉审查PASS+287passed+pushed；backlog/用户TODO 在其 checklist.yaml(backlog:/user_todo: 段)。新会话=干净起点
 current_sprint_slug: "2026-06-20-agent-capability-redesign"
-current_roadmap_slug: ""          # 跨切面 goal，非单一 roadmap item
+current_roadmap_slug: "" # 跨切面 goal，非单一 roadmap item
 skip_polish: false
 skip_architecture_check: false
 
@@ -49,7 +49,7 @@ counts:
   issues_count: 0
   refactors_count: 0
   systems_count: 2
-  reviews_count: 33
+  reviews_count: 34
   cleanup_count: 1
   compound:
     learning: 4
@@ -62,12 +62,23 @@ pointers:
   latest_review: "sprints/2026-06-19-contract-audit-api/reviews/summary.md"
   latest_cleanup: "sprints/2026-06-19-contract-audit-feature/cleanup-pass.md"
   latest_brainstorm: ""
-  latest_decisions: ["compound/2026-06-20-decision-verification-gate-and-scaffolding.md", "compound/2026-06-19-decision-ops-below-routes-layering.md", "compound/2026-06-19-decision-agent-front-cc-out-of-scope.md"]
-  latest_lessons: ["compound/2026-06-18-learning-absence-is-not-zero.md", "compound/2026-06-17-learning-cross-review-and-soft-timeout.md", "compound/2026-06-17-learning-classify-fix-exposes-latent-bug.md", "compound/2026-06-02-learning-legacy-v962-migration.md"]
+  latest_decisions:
+    ["compound/2026-06-20-decision-verification-gate-and-scaffolding.md", "compound/2026-06-19-decision-ops-below-routes-layering.md", "compound/2026-06-19-decision-agent-front-cc-out-of-scope.md"]
+      "compound/2026-06-20-decision-verification-gate-and-scaffolding.md",
+      "compound/2026-06-19-decision-ops-below-routes-layering.md",
+      "compound/2026-06-19-decision-agent-front-cc-out-of-scope.md",
+    ]
+  latest_lessons:
+    ["compound/2026-06-18-learning-absence-is-not-zero.md", "compound/2026-06-17-learning-cross-review-and-soft-timeout.md", "compound/2026-06-17-learning-classify-fix-exposes-latent-bug.md", "compound/2026-06-02-learning-legacy-v962-migration.md"]
+      "compound/2026-06-18-learning-absence-is-not-zero.md",
+      "compound/2026-06-17-learning-cross-review-and-soft-timeout.md",
+      "compound/2026-06-17-learning-classify-fix-exposes-latent-bug.md",
+      "compound/2026-06-02-learning-legacy-v962-migration.md",
+    ]
   latest_architecture_update: "2026-06-20T01:29:08.936Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "idle:agent-capability-redesign 完成。新会话起点→读 pending-actions.md(用户TODO:G3 信用key/G4 case-memory schema; 代码 backlog) 或用户新方向"
+next_action: "idle:agent-capability-redesign 完成。backlog/用户TODO 归各 sprint checklist.yaml(本 sprint backlog:/user_todo: 段;litellm key 见 review-backend-refactor/summary.md;存储项见 logging-and-storage/ship.md)。新会话听用户新方向"
 last_subagent: "generator"
 last_subagent_at: "2026-06-02T09:25:27.661Z"
 active_worktrees: []
@@ -86,7 +97,8 @@ project:
   build_cmd: "uv build"
   lint_cmd: "uv run ruff check ."
   dev_cmd: "uv run python -m server.cli serve"
-  conventions: ["line-length=100", "target=py312", "ruff formatter", "packages=[server]"]
+  conventions:
+    ["line-length=100", "target=py312", "ruff formatter", "packages=[server]"]
   gotchas:
     - "tests/ 已纳入版本控制，测试回归应与实现同步提交"
     - "knowledge/ 与 data/ 被 .gitignore 忽略，制度源材料不入库"
@@ -109,21 +121,20 @@ fingerprint: ""
 2026-06-20（agent-capability-redesign goal **完成**）: 用户驱动的跨切面架构 sprint（依据
 `sprints/2026-06-19-review-backend-refactor/reviews/round4-fullstack-review.md`）。五诉求收敛为
 **两脊椎（验证闸 + 记忆轴）**，G0-G5 全部触达、两批交叉审查均 **PASS**、**287 passed**、已 push origin/main。
+
 - **G0a** 删 legal/contract + HR 死域（round4 F8，15 文件 + 6 处 un-wire）；**G0b** 泛型化
   `server/stores/task_store.TaskStore` 收敛 audit/tender 重复（F7）。
 - **G1 验证闸**（F1 BLOCKER）：`apply_schema_semantics` 加 jsonschema 形校验 + approved/rejected 须引
   ≥1 policy_ref + 引用真伪闸（env 门控 `RULE_REF_CHECK`，默认关）+ 评分 score≤max 一致性。
 - **G2** `common/plan.schema.json` + `extracted_data.plan` 形校验（类型化计划，命令可选产出）。
 - **G3** 外部企业信用工具脚手架：`server/ops/credit_api.py` + `CreditApiSettings`(env `CREDIT_API_URL/KEY`)
-  + `contracts/tools/credit-check.schema.json` + cli `credit-check`；**未配置→manual_review，填 url+key 即用**。
+  - `contracts/tools/credit-check.schema.json` + cli `credit-check`；**未配置→manual_review，填 url+key 即用**。
 - **G4** memory-query SKILL 三层记忆(制度>案例>工作)+规则版本复检+衰减；**G5** `server/stores/override_store.py`
-  + cli `override-result` + distill 消费文档（人工否决→案例记忆 复利回路）。
+  - cli `override-result` + distill 消费文档（人工否决→案例记忆 复利回路）。
 - 决策见 `compound/2026-06-20-decision-verification-gate-and-scaffolding.md`。
-- **backlog（诚实，有约束，见 pending-actions.md + 该 sprint checklist.yaml）**：evidence_chain source 解析 +
-  算术重算（撞「Python 不判断」gotcha）、worker/route 泛型化、G3 评标内自动注入、G4/G5 全自动闭环。
-- **用户侧 TODO**：① G3 拿到信用 API 后填 `enterprise-agent.env` 的 `CREDIT_API_URL/KEY`；
-  ② G4 在部署侧改 gitignored 的 `knowledge/_schema/case-memory.schema.json`（domain enum→
-  `["expense","tender","ocr"]`，加 valid_until/superseded_by/decided_under_rule_version）。
+- **backlog + 用户侧 TODO（唯一归宿 = 该 sprint `checklist.yaml` 的 `backlog:` / `user_todo:` 段）**：
+  evidence_chain 解析+算术重算（撞「Python 不判断」gotcha）、worker/route 泛型化、G3 评标内自动注入、
+  G4/G5 全自动闭环；用户侧：G3 填信用 API key、G4 部署侧改 gitignored 的 case-memory.schema.json。
 - 注：`contract-audit-platform` roadmap(item0-3)曾先完成，但其 **item2/item3 的合同域代码已在本 sprint G0a 删除**
   （用户确认只做 tender 评标，不做独立合同审查）。env 示例已去重，只留 `enterprise-agent.env.example`。
 
@@ -143,7 +154,7 @@ active sprint 切到 `2026-06-19-tender-ingestion-workflow`（Feature, stage=imp
 `_cleanse_risk_dimensions`、memory 单坏文件异常隔离、session 测试 patch 正确单例。**241 passed / ruff clean**。
 延后项已文档化于 `sprints/2026-06-19-review-backend-refactor/reviews/summary.md`（架构分层守卫需 ops/routes
 层序决策转 Phase 1、API 脱敏、并发测试、migrate 可观测性、全部 polish）。运维遗留：litellm key 轮换（仅运维可做，
-见 `pending-actions.md`）。**下一项 item1 `contract-audit-feature` 待 design 阶段启动（next_action 已指向）**；
+见同目录 `reviews/summary.md` 的 🔴 运维项）。**下一项 item1 `contract-audit-feature` 待 design 阶段启动（next_action 已指向）**；
 主线方向（item1 合同审计 vs 并行 tender-ingestion sprint）待用户拍板，本次仅收尾 item0 状态。
 
 2026-06-19: Sprint `2026-06-19-tender-ingestion-workflow`（Feature）**计划就绪，待开工**（PACE
@@ -187,6 +198,8 @@ slug 拆分为独立 sprint 目录；`lessons.md` 整体保留为
 - `docs/` — 项目参考文档 (开发指南 / 前端对接 / audit-skills)，非状态机文件
 
 ## 历史 (由 pace-continuator hook 自动追加, 最多保留近 10 条)
+
+- `2026-06-20 02:49:56`: stage=ship sprint=2026-06-20-agent-capability-redesign turn-end
 - `2026-06-20 01:47:27`: stage=impl sprint=2026-06-20-agent-capability-redesign turn-end
 - `2026-06-19 12:07:21`: stage=ship sprint=2026-06-19-contract-audit-api turn-end
 - `2026-06-19 10:20:54`: stage=impl sprint=2026-06-19-contract-audit-feature turn-end
@@ -195,49 +208,6 @@ slug 拆分为独立 sprint 目录；`lessons.md` 整体保留为
 - `2026-06-19 01:40:10`: stage=review sprint=2026-06-19-review-backend-refactor turn-end
 - `2026-06-18 15:25:31`: stage=ship sprint=2026-06-18-tender-domain turn-end
 - `2026-06-17 10:00:43`: stage=ship sprint=2026-06-17-ocr-http-api turn-end
-- `2026-06-17 09:53:50`: stage=ship sprint=  turn-end
-- `2026-06-17 09:51:55`: stage=ship sprint=  turn-end
+- `2026-06-17 09:53:50`: stage=ship sprint= turn-end
 
 - 2026-06-02 [migrate] v9.6.2(legacy flat) → v9.6.4. 备份见 `.ai_state.backup-*`。
-
-
-## 历史
-
-
-## 历史
-
-
-## 历史
-
-
-## 历史
-
-
-## 历史
-
-
-## 历史
-
-
-## 历史
-
-
-## 历史
-
-
-## 历史
-
-
-## 历史
-
-
-## 历史
-
-
-## 历史
-
-
-## 历史
-
-
-## 历史
