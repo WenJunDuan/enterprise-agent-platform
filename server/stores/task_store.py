@@ -154,6 +154,50 @@ class TaskStore:
             )
             return cursor.rowcount > 0
 
+    def try_transition(
+        self,
+        request_id: str,
+        tenant: str,
+        *,
+        updates: dict[str, Any],
+        require_not_status: str = "running",
+    ) -> bool:
+        """原子条件转移：仅当当前 ``status != require_not_status`` 时套用 *updates*。
+
+        单条 UPDATE 守住 status 闸，消除 retry 的"读→判 status→写"TOCTOU（round4 F6）：
+        并发两次 retry 只有一次 ``rowcount==1``，另一次得 ``False`` → 路由回 409，
+        不会双重排程/双重成本。列名取自 ``_FIELDS`` 白名单，无外部输入进 SQL。
+        """
+        cols = [col for col in updates if col in _FIELDS and col != "request_id"]
+        if not cols:
+            return False
+        set_clause = ", ".join(f"{col} = ?" for col in cols)
+        params: list[Any] = [updates[col] for col in cols]
+        params.extend([request_id, tenant, require_not_status])
+        with connect_sqlite(PLATFORM_DB_FILE, immediate=True) as connection:
+            cursor = connection.execute(
+                f"UPDATE {self.table} SET {set_clause} "  # noqa: S608 - cols 经 _FIELDS 白名单
+                f"WHERE request_id = ? AND tenant = ? AND status != ?",
+                params,
+            )
+            return cursor.rowcount == 1
+
+    def delete_if_idle(
+        self, request_id: str, tenant: str, *, busy_status: str = "running"
+    ) -> bool:
+        """原子守卫删除：仅当 ``status != busy_status`` 时删行（与 try_transition 配套守 F6）。
+
+        消除 delete 的"读→判 status→删"TOCTOU；并发 delete 与 running-retry 竞态下，
+        要么删成功、要么因 running 删不动（``rowcount 0`` → 路由回 409）。
+        """
+        with connect_sqlite(PLATFORM_DB_FILE) as connection:
+            cursor = connection.execute(
+                f"DELETE FROM {self.table} "  # noqa: S608
+                f"WHERE request_id = ? AND tenant = ? AND status != ?",
+                (request_id, tenant, busy_status),
+            )
+            return cursor.rowcount > 0
+
     def get(self, request_id: str, tenant: str) -> dict[str, Any] | None:
         with connect_sqlite(PLATFORM_DB_FILE) as connection:
             row = connection.execute(

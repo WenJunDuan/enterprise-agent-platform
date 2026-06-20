@@ -87,3 +87,71 @@ def test_recover_stale_marks_running_as_failed(rid):
     assert rid in recovered
     got = store.get_audit_task_admin(rid)
     assert got["status"] == "failed"
+
+
+# ── round4 F6：retry/delete 原子化（消除 TOCTOU 双执行/双成本）──────────────────
+
+
+def test_try_transition_succeeds_when_not_running(rid):
+    store.upsert_audit_task(_new_task(rid, status="completed"))
+    won = store.try_transition_audit_task(
+        rid, "acme", updates={"status": "running", "updated_at": "2026-06-19T03:00:00+00:00"}
+    )
+    assert won is True
+    assert store.get_audit_task(rid, tenant="acme")["status"] == "running"
+
+
+def test_try_transition_blocked_when_running(rid):
+    store.upsert_audit_task(_new_task(rid, status="running"))
+    won = store.try_transition_audit_task(
+        rid, "acme", updates={"status": "running", "progress_message": "再来一次"}
+    )
+    assert won is False  # 已 running → status 闸拦下，不重复占位
+
+
+def test_try_transition_tenant_scoped(rid):
+    store.upsert_audit_task(_new_task(rid, tenant="acme", status="completed"))
+    assert (
+        store.try_transition_audit_task(
+            rid, "other", updates={"status": "running"}
+        )
+        is False
+    )  # 跨租户不可转移
+
+
+def test_try_transition_concurrent_single_winner(rid):
+    """round4 F6 核心：N 个并发 retry 把 completed→running，恰好一个赢家。"""
+    import threading
+
+    store.upsert_audit_task(_new_task(rid, status="completed"))
+    results: list[bool] = []
+    lock = threading.Lock()
+    barrier = threading.Barrier(8)
+
+    def _attempt() -> None:
+        barrier.wait()  # 尽量让 8 个线程同时冲 UPDATE
+        won = store.try_transition_audit_task(
+            rid, "acme", updates={"status": "running", "updated_at": "2026-06-19T04:00:00+00:00"}
+        )
+        with lock:
+            results.append(won)
+
+    threads = [threading.Thread(target=_attempt) for _ in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert len(results) == 8
+    assert results.count(True) == 1  # 恰好一个赢家 → 不会双重排程
+
+
+def test_delete_if_idle_blocked_when_running(rid):
+    store.upsert_audit_task(_new_task(rid, status="running"))
+    assert store.delete_audit_task_if_idle(rid, "acme") is False
+    assert store.get_audit_task(rid, tenant="acme") is not None  # running 任务仍在
+
+
+def test_delete_if_idle_succeeds_when_idle(rid):
+    store.upsert_audit_task(_new_task(rid, status="completed"))
+    assert store.delete_audit_task_if_idle(rid, "acme") is True
+    assert store.get_audit_task(rid, tenant="acme") is None
