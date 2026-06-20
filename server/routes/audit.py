@@ -98,7 +98,7 @@ async def audit_submit(
         except ValidationError as exc:
             raise RequestValidationError(exc.errors()) from exc
         mode = req_payload.mode
-        case_path = validate_directory_case_path(req_payload.directory_path)
+        case_path = validate_directory_case_path(req_payload.directory_path, tenant)
     elif content_type.startswith("multipart/form-data"):
         form_data = await request.form()
         mode = str(form_data.get("mode") or "").strip()
@@ -106,6 +106,7 @@ async def audit_submit(
             raise HTTPException(status_code=400, detail="multipart requests must use mode=upload")
         case_path = await materialize_upload_submission(
             request_id=request_id,
+            tenant=tenant,
             form_json=form_data.get("form_json"),
             form_data=form_data,
         )

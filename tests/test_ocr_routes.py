@@ -12,10 +12,11 @@ import shutil
 import pytest
 from fastapi.testclient import TestClient
 
-from server.routes.upload_helpers import ALLOWED_DIRECTORY_ROOT
+from server.routes.upload_helpers import tenant_submission_root
 
 _TOKEN = "test-fake-token-acme-ocr"
 _AUTH = {"Authorization": f"Bearer {_TOKEN}"}
+_CASE_ROOT = tenant_submission_root("acme")  # 测试租户提交子树根（F2 隔离边界）
 
 
 @pytest.fixture
@@ -78,7 +79,7 @@ def test_extract_empty_upload_rejected(client):
 
 
 def test_extract_directory_mode(client):
-    case = ALLOWED_DIRECTORY_ROOT / "test-ocr-route-case"
+    case = _CASE_ROOT / "test-ocr-route-case"
     case.mkdir(parents=True, exist_ok=True)
     (case / "doc.txt").write_text("目录模式识别内容", encoding="utf-8")
     try:
@@ -100,6 +101,22 @@ def test_extract_directory_outside_root_rejected(client):
         headers=_AUTH,
     )
     assert resp.status_code == 400
+
+
+def test_extract_directory_cross_tenant_rejected(client):
+    # round4 F2 / approach b 核心：acme 不能 directory-读其他租户的提交子树。
+    other = tenant_submission_root("other-tenant") / "case"
+    other.mkdir(parents=True, exist_ok=True)
+    (other / "doc.txt").write_text("OTHER TENANT DATA", encoding="utf-8")
+    try:
+        resp = client.post(
+            "/ocr/extract",
+            json={"mode": "directory", "directory_path": str(other)},
+            headers=_AUTH,
+        )
+        assert resp.status_code == 400  # 跨租户子树被拒
+    finally:
+        shutil.rmtree(other, ignore_errors=True)
 
 
 def test_extract_unsupported_content_type(client):
@@ -183,7 +200,7 @@ def test_extract_result_path_is_basename_not_absolute(client):
 def test_extract_directory_preserves_subdir_paths(client):
     # codex round 2：directory 模式有子目录同名文件时，path 须保留相对路径以区分，
     # 不能塌成 basename（否则 a/doc.txt 与 b/doc.txt 无法区分）。
-    case = ALLOWED_DIRECTORY_ROOT / "test-ocr-subdir-case"
+    case = _CASE_ROOT / "test-ocr-subdir-case"
     (case / "a").mkdir(parents=True, exist_ok=True)
     (case / "b").mkdir(parents=True, exist_ok=True)
     (case / "a" / "doc.txt").write_text("AAA", encoding="utf-8")
@@ -223,7 +240,7 @@ def test_extract_corrupt_file_isolated_as_error(client):
 
 def test_extract_directory_rejects_symlink_escape(client, tmp_path):
     # codex round 4 P1：directory 模式不得经子 symlink 读 case 目录外的文件。
-    case = ALLOWED_DIRECTORY_ROOT / "test-ocr-symlink-case"
+    case = _CASE_ROOT / "test-ocr-symlink-case"
     case.mkdir(parents=True, exist_ok=True)
     secret = tmp_path / "secret.txt"
     secret.write_text("SECRET_OUTSIDE_DATA", encoding="utf-8")

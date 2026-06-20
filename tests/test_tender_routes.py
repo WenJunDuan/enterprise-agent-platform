@@ -14,12 +14,13 @@ import pytest
 from fastapi.testclient import TestClient
 
 from server.common.agent_bridge import AgentRunMeta
-from server.routes.upload_helpers import ALLOWED_DIRECTORY_ROOT
+from server.routes.upload_helpers import tenant_submission_root
 from server.stores.tender_task_store import get_tender_task_admin, upsert_tender_task
 
 _TOKEN = "test-fake-token-acme-tender"
 _AUTH = {"Authorization": f"Bearer {_TOKEN}"}
 EVAL_SCHEMA = "common/audit-result.schema.json"
+_CASE_ROOT = tenant_submission_root("acme")  # 测试租户提交子树根（F2 隔离边界）
 
 
 @pytest.fixture
@@ -38,7 +39,7 @@ def client(monkeypatch):
 
 
 def _make_dir_case(name: str) -> Path:
-    case = ALLOWED_DIRECTORY_ROOT / name
+    case = _CASE_ROOT / name
     case.mkdir(parents=True, exist_ok=True)
     (case / "bid.txt").write_text("投标文件内容", encoding="utf-8")
     return case
@@ -188,14 +189,14 @@ def test_worker_forwards_to_evaluate_bid_and_persists(monkeypatch):
         worker.execute_tender_evaluation_task(
             request_id=request_id,
             tenant="acme",
-            directory_path=str(ALLOWED_DIRECTORY_ROOT),
+            directory_path=str(_CASE_ROOT),
             source_mode="directory",
         )
     )
 
     assert calls["command_name"] == "tender-evaluate"
     assert calls["schema_name"] == EVAL_SCHEMA
-    assert calls["arguments"] == (str(ALLOWED_DIRECTORY_ROOT),)
+    assert calls["arguments"] == (str(_CASE_ROOT),)
     assert calls["opts"]["request_id"] == request_id
     assert calls["opts"]["tenant"] == "acme"
     record = get_tender_task_admin(request_id)
