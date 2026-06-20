@@ -17,12 +17,12 @@ skills:
 > 目标：减少串行往返。**直接读取本地规则文件并在一次推理中完成评分与判定**，不要把下面的原子 skill 当作必走步骤逐个调用。
 
 1. 接收符合 `.claude/contracts/tender/extract-result.schema.json` 的提取结果作为事实底稿；若只有原始材料没有 extract-result，先回到提取阶段。
-2. 一次性读取本案适用的本地规则（**两层**）：
-   - 通则 / 法规 / 资格一票否决 → `knowledge/tender/statute.rules.json`
-   - 本项目评分办法（按招标编号选择）→ `knowledge/tender/{招标编号}.rules.json`
-   读取每个规则文件顶层 `source_path` / `source_version` 作为追溯；不要现场从招标文件 PDF 重新造规则。规则文件缺失时按降级输出 `manual_review`（`rule_gap`）。
+2. 一次性取齐本案评判依据：
+   - **本项目评分标准（criteria）**：`Read` 招标文件第三章《评标办法》，直读解析为评分标准（评分项 / 满分 / 评分规则 / 出处 / 可判定性标签），写入 `extracted_data.criteria`（对齐 `.claude/contracts/tender/criteria.schema.json`）；若上游已在 `extracted_data.criteria` 传入则直接复用。
+   - **通则层国家法规（法律底座，非项目评分标准）**：`knowledge/tender/evalmethod.rules.json`（评标方法暂行规定）、`knowledge/tender/regulation.rules.json`（招标投标法实施条例），读取顶层 `source_path` / `source_version` 作为追溯。
+   招标文件第三章的评分标准**直读即权威**；招标文件没写的标准不得臆造补充。**缺招标文件 / 读不出第三章《评标办法》** → 相关评分项降级输出 `manual_review`（`rule_gap`）。
 3. 如 `knowledge/memory/tender/` 中存在与本案高度相似的案例 / 异常记忆，读取并作为 `memory:` 辅助证据，不能替代结构化规则。
-4. 在**同一次推理**中逐评分项判定，并把结果写入 `extracted_data.scoring`，每项为 `{item, max, score, status, basis}`：
+4. 在**同一次推理**中**对照 `extracted_data.criteria` 逐评分项**判定，并把结果写入 `extracted_data.scoring`，每项为 `{item, max, score, status, basis}`（`item` / `max` 与 criteria 对应项一致）：
    - 规则可依文档判定 → `status: "scored"`，给出 `score` 与 `basis`
    - 命中"不可判定"标签的项 → `status: "manual_review"`、`score: null`，**绝不判 0**：
      - `requires_live_event`（如项目负责人答辩等现场环节）
@@ -51,7 +51,7 @@ skills:
 
 - 最终输出必须符合 `.claude/contracts/common/audit-result.schema.json`；决策只用 `verdict`（`approved` / `rejected` / `manual_review`），不要输出 `result` / `conclusion`（服务端从 `verdict` 派生）。
 - `claim_id` 为投标编号或投标人标识。
-- `policy_refs` 必须来自命中的 `rule_id`（如 `tender_statute_003` / `tender_r2024007_004`）。
+- 承重结论（`approved` / `rejected`）的 `policy_refs` **只引通则层真实 `rule_id`**（如 `tender_evalmethod_001` / `tender_evalmethod_003` / `tender_evalmethod_005`）；`criteria` 各评分项的标准与命中（来自招标文件第三章、无 `rule_id`）写入 `evidence_chain`，**不要塞进 `policy_refs`**（平台真伪闸会拒编造的 `rule_id`）。
 - `extracted_data.scoring` 写入逐评分项的 `{item, max, score, status, basis}`；可在 `extracted_data` 另写 `technical_subtotal` 等汇总，但**不要把未判定项算入合计**，未判定项以文字说明"待人工/现场/外部核定"。
 - `explanation` / `reasons` / `evidence_chain` 必须使用中文，措辞平实、专业、克制（像评标 / 审计意见）：禁用夸张口语词（硬伤、铁证、实锤等），定性留有余地（用"疑似 / 需人工核实"，证据不确凿不下终局结论）。
 - `manual_review` 时，`explanation` 必须写明哪些评分项不能自动判定、缺少什么材料、哪条规则无法闭合，并填写 `manual_review_reason`（只能取 `missing_approval` / `rule_gap` / `data_conflict` / `insufficient_evidence` / `budget_exceeded` / `invoice_invalid` / `pre_approval_mismatch` 之一最贴切者）。

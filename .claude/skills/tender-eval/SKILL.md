@@ -5,21 +5,22 @@ description: Use when 评标、招投标评分、投标文件合规审查，需�
 
 # 评标总控
 
-## 本地规则（两层）
+## 本地规则与评分标准
 
-- **通则层**（稳定，跨项目）：`knowledge/tender/statute.rules.json`
-  ← 招标投标法 / 政府采购法 / 综合评分法通则、资格一票否决项等（把源文件放入 `knowledge/external/` 后用 `/init-rules <源文件> tender` 生成）
-- **项目层**（每标一份）：`knowledge/tender/{招标编号}.rules.json`
-  ← 对应招标文件第三章《评标办法》，用 `/init-rules <招标文件> tender` 生成
+- **通则层国家法规**（稳定、跨项目，作**法律底座**）：
+  - `knowledge/tender/evalmethod.rules.json` ←《评标委员会和评标方法暂行规定》（发改委12号令）
+  - `knowledge/tender/regulation.rules.json` ←《招标投标法实施条例》
+  - 由 `/init-rules <法规源文件> tender` 生成；管废标 / 资格 / 一致性 / 程序的法定依据，**不含**具体项目的分值权重。
+- **会话项目评分标准（criteria）**（每标一份，**不预建**）：本项目评分项 / 满分 / 评分规则就在**它自己的招标文件第三章《评标办法》**里，评标时由 `/tender-evaluate` 在 S1 **直读招标文件**解析为 `extracted_data.criteria`（对齐 `.claude/contracts/tender/criteria.schema.json`），随结论持久化作本次会话规则。
 
-> tender 域的 `category` 轴用法：`statute` 表示通则层；`{招标编号}`（如 `r2024007`）表示某个具体项目的评分规则。rule_id 用下划线连接，例如 `tender_statute_001`、`tender_r2024007_004`。
+> 通则层 `rule_id` 形如 `tender_evalmethod_001` / `tender_regulation_003`（下划线连接），可作 `policy_refs`。criteria 来自招标文件第三章、**无 `rule_id`**，其标准与命中写入 `evidence_chain`。
 
 ## 执行顺序（一次性，少往返）
 
 1. 优先消费 `tender-extractor` 输出的结构化事实；若当前只有原始材料，不要直接猜字段，先回到提取阶段。
-2. 一次性读取通则层 + 本项目层规则；读取顶层 `source_path` / `source_version` 作为追溯；不要在评标现场直接从招标文件 PDF 重新造规则。
+2. `Read` 招标文件第三章《评标办法》直读解析为 `extracted_data.criteria`（招标文件**没写的标准不臆造补充**）；并读通则层 `evalmethod` / `regulation` 法规作法律底座，读取顶层 `source_path` / `source_version` 作为追溯。
 3. 读取 `knowledge/memory/tender/` 中的相似案例 / 异常记忆作为 `memory:` 辅助证据（不能替代结构化规则）。
-4. 逐评分项判定，写入 `extracted_data.scoring`，每项 `{item, max, score, status, basis}`，并整理 `policy_refs`（来自命中的 `rule_id`）/ `evidence_chain` / `verdict`，一次产出契约结果。
+4. **对照 `criteria` 逐评分项判定**，写入 `extracted_data.scoring`，每项 `{item, max, score, status, basis}`；承重 `policy_refs` 只引通则层真实 `rule_id`，criteria 命中写 `evidence_chain`；一次产出契约结果。
 
 ## 不可判定项 → manual_review（绝不判 0）
 
@@ -39,4 +40,4 @@ description: Use when 评标、招投标评分、投标文件合规审查，需�
 - 关键字段缺失：投标报价、拟派项目负责人、业绩项目经理、资格证明
 - 拟派项目负责人与业绩 / 承诺书中的姓名不一致或归属冲突（`data_conflict`）
 - 多份材料互相冲突且无法唯一解释
-- 通则 / 项目规则存在覆盖缺口，需要后续用 `system-rule-init` 补齐
+- 缺招标文件 / 读不出第三章《评标办法》（无法取本项目 `criteria`），或通则层法规存在覆盖缺口（后者可用 `system-rule-init` 补齐）

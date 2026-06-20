@@ -13,9 +13,11 @@ from server.common.contract import DEFAULT_OUTPUT_SCHEMA_NAME, load_output_schem
 
 # tender-evaluate 五步 harness 声明依赖的契约（均已入库）：
 # - 最终结论复用 common/audit-result（= DEFAULT_OUTPUT_SCHEMA_NAME）
+# - S1 会话评分标准 tender/criteria（招标文件第三章直读产物）
 # - S2 事实底稿语义 tender/extract-result；reviewer(默认关) tender/review-delta
 _TENDER_CONTRACTS = [
     DEFAULT_OUTPUT_SCHEMA_NAME,
+    "tender/criteria.schema.json",
     "tender/extract-result.schema.json",
     "tender/review-delta.schema.json",
 ]
