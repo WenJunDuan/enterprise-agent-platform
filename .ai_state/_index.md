@@ -5,7 +5,7 @@ version: "9.6.4"
 
 # === PACE 路由状态 ===
 path: "System"                    # 活动 sprint=agent-capability-redesign(System,跨切面架构); contract-audit-platform 主体已达成
-stage: "impl"                     # agent-capability-redesign: G0a+G1(F8死域+F1验证闸,最高优先2项)done+交叉审查PASS+已push；G0b/G1c/G2/G4/G5 剩余, G3 阻塞(无外部API)
+stage: "ship"                     # agent-capability-redesign G0-G5 全触达+两批交叉审查PASS+287passed+pushed(7eb656a)；backlog/用户TODO 见 pending-actions.md。新会话=干净起点
 current_sprint_slug: "2026-06-20-agent-capability-redesign"
 current_roadmap_slug: ""          # 跨切面 goal，非单一 roadmap item
 skip_polish: false
@@ -54,7 +54,7 @@ counts:
   compound:
     learning: 4
     trick: 0
-    decision: 2
+    decision: 3
     explore: 0
 # === Pointers (指向最新相关文件) ===
 pointers:
@@ -62,12 +62,12 @@ pointers:
   latest_review: "sprints/2026-06-19-contract-audit-api/reviews/summary.md"
   latest_cleanup: "sprints/2026-06-19-contract-audit-feature/cleanup-pass.md"
   latest_brainstorm: ""
-  latest_decisions: ["compound/2026-06-19-decision-ops-below-routes-layering.md", "compound/2026-06-19-decision-agent-front-cc-out-of-scope.md"]
+  latest_decisions: ["compound/2026-06-20-decision-verification-gate-and-scaffolding.md", "compound/2026-06-19-decision-ops-below-routes-layering.md", "compound/2026-06-19-decision-agent-front-cc-out-of-scope.md"]
   latest_lessons: ["compound/2026-06-18-learning-absence-is-not-zero.md", "compound/2026-06-17-learning-cross-review-and-soft-timeout.md", "compound/2026-06-17-learning-classify-fix-exposes-latent-bug.md", "compound/2026-06-02-learning-legacy-v962-migration.md"]
   latest_architecture_update: "2026-06-20T01:29:08.936Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "goal:agent-capability-redesign G0-G5 全触达+交叉审查PASS+pushed；backlog:evidence_chain解析/算术重算/worker-route泛型化/G3自动注入/全自动闭环 + G4 schema(gitignored,用户侧)"
+next_action: "idle:agent-capability-redesign 完成。新会话起点→读 pending-actions.md(用户TODO:G3 信用key/G4 case-memory schema; 代码 backlog) 或用户新方向"
 last_subagent: "generator"
 last_subagent_at: "2026-06-02T09:25:27.661Z"
 active_worktrees: []
@@ -105,6 +105,27 @@ fingerprint: ""
 > 本文件由 Athena 自动维护. 不要手工修改 frontmatter 字段以外的部分除非你知道你在做什么.
 
 ## 当前状态
+
+2026-06-20（agent-capability-redesign goal **完成**）: 用户驱动的跨切面架构 sprint（依据
+`sprints/2026-06-19-review-backend-refactor/reviews/round4-fullstack-review.md`）。五诉求收敛为
+**两脊椎（验证闸 + 记忆轴）**，G0-G5 全部触达、两批交叉审查均 **PASS**、**287 passed**、已 push origin/main。
+- **G0a** 删 legal/contract + HR 死域（round4 F8，15 文件 + 6 处 un-wire）；**G0b** 泛型化
+  `server/stores/task_store.TaskStore` 收敛 audit/tender 重复（F7）。
+- **G1 验证闸**（F1 BLOCKER）：`apply_schema_semantics` 加 jsonschema 形校验 + approved/rejected 须引
+  ≥1 policy_ref + 引用真伪闸（env 门控 `RULE_REF_CHECK`，默认关）+ 评分 score≤max 一致性。
+- **G2** `common/plan.schema.json` + `extracted_data.plan` 形校验（类型化计划，命令可选产出）。
+- **G3** 外部企业信用工具脚手架：`server/ops/credit_api.py` + `CreditApiSettings`(env `CREDIT_API_URL/KEY`)
+  + `contracts/tools/credit-check.schema.json` + cli `credit-check`；**未配置→manual_review，填 url+key 即用**。
+- **G4** memory-query SKILL 三层记忆(制度>案例>工作)+规则版本复检+衰减；**G5** `server/stores/override_store.py`
+  + cli `override-result` + distill 消费文档（人工否决→案例记忆 复利回路）。
+- 决策见 `compound/2026-06-20-decision-verification-gate-and-scaffolding.md`。
+- **backlog（诚实，有约束，见 pending-actions.md + 该 sprint checklist.yaml）**：evidence_chain source 解析 +
+  算术重算（撞「Python 不判断」gotcha）、worker/route 泛型化、G3 评标内自动注入、G4/G5 全自动闭环。
+- **用户侧 TODO**：① G3 拿到信用 API 后填 `enterprise-agent.env` 的 `CREDIT_API_URL/KEY`；
+  ② G4 在部署侧改 gitignored 的 `knowledge/_schema/case-memory.schema.json`（domain enum→
+  `["expense","tender","ocr"]`，加 valid_until/superseded_by/decided_under_rule_version）。
+- 注：`contract-audit-platform` roadmap(item0-3)曾先完成，但其 **item2/item3 的合同域代码已在本 sprint G0a 删除**
+  （用户确认只做 tender 评标，不做独立合同审查）。env 示例已去重，只留 `enterprise-agent.env.example`。
 
 2026-06-19（重拍 Sprint 节点）: 梳理整合「进 item1 design」与「先做 tender 路由」两条流，用户拍板
 **tender 路由先行**。roadmap `contract-audit-platform` 折入已就绪的 tender sprint，执行序重排为
