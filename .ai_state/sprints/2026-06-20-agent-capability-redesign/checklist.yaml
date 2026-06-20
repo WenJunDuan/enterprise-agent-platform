@@ -40,11 +40,20 @@ tasks:
 
   - id: G3
     title: 工具契约化（外部 API 一个强 I/O 契约 + 结果过闸）
-    status: todo
+    status: todo             # 用户改定(2026-06-20)：建全部代码+env，按 config 门控；无接口时跳过→人工
+    spec: >
+      用户(2026-06-20)：目前没有企业信用/发票查验接口，后面去争取。现在审核遇 requires_external_data
+      直接跳过→人工审核(manual_review)。但代码全部做好、环境变量也配好——后面只要复制 api url+key
+      进 env 就能直接用，无需再改代码。
     files:
-      - .claude/contracts/                   # 新增工具 I/O schema
-      - server/common/                       # 工具结果校验夹层
-    accept: "tender requires_external_data（企业信用）首个真用例：原始 API JSON 先过代码校验再进上下文"
+      - server/platform/config.py            # 加 CREDIT_API_URL/CREDIT_API_KEY env + credit_api_configured 标志
+      - server/common/external_tools.py      # 新：企业信用查询工具(httpx)；未配置→None(跳过)；配置→调用+结果过 schema
+      - .claude/contracts/tools/credit-check.schema.json  # 新：外部 API 结果 I/O 契约
+      - .env.example                          # 新：占位 CREDIT_API_URL= / CREDIT_API_KEY=
+      - tests/test_external_tools.py          # 已配置(mock 成功)/未配置→跳过/坏响应→拒
+    accept: >
+      代码+env 全做好；未配置(无 URL/KEY)→工具返 None→评分项保持 manual_review(人工)；
+      配置后(填 URL+KEY)→自动调用 + 结果先过 schema 校验再进上下文(round4 F1「结果先过代码校验」)。
     depends_on: [G1]
 
   - id: G4
