@@ -91,6 +91,23 @@ def test_gate_rejects_approved_without_policy_refs():
         apply_schema_semantics(DEFAULT_OUTPUT_SCHEMA_NAME, _valid_audit_result(policy_refs=[]))
 
 
+def test_gate_rejects_rejected_without_policy_refs():
+    # 与 approved 对称：rejected 也是承重结论，空 refs → 拒。
+    with pytest.raises(JSONContractError):
+        apply_schema_semantics(
+            DEFAULT_OUTPUT_SCHEMA_NAME, _valid_audit_result(verdict="rejected", policy_refs=[])
+        )
+
+
+def test_manual_review_allowed_with_empty_policy_refs():
+    # manual_review 豁免 G1b：人工复核本就因证据/规则不足，不强求引规则（边界快照）。
+    out = apply_schema_semantics(
+        DEFAULT_OUTPUT_SCHEMA_NAME,
+        _valid_audit_result(verdict="manual_review", manual_review_reason="rule_gap", policy_refs=[]),
+    )
+    assert out["verdict"] == "manual_review"
+
+
 def test_register_new_schema_takes_effect_without_editing_dispatcher():
     schema = "test/widget.schema.json"
     calls: list[str] = []

@@ -107,6 +107,10 @@ def _validate_against_json_schema(schema_name: str, structured_output: Structure
         raise JSONContractError(
             f"模型输出不满足 schema {schema_name} 于 `{location}`: {exc.message}"
         ) from exc
+    except jsonschema.SchemaError as exc:
+        # 契约 schema 文件本身非法 = 平台 bug（非模型 bug）。仍转 JSONContractError，
+        # 避免未捕获异常穿透重试环→500 暴露内部 schema 路径。
+        raise JSONContractError(f"契约 schema {schema_name} 自身非法: {exc.message}") from exc
 
 
 def apply_schema_semantics(schema_name: str, structured_output: StructuredJSON) -> StructuredJSON:
