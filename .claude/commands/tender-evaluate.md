@@ -18,7 +18,7 @@ allowed-tools: Read, Glob, Skill, Task
   - `source_ref`（第三章出处：文件+页）、`method`（综合评估法 / 经评审的最低投标价法 / 其他）、`total_max`（满分合计）
   - `items[]`：每项 `{item 评分项名, max 满分, scoring_rule 评分规则原文/转述, source_ref 出处页, tag}`
   - `tag` 标"可判定性"：可依投标文件判定 → `scored`；命中 `requires_live_event`（现场答辩）/ `requires_external_data`（外部信用）/ `requires_cross_bid_comparison`（价格横比）→ 留待 S3 走 `manual_review`。
-- 这份 `criteria` 就是本次评标的**会话项目规则**，随结论持久化（落 data/）；S3 据它逐项评分。
+- 这份 `criteria` 就是本次评标的**会话项目规则**，随结论持久化（落 data/）；S3 据它逐项评分。criteria 须**逐字依招标文件第三章**（评分项 / 满分 / 规则不增删改），确保同一招标在不同投标人评标时得到**一致的 criteria**——这是后续多家公平横向比较的前提。
 - 同时 `Read` 通则层国家法规作**法律底座**（注意：**不是**项目评分标准，而是废标 / 资格 / 一致性 / 程序的法定依据，跨项目稳定）：
   - `knowledge/tender/evalmethod.rules.json`（《评标委员会和评标方法暂行规定》，发改委12号令）
   - `knowledge/tender/regulation.rules.json`（《招标投标法实施条例》）
@@ -57,17 +57,18 @@ allowed-tools: Read, Glob, Skill, Task
 ## 输出契约
 
 1. 最终结论必须符合 `.claude/contracts/common/audit-result.schema.json`。决策只用 `verdict`（`approved` / `rejected` / `manual_review`），不要输出 `result` / `conclusion`（服务端从 `verdict` 派生）。
-2. `claim_id` 为投标编号或投标人标识。
+2. `claim_id` 为**投标人稳定标识**（优先统一社会信用代码，次投标人名称），便于 server 按投标人追加 / 去重；并把**招标项目标识**（招标编号 / 项目名）一并留在 `extracted_data`，供 server 按招标分组、横向比较。
 3. `explanation` / `reasons` / `evidence_chain` 用中文，措辞平实、专业、克制（像评标/审计意见）：禁用夸张或口语词（硬伤、铁证、实锤等），定性留有余地（用"疑似/需人工核实"，证据不确凿不下终局结论）。
 4. `manual_review` 时，`explanation` 必须写明哪些评分项不能自动判定、缺什么材料、哪条规则无法闭合，并填 `manual_review_reason`（只能取 `missing_approval` / `rule_gap` / `data_conflict` / `insufficient_evidence` / `budget_exceeded` / `invoice_invalid` / `pre_approval_mismatch` 之一最贴切者）。
 5. `extracted_data.scoring` 为逐项 `{item, max, score, status, basis}`；未判定项 `score:null` 不计入合计，并在文字中说明需要什么外部输入（现场记录/外部评价表/全部投标报价）。
 6. 只返回一个 JSON 对象，直接符合 `audit-result` 契约；不要输出 Markdown、表格、前言或任何 JSON 之外的文字。
 7. 评标只用本地规则与制度文件，不使用训练记忆中的规则，不编造缺失的规则、附件或评分依据。
 
-## 复核与多投标人
+## 单投标人边界与多投标人追加
 
-- 当前为一次性内联评标，**默认不调度 `tender-reviewer`**；高风险/证据冲突在 `verdict`/`risk_score`/`explanation` 中如实标注，交人工处理。
-- v1 仅评单个投标人；价格横比、有效投标数等 `requires_cross_bid_comparison` 项保持 `manual_review`，留多投标人阶段统一落定。
+- **本命令一次只评目录里的这一家投标人**（招标文件 + 该投标人投标文件）。**不要**尝试读取、比较其他投标人或既往评标结果——多投标人的横向比较、汇总、增量追加由上层 前端 / server 负责（每家一条结果存 data/，按招标项目分组；已出结果不重评）。
+- 因此 `requires_cross_bid_comparison` 项（价格分、有效投标数等）本家单独无法判定，保持 `manual_review` + `score:null`（绝不判 0）；但须把**横比所需的本家数据**（尤其本家投标报价 金额 / 币种）结构化留在 `extracted_data`，并在该项 `basis` 写明"横比数据已具备（本家报价 X），待全部投标汇总后由上层统一计算"，让 server 后续能一次性横比。
+- 当前为一次性内联评标，**默认不调度 `tender-reviewer`**；高风险 / 证据冲突在 `verdict` / `risk_score` / `explanation` 中如实标注，交人工处理。
 
 参数: $ARGUMENTS
 用法: /tender-evaluate data/tenders/r2024007
