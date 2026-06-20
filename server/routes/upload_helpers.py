@@ -8,6 +8,7 @@ No route handlers, no FastAPI app references.
 from __future__ import annotations
 
 import json
+import re
 import shutil
 from pathlib import Path
 from typing import Any
@@ -18,8 +19,19 @@ from server.platform.config import get_app_settings
 from server.platform.paths import PROJECT_ROOT, SUBMISSION_ROOT_DIR
 from server.platform.storage import append_json_file
 
+# tenant 名白名单：阻止含 / 或 .. 的名字让 resolve 逃出 submissions 根（round4 F2 / review F1）。
+_SAFE_TENANT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
+
+
 def tenant_submission_root(tenant: str) -> Path:
-    """每租户提交子树根 ``data/submissions/<tenant>/``（round4 F2 隔离边界）。"""
+    """每租户提交子树根 ``data/submissions/<tenant>/``（round4 F2 隔离边界）。
+
+    对 tenant 名做白名单校验——含 ``/`` / ``..`` / 空串的名字会让 ``resolve`` 逃出
+    submissions 根、破坏隔离（防御内部威胁：被污染的 TENANT_KEYS 配置）。非法名直接拒，
+    不静默穿越。
+    """
+    if not _SAFE_TENANT.match(tenant):
+        raise HTTPException(status_code=400, detail="invalid tenant identifier")
     return (SUBMISSION_ROOT_DIR / tenant).resolve()
 
 
