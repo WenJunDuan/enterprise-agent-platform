@@ -500,6 +500,12 @@ def override_result(
     据此由 distill-memory 提炼成高置信案例记忆；下次同型案件经 memory-query 召回为风险提示
     （仍按当前规则复检，不自动判）。
     """
+    valid_verdicts = {"approved", "rejected", "manual_review"}
+    if human_verdict not in valid_verdicts:
+        raise typer.BadParameter(
+            f"human_verdict 须为 {sorted(valid_verdicts)} 之一", param_hint="human_verdict"
+        )
+
     from server.stores.override_store import record_override
 
     record = get_result_record_by_request_id_admin(request_id=request_id)

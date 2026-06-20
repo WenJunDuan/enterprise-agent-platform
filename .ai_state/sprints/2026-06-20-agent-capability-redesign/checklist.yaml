@@ -30,7 +30,13 @@ tasks:
       G1b-full(output_contracts._load_known_rule_ids 扫 knowledge/*/*.rules.json，policy_refs 须 ⊆ 真实 rule_id)
       按 G3 同款 env 门控 RULE_REF_CHECK(默认关,避免 gitignored knowledge/ 破坏测试;部署侧规则稳定后开启)；
       G1c(_verify_scoring_consistency: extracted_data.scoring 每项 0≤score≤max，null 分跳过)未门控(安全不变式)。
-      19 contract_registry 用例(schema/policy/ref/scoring)；279 全量绿。仍剩：算术「重算」(需 OCR 确定性数,架构更重)留 backlog
+      19 contract_registry 用例(schema/policy/ref/scoring)；279 全量绿。
+    g1_backlog: >
+      仍剩(诚实记 backlog,均需 Python 拿到「真实输入/确定性数」,与「Python 不判断」架构有张力)：
+      ① evidence_chain 每条 source 解析到真实输入文件/字段(design §脊椎一第2件与 policy_refs 并列；
+         现仅 jsonschema 查 source 非空,未解析真伪)——需 Python 知道本案输入文件清单,留 backlog；
+      ② 算术「重算」(金额/限额/日期由 OCR 确定性数→Python 重比较)——需 OCR 确定性数+域比较逻辑,留 backlog。
+      已落地的是「验证轻量层」(schema 形+policy 非空+ref⊆真实rule_id(门控)+score≤max),非完整深度解析。
     note: "杠杆最高的一刀；同时关闭 round4 F1（BLOCKER）的核心"
 
   - id: G2
@@ -90,6 +96,10 @@ tasks:
       ① domain enum ["expense","hr","legal"] → ["expense","tender","ocr"](去死域 hr/legal,加 tender,修 F12)；
       ② 加字段 valid_until / superseded_by / decided_under_rule_version(支撑上面 SKILL 的复检/衰减)。
     accept: "tender 记忆可存可校验；召回带衰减；规则升版后旧版本记忆自动标陈旧"
+    verify: >
+      tracked 行为(SKILL 三层/复检/衰减)经 git diff 可验；schema 字段在 gitignored knowledge/，
+      git 不可追溯——验收方式=用户在部署侧改完 case-memory.schema.json(enum+3字段)后确认，
+      不以 git diff 为唯一验收依据(spec-compliance M2)。
 
   - id: G5
     title: 人工否决 → 案例记忆 回路（唯一复利反馈）
@@ -121,5 +131,5 @@ tasks:
     deleted: "contract.py/contract_worker.py/contract_store.py/contract_task_store.py + review-contract.md + agents/legal/ + agents/hr/ + contracts/legal/ + 4 contract 测试 + system-contract-audit.md (15 文件)"
     accept: "死域从路由与 plumbing 移除；task store/route/worker 收敛为泛型 TaskPipeline"
     result_g0a: "死域删除完成；260 passed/ruff clean；无残留死域引用(contract schema 系统 server/common/contract.py 保留，与 legal 域无关)"
-    g0b_done: "泛型化完成：新 server/stores/task_store.py(TaskStore，表名白名单校验) 收敛 audit/tender 两 store 的 96% 雷同逻辑；audit_task_store/tender_task_store 退化为薄包装(绑表名+导出同名函数,调用方零改)；audit 保留 legacy backfill。15 store 测试+272 全量+6 守卫全过,零回归。worker/route 层(80%/72% 雷同)未泛型化(域差异更多,留 backlog)"
+    g0b_done: "泛型化完成：新 server/stores/task_store.py(TaskStore，表名白名单校验) 收敛 audit/tender 两 store 的 96% 雷同逻辑；audit_task_store/tender_task_store 退化为薄包装(绑表名+导出同名函数,调用方零改)；audit 保留 legacy backfill。15 store 测试+272 全量+6 守卫全过,零回归。worker/route 层(实测 worker~78%/route~64% 雷同)未泛型化(域差异更多,留 backlog)"
     note: "round4 F7+F8；先减熵后抽象，先于 G2/G3"

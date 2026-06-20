@@ -326,13 +326,30 @@ class CreditApiSettings:
     def configured(self) -> bool:
         return bool(self.url.strip()) and bool(self.key.strip())
 
+    def __repr__(self) -> str:
+        # 掩码 key，避免 settings 被打进日志/异常堆栈时泄露密钥。
+        masked = "***" if self.key else ""
+        return (
+            f"CreditApiSettings(url={self.url!r}, key={masked!r}, "
+            f"timeout_seconds={self.timeout_seconds})"
+        )
+
+
+def _credit_timeout_seconds() -> float:
+    """解析超时 env，非法值（如空串/"ten"）兜底默认 10s，绝不让坏 env 炸服务启动。"""
+    raw = os.getenv("CREDIT_API_TIMEOUT_SECONDS", "10").strip()
+    try:
+        return float(raw) if raw else 10.0
+    except ValueError:
+        return 10.0
+
 
 def get_credit_api_settings() -> CreditApiSettings:
     """Read external credit-API settings from env (uncached)."""
     return CreditApiSettings(
         url=os.getenv("CREDIT_API_URL", "").strip(),
         key=os.getenv("CREDIT_API_KEY", "").strip(),
-        timeout_seconds=float(os.getenv("CREDIT_API_TIMEOUT_SECONDS", "10")),
+        timeout_seconds=_credit_timeout_seconds(),
     )
 
 
