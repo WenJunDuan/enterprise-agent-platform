@@ -30,6 +30,9 @@ deploy/prod/litellm_config.yaml
 .data/*
 .ace-tool/
 .ai_state/.snapshots/
+# Athena evidence 原始 tool I/O：可能捕获 .env 片段 / 真实 key，不入库
+# （evidence.yaml 已脱敏，保留作完成度审计；原始 trace 仅本地留存）
+tool-trace.jsonl
 # Athena CX 平台镜像（非本仓产物），不入库
 .agents/
 .codex/
