@@ -4,11 +4,11 @@
 
 ## 支持的业务域
 
-| 业务域  | 典型场景                                                 | 调度入口                                                                     |
-| ------- | -------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| expense | 报销、费用、发票、差旅、招待、借款                       | `/audit` 内联一次性审核（提取+判断同会话）；`expense-reviewer` 暂时关闭      |
-| tender  | 招投标、评标、投标文件评分、资格审查、业绩核验、废标判定 | `/tender-evaluate` 内联五步评标（立案→计划→抽取→评判→汇总，AI 直读、同会话）；`tender-reviewer` 默认关闭 |
-| system  | 制度导入、规则初始化、政策更新、记忆沉淀                 | `system-rule-init` / `system-memory-distill`（skill，非 agent）              |
+| 业务域  | 典型场景                                                 | 调度入口                                                                                                 |
+| ------- | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| expense | 报销、费用、发票、差旅、招待、借款                       | `/audit` 内联一次性审核（提取+判断同会话）；`expense-reviewer` 暂时关闭                                  |
+| tender  | 招投标、评标、投标文件评分、资格审查、业绩核验、废标判定 | `/tender-evaluate` 内联五步评标（立案→取标准→抽取→评判→汇总，AI 直读、同会话）；`tender-reviewer` 默认关闭 |
+| system  | 制度导入、规则初始化、政策更新、记忆沉淀                 | `system-rule-init` / `system-memory-distill`（skill，非 agent）                                          |
 
 ## 路由原则
 
@@ -69,15 +69,6 @@
 示例：
 
 - “报销材料是扫描件/图片” → 先 `OCR` 识别成结构化底稿，再交 `expense` 审核（OCR 结果先过校验再进审核上下文）。
-
-## 二次复核成本治理
-
-- **当前已彻底关闭**：post-write `review-output` hook 已从 `.claude/settings.json` 移除，不再触发任何二审。重新开启需两步：① 在 `settings.json` 的 `hooks.PostToolUse` 重新注册 `review-output.py`；② 设 `SECOND_REVIEW_ENABLED=true`。`review-output.py` 脚本、`expense-reviewer` agent、`review_delta_store` 均保留待重启。
-- 重启后，`review-output` 仍不是默认全量执行的主审流程；只有以下结果才值得进入第二道 SDK 复核：
-  - `rejected`
-  - `risk_score >= 70`
-  - `manual_review_reason ∈ {data_conflict, pre_approval_mismatch, missing_approval, invoice_invalid}`
-- 低风险 `approved` 和普通 `manual_review(insufficient_evidence / rule_gap)` 默认不走二审 hook，避免把成本打满。
 
 ## 保守原则
 
