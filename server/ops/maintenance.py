@@ -57,7 +57,8 @@ def _iter_leaf_case_dirs(submission_root: Path) -> list[Path]:
     leaves.extend(submission_root.glob("*/audit/*"))
     leaves.extend(submission_root.glob("*/ocr/*"))
     leaves.extend(submission_root.glob("*/tender/*/*"))
-    return [p for p in leaves if p.is_dir()]
+    # codex P1：排除 symlink——合法 case 目录绝不是 symlink；跟随 symlink 的 rmtree 会删外部目标。
+    return [p for p in leaves if p.is_dir() and not p.is_symlink()]
 
 
 def rotate_log_file(path: Path, *, max_bytes: int, backups: int) -> bool:
@@ -168,6 +169,11 @@ def cleanup_orphan_submission_directories(days: int, now: str | None = None) -> 
     # 否则会误删整个 tenant/domain/project 中间目录，或漏删深层 leaf。
     for case_dir in _iter_leaf_case_dirs(submission_root):
         resolved = case_dir.resolve()
+        # codex P1：resolve 后再确认仍在 submissions 根内（防中间 symlink 让 rmtree 逃出根删外部）。
+        try:
+            resolved.relative_to(submission_root)
+        except ValueError:
+            continue
         if str(resolved) in known:
             continue  # 有 task 记录 → 交给 cleanup_old_submission_directories
         modified = datetime.fromtimestamp(resolved.stat().st_mtime, tz=timezone.utc)

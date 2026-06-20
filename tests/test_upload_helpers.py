@@ -33,6 +33,21 @@ def test_build_case_dir_rejects_unknown_domain():
     assert exc.value.status_code == 400
 
 
+def test_build_case_dir_tender_requires_project():
+    # codex P2：tender 必须带 project 层。
+    with pytest.raises(HTTPException) as exc:
+        build_case_dir("acme", "tender", "rid")  # 无 project_id
+    assert exc.value.status_code == 400
+
+
+def test_build_case_dir_audit_ocr_reject_project():
+    # codex P2：audit/ocr 不得带 project_id（否则造出 maintenance 不识别的形状）。
+    with pytest.raises(HTTPException):
+        build_case_dir("acme", "audit", "rid", "tp-x")
+    with pytest.raises(HTTPException):
+        build_case_dir("acme", "ocr", "rid", "tp-x")
+
+
 def test_build_case_dir_rejects_traversal_segment():
     # request_id / project_id 含 / 或 .. → 白名单拒，防穿越。
     with pytest.raises(HTTPException):

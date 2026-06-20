@@ -9,7 +9,10 @@ from __future__ import annotations
 import os
 import time
 
-from server.ops.maintenance import cleanup_orphan_submission_directories
+from server.ops.maintenance import (
+    cleanup_old_submission_directories,
+    cleanup_orphan_submission_directories,
+)
 
 
 def _no_tasks(monkeypatch):
@@ -65,3 +68,46 @@ def test_orphan_cleanup_resolves_known_against_project_root(tmp_path, monkeypatc
     removed = cleanup_orphan_submission_directories(days=7)
     assert str(active.resolve()) not in removed  # 活跃任务目录（known 命中）不被误删
     assert active.exists()
+
+
+def test_orphan_cleanup_does_not_follow_symlink_escape(tmp_path, monkeypatch):
+    """codex P1：symlink 叶子 case 目录不被跟随删除（绝不删 submissions 根外目标）。"""
+    monkeypatch.setattr("server.ops.maintenance.SUBMISSION_ROOT_DIR", tmp_path)
+    _no_tasks(monkeypatch)
+    # 外部目标（submissions 根外），不应被删。
+    external = tmp_path.parent / "external-secret-dir"
+    external.mkdir(parents=True, exist_ok=True)
+    (external / "keep.txt").write_text("KEEP", encoding="utf-8")
+    # symlink 叶子伪装成 ocr case 目录，指向外部。
+    domain_dir = tmp_path / "acme" / "ocr"
+    domain_dir.mkdir(parents=True)
+    link = domain_dir / "evil-rid"
+    link.symlink_to(external, target_is_directory=True)
+    old = time.time() - 10 * 86400
+    os.utime(external, (old, old))
+
+    removed = cleanup_orphan_submission_directories(days=7)
+    assert str(external.resolve()) not in removed  # 外部目标未被删
+    assert external.exists() and (external / "keep.txt").exists()  # 外部数据完好
+
+
+def test_cleanup_old_handles_tender_and_compare_tasks(tmp_path, monkeypatch):
+    """codex P2：cleanup_old 纳入 tender 任务；compare 任务 case_path='-' 安全跳过。"""
+    monkeypatch.setattr("server.ops.maintenance.SUBMISSION_ROOT_DIR", tmp_path)
+    monkeypatch.setattr("server.ops.maintenance.PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr("server.ops.maintenance.list_audit_tasks_admin", lambda: [])
+    tender_case = tmp_path / "acme" / "tender" / "tp-x" / "rid"
+    tender_case.mkdir(parents=True)
+    monkeypatch.setattr(
+        "server.ops.maintenance.list_tender_tasks_admin",
+        lambda: [
+            {"case_path": "acme/tender/tp-x/rid", "source_mode": "upload",
+             "status": "completed", "finished_at": "2026-06-01T00:00:00+00:00"},
+            # compare 任务占位 "-"，不建目录 → 必须安全跳过，不报错。
+            {"case_path": "-", "source_mode": "compare", "status": "completed",
+             "finished_at": "2026-06-01T00:00:00+00:00"},
+        ],
+    )
+    removed = cleanup_old_submission_directories(days=7, now="2026-06-20T00:00:00+00:00")
+    assert str(tender_case.resolve()) in removed  # tender upload 过期目录被清
+    assert not tender_case.exists()

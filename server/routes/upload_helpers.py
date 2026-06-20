@@ -61,6 +61,12 @@ def build_case_dir(
     """
     if domain not in SUBMISSION_DOMAINS:
         raise HTTPException(status_code=400, detail="invalid submission domain")
+    # codex P2：强制 domain 拓扑——tender 必须有 project 层，audit/ocr 不带，
+    # 否则 helper 会造出 maintenance glob 模型不识别的形状。
+    if domain == "tender" and project_id is None:
+        raise HTTPException(status_code=400, detail="tender submission requires project_id")
+    if domain != "tender" and project_id is not None:
+        raise HTTPException(status_code=400, detail=f"{domain} submission must not carry project_id")
     root = tenant_submission_root(tenant) / domain
     if project_id is not None:
         root = root / _safe_segment(project_id, label="project_id")
