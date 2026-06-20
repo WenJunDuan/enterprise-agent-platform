@@ -96,6 +96,13 @@ export type TenderReviewMockData = {
   categories: ReviewCategoryData[]
   paragraphs: DocumentParagraph[]
   compareGroups: CompareGroup[]
+  compareNotice?: {
+    stale: boolean
+    provisional: boolean
+    recommended: string | null
+    warnings: string[]
+    explanation: string
+  }
 }
 
 export type DashboardSummary = {

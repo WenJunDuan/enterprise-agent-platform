@@ -1,6 +1,24 @@
 import { useMemo, useState } from 'react'
-import { tenderReviewMockData } from './mock-data'
-import { buildDashboardSummary, filterReviewHistory } from './model'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  createTenderProject,
+  evaluateTenderProjectUpload,
+  getTenderCompareOrNull,
+  getTenderProject,
+  getTenderProjectResult,
+  listTenderProjectResults,
+  listTenderProjects,
+  triggerTenderCompare,
+  waitForTenderCompare,
+  waitForTenderTask,
+  type TenderProjectCreateRequest,
+} from './api'
+import {
+  buildDashboardSummary,
+  buildTenderReviewData,
+  filterReviewHistory,
+  mapTenderProject,
+} from './model'
 import type {
   HistoryTimeRange,
   ReviewCategory,
@@ -10,8 +28,13 @@ import type {
   UploadBidder,
 } from './types'
 
-const PROGRESS_STEP = 4
-const PROGRESS_INTERVAL_MS = 80
+const TENDER_PROJECTS_QUERY_KEY = ['tender-projects'] as const
+const EMPTY_PROJECT_TITLE = '新建招投标项目'
+const DEFAULT_UPLOAD_BIDDER: UploadBidder = {
+  id: 1,
+  name: '投标单位 1',
+  files: [],
+}
 
 function toTenderFiles(files: FileList | null): TenderFile[] {
   if (!files?.length) return []
@@ -22,50 +45,177 @@ function toTenderFiles(files: FileList | null): TenderFile[] {
   }))
 }
 
+function hasNativeFile(file: TenderFile): file is TenderFile & { file: File } {
+  return file.file instanceof File
+}
+
 export function useTenderReviewPage(
   initialScreen: TenderReviewScreen = 'dashboard'
 ) {
+  const queryClient = useQueryClient()
   const [screen, setScreen] = useState<TenderReviewScreen>(initialScreen)
   const [reviewMode, setReviewMode] = useState<TenderReviewMode>('detail')
   const [category, setCategory] = useState<ReviewCategory>('qual')
-  const [selectedBidderId, setSelectedBidderId] = useState('A')
-  const [activeItemId, setActiveItemId] = useState('q4')
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
+  const [selectedBidderId, setSelectedBidderId] = useState('')
+  const [activeItemId, setActiveItemId] = useState('result-summary')
   const [query, setQuery] = useState('')
   const [timeRange, setTimeRange] = useState<HistoryTimeRange>('all')
   const [progress, setProgress] = useState(0)
-  const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [uploadError, setUploadError] = useState(false)
-  const [tenderFiles, setTenderFiles] = useState<TenderFile[]>(
-    tenderReviewMockData.tenderFiles
-  )
-  const [uploadBidders, setUploadBidders] = useState<UploadBidder[]>(
-    tenderReviewMockData.uploadBidders
-  )
-  const [nextBidderId, setNextBidderId] = useState(
-    tenderReviewMockData.uploadBidders.length + 1
+  const [submitError, setSubmitError] = useState('')
+  const [tenderFiles, setTenderFiles] = useState<TenderFile[]>([])
+  const [uploadBidders, setUploadBidders] = useState<UploadBidder[]>([
+    DEFAULT_UPLOAD_BIDDER,
+  ])
+  const [nextBidderId, setNextBidderId] = useState(2)
+
+  const projectsQuery = useQuery({
+    queryKey: TENDER_PROJECTS_QUERY_KEY,
+    queryFn: () => listTenderProjects({ limit: 100 }),
+  })
+
+  const selectedProjectIdForQuery =
+    selectedProjectId ?? projectsQuery.data?.[0]?.project_id ?? ''
+  const shouldLoadSelectedProject = Boolean(
+    selectedProjectIdForQuery &&
+      (screen === 'analysis' || screen === 'report')
   )
 
-  const summary = useMemo(() => buildDashboardSummary(tenderReviewMockData), [])
+  const projectDetailQuery = useQuery({
+    queryKey: ['tender-project', selectedProjectIdForQuery],
+    queryFn: () => getTenderProject(selectedProjectIdForQuery),
+    enabled: shouldLoadSelectedProject,
+  })
+
+  const resultsQuery = useQuery({
+    queryKey: ['tender-project-results', selectedProjectIdForQuery],
+    queryFn: () => listTenderProjectResults(selectedProjectIdForQuery, { limit: 200 }),
+    enabled: shouldLoadSelectedProject,
+  })
+
+  const compareQuery = useQuery({
+    queryKey: ['tender-project-compare', selectedProjectIdForQuery],
+    queryFn: () => getTenderCompareOrNull(selectedProjectIdForQuery),
+    enabled: shouldLoadSelectedProject,
+    refetchInterval: (query) => {
+      const compare = query.state.data
+      return compare == null || compare.stale ? 3000 : false
+    },
+  })
+
+  const selectedResultRequestId = useMemo(() => {
+    const results = resultsQuery.data ?? []
+    const bySelectedBidder = results.find(
+      (result) =>
+        result.claim_id === selectedBidderId ||
+        result.request_id === selectedBidderId
+    )
+    return bySelectedBidder?.request_id ?? results[0]?.request_id ?? ''
+  }, [resultsQuery.data, selectedBidderId])
+
+  const resultDetailQuery = useQuery({
+    queryKey: [
+      'tender-project-result',
+      selectedProjectIdForQuery,
+      selectedResultRequestId,
+    ],
+    queryFn: () =>
+      getTenderProjectResult(selectedProjectIdForQuery, selectedResultRequestId),
+    enabled: Boolean(shouldLoadSelectedProject && selectedResultRequestId),
+  })
+
+  const projects = useMemo(() => {
+    const rawProjects = projectsQuery.data ?? []
+    const selectedDetail = projectDetailQuery.data
+    const compare = compareQuery.data
+    const summaries = resultsQuery.data ?? []
+
+    return rawProjects.map((project) =>
+      selectedDetail?.project_id === project.project_id
+        ? mapTenderProject(selectedDetail, compare, summaries)
+        : mapTenderProject(project)
+    )
+  }, [
+    compareQuery.data,
+    projectDetailQuery.data,
+    projectsQuery.data,
+    resultsQuery.data,
+  ])
+
+  const summary = useMemo(() => buildDashboardSummary(projects), [projects])
   const history = useMemo(
     () =>
-      filterReviewHistory(tenderReviewMockData.projects, {
+      filterReviewHistory(projects, {
         query,
         timeRange,
-        now: '2026-06-19',
+        now: new Date().toISOString().slice(0, 10),
       }),
-    [query, timeRange]
+    [projects, query, timeRange]
+  )
+
+  const selectedProject =
+    projectDetailQuery.data ??
+    projectsQuery.data?.find((project) => project.project_id === selectedProjectIdForQuery) ??
+    null
+  const viewData = useMemo(
+    () => ({
+      ...buildTenderReviewData({
+        projects: projectsQuery.data ?? [],
+        project: selectedProject,
+        resultSummaries: resultsQuery.data ?? [],
+        selectedResult: resultDetailQuery.data ?? null,
+        compare: compareQuery.data ?? null,
+      }),
+      projects,
+    }),
+    [
+      compareQuery.data,
+      projects,
+      projectsQuery.data,
+      resultDetailQuery.data,
+      resultsQuery.data,
+      selectedProject,
+    ]
   )
 
   const canStartReview =
-    tenderFiles.length > 0 &&
-    uploadBidders.some((bidder) => bidder.files.length > 0)
+    tenderFiles.some(hasNativeFile) &&
+    uploadBidders.some((bidder) => bidder.files.some(hasNativeFile))
 
-  function openAnalysis(mode: TenderReviewMode = 'detail') {
+  const startReviewMutation = useMutation({
+    mutationFn: submitReview,
+    onSuccess: async ({ projectId, hasCompare }) => {
+      setSelectedProjectId(projectId)
+      setReviewMode(hasCompare ? 'compare' : 'detail')
+      setScreen('analysis')
+      await queryClient.invalidateQueries({ queryKey: TENDER_PROJECTS_QUERY_KEY })
+      await queryClient.invalidateQueries({ queryKey: ['tender-project', projectId] })
+      await queryClient.invalidateQueries({
+        queryKey: ['tender-project-results', projectId],
+      })
+      await queryClient.invalidateQueries({
+        queryKey: ['tender-project-compare', projectId],
+      })
+      setProgress(0)
+    },
+    onError: (error) => {
+      setSubmitError(error instanceof Error ? error.message : '分析失败，请稍后重试。')
+      setProgress(0)
+    },
+  })
+
+  function openAnalysis(
+    mode: TenderReviewMode = 'detail',
+    projectId = selectedProjectIdForQuery
+  ) {
+    if (projectId) setSelectedProjectId(projectId)
     setReviewMode(mode)
     setScreen('analysis')
   }
 
-  function openReport() {
+  function openReport(projectId = selectedProjectIdForQuery) {
+    if (projectId) setSelectedProjectId(projectId)
     setScreen('report')
   }
 
@@ -78,6 +228,7 @@ export function useTenderReviewPage(
       ...nextFiles,
     ])
     setUploadError(false)
+    setSubmitError('')
   }
 
   function removeTenderFile(index: number) {
@@ -122,6 +273,7 @@ export function useTenderReviewPage(
       )
     )
     setUploadError(false)
+    setSubmitError('')
   }
 
   function removeBidderFile(id: number, fileIndex: number) {
@@ -138,30 +290,76 @@ export function useTenderReviewPage(
   }
 
   function startReview() {
-    if (isAnalyzing) return
+    if (startReviewMutation.isPending) return
     if (!canStartReview) {
       setUploadError(true)
+      setSubmitError('')
       return
     }
 
-    setIsAnalyzing(true)
     setUploadError(false)
+    setSubmitError('')
     setProgress(0)
-    const timer = window.setInterval(() => {
-      setProgress((current) => {
-        const next = Math.min(100, current + PROGRESS_STEP)
-        if (next >= 100) {
-          window.clearInterval(timer)
-          window.setTimeout(() => {
-            setIsAnalyzing(false)
-            setReviewMode('detail')
-            setScreen('analysis')
-            setProgress(0)
-          }, 450)
-        }
-        return next
+    startReviewMutation.mutate()
+  }
+
+  async function submitReview() {
+    const nativeTenderFiles = tenderFiles.filter(hasNativeFile).map((item) => item.file)
+    const bidders = uploadBidders
+      .map((bidder) => ({
+        ...bidder,
+        nativeFiles: bidder.files.filter(hasNativeFile).map((item) => item.file),
+      }))
+      .filter((bidder) => bidder.nativeFiles.length > 0)
+
+    if (!nativeTenderFiles.length || !bidders.length) {
+      throw new Error('请至少上传 1 个招标文件，并为至少一家投标单位上传文件。')
+    }
+
+    setProgress(4)
+    const project = await createTenderProject(buildCreateProjectBody(nativeTenderFiles[0]))
+    setProgress(10)
+
+    const acceptedTasks = []
+    for (const [index, bidder] of bidders.entries()) {
+      const accepted = await evaluateTenderProjectUpload(project.project_id, {
+        bidderName: bidder.name,
+        tenderFiles: nativeTenderFiles,
+        bidderFiles: bidder.nativeFiles,
       })
-    }, PROGRESS_INTERVAL_MS)
+      acceptedTasks.push(accepted)
+      setProgress(10 + Math.round(((index + 1) / bidders.length) * 20))
+    }
+
+    let completedCount = 0
+    await Promise.all(
+      acceptedTasks.map((task) =>
+        waitForTenderTask(task.request_id, {
+          onUpdate: (status) => {
+            if (status.progress_message) {
+              setSubmitError('')
+            }
+          },
+        }).then((status) => {
+          completedCount += 1
+          setProgress(30 + Math.round((completedCount / acceptedTasks.length) * 50))
+          return status
+        })
+      )
+    )
+
+    const hasCompare = acceptedTasks.length >= 2
+    if (hasCompare) {
+      setProgress(84)
+      await triggerCompareOrContinue(project.project_id)
+      setProgress(90)
+      await waitForTenderCompare(project.project_id, {
+        onUpdate: () => setProgress((current) => Math.max(current, 92)),
+      })
+    }
+
+    setProgress(100)
+    return { projectId: project.project_id, hasCompare }
   }
 
   return {
@@ -180,8 +378,9 @@ export function useTenderReviewPage(
     setQuery,
     setTimeRange,
     progress,
-    isAnalyzing,
+    isAnalyzing: startReviewMutation.isPending,
     uploadError,
+    submitError,
     tenderFiles,
     uploadBidders,
     canStartReview,
@@ -198,7 +397,43 @@ export function useTenderReviewPage(
     viewModel: {
       summary,
       history,
-      data: tenderReviewMockData,
+      data: viewData,
+      isLoading: projectsQuery.isLoading,
+      error:
+        projectsQuery.error instanceof Error
+          ? projectsQuery.error.message
+          : projectDetailQuery.error instanceof Error
+            ? projectDetailQuery.error.message
+            : null,
     },
   }
+}
+
+function buildCreateProjectBody(file: File): TenderProjectCreateRequest {
+  const title = stripExtension(file.name) || EMPTY_PROJECT_TITLE
+  return {
+    tender_no: deriveTenderNo(file.name),
+    title,
+    method: '综合评估法',
+    funding_type: 'unknown',
+  }
+}
+
+async function triggerCompareOrContinue(projectId: string) {
+  try {
+    await triggerTenderCompare(projectId)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : ''
+    if (!message.includes('横比正在进行中')) throw error
+  }
+}
+
+function deriveTenderNo(fileName: string) {
+  const normalized = stripExtension(fileName)
+  const matched = normalized.match(/[A-Za-z0-9][A-Za-z0-9_-]{4,}/u)
+  return matched?.[0] ?? `TR-${Date.now()}`
+}
+
+function stripExtension(fileName: string) {
+  return fileName.replace(/\.[^.]+$/u, '').trim()
 }

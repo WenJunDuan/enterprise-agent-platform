@@ -14,7 +14,7 @@ export function ScreenContent({ page }: { page: TenderReviewPageState }) {
         <DashboardView
           summary={page.viewModel.summary}
           projects={page.viewModel.data.projects}
-          onOpenProject={() => page.openAnalysis('detail')}
+          onOpenProject={(projectId) => page.openAnalysis('detail', projectId)}
         />
       )
     case 'create':
@@ -26,6 +26,7 @@ export function ScreenContent({ page }: { page: TenderReviewPageState }) {
           progress={page.progress}
           isAnalyzing={page.isAnalyzing}
           uploadError={page.uploadError}
+          submitError={page.submitError}
           canStart={page.canStartReview}
           onStart={page.startReview}
           onCancel={() => page.setScreen('dashboard')}
@@ -46,8 +47,8 @@ export function ScreenContent({ page }: { page: TenderReviewPageState }) {
           history={page.viewModel.history}
           onQuery={page.setQuery}
           onTimeRange={page.setTimeRange}
-          onAnalysis={() => page.openAnalysis('detail')}
-          onReport={page.openReport}
+          onAnalysis={(projectId) => page.openAnalysis('detail', projectId)}
+          onReport={(projectId) => page.openReport(projectId)}
         />
       )
     case 'analysis':

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import type {
   ReviewCategory,
   ReviewItem,
+  ReviewBidder,
   TenderReviewMockData,
   TenderReviewMode,
 } from '../types'
@@ -22,12 +23,6 @@ type AnalysisWorkbenchViewProps = {
   onHistory: () => void
   onReport: () => void
 }
-
-const scoreBlocks = [
-  { label: '商务标', got: 48, max: 50, color: 'bg-blue-500' },
-  { label: '技术标', got: 36.5, max: 40, color: 'bg-violet-500' },
-  { label: '信誉业绩', got: 10, max: 10, color: 'bg-emerald-500' },
-]
 
 export function AnalysisWorkbenchView(props: AnalysisWorkbenchViewProps) {
   const viewLabel = props.mode === 'compare' ? '评分对比' : '分析中心'
@@ -154,7 +149,9 @@ function DetailWorkbench(props: AnalysisWorkbenchViewProps) {
   const selectedBidder =
     props.data.reviewBidders.find(
       (bidder) => bidder.id === props.selectedBidderId
-    ) ?? props.data.reviewBidders[0]
+    ) ??
+    props.data.reviewBidders[0] ??
+    emptyBidder
   const activeCategory =
     props.data.categories.find((category) => category.key === props.category) ??
     props.data.categories[0]
@@ -162,6 +159,8 @@ function DetailWorkbench(props: AnalysisWorkbenchViewProps) {
     (item) => item.id === props.activeItemId
   )
   const activeLoc = activeItem?.loc ?? -1
+  const scoreBlocks = getScoreBlocks(props.data)
+  const reviewStats = getReviewStats(props.data.categories, selectedBidder)
 
   return (
     <div className='grid min-h-[620px] xl:grid-cols-[288px_minmax(0,1.2fr)_minmax(340px,1fr)]'>
@@ -180,7 +179,8 @@ function DetailWorkbench(props: AnalysisWorkbenchViewProps) {
 
         <div className='mt-5 space-y-4'>
           <div className='text-xs font-semibold text-muted-foreground'>分项得分</div>
-          {scoreBlocks.map((block) => (
+          {scoreBlocks.length > 0 ? (
+            scoreBlocks.map((block) => (
             <div key={block.label}>
               <div className='mb-1 flex justify-between text-sm'>
                 <span className='font-medium'>{block.label}</span>
@@ -195,7 +195,12 @@ function DetailWorkbench(props: AnalysisWorkbenchViewProps) {
                 />
               </div>
             </div>
-          ))}
+            ))
+          ) : (
+            <div className='rounded-lg border border-dashed p-3 text-sm text-muted-foreground'>
+              暂无分项得分。
+            </div>
+          )}
         </div>
 
         <div className='mt-5 rounded-xl border bg-card p-4'>
@@ -204,8 +209,7 @@ function DetailWorkbench(props: AnalysisWorkbenchViewProps) {
             审核小结
           </div>
           <p className='text-sm leading-6 text-muted-foreground'>
-            资格审查 <b className='text-foreground'>6 项通过、1 项待核查</b>
-            ；技术与商务得分均居首位。建议核实「近三年无重大安全事故」承诺函原件后，推荐为第一中标候选人。
+            {reviewStats.summary}
           </p>
         </div>
       </aside>
@@ -251,7 +255,7 @@ function DetailWorkbench(props: AnalysisWorkbenchViewProps) {
             投标文件原文
           </div>
           <div className='mt-1 text-xs text-muted-foreground'>
-            中建华东建设集团_投标文件.pdf · 点击左侧要点自动定位
+            {selectedBidder.name} · 点击左侧要点自动定位证据
           </div>
         </div>
         <div className='max-h-[560px] space-y-3 overflow-y-auto p-5'>
@@ -439,11 +443,19 @@ function CompareTable({ data }: { data: TenderReviewMockData }) {
   const rows = data.compareGroups.flatMap((group) =>
     group.rows.map((row) => ({ ...row, group: group.name }))
   )
+  const bidderCount = Math.max(data.reviewBidders.length, 1)
+  const gridStyle = {
+    gridTemplateColumns: `minmax(260px,1.6fr) repeat(${bidderCount}, minmax(140px,1fr))`,
+  }
+  const minWidth = 260 + bidderCount * 160
 
   return (
     <div className='overflow-x-auto rounded-xl border bg-card shadow-sm'>
-      <div className='min-w-[980px]'>
-        <div className='grid grid-cols-[1.6fr_repeat(4,1fr)] border-b bg-muted/40 text-xs font-semibold text-muted-foreground'>
+      <div style={{ minWidth }}>
+        <div
+          className='grid border-b bg-muted/40 text-xs font-semibold text-muted-foreground'
+          style={gridStyle}
+        >
           <div className='px-5 py-3'>评审项 / 分值</div>
           {data.reviewBidders.map((bidder) => (
             <div key={bidder.id} className='px-3 py-3 text-center'>
@@ -452,11 +464,12 @@ function CompareTable({ data }: { data: TenderReviewMockData }) {
           ))}
         </div>
         {rows.map((row) => {
-          const max = Math.max(...row.cells)
+          const max = Math.max(...row.cells, 0)
           return (
             <div
               key={`${row.group}-${row.name}`}
-              className='grid grid-cols-[1.6fr_repeat(4,1fr)] border-b last:border-b-0'
+              className='grid border-b last:border-b-0'
+              style={gridStyle}
             >
               <div className='px-5 py-3'>
                 <div className='text-sm font-medium'>{row.name}</div>
@@ -483,7 +496,9 @@ function CompareTable({ data }: { data: TenderReviewMockData }) {
                         'h-full rounded-full',
                         value === max ? 'bg-emerald-500' : 'bg-muted-foreground/40'
                       )}
-                      style={{ width: `${(value / row.max) * 100}%` }}
+                      style={{
+                        width: `${row.max > 0 ? (value / row.max) * 100 : 0}%`,
+                      }}
                     />
                   </div>
                 </div>
@@ -491,7 +506,7 @@ function CompareTable({ data }: { data: TenderReviewMockData }) {
             </div>
           )
         })}
-        <div className='grid grid-cols-[1.6fr_repeat(4,1fr)] bg-blue-50 font-semibold'>
+        <div className='grid bg-blue-50 font-semibold' style={gridStyle}>
           <div className='px-5 py-4'>综合总分</div>
           {data.reviewBidders.map((bidder) => (
             <div key={bidder.id} className='px-3 py-4 text-center text-primary'>
@@ -502,4 +517,49 @@ function CompareTable({ data }: { data: TenderReviewMockData }) {
       </div>
     </div>
   )
+}
+
+const emptyBidder: ReviewBidder = {
+  id: '-',
+  tag: '-',
+  name: '暂无投标人',
+  short: '暂无',
+  total: 0,
+  rank: 0,
+}
+
+function getScoreBlocks(data: TenderReviewMockData) {
+  const colors = ['bg-blue-500', 'bg-violet-500', 'bg-emerald-500']
+  return data.categories
+    .map((category, index) => {
+      const scoredItems = category.items.filter(
+        (item) => typeof item.got === 'number' && typeof item.max === 'number'
+      )
+      const got = scoredItems.reduce((sum, item) => sum + (item.got ?? 0), 0)
+      const max = scoredItems.reduce((sum, item) => sum + (item.max ?? 0), 0)
+      return {
+        label: category.label,
+        got: Number(got.toFixed(1)),
+        max: Number(max.toFixed(1)),
+        color: colors[index % colors.length],
+      }
+    })
+    .filter((block) => block.max > 0)
+}
+
+function getReviewStats(
+  categories: TenderReviewMockData['categories'],
+  selectedBidder: ReviewBidder
+) {
+  const items = categories.flatMap((category) => category.items)
+  const passCount = items.filter((item) => item.status === 'pass').length
+  const warningCount = items.filter((item) => item.status === 'warning').length
+  const failCount = items.filter((item) => item.status === 'fail').length
+  const totalCount = items.length
+  return {
+    summary:
+      totalCount > 0
+        ? `${selectedBidder.name} 共完成 ${totalCount} 项审核：${passCount} 项通过、${warningCount} 项待核查、${failCount} 项不通过。`
+        : `${selectedBidder.name} 暂无可展示的评分明细。`,
+  }
 }

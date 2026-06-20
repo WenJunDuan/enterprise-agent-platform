@@ -1,4 +1,5 @@
 import { ArrowLeft, Printer } from 'lucide-react'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import type { TenderReviewMockData } from '../types'
 
@@ -38,6 +39,7 @@ export function ReportView({ data, onBack }: ReportViewProps) {
         </header>
 
         <ReportMeta data={data} />
+        <CompareNotice data={data} />
         <RankingSection data={data} />
         <DetailSection data={data} />
         <Conclusion data={data} />
@@ -86,7 +88,36 @@ function ReportMeta({ data }: { data: TenderReviewMockData }) {
   )
 }
 
+function CompareNotice({ data }: { data: TenderReviewMockData }) {
+  const notice = data.compareNotice
+  if (!notice || (!notice.stale && !notice.provisional && notice.warnings.length === 0)) {
+    return null
+  }
+
+  return (
+    <Alert className='mt-6'>
+      <AlertTitle>
+        {notice.stale
+          ? '横比结果已过期'
+          : notice.provisional
+            ? '暂定排名'
+            : '横比告警'}
+      </AlertTitle>
+      <AlertDescription className='mt-2 space-y-1'>
+        {notice.stale ? <div>投标人有变化，请重新横比后再展示推荐结论。</div> : null}
+        {notice.provisional ? (
+          <div>暂定排名，定标由招标人依法确定。</div>
+        ) : null}
+        {notice.warnings.map((warning) => (
+          <div key={warning}>{warning}</div>
+        ))}
+      </AlertDescription>
+    </Alert>
+  )
+}
+
 function RankingSection({ data }: { data: TenderReviewMockData }) {
+  const provisional = Boolean(data.compareNotice?.provisional)
   return (
     <section className='mt-8'>
       <ReportTitle>一、评标结论与排名</ReportTitle>
@@ -108,7 +139,7 @@ function RankingSection({ data }: { data: TenderReviewMockData }) {
               {bidder.total}
             </div>
             <div className='p-3 text-sm font-medium text-muted-foreground'>
-              {getCandidateLabel(bidder.rank)}
+              {getCandidateLabel(bidder.rank, provisional)}
             </div>
           </div>
         ))}
@@ -118,20 +149,16 @@ function RankingSection({ data }: { data: TenderReviewMockData }) {
 }
 
 function DetailSection({ data }: { data: TenderReviewMockData }) {
-  const rows = [
-    ['商务标小计', '50', '48.0', true],
-    ['　投标报价', '40', '38.0', false],
-    ['　工期承诺', '5', '5.0', false],
-    ['　财务状况', '5', '5.0', false],
-    ['技术标小计', '40', '36.5', true],
-    ['　施工组织设计', '15', '13.5', false],
-    ['　项目管理团队', '10', '9.0', false],
-    ['　质量保证措施', '8', '7.5', false],
-    ['　安全文明施工', '7', '6.5', false],
-    ['信誉业绩小计', '10', '10.0', true],
-    ['　类似项目业绩', '6', '6.0', false],
-    ['　企业信誉', '4', '4.0', false],
-  ] as const
+  const winnerIndex = data.reviewBidders.findIndex((bidder) => bidder.rank === 1)
+  const firstIndex = winnerIndex >= 0 ? winnerIndex : 0
+  const rows = data.compareGroups.flatMap((group) =>
+    group.rows.map((row) => ({
+      group: group.name,
+      name: row.name,
+      max: row.max,
+      got: row.cells[firstIndex] ?? 0,
+    }))
+  )
 
   return (
     <section className='mt-8'>
@@ -139,28 +166,41 @@ function DetailSection({ data }: { data: TenderReviewMockData }) {
       <div className='mt-2 text-sm text-muted-foreground'>
         {data.reviewBidders[0]?.name} · 综合得分 {data.reviewBidders[0]?.total} 分
       </div>
-      <div className='mt-4 overflow-hidden rounded-lg border'>
-        {rows.map(([name, max, got, group], index) => (
+      {rows.length > 0 ? (
+        <div className='mt-4 overflow-hidden rounded-lg border'>
+          {rows.map((row, index) => (
           <div
-            key={`${name}-${max}`}
+            key={`${row.group}-${row.name}`}
             className={`grid grid-cols-[1fr_90px_90px] border-b last:border-b-0 ${
-              group ? 'bg-blue-50 font-semibold' : index % 2 ? 'bg-muted/20' : ''
+              index % 2 ? 'bg-muted/20' : ''
             }`}
           >
-            <div className='p-3 text-sm'>{name}</div>
-            <div className='p-3 text-center text-sm text-muted-foreground'>
-              {max}
+            <div className='p-3 text-sm'>
+              <span className='text-xs text-muted-foreground'>{row.group}</span>
+              <br />
+              {row.name}
             </div>
-            <div className='p-3 text-center text-sm font-semibold'>{got}</div>
+            <div className='p-3 text-center text-sm text-muted-foreground'>
+              {row.max}
+            </div>
+            <div className='p-3 text-center text-sm font-semibold'>{row.got}</div>
           </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      ) : (
+        <div className='mt-4 rounded-lg border border-dashed p-4 text-sm text-muted-foreground'>
+          暂无横比评分明细。
+        </div>
+      )}
     </section>
   )
 }
 
 function Conclusion({ data }: { data: TenderReviewMockData }) {
   const winner = data.reviewBidders[0]
+  const notice = data.compareNotice
+  const second = data.reviewBidders[1]
+  const third = data.reviewBidders[2]
   return (
     <section className='mt-8'>
       <ReportTitle>三、评标委员会意见</ReportTitle>
@@ -168,14 +208,42 @@ function Conclusion({ data }: { data: TenderReviewMockData }) {
         经评标委员会对 {data.reviewBidders.length}{' '}
         家投标人进行资格审查、技术评审与商务评审，
         <b className='text-foreground'>{winner?.name}</b>
-        综合得分 {winner?.total} 分，位列第一，其技术方案先进、报价合理、类似业绩突出。建议推荐为
-        <b className='text-emerald-700'>第一中标候选人</b>。
-        <br />
-        <br />
-        需提请注意：该投标人「近三年无重大安全事故」一项需于中标后提供承诺函原件及主管部门证明予以核实。
-        {data.reviewBidders[1]?.name}（{data.reviewBidders[1]?.total} 分）、
-        {data.reviewBidders[2]?.name}（{data.reviewBidders[2]?.total} 分）
-        依次推荐为第二、第三中标候选人。
+        综合得分 {winner?.total ?? '-'} 分，位列第一。
+        {notice?.provisional || !notice?.recommended ? (
+          <>
+            本次横比为
+            <b className='text-amber-700'>暂定排名</b>
+            ，定标由招标人依法确定。
+          </>
+        ) : (
+          <>
+            建议推荐为
+            <b className='text-emerald-700'>第一中标候选人</b>。
+          </>
+        )}
+        {notice?.explanation ? (
+          <>
+            <br />
+            <br />
+            {notice.explanation}
+          </>
+        ) : null}
+        {notice?.warnings.length ? (
+          <>
+            <br />
+            <br />
+            需提请注意：{notice.warnings.join('；')}
+          </>
+        ) : null}
+        {second ? (
+          <>
+            <br />
+            <br />
+            {second.name}（{second.total} 分）
+            {third ? `、${third.name}（${third.total} 分）` : ''}
+            依次列后。
+          </>
+        ) : null}
       </p>
     </section>
   )
@@ -190,7 +258,8 @@ function ReportTitle({ children }: { children: React.ReactNode }) {
   )
 }
 
-function getCandidateLabel(rank: number) {
+function getCandidateLabel(rank: number, provisional: boolean) {
+  if (provisional) return rank > 0 ? `暂定第 ${rank} 名` : '暂定排名'
   if (rank === 1) return '第一中标候选人'
   if (rank === 2) return '第二中标候选人'
   if (rank === 3) return '第三中标候选人'

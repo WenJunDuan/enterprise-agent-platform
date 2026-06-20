@@ -94,7 +94,7 @@ export function getApiRuntimeConfig() {
   }
 }
 
-function authHeaders(token = getActiveTenantToken()): HeadersInit {
+export function authHeaders(token = getActiveTenantToken()): HeadersInit {
   if (!token) {
     throw new Error('登录状态已失效，请重新输入 PIN。')
   }
@@ -109,7 +109,7 @@ function getGatewayErrorMessage() {
   return '服务暂不可用，请稍后重试。'
 }
 
-async function handleResponse<T>(res: Response): Promise<T> {
+export async function handleResponse<T>(res: Response): Promise<T> {
   if (!res.ok) {
     let message = '请求失败，请稍后重试。'
     const contentType = res.headers.get('content-type') || ''
@@ -131,7 +131,7 @@ async function handleResponse<T>(res: Response): Promise<T> {
   return res.json() as Promise<T>
 }
 
-function url(path: string): string {
+export function url(path: string): string {
   const base = BASE.endsWith('/') ? BASE.slice(0, -1) : BASE
   return `${base}${path}`
 }
