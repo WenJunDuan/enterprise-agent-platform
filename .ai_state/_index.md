@@ -5,7 +5,7 @@ version: "9.6.4"
 
 # === PACE 路由状态 ===
 path: "System"                    # 活动 sprint=agent-capability-redesign(System,跨切面架构); contract-audit-platform 主体已达成
-stage: "impl"                     # goal=完成 agent-capability-redesign 全 sprint(G0-G5)；用户授权长任务自治→review→merge→push→cleanup
+stage: "impl"                     # agent-capability-redesign: G0a+G1(F8死域+F1验证闸,最高优先2项)done+交叉审查PASS+已push；G0b/G1c/G2/G4/G5 剩余, G3 阻塞(无外部API)
 current_sprint_slug: "2026-06-20-agent-capability-redesign"
 current_roadmap_slug: ""          # 跨切面 goal，非单一 roadmap item
 skip_polish: false
@@ -67,7 +67,7 @@ pointers:
   latest_architecture_update: "2026-06-20T01:29:08.936Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "goal:agent-capability-redesign:G0-delete-dead-domains"
+next_action: "goal:agent-capability-redesign:resume-G0b/G1c/G2/G4/G5 (G3 blocked:无外部API凭证)"
 last_subagent: "generator"
 last_subagent_at: "2026-06-02T09:25:27.661Z"
 active_worktrees: []
