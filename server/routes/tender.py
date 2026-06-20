@@ -22,7 +22,11 @@ from server.routes.upload_helpers import (
     remove_submission_dir,
     validate_directory_case_path,
 )
-from server.routes.tender_compare_worker import collect_compare_input, schedule_compare_task
+from server.routes.tender_compare_worker import (
+    collect_compare_input,
+    has_active_compare,
+    schedule_compare_task,
+)
 from server.stores.request_store import new_request_id, utc_now
 from server.stores.result_store import get_result_payload_by_request_id, list_results_by_project
 from server.stores.tender_compare_store import (
@@ -429,7 +433,8 @@ async def get_tender_project_detail(
         current_sig = _current_compare_signature(tenant, project_id, record)
         compare_stale = current_sig is None or is_stale(compare.get("input_signature"), current_sig)
         payload = compare.get("payload") or {}
-        if not compare_stale and not payload.get("provisional"):
+        # codex P1.2：必须显式 provisional is False（缺失 ≠ 终局）且 recommended 非空才展示。
+        if not compare_stale and payload.get("provisional") is False and payload.get("recommended"):
             recommended_bidder = payload.get("recommended")
     return TenderProjectDetailResponse(
         **base.model_dump(),
@@ -530,6 +535,9 @@ async def trigger_tender_compare(
         raise HTTPException(status_code=404, detail="Tender project not found")
     if _current_compare_signature(tenant, project_id, project) is None:
         raise HTTPException(status_code=400, detail="参与横比的已完成投标人不足 2 家")
+    # cc C1：防并发双击重复算（同 project 已有在途 compare 则拒）。
+    if has_active_compare(tenant, project_id):
+        raise HTTPException(status_code=409, detail="该招标项目横比正在进行中，请稍后查看结果")
     request_id = new_request_id()
     schedule_compare_task(request_id=request_id, tenant=tenant, project_id=project_id)
     return TenderSubmitAcceptedResponse(

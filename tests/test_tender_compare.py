@@ -165,6 +165,30 @@ def test_trigger_compare_unknown_project_404(client):
     assert client.post("/tender/projects/nope/compare", headers=_AUTH).status_code == 404
 
 
+def test_trigger_compare_duplicate_returns_409(client):
+    """cc C1：同 project 已有在途 compare → 409，防并发双击重复算。"""
+    from server.stores.tender_compare_task_store import upsert_compare_task
+
+    pid = _new_project(client, funding_type="state_funded")
+    _archive_bid(pid, "B1", 1000.0)
+    _archive_bid(pid, "B2", 1200.0)
+    # 手动放一个在途(running) compare task（绕过 fixture 的 schedule no-op）
+    upsert_compare_task(
+        {
+            "request_id": "cmp-active",
+            "tenant": "acme",
+            "status": "running",
+            "mode": "compare",
+            "source_mode": "compare",
+            "case_path": "-",
+            "group_id": pid,
+            "updated_at": "2026-06-20T00:00:00+00:00",
+        }
+    )
+    resp = client.post(f"/tender/projects/{pid}/compare", headers=_AUTH)
+    assert resp.status_code == 409  # 在途，拒绝重复
+
+
 def test_get_compare_before_run_404(client):
     pid = _new_project(client)
     assert client.get(f"/tender/projects/{pid}/compare", headers=_AUTH).status_code == 404
@@ -197,31 +221,71 @@ def test_get_compare_result_and_stale(client):
 # ── codex P1.1 / P1.2 污染回归（最关键）────────────────────────────────────────
 
 
-def test_compare_does_not_pollute_results_or_roster(client):
-    """compare 结果不进 results 表、不进 bid 名册（codex P1.1/P1.2）。"""
-    from server.stores.tender_compare_store import (
-        CompareSignature,
-        compute_criteria_hash,
-        upsert_compare_result,
-    )
+def test_compare_does_not_pollute_results_or_roster(client, monkeypatch):
+    """compare **真链路**不污染 results/名册（codex P1.1/P1.2 + P2.3 真覆盖）。
+
+    跑 execute_compare_task → run_command_json，断言 archive_to_results=False 被透传，
+    且 compare 完成后 results 表无新增（名册/回看仍只 2 家真实投标人）。
+    """
+    import asyncio as _asyncio
+
+    import server.routes.tender_compare_worker as worker
 
     pid = _new_project(client)
     _archive_bid(pid, "B1", 1000.0)
     _archive_bid(pid, "B2", 1200.0)
-    # compare 结果存专表（不经 results）
-    upsert_compare_result(
-        project_id=pid, tenant="acme",
-        payload={"recommended": "B1", "provisional": False, "bidders": [{"claim_id": "B1"}]},
-        signature=CompareSignature(input_result_ids=["x"], criteria_hash=compute_criteria_hash({})),
-    )
-    # 名册仍只有 2 家真实投标人，没有 compare 伪投标人
+    results_before = len(client.get(f"/tender/projects/{pid}/results", headers=_AUTH).json())
+
+    captured: dict = {}
+
+    async def fake_json(command_name, *args, schema_name, **opts):
+        captured["archive_to_results"] = opts.get("archive_to_results")
+        from server.common.agent_bridge import AgentRunMeta
+
+        meta = AgentRunMeta(
+            request_id=opts["request_id"], conversation_id="c", claude_session_id="s",
+            resume_session_id=None, fork_from_session_id=None, schema_name=schema_name,
+            log_file="l", result_file="r", result_subtype="ok", cost_usd=0.0, finished_at=None,
+        )
+        return {"project_id": pid, "bidders": [], "recommended": None,
+                "provisional": True, "warnings": [], "explanation": "x", "policy_refs": []}, meta
+
+    monkeypatch.setattr(worker, "run_command_json", fake_json)
+    _asyncio.run(worker.execute_compare_task(request_id="cmp-real", tenant="acme", project_id=pid))
+
+    # archive flag 确实以 False 透传（compare 不进 results）
+    assert captured["archive_to_results"] is False
+    # results 表无新增（compare 没污染）；名册仍 2 家
+    results_after = client.get(f"/tender/projects/{pid}/results", headers=_AUTH).json()
+    assert len(results_after) == results_before == 2
     detail = client.get(f"/tender/projects/{pid}", headers=_AUTH).json()
     assert detail["bidder_count"] == 2
-    claim_ids = [b["claim_id"] for b in detail["bids"]]
-    assert sorted(claim_ids) == ["B1", "B2"]
-    # /results 回看也只有 2 家
-    results = client.get(f"/tender/projects/{pid}/results", headers=_AUTH).json()
-    assert len(results) == 2
+    assert sorted(b["claim_id"] for b in detail["bids"]) == ["B1", "B2"]
+    # compare 结果已存专表
+    assert client.get(f"/tender/projects/{pid}/compare", headers=_AUTH).status_code == 200
+
+
+def test_collect_flags_criteria_inconsistent(client):
+    """codex P1.1：各家 criteria 不一致 → compare 输入标 criteria_inconsistent=true。"""
+    from server.routes.tender_compare_worker import collect_compare_input
+
+    pid = _new_project(client)
+    _archive_bid(pid, "B1", 1000.0, criteria=_criteria(price_max=40))
+    _archive_bid(pid, "B2", 1200.0, criteria=_criteria(price_max=30))  # 不同满分→不同 hash
+    compare_input, _sig = collect_compare_input("acme", pid, {})
+    assert compare_input["criteria_inconsistent"] is True
+
+
+def test_collect_criteria_consistent_when_same(client):
+    """各家 criteria 相同 → criteria_inconsistent=false。"""
+    from server.routes.tender_compare_worker import collect_compare_input
+
+    pid = _new_project(client)
+    same = _criteria()
+    _archive_bid(pid, "B1", 1000.0, criteria=same)
+    _archive_bid(pid, "B2", 1200.0, criteria=same)
+    compare_input, _sig = collect_compare_input("acme", pid, {})
+    assert compare_input["criteria_inconsistent"] is False
 
 
 def test_compare_recommended_shows_in_detail_when_final(client):

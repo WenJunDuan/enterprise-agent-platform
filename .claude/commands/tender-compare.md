@@ -24,6 +24,9 @@ allowed-tools: Read
 
 ## 任务（Claude 侧判断与计算，逐步）
 
+### 0. 前置：criteria 一致性
+- 若输入 `criteria_inconsistent: true`（各投标人评标时用的评分标准不一致）→ **不做横比排名**：所有 bidder `status: "manual_review"`、`rank: null`，`recommended: null`、`provisional: true`，`warnings` 写"各投标人评分标准(criteria)不一致，需人工核对评标办法后重评"，`explanation` 说明原因。直接产出该结论，不进下面步骤。
+
 ### 1. 认定有效投标
 - `verdict: "rejected"`（废标）的投标人**不参与价格评分与排名**，在输出里 `status: "rejected"`、`rank: null`、`note` 写明废标不参与。
 - 其余进入横比。
@@ -48,7 +51,7 @@ allowed-tools: Read
 
 ## 输出契约
 
-1. 只返回一个 JSON 对象，符合 `.claude/contracts/tender/compare-result.schema.json`，不要输出 JSON 之外的任何文字。
+1. 只返回一个 JSON 对象，符合 `.claude/contracts/tender/compare-result.schema.json`，不要输出 JSON 之外的任何文字。**必须显式给出 `recommended`（终局推荐 claim_id 或 null）、`provisional`（true/false）、`warnings`（数组，无则空数组）**——不可省略；`provisional: true` 时 `recommended` 必须为 null。
 2. `bidders` 与输入一一对应，逐家 `{claim_id, bid_price, price_score, other_score, total_score, rank, status, note}`。
 3. **承重 `policy_refs` 只引通则层真实 `rule_id`**（如 `tender_evalmethod_004` 加权、`tender_evalmethod_010` 异常低价、`tender_evalmethod_012` 有效投标数、`tender_evalmethod_013` 国有资金定标）；价格公式原文与各家命中写入 `evidence_chain`（引 `criteria_price_item` 出处 + 各家报价），**不要塞进 `policy_refs`**（会被真伪闸拒）。
 4. `explanation` / `note` / `warnings` 用中文，平实、专业、克制；定性留余地（"建议 / 需人工核定 / 供参考"），不越权替招标人定标。

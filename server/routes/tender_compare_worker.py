@@ -25,7 +25,7 @@ from server.stores.tender_compare_store import (
     compute_criteria_hash,
     upsert_compare_result,
 )
-from server.stores.tender_compare_task_store import upsert_compare_task
+from server.stores.tender_compare_task_store import list_compare_tasks, upsert_compare_task
 from server.stores.tender_project_store import get_project
 
 logger = logging.getLogger(__name__)
@@ -42,6 +42,14 @@ def _track(task: asyncio.Task[None]) -> None:
     task.add_done_callback(_BACKGROUND_TASKS.discard)
 
 
+def has_active_compare(tenant: str, project_id: str) -> bool:
+    """该招标项目下是否已有在途(accepted/running) compare 任务（防并发双击重复算，cc C1）。"""
+    return any(
+        t.get("status") in {"accepted", "running"}
+        for t in list_compare_tasks(tenant, group_id=project_id, limit=50)
+    )
+
+
 def collect_compare_input(
     tenant: str, project_id: str, project: dict[str, Any]
 ) -> tuple[dict[str, Any], CompareSignature] | None:
@@ -55,6 +63,7 @@ def collect_compare_input(
     result_ids: list[str] = []
     criteria_seen: Any = None
     price_item: Any = None
+    criteria_hashes: set[str] = set()  # codex P1.1：覆盖**全量**各家 criteria，非只第一份
     for row in rows:
         # list_results_by_project 的 payload 列是未解析 JSON 字符串（SELECT *），需 loads。
         payload = row.get("payload")
@@ -67,9 +76,12 @@ def collect_compare_input(
         if not isinstance(response, dict):
             continue
         extracted = response.get("extracted_data") or {}
-        if criteria_seen is None and extracted.get("criteria"):
-            criteria_seen = extracted["criteria"]
-            price_item = _find_price_item(criteria_seen)
+        crit = extracted.get("criteria")
+        if crit:
+            criteria_hashes.add(compute_criteria_hash(crit))
+            if criteria_seen is None:
+                criteria_seen = crit
+                price_item = _find_price_item(crit)
         result_ids.append(str(row["request_id"]))
         bidders.append(
             {
@@ -81,17 +93,21 @@ def collect_compare_input(
         )
     if len(bidders) < 2:
         return None
+    # codex P1.1：各家 criteria 不全一致 → 标记，命令据此走 manual_review，不任取一份当权威公式。
+    criteria_inconsistent = len(criteria_hashes) > 1
     compare_input = {
         "project_id": project_id,
         "method": (criteria_seen or {}).get("method") if isinstance(criteria_seen, dict) else None,
         "funding_type": project.get("funding_type") or "unknown",
         "control_price": project.get("control_price"),
         "criteria_price_item": price_item,
+        "criteria_inconsistent": criteria_inconsistent,
         "bidders": bidders,
     }
     signature = CompareSignature(
         input_result_ids=result_ids,
-        criteria_hash=compute_criteria_hash(criteria_seen),
+        # 签名覆盖全量 criteria hash 集（codex P1.1）：任一家 criteria 变化都触发 stale。
+        criteria_hash=compute_criteria_hash(sorted(criteria_hashes)),
     )
     return compare_input, signature
 
@@ -151,11 +167,15 @@ async def _execute_inner(*, request_id: str, tenant: str, project_id: str) -> No
                 _run_compare(request_id=request_id, tenant=tenant, compare_input=compare_input),
                 timeout=COMPARE_TIMEOUT_SEC,
             )
+            stored = payload if isinstance(payload, dict) else {"raw": payload}
+            # codex P2.4：以服务端 project_id 为准，杜绝 Claude 回填错 project_id 致 GET 自相矛盾。
+            if isinstance(stored, dict):
+                stored["project_id"] = project_id
             await asyncio.to_thread(
                 upsert_compare_result,
                 project_id=project_id,
                 tenant=tenant,
-                payload=payload if isinstance(payload, dict) else {"raw": payload},
+                payload=stored,
                 signature=signature,
             )
             finished = utc_now()
@@ -199,7 +219,13 @@ def _task_row(
 
 
 def schedule_compare_task(*, request_id: str, tenant: str, project_id: str) -> None:
-    """Fire-and-forget compare task（tracked，防 GC）。"""
+    """Fire-and-forget compare task（tracked，防 GC）。
+
+    先同步建 accepted 记录，使紧随的并发请求能经 ``has_active_compare`` 查到在途 → 防重（cc C1）。
+    """
+    upsert_compare_task(
+        _task_row(request_id, tenant, project_id, "accepted", "横比任务已提交", utc_now())
+    )
     task = asyncio.create_task(
         execute_compare_task(request_id=request_id, tenant=tenant, project_id=project_id)
     )
