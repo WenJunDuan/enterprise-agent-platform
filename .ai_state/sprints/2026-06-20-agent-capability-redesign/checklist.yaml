@@ -25,7 +25,12 @@ tasks:
     accept: "缺 policy_refs/evidence_chain/risk_score 或引用不解析 → JSONContractError 或 manual_review；既有重试环接住"
     result_g1a: "jsonschema.validate 在 enrich 前对所有模型输出跑(text/structured 两路)；缺 required/多余字段/类型错/枚举错全拒；265 passed"
     result_g1b: "approved/rejected 空 policy_refs → 拒(无依据判决)。直击 round4「approved 无 refs 也通过」"
-    g1_deferred: "G1b-full(policy_refs ⊆ 已注入 rule_id 集) 需 domain→rules 管线(规则在 Claude 侧读,Python 不知注入集)；G1c 算术重算 需 OCR 确定性数+比较逻辑。两者列 backlog"
+    g1_full_done: >
+      G1b-full + G1c 已补全(2026-06-20，验证非判断)：
+      G1b-full(output_contracts._load_known_rule_ids 扫 knowledge/*/*.rules.json，policy_refs 须 ⊆ 真实 rule_id)
+      按 G3 同款 env 门控 RULE_REF_CHECK(默认关,避免 gitignored knowledge/ 破坏测试;部署侧规则稳定后开启)；
+      G1c(_verify_scoring_consistency: extracted_data.scoring 每项 0≤score≤max，null 分跳过)未门控(安全不变式)。
+      19 contract_registry 用例(schema/policy/ref/scoring)；279 全量绿。仍剩：算术「重算」(需 OCR 确定性数,架构更重)留 backlog
     note: "杠杆最高的一刀；同时关闭 round4 F1（BLOCKER）的核心"
 
   - id: G2

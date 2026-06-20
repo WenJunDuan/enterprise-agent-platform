@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import json
+import os
 from typing import Any
 
 from server.common.contract import (
@@ -24,6 +25,38 @@ from server.common.contract import (
     StructuredJSON,
     register_schema_processor,
 )
+from server.platform.paths import PROJECT_ROOT
+
+_KNOWLEDGE_DIR = PROJECT_ROOT / "knowledge"
+
+
+def _rule_ref_check_enabled() -> bool:
+    """G1b-full 幻觉闸开关。默认关——避免无 knowledge/ 的 CI/fixture 误挂；
+    部署侧 knowledge/ 规则稳定后设 ``RULE_REF_CHECK=1`` 即启用。"""
+    return os.getenv("RULE_REF_CHECK", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _load_known_rule_ids() -> set[str]:
+    """扫 ``knowledge/{domain}/*.rules.json`` 收集所有 rule_id。
+
+    用于幻觉闸：模型自报的 ``policy_refs`` 必须是真实存在的规则号（防编造 "TRAVEL-RULE-999"）。
+    无 knowledge/ 或读不出 → 返回空集（调用方据此跳过校验，保持向后兼容）。
+    """
+    known: set[str] = set()
+    if not _KNOWLEDGE_DIR.is_dir():
+        return known
+    for path in _KNOWLEDGE_DIR.glob("*/*.rules.json"):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        rules = data.get("rules") if isinstance(data, dict) else None
+        if not isinstance(rules, list):
+            continue
+        for rule in rules:
+            if isinstance(rule, dict) and isinstance(rule.get("rule_id"), str):
+                known.add(rule["rule_id"])
+    return known
 
 # `verdict` is the single source of truth; `result` (bool) and `conclusion` (label)
 # are derived from it server-side so the model never has to keep three fields in sync.
@@ -167,8 +200,48 @@ def _validate_audit_result(structured_output: StructuredJSON) -> None:
             raise JSONContractError(
                 f"audit result with verdict={verdict} must cite at least one policy_ref."
             )
+        # G1b-full（env-gated）：policy_refs 必须是真实存在的 rule_id，防模型编造规则号。
+        # 这是「验证而非判断」——只查引用真伪，verdict 仍由 Claude 判。默认关(见 _rule_ref_check_enabled)。
+        if _rule_ref_check_enabled():
+            known = _load_known_rule_ids()
+            if known:  # 加载到规则才校验；无 knowledge/ → 跳过(向后兼容)
+                unknown = [ref for ref in policy_refs if ref not in known]
+                if unknown:
+                    raise JSONContractError(
+                        f"policy_refs 引用了不存在的 rule_id（疑似编造）: {unknown}"
+                    )
 
+    _verify_scoring_consistency(structured_output)
     _cleanse_risk_dimensions(structured_output)
+
+
+def _verify_scoring_consistency(structured_output: dict[str, Any]) -> None:
+    """G1c（round4 验证非判断）：评分项内部算术一致性——每项 0 ≤ score ≤ max。
+
+    不替模型判分，只拒"给了超出量纲的分"这类自相矛盾输出（如 max=10 却给 15）。
+    仅在 ``extracted_data.scoring`` 存在时触发；``score=null``（不可判定/manual_review 项）跳过。
+    """
+    extracted = structured_output.get("extracted_data")
+    if not isinstance(extracted, dict):
+        return
+    scoring = extracted.get("scoring")
+    if not isinstance(scoring, list):
+        return
+    for item in scoring:
+        if not isinstance(item, dict):
+            continue
+        score = item.get("score")
+        max_score = item.get("max")
+        if not _is_real_number(score) or not _is_real_number(max_score):
+            continue  # null 分（未判定项）或非数 → 不在本闸范围
+        if score < 0 or score > max_score:
+            raise JSONContractError(
+                f"评分项 score={score} 超出 [0, max={max_score}] 范围（item={item.get('item')!r}）"
+            )
+
+
+def _is_real_number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
 def _validate_init_rules_report(structured_output: StructuredJSON) -> None:
