@@ -5,6 +5,7 @@ owner: claude-code
 design: design.md
 status: done                       # H1-H4 全绿(299 passed/ruff);F5③ + 续项在 backlog
 baseline: "287 passed / ruff clean (2026-06-20 sprint 起点)"
+review_pass1: "REWORK→fixed(2026-06-20)：M1/F1/F4/E2 must-fix 已修(54455a1),301 green;余项 backlog。见 reviews/pass1.md"
 
 decisions:
   - "四类债按 成本×价值×风险 排序 H1→H4：先摘低垂果实(真伪闸+F3)，async/租户重活靠后"
@@ -74,3 +75,4 @@ backlog:
   - "F5③ 超时杀 claude CLI 子进程：待模型可用后集成验证 SDK aclose 是否已清理(见 H3.backlog)"
   - "tool-trace.jsonl 捕获 .env 明文(本会话 5 处命中)：建议 gitignore tool-trace.jsonl 或 hook 脱敏(本会话未提交该文件)"
   - "round5 余项(非本 sprint)：L5 prompt-injection 边界 / L2·F12 case-memory tender 枚举(部署侧 gitignored schema) / rule.schema.json 死域 hr,legal enum"
+  - "review pass1 余项：F2 admission 软上限(await-induced 并发竞态,缓冲 50 足够,非硬上限) / F3 delete-retry 409 极窄竞态消息语义 / F5 H1 默认ON正向 pass 路径测试 / F7 upload_helpers E302 空行 / D1 design.md H1 sub-task 文案(写了 approach B,实现以 A 为准)"
