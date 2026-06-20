@@ -6,7 +6,8 @@
 
 | 档 | 子系统 | 摘要 |
 |---|---|---|
-| （暂无） | — | contract/legal 子系统已于 2026-06-20 agent-capability-redesign G0 删除（死域，无 knowledge/legal 规则） |
+| `system-tender-data-model.md` | tender 招标数据模型 | 招标项目实体 owns N 家投标评标 + 多投标人追加 + 回看 + 价格横比（Phase 1+2，2026-06-20） |
+| （已删） | contract/legal | 2026-06-20 agent-capability-redesign G0 删除（死域，无 knowledge/legal 规则） |
 
 ## 真实业务域（round4 校准）
 
@@ -29,6 +30,6 @@ app (api/cli) → routes → ops → features(audit|ocr) → core → common →
 ## 存储
 
 - 统一单库 `data/db/platform.sqlite3`（多表）：results/requests/sessions/review_deltas/
-  memory_assets/audit_tasks/tender_tasks。
+  memory_assets/audit_tasks/tender_tasks + **tender_projects/tender_compare_tasks/tender_compare_results**（招标数据模型）。
 - 大 blob 留文件：会话 event 流、上传原件。
-- 详见 `sprints/2026-06-19-logging-and-storage/design-data-storage.md`。
+- 详见 `sprints/2026-06-19-logging-and-storage/design-data-storage.md` + `architecture/system-tender-data-model.md`。

@@ -4,8 +4,8 @@
 version: "9.6.4"
 
 # === PACE 路由状态 ===
-path: "System" # tender-data-model goal Phase1 实现完成(325 passed)；codex 设计评审 APPROVE-WITH-CHANGES；下一步=Phase2(价格横比)或前端对接
-stage: "impl" # tender-data-model Phase1 done(招标项目实体+多投标人追加+回看,6 任务全绿,1 commit 429bf5d)；可选 impl 后代码交叉审查
+path: "System" # tender-data-model goal Phase1+Phase2 实现+交叉审查全完成(344 passed)；多投标人比选闭环完整；下一步=前端对接或 ship
+stage: "review" # Phase2 价格横比 done+codex/cc 代码评审 REWORK→fixed+architecture 档已更新；可 ship
 current_sprint_slug: "2026-06-20-tender-data-model"
 current_roadmap_slug: "" # 跨切面 goal，非单一 roadmap item
 skip_polish: false
@@ -49,7 +49,7 @@ counts:
   issues_count: 0
   refactors_count: 0
   systems_count: 5
-  reviews_count: 40
+  reviews_count: 43
   cleanup_count: 1
   compound:
     learning: 4
@@ -75,10 +75,10 @@ pointers:
       "compound/2026-06-17-learning-classify-fix-exposes-latent-bug.md",
       "compound/2026-06-02-learning-legacy-v962-migration.md",
     ]
-  latest_architecture_update: "2026-06-20T01:29:08.936Z"
+  latest_architecture_update: "2026-06-20T10:04:38.538Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "tender-data-model goal Phase1 实现 + 代码级交叉审查全完成(330 passed/ruff)。设计评审 codex APPROVE-WITH-CHANGES;代码评审 codex REWORK→fixed(P1.1 retry 丢 project_id 覆盖结论/P1.2 空 tender_no 500)+ cc CONCERNS→fixed(P1 删后回看详情 404),3 P1 全修+回归测试。下一步候选(待用户定):①Phase2(价格横比/排名/recommendedBidder+/compare,见 checklist phase2_backlog) ②前端 features/contract/tender-review 接真实 /tender/projects API。另:tender-criteria 的 codex review 仍待网关补跑(codex review --base 13d58a7)"
+next_action: "tender-data-model goal **Phase1+Phase2 全完成**(344 passed/ruff)。Phase2 价格横比:Claude 侧 /tender-compare 算价格分/排名/推荐中标人,compare 不污染 results(archive_to_results=False)/独立 task 表/criteria 全量 hash+stale/推荐终局护栏。codex 设计 APPROVE-WITH-CHANGES + 代码 REWORK→fixed(4 项);cc CONCERNS→fixed(2 项);architecture 档已更新。多投标人比选闭环完整(招标项目→追加 N 家→各自评标→横比排名→推荐)。下一步候选(待用户定):①ship(收尾) ②前端 features/contract/tender-review 接真实 /tender/projects+compare API。另:tender-criteria codex review 仍待网关补跑(codex review --base 13d58a7)"
 last_subagent: "generator"
 last_subagent_at: "2026-06-02T09:25:27.661Z"
 active_worktrees: []
