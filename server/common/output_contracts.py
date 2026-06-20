@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import datetime, timezone
 from typing import Any
 
 import jsonschema
@@ -299,8 +300,54 @@ def _validate_init_rules_report(structured_output: StructuredJSON) -> None:
         )
 
 
+# 服务端权威元数据：reviewed_by/timestamp 模型不该(也不可靠地)产出；claim_id 缺失时回落任务 request_id。
+# 在 G1 硬校验前盖章，避免把"服务端该填的字段"当成模型 bug 反复重试至失败（live eval 实测 [1M] 常漏这些）。
+_DEFAULT_REVIEWED_BY = "expense-auditor"
+
+
+def _stamp_server_metadata(output: dict[str, Any], request_id: str | None) -> None:
+    """Stamp server-authoritative metadata + default the model-owned envelope (in-place)."""
+    output.setdefault("claim_id", request_id or "UNKNOWN")
+    output.setdefault("reviewed_by", _DEFAULT_REVIEWED_BY)
+    output.setdefault("timestamp", datetime.now(timezone.utc).isoformat())
+    # extracted_data 是事实底稿(模型职责)；偶发漏给时回落空对象,保结论可落库(降级而非掩盖)。
+    output.setdefault("extracted_data", {})
+
+
+def normalize_audit_result(
+    structured_output: StructuredJSON, request_id: str | None = None
+) -> StructuredJSON:
+    """G1 前置规整：盖 server 元数据 + 拍平 envelope 格式，使硬 schema 校验只挡真问题。
+
+    1. 元数据：claim_id(缺→request_id)/reviewed_by/timestamp/extracted_data 默认值。
+    2. reasons/policy_refs：对象→字符串（防前端崩 + 满足 string[] 契约）。
+    3. risk_dimensions：对象映射/0-100 量纲 → [{name∈枚举,score 0-10}]；非法项清除；空则丢(可选字段)。
+
+    与 ``enrich_audit_decision`` 的分工：normalize 跑在硬 schema 校验**前**（只产 schema 内字段）；
+    enrich 跑在校验**后**（派生 schema 外的 result/conclusion）。
+    """
+    if not isinstance(structured_output, dict):
+        return structured_output
+    _stamp_server_metadata(structured_output, request_id)
+    for field in ("reasons", "policy_refs"):
+        value = structured_output.get(field)
+        if isinstance(value, list):
+            structured_output[field] = [_coerce_reason_to_str(item) for item in value]
+    if "risk_dimensions" in structured_output:
+        coerced = _coerce_risk_dimensions(structured_output["risk_dimensions"])
+        if coerced is None:
+            structured_output.pop("risk_dimensions", None)
+        else:
+            structured_output["risk_dimensions"] = coerced
+            _cleanse_risk_dimensions(structured_output)  # 丢非枚举/越界项
+            if not structured_output.get("risk_dimensions"):
+                structured_output.pop("risk_dimensions", None)
+    return structured_output
+
+
 register_schema_processor(
     DEFAULT_OUTPUT_SCHEMA_NAME,
+    normalize=normalize_audit_result,
     validate=_validate_audit_result,
     enrich=enrich_audit_decision,
 )

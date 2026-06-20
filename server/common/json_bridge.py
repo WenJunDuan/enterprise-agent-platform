@@ -50,6 +50,7 @@ def _apply_result_message_structured(
     schema_name: str,
     final_structured_output: StructuredJSON | None,
     final_subtype: str,
+    request_id: str | None = None,
 ) -> tuple[StructuredJSON | None, str | None]:
     """Try to extract validated structured output from a ResultMessage (structured mode).
 
@@ -60,7 +61,9 @@ def _apply_result_message_structured(
     if structured_output is not None and final_structured_output is None:
         if not isinstance(structured_output, (dict, list)):
             raise JSONContractError("Claude returned a non-object structured output.")
-        structured_output = apply_schema_semantics(schema_name, structured_output)
+        structured_output = apply_schema_semantics(
+            schema_name, structured_output, request_id=request_id
+        )
         return structured_output, utc_now()
     if final_subtype == "error_max_structured_output_retries":
         raise JSONContractError(
@@ -75,6 +78,7 @@ def _apply_result_message_text(
     schema_name: str,
     final_structured_output: StructuredJSON | None,
     text_accum: list[str],
+    request_id: str | None = None,
 ) -> tuple[StructuredJSON | None, str | None]:
     """Try to extract validated structured output from a ResultMessage (text mode).
 
@@ -87,7 +91,7 @@ def _apply_result_message_text(
     raw_text = (getattr(message, "result", "") or "") or "".join(text_accum)
     parsed = _extract_json_object(raw_text)
     if parsed is not None:
-        parsed = apply_schema_semantics(schema_name, parsed)
+        parsed = apply_schema_semantics(schema_name, parsed, request_id=request_id)
         return parsed, utc_now()
     return None, None
 
@@ -177,6 +181,7 @@ async def run_agent_json(
                         schema_name=schema_name,
                         final_structured_output=final_structured_output,
                         final_subtype=final_subtype,
+                        request_id=request_id,
                     )
                 else:
                     extracted, ts = _apply_result_message_text(
@@ -184,6 +189,7 @@ async def run_agent_json(
                         schema_name=schema_name,
                         final_structured_output=final_structured_output,
                         text_accum=text_accum,
+                        request_id=request_id,
                     )
 
                 if extracted is not None:
