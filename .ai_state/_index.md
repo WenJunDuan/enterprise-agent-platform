@@ -4,8 +4,8 @@
 version: "9.6.4"
 
 # === PACE 路由状态 ===
-path: "System" # tender-data-model goal Phase1+Phase2 实现+交叉审查全完成(344 passed)；多投标人比选闭环完整；下一步=前端对接或 ship
-stage: "review" # Phase2 价格横比 done+codex/cc 代码评审 REWORK→fixed+architecture 档已更新；可 ship
+path: "System" # tender-data-model goal **已 ship**(Phase1+2,344 passed,双审 REWORK→fixed→PASS)；下个 sprint=前端 tender 对接
+stage: "ship" # tender-data-model shipped(2026-06-20);下一 sprint 待启=agent-front tender-review 接真实 /tender API
 current_sprint_slug: "2026-06-20-tender-data-model"
 current_roadmap_slug: "" # 跨切面 goal，非单一 roadmap item
 skip_polish: false
@@ -49,7 +49,7 @@ counts:
   issues_count: 0
   refactors_count: 0
   systems_count: 5
-  reviews_count: 43
+  reviews_count: 44
   cleanup_count: 1
   compound:
     learning: 4
