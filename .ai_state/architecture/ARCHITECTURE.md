@@ -6,7 +6,13 @@
 
 | 档 | 子系统 | 摘要 |
 |---|---|---|
-| [system-contract-audit.md](system-contract-audit.md) | legal 合同审查 + 合同库 | /review-contract 内联审查产 audit-result + contract_store 落库（条款/付款节点），request_id 回链 |
+| （暂无） | — | contract/legal 子系统已于 2026-06-20 agent-capability-redesign G0 删除（死域，无 knowledge/legal 规则） |
+
+## 真实业务域（round4 校准）
+
+- **expense**（报销审核）· **tender**（招投标评标）· **ocr**（文档识别能力，喂其它域）。
+- system 是制度→规则工具域，不出审批结论。
+- **已删死域**：legal/contract（无规则、纯增攻击面）+ HR（仅孤儿 agent stub）——见 round4 F8。
 
 ## 全局分层（server/）
 
@@ -16,13 +22,13 @@ app (api/cli) → routes → ops → features(audit|ocr) → core → common →
 
 - `ops` 是 routes 之下的 service 层（diagnostics/maintenance），被 app+routes 共同消费——
   见 `compound/2026-06-19-decision-ops-below-routes-layering.md`（T2.5 修正）。
-- feature 域（audit/ocr）互不 import；tender/legal 走内联命令，未建 feature 模块。
+- feature 域（audit/ocr）互不 import；tender 走内联命令，未建 feature 模块。
 - 守卫：`tests/test_layering.py`（6 条：routes 不 import api、platform 叶子、common 不依赖上层、
   feature 互斥、ops 不 import routes/app/features、stores 只 import platform）。
 
 ## 存储
 
 - 统一单库 `data/db/platform.sqlite3`（多表）：results/requests/sessions/review_deltas/
-  memory_assets/audit_tasks/tender_tasks/contracts。
-- 大 blob 留文件：会话 event 流、上传原件、合同原件 `data/contracts/<id>/source/`。
+  memory_assets/audit_tasks/tender_tasks。
+- 大 blob 留文件：会话 event 流、上传原件。
 - 详见 `sprints/2026-06-19-logging-and-storage/design-data-storage.md`。

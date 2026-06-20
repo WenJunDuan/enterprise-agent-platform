@@ -41,7 +41,6 @@ MEMORY_INDEX_DB_FILE = PLATFORM_DB_FILE
 # 只有会话原始 event 流（大、append-only）和上传原件仍落文件。
 SUBMISSION_ROOT_DIR = DATA_ROOT / "submissions"  # 上传原件（ephemeral）
 SESSION_EVENT_DIR = DATA_ROOT / "sessions" / "events"  # 会话原始 event 流
-CONTRACTS_DATA_DIR = DATA_ROOT / "contracts"  # 合同库原件 data/contracts/<contract_id>/source/
 
 # ── 迁移用：旧 logs/ 位置（一次性 migrate_storage 读取，迁完可删）─────────────
 LEGACY_RESULT_DB_FILE = LOGS_ROOT / "results" / "index.sqlite3"
@@ -65,7 +64,6 @@ def ensure_local_layout() -> None:
         DB_DIR,
         SUBMISSION_ROOT_DIR,
         SESSION_EVENT_DIR,
-        CONTRACTS_DATA_DIR,
     ]:
         path.mkdir(parents=True, exist_ok=True)
 
