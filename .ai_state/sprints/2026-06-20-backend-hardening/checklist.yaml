@@ -3,7 +3,7 @@ title: 后端加固 — 收口 round4/round5 两轮审查一致认定的基础�
 path: System
 owner: claude-code
 design: design.md
-status: in_progress                # 落档完成；H1 起步本地实测中
+status: done                       # H1-H4 全绿(299 passed/ruff);F5③ + 续项在 backlog
 baseline: "287 passed / ruff clean (2026-06-20 sprint 起点)"
 
 decisions:
@@ -39,23 +39,38 @@ tasks:
 
   - id: H3
     title: F4 to_thread + F5 任务生命周期（异步正确性）
-    status: planned
+    status: done                  # F4 + F5①② done(298 green);F5③ 杀子进程降级→backlog
     files:
-      - server/routes/audit_worker.py             # F4: 4处 upsert 包 to_thread；F5: task 引用集/准入上限/超时杀子进程
-      - server/audit/runner.py                    # F5: runner 暴露取消/kill(若需)
-      - tests/test_audit_worker.py
-    accept: "孤儿任务不被 GC；超额准入返 503；超时后无残留 claude CLI 子进程(做不动则降级记录+告警)"
+      - server/routes/audit_worker.py             # F4:4处 upsert 包 to_thread；F5①:_BACKGROUND_TASKS 引用集；F5②:admission_available
+      - server/routes/audit.py                    # submit/retry 加准入闸→503
+      - tests/test_audit_worker.py                # F5①② 引用追踪/自清/准入(asyncio.run,无需 pytest-asyncio)
+    accept: "孤儿任务不被 GC(引用集+自清测试)；超额准入返 503；F4 同步写经 to_thread 不阻塞 loop"
+    backlog: >
+      F5③ 超时杀 claude CLI 子进程降级为 backlog：run_agent 经 async-for query() 流，
+      wait_for 取消会 aclose 该 async-gen → SDK transport 清理应已杀子进程；但无可用模型
+      (anyrouter 503/本地 litellm down)无法集成验证，recover_stale_audit_tasks 已是 DB 层
+      孤儿兜底(重启标 failed)。待模型可用后集成验证再决定是否需显式 kill。
     depends_on: [H1]
 
   - id: H4
-    title: F2 directory 模式租户隔离（数据边界）
-    status: blocked                # 等用户决策 a/b + 是否本 sprint 做
+    title: F2 directory 模式租户隔离（数据边界）— approach (b) 完全版
+    status: done                  # 三路由统一 tenant 子树;299 green(含跨租户拒绝测试)/ruff
     files:
-      - server/routes/upload_helpers.py           # validate_directory_case_path 加租户归属/或移除 directory 外部口
-      - server/routes/audit.py
-      - tests/test_routes_smoke.py
-    accept: "directory 模式不可读 data/db、data/sessions、跨租户 submissions；upload 模式不受影响"
+      - server/routes/upload_helpers.py           # validate_directory_case_path(case,tenant) confine data/submissions/<tenant>/;materialize_* 命名空间化 <tenant>/<request_id>;新 tenant_submission_root
+      - server/routes/audit.py / ocr.py / tender.py  # 三路由传 tenant(ocr extract 原丢弃 tenant 已补)
+      - tests/test_ocr_routes.py / test_tender_routes.py  # 用例置于 tenant 子树 + 新增跨租户拒绝测试
+    accept: "directory 模式不可读 data/db、data/sessions、跨租户 submissions(测试证)；upload 写入 data/submissions/<tenant>/<request_id>"
+    note: >
+      API 行为变更：HTTP directory 模式(audit/ocr/tender)的 directory_path 现须在
+      data/submissions/<tenant>/ 下，外部调用方须把目录置于本租户子树；slash 命令
+      /tender-evaluate(本地 AI 直读)不受影响。
     depends_on: [H1]
 
 user_decision:
-  - "H4/F2：demo/内网单组织阶段是否本 sprint 做？做的话走 (a) 对外仅 upload 模式 / 还是 (b) 每租户 data/submissions/<tenant>/ 子树？未定前不动 F2 代码"
+  - "[已定 2026-06-20] F3 → approach A(重命名去 statute- 前缀，rule_id 不动)"
+  - "[已定 2026-06-20] H4/F2 → 本 sprint 做，approach (b) 完全版(三路由统一 tenant 子树 + 上传命名空间化)。done"
+
+backlog:
+  - "F5③ 超时杀 claude CLI 子进程：待模型可用后集成验证 SDK aclose 是否已清理(见 H3.backlog)"
+  - "tool-trace.jsonl 捕获 .env 明文(本会话 5 处命中)：建议 gitignore tool-trace.jsonl 或 hook 脱敏(本会话未提交该文件)"
+  - "round5 余项(非本 sprint)：L5 prompt-injection 边界 / L2·F12 case-memory tender 枚举(部署侧 gitignored schema) / rule.schema.json 死域 hr,legal enum"
