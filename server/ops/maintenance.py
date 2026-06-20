@@ -21,6 +21,43 @@ from server.platform.paths import (
 )
 from server.platform.storage import describe_storage_target
 from server.stores.audit_task_store import list_audit_tasks_admin
+from server.stores.tender_task_store import list_tender_tasks_admin
+
+
+def _resolve_case_path(case_path: str) -> Path:
+    """相对 case_path 一律按 PROJECT_ROOT 解析（codex P1.4），不受 CWD 影响。"""
+    candidate = Path(case_path)
+    return (candidate if candidate.is_absolute() else PROJECT_ROOT / candidate).resolve()
+
+
+def _all_upload_tasks() -> list[dict[str, Any]]:
+    """audit + tender 两域的任务（都会 materialize submission 目录）。
+
+    compare 任务（tender_compare_tasks）case_path 为占位 "-"，不建目录，故不纳入。
+    """
+    return [*list_audit_tasks_admin(), *list_tender_tasks_admin()]
+
+
+def _known_case_dirs() -> set[str]:
+    """所有任务登记的 case 目录（resolved），孤儿清理据此排除活跃目录。"""
+    known: set[str] = set()
+    for record in _all_upload_tasks():
+        case_path = str(record.get("case_path") or "").strip()
+        if case_path and case_path != "-":
+            known.add(str(_resolve_case_path(case_path)))
+    return known
+
+
+def _iter_leaf_case_dirs(submission_root: Path) -> list[Path]:
+    """枚举叶子 case 目录（域感知，避免误删 tenant/domain/project 中间目录）。
+
+    新结构：``<tenant>/audit/<rid>``、``<tenant>/ocr/<rid>``、``<tenant>/tender/<project>/<rid>``。
+    """
+    leaves: list[Path] = []
+    leaves.extend(submission_root.glob("*/audit/*"))
+    leaves.extend(submission_root.glob("*/ocr/*"))
+    leaves.extend(submission_root.glob("*/tender/*/*"))
+    return [p for p in leaves if p.is_dir()]
 
 
 def rotate_log_file(path: Path, *, max_bytes: int, backups: int) -> bool:
@@ -73,12 +110,12 @@ def storage_report() -> dict[str, Any]:
 
 
 def cleanup_old_submission_directories(days: int, now: str | None = None) -> list[str]:
-    """Remove expired submission directories for finished upload-mode tasks."""
+    """Remove expired submission directories for finished upload-mode tasks（audit + tender）。"""
     cutoff = _coerce_timestamp(now) - timedelta(days=days)
     removed: list[str] = []
     submission_root = SUBMISSION_ROOT_DIR.resolve()
 
-    for record in list_audit_tasks_admin():
+    for record in _all_upload_tasks():
         if record.get("source_mode") != "upload":
             continue
         if record.get("status") not in {"completed", "failed"}:
@@ -91,11 +128,11 @@ def cleanup_old_submission_directories(days: int, now: str | None = None) -> lis
             continue
 
         case_path = str(record.get("case_path") or "").strip()
-        if not case_path:
+        if not case_path or case_path == "-":
             continue
 
-        path = Path(case_path)
-        resolved = path.resolve()
+        # codex P1.4：相对路径按 PROJECT_ROOT 解析（不受 CWD 影响）。
+        resolved = _resolve_case_path(case_path)
         try:
             resolved.relative_to(submission_root)
         except ValueError:
@@ -122,21 +159,17 @@ def cleanup_orphan_submission_directories(days: int, now: str | None = None) -> 
     if not submission_root.exists():
         return []
 
-    # 与 remove_submission_dir 一致：相对 case_path 对 PROJECT_ROOT 解析，不受 CWD 影响，
-    # 否则从非项目目录跑 maintenance 时活跃任务目录会漏出 known、被孤儿清理误删。
-    known = {
-        str((Path(p) if Path(p).is_absolute() else PROJECT_ROOT / p).resolve())
-        for record in list_audit_tasks_admin()
-        if (p := str(record.get("case_path") or "").strip())
-    }
+    # codex P1.4：known 纳入 audit + tender 两域任务目录（PROJECT_ROOT 解析），
+    # 否则活跃 tender 目录会被当 orphan 误删。
+    known = _known_case_dirs()
 
     removed: list[str] = []
-    for child in submission_root.iterdir():
-        if not child.is_dir():
-            continue
-        resolved = child.resolve()
+    # codex P1.4：递归到**叶子 case 目录**（域感知 glob），不再只扫第一层（租户级）——
+    # 否则会误删整个 tenant/domain/project 中间目录，或漏删深层 leaf。
+    for case_dir in _iter_leaf_case_dirs(submission_root):
+        resolved = case_dir.resolve()
         if str(resolved) in known:
-            continue  # 有 audit task 记录 → 交给 cleanup_old_submission_directories
+            continue  # 有 task 记录 → 交给 cleanup_old_submission_directories
         modified = datetime.fromtimestamp(resolved.stat().st_mtime, tz=timezone.utc)
         if modified >= cutoff:
             continue  # retention 内，可能仍在处理，保留

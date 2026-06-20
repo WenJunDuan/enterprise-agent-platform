@@ -18,6 +18,7 @@ from server.core import enrich_audit_decision
 from server.routes.deps import verify_tenant
 from server.routes.tender_worker import admission_available, schedule_tender_evaluation_task
 from server.routes.upload_helpers import (
+    UNBOUND_PROJECT,
     materialize_upload_submission,
     remove_submission_dir,
     validate_directory_case_path,
@@ -207,7 +208,12 @@ async def _submit_bid_evaluation(
         except ValidationError as exc:
             raise RequestValidationError(exc.errors()) from exc
         mode = req_payload.mode
-        case_path = validate_directory_case_path(req_payload.directory_path, tenant)
+        case_path = validate_directory_case_path(
+            req_payload.directory_path,
+            tenant,
+            expected_domain="tender",
+            expected_project_id=project_id or UNBOUND_PROJECT,
+        )
     elif content_type.startswith("multipart/form-data"):
         form_data = await request.form()
         mode = str(form_data.get("mode") or "").strip()
@@ -218,6 +224,8 @@ async def _submit_bid_evaluation(
             tenant=tenant,
             form_json=form_data.get("form_json"),
             form_data=form_data,
+            domain="tender",
+            project_id=project_id or UNBOUND_PROJECT,
         )
     else:
         raise HTTPException(status_code=415, detail="Unsupported Content-Type")
