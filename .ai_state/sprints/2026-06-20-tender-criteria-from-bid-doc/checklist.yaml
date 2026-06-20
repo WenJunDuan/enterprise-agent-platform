@@ -1,0 +1,76 @@
+sprint: 2026-06-20-tender-criteria-from-bid-doc
+title: Tender 评标改造 — 招标文件直读出标准，删项目层预建
+path: System
+owner: claude-code
+design: design.md
+status: planned                  # 本会话只出设计；下个会话实现(用户 2026-06-20 决定)
+
+decisions:
+  - "评标标准来自招标文件第三章《评标办法》直读(=会话项目规则)，删预建 knowledge/tender/{编号}.rules.json 项目层"
+  - "通则层 evalmethod/regulation(国家法规)保留作法律底座，不动"
+  - "会话规则持久化 v1 取最小改动：extracted_data.criteria 随结论 archive 落 data/(备选:加 Write 写显式 criteria.json,留后)"
+  - "翻护栏：招标文件直读=权威，非编造；招标文件没写的才不补"
+  - "与 H1 真伪闸对齐(RULE_REF_CHECK 默认开)：policy_refs 引通则层真实 rule_id，criteria 命中走 evidence_chain"
+
+prereq_done:                     # 本会话已做的前置
+  - "删除 knowledge/tender/r2024007.rules.json(预建项目层样例,gitignored);validate-assets ok / 301 green"
+  - "确认无 tracked 代码/测试依赖该文件(test_cli_tender_evaluate 用 cases/r2024007 目录路径+mock)"
+
+tasks:
+  - id: T1
+    title: criteria 会话评分标准契约 + extracted_data.criteria
+    status: planned
+    files:
+      - .claude/contracts/tender/criteria.schema.json   # 新:source_ref/method/total_max/items[{item,max,scoring_rule,source_ref,tag}]
+      - .claude/contracts/common/audit-result.schema.json  # 视 schema 宽松度:允许 extracted_data.criteria(或仅文档约束)
+    accept: "criteria 结构定义清晰;extracted_data 能携带 criteria 不被出口 schema 拒"
+
+  - id: T2
+    title: tender-evaluate.md S1 重写(读招标文件第三章→criteria)+ 翻护栏
+    status: planned
+    files:
+      - .claude/commands/tender-evaluate.md
+    accept: >
+      S1 改为:Read 招标文件第三章《评标办法》→ 结构化为 criteria(评分项+满分+评分规则+出处+不可判定标签)→
+      写 extracted_data.criteria;删"读项目层 {编号}.rules.json / 缺失 rule_gap / 不要读招标文件 PDF";
+      新护栏"直读招标文件第三章=权威,没写的不臆测补"。
+    depends_on: [T1]
+
+  - id: T3
+    title: S3/S4 对照 criteria 评分 + 与 H1 真伪闸对齐
+    status: planned
+    files:
+      - .claude/commands/tender-evaluate.md
+      - .claude/agents/tender/evaluator.md          # 同步:S3-4 子 agent 也按 criteria
+    accept: >
+      S3 逐项对照 extracted_data.criteria 评分(不再读 knowledge 项目层);承重结论 policy_refs 只引通则层
+      真实 rule_id(如 tender_evalmethod_003 授权项目自定权重),criteria 命中/出处写 evidence_chain;
+      不可判定项 score:null 不判 0。缺招标文件→manual_review(rule_gap)。
+    depends_on: [T1, T2]
+
+  - id: T4
+    title: 清 .claude — 去 tender 项目层概念 + statute 死引用
+    status: planned
+    files:
+      - .claude/CLAUDE.md                           # tender 段:删项目层预建/init-rules,改通则层+招标文件直读
+      - .claude/agents/tender/evaluator.md          # 清 statute.rules.json / tender_statute_*(已不存在)
+      - .claude/agents/tender/extractor.md          # 同上
+      - .claude/skills/tender-eval/SKILL.md         # 清 statute;两层改"通则(法规)+会话标准(招标文件)"
+      - .claude/skills/system/rule-init/SKILL.md    # 去 tender 项目层(招标编号→{编号}.rules.json)那条
+    accept: "grep statute 在 .claude 清零;CLAUDE.md/SKILL/agent 口径一致指向新流程;不残留'项目层预建'"
+    depends_on: [T2]
+
+  - id: T5
+    title: 测试 + 验收
+    status: planned
+    files:
+      - tests/  # tender 命令/CLI 产出 criteria + 按 criteria 评分;缺招标文件 manual_review;视现有 test_cli_tender_evaluate 调整
+    accept: "uv run pytest -q 全绿 + ruff clean + validate-assets ok;验收标准(design §验收)逐条过;System 路径交叉审查 PASS"
+    depends_on: [T1, T2, T3, T4]
+
+backlog:
+  - "T6(可选)显式 criteria.json artifact:给 tender 命令加 Write + data/submissions/<tenant>/<request_id>/ 路径白名单,S1 写盘(更贴'先存再读',v1 用 extracted_data.criteria 已够)"
+  - "tender_worker 没吃到 backend-hardening 的 async 加固(F4 to_thread/F5 准入闸)——另案,见 2026-06-20-backend-hardening 梳理"
+  - "丢分/得分原因可加强:scoring[].basis 强制写明'本项得X/扣Y因…'(现为自由 basis)"
+
+next_session_entry: "读本 design.md + checklist;按 T1→T5 顺序实现(设计先行已完成);System 路径,impl 后走 review(reviewer+spec-compliance+evaluator)再 ship"
