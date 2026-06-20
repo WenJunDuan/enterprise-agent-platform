@@ -103,12 +103,18 @@ async def run_agent_json(
     request_id: str | None = None,
     tenant: str | None = None,
     project_id: str | None = None,
+    archive_to_results: bool = True,
     **opts: Any,
 ) -> tuple[StructuredJSON, AgentRunMeta]:
     """Run Claude and return the parsed JSON object.
 
     structured=True 用 SDK 的 output_format 强制结构化输出（需模型支持 function
     calling）；structured=False 走文本模式：模型直接输出 JSON 文本，服务端自己抽取解析。
+
+    archive_to_results=True 时把结论归档进 ``results`` 表（单投标人评标 / audit 的默认路径）。
+    价格横比（compare）传 **False**：其结论不是单投标人 audit-result，自存
+    ``tender_compare_results``，**不进 ``results``**，否则会被 ``_project_bid_roster`` 当成
+    伪投标人污染名册 / 回看（codex P1.1）。
     """
     conversation_id = conversation_id or new_conversation_id()
     request_id = request_id or str(uuid.uuid4())
@@ -197,23 +203,26 @@ async def run_agent_json(
                     "文本模式下未能从模型输出中解析出 JSON 对象（模型可能没按要求只输出 JSON）。"
                 )
 
-            result_record = archive_result_payload(
-                request_id=request_id,
-                tenant=tenant,
-                project_id=project_id,
-                conversation_id=conversation_id,
-                claude_session_id=final_claude_session_id,
-                resume_session_id=resolved_resume_session_id,
-                fork_from_session_id=fork_from_session_id,
-                schema_name=schema_name,
-                request_mode="structured" if structured else "text",
-                result_subtype=final_subtype or None,
-                cost_usd=final_cost,
-                prompt_preview=prompt[:200],
-                response=final_structured_output,
-                created_at=finished_at or utc_now(),
-            )
-            result_file = result_record.result_file
+            # compare 等非投标人结论传 archive_to_results=False：不进 results 表（codex P1.1），
+            # 由调用方自存专表（如 tender_compare_results）。
+            if archive_to_results:
+                result_record = archive_result_payload(
+                    request_id=request_id,
+                    tenant=tenant,
+                    project_id=project_id,
+                    conversation_id=conversation_id,
+                    claude_session_id=final_claude_session_id,
+                    resume_session_id=resolved_resume_session_id,
+                    fork_from_session_id=fork_from_session_id,
+                    schema_name=schema_name,
+                    request_mode="structured" if structured else "text",
+                    result_subtype=final_subtype or None,
+                    cost_usd=final_cost,
+                    prompt_preview=prompt[:200],
+                    response=final_structured_output,
+                    created_at=finished_at or utc_now(),
+                )
+                result_file = result_record.result_file
             return final_structured_output, AgentRunMeta(
                 request_id=request_id,
                 conversation_id=conversation_id,

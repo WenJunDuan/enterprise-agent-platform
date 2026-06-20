@@ -22,8 +22,14 @@ from server.routes.upload_helpers import (
     remove_submission_dir,
     validate_directory_case_path,
 )
+from server.routes.tender_compare_worker import collect_compare_input, schedule_compare_task
 from server.stores.request_store import new_request_id, utc_now
 from server.stores.result_store import get_result_payload_by_request_id, list_results_by_project
+from server.stores.tender_compare_store import (
+    compute_input_signature,
+    get_compare_result,
+    is_stale,
+)
 from server.stores.tender_project_store import (
     get_or_create_project,
     get_project,
@@ -92,6 +98,7 @@ class TenderProjectCreateRequest(BaseModel):
     tenderee: str | None = None
     method: str | None = None
     control_price: str | None = None
+    funding_type: str | None = None  # state_funded/other/unknown（compare 推荐终局护栏）
 
 
 class TenderProjectResponse(BaseModel):
@@ -101,6 +108,7 @@ class TenderProjectResponse(BaseModel):
     tenderee: str | None = None
     method: str | None = None
     control_price: str | None = None
+    funding_type: str | None = None
     status: str
     created_at: str
     updated_at: str
@@ -116,6 +124,8 @@ class TenderProjectBid(BaseModel):
 class TenderProjectDetailResponse(TenderProjectResponse):
     bidder_count: int
     bids: list[TenderProjectBid]
+    recommended_bidder: str | None = None  # 仅 compare 已跑、非 stale、有终局 recommended 时填
+    compare_stale: bool = False  # compare 已跑但参与集已变（需重跑）
 
 
 def _public_project(record: dict[str, Any]) -> TenderProjectResponse:
@@ -126,6 +136,7 @@ def _public_project(record: dict[str, Any]) -> TenderProjectResponse:
         tenderee=record.get("tenderee"),
         method=record.get("method"),
         control_price=record.get("control_price"),
+        funding_type=record.get("funding_type"),
         status=str(record["status"]),
         created_at=str(record["created_at"]),
         updated_at=str(record["updated_at"]),
@@ -380,6 +391,7 @@ async def create_tender_project(
         tenderee=body.tenderee,
         method=body.method,
         control_price=body.control_price,
+        funding_type=body.funding_type,
     )
     return _public_project(record)
 
@@ -401,14 +413,31 @@ async def get_tender_project_detail(
     project_id: str,
     authorization: str | None = Header(None),
 ) -> TenderProjectDetailResponse:
-    """项目详情 + 投标人名册（合并 results∪活跃 tasks）+ bidder_count。"""
+    """项目详情 + 投标人名册（合并 results∪活跃 tasks）+ bidder_count + compare 联动。"""
     tenant = verify_tenant(authorization)
     record = get_project(project_id, tenant)
     if record is None:
         raise HTTPException(status_code=404, detail="Tender project not found")
     bids = _project_bid_roster(tenant, project_id)
     base = _public_project(record)
-    return TenderProjectDetailResponse(**base.model_dump(), bidder_count=len(bids), bids=bids)
+    # compare 联动（codex P1.5/P2.6）：recommendedBidder 仅当 compare 已跑、非 stale、
+    # 有终局 recommended（非 provisional）时展示——计算不存储，从 compare 结果实时取。
+    recommended_bidder: str | None = None
+    compare_stale = False
+    compare = get_compare_result(project_id, tenant)
+    if compare is not None:
+        current_sig = _current_compare_signature(tenant, project_id, record)
+        compare_stale = current_sig is None or is_stale(compare.get("input_signature"), current_sig)
+        payload = compare.get("payload") or {}
+        if not compare_stale and not payload.get("provisional"):
+            recommended_bidder = payload.get("recommended")
+    return TenderProjectDetailResponse(
+        **base.model_dump(),
+        bidder_count=len(bids),
+        bids=bids,
+        recommended_bidder=recommended_bidder,
+        compare_stale=compare_stale,
+    )
 
 
 @router.post("/projects/{project_id}/evaluate", response_model=TenderSubmitAcceptedResponse)
@@ -475,3 +504,61 @@ async def get_tender_project_result_detail(
         raise HTTPException(status_code=404, detail="Tender result not found in this project")
     response = enrich_audit_decision(payload["response"])
     return response if isinstance(response, dict) else payload["response"]
+
+
+# ── 价格横比（Phase 2：多家比选 / 排名 / 推荐中标人）──────────────────────────
+
+
+def _current_compare_signature(tenant: str, project_id: str, project: dict[str, Any]) -> str | None:
+    """当前 completed 投标人集的输入签名；不足 2 家返回 None（无法 compare）。"""
+    collected = collect_compare_input(tenant, project_id, project)
+    if collected is None:
+        return None
+    _input, signature = collected
+    return compute_input_signature(signature.input_result_ids, signature.criteria_hash)
+
+
+@router.post("/projects/{project_id}/compare", response_model=TenderSubmitAcceptedResponse)
+async def trigger_tender_compare(
+    project_id: str,
+    authorization: str | None = Header(None),
+) -> TenderSubmitAcceptedResponse:
+    """触发招标项目价格横比（异步）。要求该招标下 ≥2 家投标人已完成评标。"""
+    tenant = verify_tenant(authorization)
+    project = get_project(project_id, tenant)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Tender project not found")
+    if _current_compare_signature(tenant, project_id, project) is None:
+        raise HTTPException(status_code=400, detail="参与横比的已完成投标人不足 2 家")
+    request_id = new_request_id()
+    schedule_compare_task(request_id=request_id, tenant=tenant, project_id=project_id)
+    return TenderSubmitAcceptedResponse(
+        request_id=request_id,
+        status="accepted",
+        mode="compare",
+        task_status_url=f"/tender/projects/{project_id}/compare",
+    )
+
+
+@router.get("/projects/{project_id}/compare")
+async def get_tender_compare(
+    project_id: str,
+    authorization: str | None = Header(None),
+) -> dict[str, Any]:
+    """取招标项目最新横比结果；追加投标 / 重评后参与集变化则标 ``stale=true``（codex P2.6）。"""
+    tenant = verify_tenant(authorization)
+    project = get_project(project_id, tenant)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Tender project not found")
+    record = get_compare_result(project_id, tenant)
+    if record is None:
+        raise HTTPException(status_code=404, detail="尚未生成横比结果，请先触发 compare")
+    current_sig = _current_compare_signature(tenant, project_id, project)
+    stale = current_sig is None or is_stale(record.get("input_signature"), current_sig)
+    return {
+        "project_id": project_id,
+        "result": record["payload"],
+        "stale": stale,
+        "computed_at": record.get("computed_at"),
+        "input_result_ids": record.get("input_result_ids"),
+    }

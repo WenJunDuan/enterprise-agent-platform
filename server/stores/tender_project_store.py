@@ -34,6 +34,7 @@ class TenderProjectRecord:
     tenderee: str | None = None  # 招标人
     method: str | None = None  # 评标方法
     control_price: str | None = None  # 标底 / 控制价（前端 controlPrice）
+    funding_type: str | None = None  # state_funded/other/unknown（compare 推荐终局护栏用，evalmethod_013）
     status: str = "doing"
     created_at: str = ""
     updated_at: str = ""
@@ -64,10 +65,22 @@ def _initialize_schema() -> None:
                 tenderee TEXT,
                 method TEXT,
                 control_price TEXT,
+                funding_type TEXT,
                 status TEXT NOT NULL DEFAULT 'doing',
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
+            """
+        )
+        # 既有表（建于 funding_type 加入前）按需补列，幂等。
+        existing_columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(tender_projects)").fetchall()
+        }
+        if "funding_type" not in existing_columns:
+            connection.execute("ALTER TABLE tender_projects ADD COLUMN funding_type TEXT")
+        connection.executescript(
+            """
             CREATE INDEX IF NOT EXISTS idx_tender_projects_tenant
                 ON tender_projects (tenant, created_at DESC);
             CREATE UNIQUE INDEX IF NOT EXISTS idx_tender_projects_tenant_no
@@ -111,6 +124,7 @@ def get_or_create_project(
     tenderee: str | None = None,
     method: str | None = None,
     control_price: str | None = None,
+    funding_type: str | None = None,
 ) -> dict[str, Any]:
     """幂等建招标项目：同 ``(tenant, tender_no)`` 已存在则返回现有（codex P1.2）。
 
@@ -129,6 +143,7 @@ def get_or_create_project(
         tenderee=tenderee,
         method=method,
         control_price=control_price,
+        funding_type=funding_type,
         status="doing",
         created_at=now,
         updated_at=now,
