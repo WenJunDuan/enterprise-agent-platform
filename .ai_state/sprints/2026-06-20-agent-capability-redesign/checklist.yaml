@@ -133,3 +133,15 @@ tasks:
     result_g0a: "死域删除完成；260 passed/ruff clean；无残留死域引用(contract schema 系统 server/common/contract.py 保留，与 legal 域无关)"
     g0b_done: "泛型化完成：新 server/stores/task_store.py(TaskStore，表名白名单校验) 收敛 audit/tender 两 store 的 96% 雷同逻辑；audit_task_store/tender_task_store 退化为薄包装(绑表名+导出同名函数,调用方零改)；audit 保留 legacy backfill。15 store 测试+272 全量+6 守卫全过,零回归。worker/route 层(实测 worker~78%/route~64% 雷同)未泛型化(域差异更多,留 backlog)"
     note: "round4 F7+F8；先减熵后抽象，先于 G2/G3"
+
+# === backlog（消化自原 pending-actions.md 的 agent-capability 项；2026-06-20 起此为唯一归宿）===
+backlog:
+  - "G1 深化：evidence_chain source 解析真伪 + 算术「重算」(金额/日期 Python 重比较)——需 Python 拿本案输入清单/确定性数,撞 gotcha「Python 不判断」,开工前先定 Python 验证深度边界"
+  - "G0b 续：worker/route 层泛型化(实测 worker~78%/route~64% 雷同,域差异比 store 多,ROI 低)"
+  - "G3 续：评标流程内自动注入信用(投标人企业名命令执行中途才抽出=鸡生蛋,需两遍流程或把工具暴露成 Claude skill)"
+  - "G4/G5 续：全自动闭环(distill 自动读 override_store.list_pending_overrides→写案例记忆→mark_distilled,跨 Python/Claude 边界+gitignored memory,需导出/呈现机制)"
+  - "小修(round4 F4)：config.contract_max_retry 命名偏(删 legal 后实为通用 JSON 重试计数)→下个 refactor 改 json_parse_max_retry"
+
+user_todo:
+  - "G3 企业信用 API：拿到接口后填 enterprise-agent.env 的 CREDIT_API_URL/CREDIT_API_KEY(代码已全做好,credit-check 自检)。未填时该项保持 manual_review=正确兜底"
+  - "G4 记忆 schema(gitignored,部署侧改 knowledge/_schema/case-memory.schema.json)：domain enum [expense,hr,legal]→[expense,tender,ocr](修 F12)；加 valid_until/superseded_by/decided_under_rule_version"

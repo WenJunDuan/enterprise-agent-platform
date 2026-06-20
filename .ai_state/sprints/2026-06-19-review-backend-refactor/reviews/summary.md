@@ -18,7 +18,7 @@
 ## 🔴 运维项（代码侧无法修，须你/运维处理）
 
 - **F1 [P0] litellm 真实 key `sk-hATxkq_*` + 内网 IP 在 git 历史 commit `7122b31`**。gitignore 抹不掉历史。
-  须 ① 在 Qwen 后端**轮换该 key 使其失效**；② 用 BFG/filter-branch 清史并强制 push。已记 `pending-actions.md`。
+  须 ① 在 Qwen 后端**轮换该 key 使其失效**；② 用 BFG/filter-branch 清史并强制 push。**仅运维可做（本条即唯一归宿）**。
 
 ## 🟡 Phase 0 修复门禁（9 项，进 Phase 1 前批量修，TDD）
 
