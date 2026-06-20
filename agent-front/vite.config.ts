@@ -126,6 +126,11 @@ export default defineConfig(({ mode }) => {
       changeOrigin: true,
       bypass: bypassSpaNavigation,
     },
+    '/tender': {
+      target: auditProxyTarget,
+      changeOrigin: true,
+      bypass: bypassSpaNavigation,
+    },
     '/health': {
       target: auditProxyTarget,
       changeOrigin: true,
