@@ -3,7 +3,15 @@ title: Tender 评标改造 — 招标文件直读出标准，删项目层预建
 path: System
 owner: claude-code
 design: design.md
-status: planned                  # 本会话只出设计；下个会话实现(用户 2026-06-20 决定)
+status: done                     # T1-T5 实现完成 + 招投标追加优化;309 passed/ruff/validate-assets ok
+review:                          # 交叉 review(2026-06-20)
+  cc: "PASS(带3项非阻塞CONCERNS:C1测试仅平台侧需端到端冒烟/C2 scoring-criteria项对应软约束/C3价格分恒manual_review)。见 reviews/cc-review.md"
+  codex: "BLOCKED — 模型端gpt-5.5不可达,3次重试均 stream disconnected,待网关恢复补跑(指令固化 logs/codex-review/instructions.txt)。见 reviews/codex-review.md"
+optimization:                    # 用户追加(2026-06-20):单投标人/多家追加运营模型
+  - "单投标人边界:命令只评一家,不读/比其他投标人或既往结果(横比/汇总/追加=前端/server)"
+  - "捕获横比数据:价格分 manual_review 同时把本家报价结构化留 extracted_data,供 server 后续一次性横比"
+  - "claim_id 稳定化(统一社会信用代码/投标人名)+ 招标项目标识留 extracted_data,便于 server 追加去重/分组"
+  - "criteria 跨投标人一致:逐字依招标文件第三章(公平横比前提)"
 
 decisions:
   - "评标标准来自招标文件第三章《评标办法》直读(=会话项目规则)，删预建 knowledge/tender/{编号}.rules.json 项目层"
@@ -73,4 +81,4 @@ backlog:
   - "tender_worker 没吃到 backend-hardening 的 async 加固(F4 to_thread/F5 准入闸)——另案,见 2026-06-20-backend-hardening 梳理"
   - "丢分/得分原因可加强:scoring[].basis 强制写明'本项得X/扣Y因…'(现为自由 basis)"
 
-next_session_entry: "读本 design.md + checklist;按 T1→T5 顺序实现(设计先行已完成);System 路径,impl 后走 review(reviewer+spec-compliance+evaluator)再 ship"
+next_session_entry: "本 sprint 已实现+优化+cc-review PASS。下个 sprint(用户 2026-06-20 定):全面检查 server Python 层——API 完整性 + 数据存储(expense/tender 都需任务列表+结果回看)+ 对照 agent-front 页面所需把接口全部实现,为下下个 sprint 前后端对接做准备。另:模型端恢复后补跑 codex review(见 reviews/codex-review.md)"
