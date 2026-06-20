@@ -89,7 +89,9 @@ async def ocr_extract(
             req_payload = DirectoryExtractRequest.model_validate(raw_body)
         except ValidationError as exc:
             raise RequestValidationError(exc.errors()) from exc
-        case_path = validate_directory_case_path(req_payload.directory_path, tenant)
+        case_path = validate_directory_case_path(
+            req_payload.directory_path, tenant, expected_domain="ocr"
+        )
     elif content_type.startswith("multipart/form-data"):
         form_data = await request.form()
         case_path = await materialize_ocr_upload(

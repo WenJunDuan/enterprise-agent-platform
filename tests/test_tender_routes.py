@@ -15,7 +15,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from server.common.agent_bridge import AgentRunMeta
-from server.routes.upload_helpers import tenant_submission_root
+from server.routes.upload_helpers import UNBOUND_PROJECT, tenant_submission_root
 from server.stores.tender_task_store import get_tender_task_admin, upsert_tender_task
 
 _TOKEN = "test-fake-token-acme-tender"
@@ -39,8 +39,12 @@ def client(monkeypatch):
     return TestClient(api_module.app)
 
 
-def _make_dir_case(name: str) -> Path:
-    case = _CASE_ROOT / name
+def _make_dir_case(name: str, project_id: str = UNBOUND_PROJECT) -> Path:
+    """建 tender 案件目录：``<tenant>/tender/<project_id>/<name>``（新存储结构）。
+
+    legacy /tender/evaluate 用默认 ``unbound`` 段；/projects/{id}/evaluate 传真实 project_id。
+    """
+    case = _CASE_ROOT / "tender" / project_id / name
     case.mkdir(parents=True, exist_ok=True)
     (case / "bid.txt").write_text("投标文件内容", encoding="utf-8")
     return case
@@ -353,9 +357,9 @@ def test_project_detail_not_found(client):
 
 
 def test_evaluate_under_project_appears_in_roster(client):
-    case = _make_dir_case("test-proj-eval")
+    pid = _create_project(client, tender_no=f"R-{uuid.uuid4().hex[:8]}")["project_id"]
+    case = _make_dir_case("test-proj-eval", pid)
     try:
-        pid = _create_project(client, tender_no=f"R-{uuid.uuid4().hex[:8]}")["project_id"]
         resp = client.post(
             f"/tender/projects/{pid}/evaluate",
             json={"mode": "directory", "directory_path": str(case)},
@@ -388,9 +392,9 @@ def test_results_recall_survives_task_deletion(client):
     """codex P1.1 回归：删任务后该招标下已完成结论仍可回看(走 results.project_id)。"""
     from server.stores.result_store import archive_result_payload
 
-    case = _make_dir_case("test-proj-recall")
+    pid = _create_project(client, tender_no=f"R-{uuid.uuid4().hex[:8]}")["project_id"]
+    case = _make_dir_case("test-proj-recall", pid)
     try:
-        pid = _create_project(client, tender_no=f"R-{uuid.uuid4().hex[:8]}")["project_id"]
         rid = client.post(
             f"/tender/projects/{pid}/evaluate",
             json={"mode": "directory", "directory_path": str(case)},
@@ -437,9 +441,9 @@ def test_project_result_detail_survives_task_deletion(client):
     """cc-impl-review P1 修复：删任务后仍能取该招标下**完整**结论（不依赖 tender_tasks）。"""
     from server.stores.result_store import archive_result_payload
 
-    case = _make_dir_case("test-proj-detail-recall")
+    pid = _create_project(client, tender_no=f"R-{uuid.uuid4().hex[:8]}")["project_id"]
+    case = _make_dir_case("test-proj-detail-recall", pid)
     try:
-        pid = _create_project(client, tender_no=f"R-{uuid.uuid4().hex[:8]}")["project_id"]
         rid = client.post(
             f"/tender/projects/{pid}/evaluate",
             json={"mode": "directory", "directory_path": str(case)},
@@ -524,9 +528,9 @@ def test_evaluate_and_retry_pass_project_id_to_schedule(client, monkeypatch):
         "server.routes.tender.schedule_tender_evaluation_task",
         lambda **kw: calls.append(kw),
     )
-    case = _make_dir_case("test-proj-schedule-spy")
+    pid = _create_project(client, tender_no=f"R-{uuid.uuid4().hex[:8]}")["project_id"]
+    case = _make_dir_case("test-proj-schedule-spy", pid)
     try:
-        pid = _create_project(client, tender_no=f"R-{uuid.uuid4().hex[:8]}")["project_id"]
         rid = client.post(
             f"/tender/projects/{pid}/evaluate",
             json={"mode": "directory", "directory_path": str(case)},

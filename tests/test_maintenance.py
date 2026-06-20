@@ -12,10 +12,18 @@ import time
 from server.ops.maintenance import cleanup_orphan_submission_directories
 
 
+def _no_tasks(monkeypatch):
+    """两域 task 列表置空，孤儿清理不受真实 DB 任务影响（隔离）。"""
+    monkeypatch.setattr("server.ops.maintenance.list_audit_tasks_admin", lambda: [])
+    monkeypatch.setattr("server.ops.maintenance.list_tender_tasks_admin", lambda: [])
+
+
 def test_orphan_submission_dir_removed_when_old(tmp_path, monkeypatch):
     monkeypatch.setattr("server.ops.maintenance.SUBMISSION_ROOT_DIR", tmp_path)
-    orphan = tmp_path / "ocr-orphan"
-    orphan.mkdir()
+    _no_tasks(monkeypatch)
+    # 新结构：孤儿叶子 case 目录 <tenant>/<domain>/<rid>（glob *//ocr/* 才扫得到）。
+    orphan = tmp_path / "acme" / "ocr" / "orphan-rid"
+    orphan.mkdir(parents=True)
     (orphan / "f.txt").write_text("x", encoding="utf-8")
     old = time.time() - 10 * 86400  # 10 天前
     os.utime(orphan, (old, old))
@@ -27,8 +35,9 @@ def test_orphan_submission_dir_removed_when_old(tmp_path, monkeypatch):
 
 def test_recent_orphan_dir_preserved(tmp_path, monkeypatch):
     monkeypatch.setattr("server.ops.maintenance.SUBMISSION_ROOT_DIR", tmp_path)
-    orphan = tmp_path / "ocr-recent"
-    orphan.mkdir()
+    _no_tasks(monkeypatch)
+    orphan = tmp_path / "acme" / "ocr" / "recent-rid"
+    orphan.mkdir(parents=True)
 
     removed = cleanup_orphan_submission_directories(days=7)  # 刚建，retention 内 → 保留
     assert str(orphan.resolve()) not in removed
@@ -40,14 +49,15 @@ def test_orphan_cleanup_resolves_known_against_project_root(tmp_path, monkeypatc
     # 否则从非项目目录跑 maintenance 会把活跃任务目录漏出 known、误删。
     monkeypatch.setattr("server.ops.maintenance.SUBMISSION_ROOT_DIR", tmp_path)
     monkeypatch.setattr("server.ops.maintenance.PROJECT_ROOT", tmp_path)
-    active = tmp_path / "r1"
-    active.mkdir()
+    active = tmp_path / "acme" / "audit" / "r1"  # 新叶子结构
+    active.mkdir(parents=True)
     old = time.time() - 10 * 86400
     os.utime(active, (old, old))
     monkeypatch.setattr(
         "server.ops.maintenance.list_audit_tasks_admin",
-        lambda: [{"case_path": "r1", "source_mode": "upload", "status": "running"}],
+        lambda: [{"case_path": "acme/audit/r1", "source_mode": "upload", "status": "running"}],
     )
+    monkeypatch.setattr("server.ops.maintenance.list_tender_tasks_admin", lambda: [])
     workdir = tmp_path / "elsewhere"
     workdir.mkdir()
     monkeypatch.chdir(workdir)  # CWD ≠ PROJECT_ROOT

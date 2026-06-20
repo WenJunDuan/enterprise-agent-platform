@@ -79,7 +79,7 @@ def test_extract_empty_upload_rejected(client):
 
 
 def test_extract_directory_mode(client):
-    case = _CASE_ROOT / "test-ocr-route-case"
+    case = _CASE_ROOT / "ocr" / "test-ocr-route-case"
     case.mkdir(parents=True, exist_ok=True)
     (case / "doc.txt").write_text("目录模式识别内容", encoding="utf-8")
     try:
@@ -210,7 +210,7 @@ def test_extract_result_path_is_basename_not_absolute(client):
 def test_extract_directory_preserves_subdir_paths(client):
     # codex round 2：directory 模式有子目录同名文件时，path 须保留相对路径以区分，
     # 不能塌成 basename（否则 a/doc.txt 与 b/doc.txt 无法区分）。
-    case = _CASE_ROOT / "test-ocr-subdir-case"
+    case = _CASE_ROOT / "ocr" / "test-ocr-subdir-case"
     (case / "a").mkdir(parents=True, exist_ok=True)
     (case / "b").mkdir(parents=True, exist_ok=True)
     (case / "a" / "doc.txt").write_text("AAA", encoding="utf-8")
@@ -250,7 +250,7 @@ def test_extract_corrupt_file_isolated_as_error(client):
 
 def test_extract_directory_rejects_symlink_escape(client, tmp_path):
     # codex round 4 P1：directory 模式不得经子 symlink 读 case 目录外的文件。
-    case = _CASE_ROOT / "test-ocr-symlink-case"
+    case = _CASE_ROOT / "ocr" / "test-ocr-symlink-case"
     case.mkdir(parents=True, exist_ok=True)
     secret = tmp_path / "secret.txt"
     secret.write_text("SECRET_OUTSIDE_DATA", encoding="utf-8")
