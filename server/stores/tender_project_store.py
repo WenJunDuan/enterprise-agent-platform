@@ -117,6 +117,9 @@ def get_or_create_project(
     ``tender_no`` 为空时不去重（允许多条匿名项目，每次新建）。``immediate=True`` 取写锁让
     check-then-insert 原子；并发抢建由 ``UNIQUE`` 部分索引兜底（抢输方 catch IntegrityError 回读）。
     """
+    # codex P1.2：空串 "" 非 NULL 会进部分唯一索引 `WHERE tender_no IS NOT NULL`，重复 "" 插入
+    # 会冲突且绕过下面 `if tender_no` 的兜底 → 500。归一为 None，让空值走"匿名多条"分支。
+    tender_no = (tender_no or "").strip() or None
     now = _utc_now()
     record = TenderProjectRecord(
         project_id=new_project_id(),

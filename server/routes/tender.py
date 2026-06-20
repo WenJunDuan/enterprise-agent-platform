@@ -338,6 +338,9 @@ async def retry_tender_task(
         tenant=tenant,
         directory_path=case_path,
         source_mode=mode,
+        # codex P1.1：retry 必须保留原招标项目链接，否则 worker 以 project_id=None 归档，
+        # INSERT OR REPLACE 会把原 project-scoped 结论覆盖成 NULL，从 /projects/{id}/results 消失。
+        project_id=record.get("group_id"),
     )
     refreshed = get_tender_task(request_id, tenant=tenant)
     return _public_tender_task(refreshed if refreshed is not None else record)
@@ -446,3 +449,29 @@ async def get_tender_project_results(
         }
         for r in rows
     ]
+
+
+@router.get("/projects/{project_id}/results/{request_id}")
+async def get_tender_project_result_detail(
+    project_id: str,
+    request_id: str,
+    authorization: str | None = Header(None),
+) -> dict[str, Any]:
+    """取该招标项目下单条结论的**完整** payload，**不依赖 tender_tasks 是否存在**。
+
+    P1.1 回看的详情层（cc-impl-review P1）：``GET /tasks/{id}/result`` 删任务后会 404，
+    但结论仍在 results。本端点直读 ``results.payload``（tenant + project 双作用域），
+    使删任务后完整结论（criteria/scoring/evidence）仍可取。
+    """
+    tenant = verify_tenant(authorization)
+    if get_project(project_id, tenant) is None:
+        raise HTTPException(status_code=404, detail="Tender project not found")
+    payload = get_result_payload_by_request_id(request_id=request_id, tenant=tenant)
+    if (
+        payload is None
+        or payload.get("project_id") != project_id
+        or not isinstance(payload.get("response"), dict)
+    ):
+        raise HTTPException(status_code=404, detail="Tender result not found in this project")
+    response = enrich_audit_decision(payload["response"])
+    return response if isinstance(response, dict) else payload["response"]
