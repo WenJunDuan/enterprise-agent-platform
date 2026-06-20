@@ -26,7 +26,7 @@ items:
 
   - slug: tender-ingestion
     title: "Phase 1 · tender 评标路由整合(CLI + HTTP /tender/evaluate + 测试 + 层序决策)"
-    status: in_progress          # design/plan/checklist 就绪，stage=impl，从 T1 起
+    status: in_progress          # T1/T2/T2.5/T3 done(260 passed)；仅 T4 端到端 materials-gated 卡用户真标
     sprint_slug: "2026-06-19-tender-ingestion-workflow"
     blocked_by: [review-backend-refactor]
     estimated_complexity: M
