@@ -23,11 +23,26 @@ def test_unregistered_schema_is_passthrough():
     assert apply_schema_semantics("other/unknown.schema.json", payload) is payload
 
 
+def _valid_audit_result(**overrides) -> dict:
+    """一份满足 audit-result schema required + additionalProperties:false 的完整结论。"""
+    base = {
+        "claim_id": "C-1",
+        "verdict": "approved",
+        "explanation": "符合差旅政策",
+        "reasons": [],
+        "policy_refs": ["EXPENSE-TRAVEL-001"],
+        "risk_score": 10,
+        "extracted_data": {},
+        "evidence_chain": [],
+        "reviewed_by": "expense-auditor",
+        "timestamp": "2026-06-20T00:00:00Z",
+    }
+    base.update(overrides)
+    return base
+
+
 def test_builtin_audit_schema_validates_and_enriches():
-    out = apply_schema_semantics(
-        DEFAULT_OUTPUT_SCHEMA_NAME,
-        {"verdict": "approved", "explanation": "ok"},
-    )
+    out = apply_schema_semantics(DEFAULT_OUTPUT_SCHEMA_NAME, _valid_audit_result())
     # enrich 从 verdict 派生 result/conclusion
     assert out["result"] is True
     assert out["conclusion"] == "合规"
@@ -36,6 +51,44 @@ def test_builtin_audit_schema_validates_and_enriches():
 def test_builtin_audit_schema_rejects_bad_verdict():
     with pytest.raises(JSONContractError):
         apply_schema_semantics(DEFAULT_OUTPUT_SCHEMA_NAME, {"verdict": "??", "explanation": "x"})
+
+
+# ── G1 验证闸（round4 F1）：schema 形校验先于一切语义处理 ──────────────────────
+
+
+def test_gate_rejects_missing_required_field():
+    # 缺 policy_refs（schema required）→ 验证闸拒，不再像旧文本路径那样静默通过+归档。
+    payload = _valid_audit_result()
+    del payload["policy_refs"]
+    with pytest.raises(JSONContractError):
+        apply_schema_semantics(DEFAULT_OUTPUT_SCHEMA_NAME, payload)
+
+
+def test_gate_rejects_additional_property():
+    # additionalProperties:false → 模型自报 result/多余字段被拒。
+    with pytest.raises(JSONContractError):
+        apply_schema_semantics(DEFAULT_OUTPUT_SCHEMA_NAME, _valid_audit_result(result=True))
+
+
+def test_gate_rejects_wrong_type():
+    # risk_score 须 integer 0-100；给字符串 → 拒。
+    with pytest.raises(JSONContractError):
+        apply_schema_semantics(DEFAULT_OUTPUT_SCHEMA_NAME, _valid_audit_result(risk_score="high"))
+
+
+def test_gate_rejects_bad_enum_value():
+    # manual_review_reason 不在 7 枚举内 → schema enum 校验拒。
+    with pytest.raises(JSONContractError):
+        apply_schema_semantics(
+            DEFAULT_OUTPUT_SCHEMA_NAME,
+            _valid_audit_result(verdict="manual_review", manual_review_reason="not_a_reason"),
+        )
+
+
+def test_gate_rejects_approved_without_policy_refs():
+    # G1b 幻觉闸：approved 但 policy_refs 为空 → 无依据判决，拒（schema 只能要求字段存在）。
+    with pytest.raises(JSONContractError):
+        apply_schema_semantics(DEFAULT_OUTPUT_SCHEMA_NAME, _valid_audit_result(policy_refs=[]))
 
 
 def test_register_new_schema_takes_effect_without_editing_dispatcher():

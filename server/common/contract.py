@@ -14,6 +14,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
+import jsonschema
+
 from server.platform.paths import PROJECT_ROOT
 
 CONTRACTS_DIR = PROJECT_ROOT / ".claude" / "contracts"
@@ -83,11 +85,38 @@ def register_schema_processor(
     _SCHEMA_PROCESSORS[schema_name] = SchemaProcessor(validate=validate, enrich=enrich)
 
 
+def _validate_against_json_schema(schema_name: str, structured_output: StructuredJSON) -> None:
+    """G1 验证闸（round4 F1 修复）：按声明的 JSON Schema 硬校验模型输出的『形』。
+
+    默认文本路径此前只在 enrich 阶段查 verdict/explanation，schema 的 required /
+    additionalProperties / 类型 全不验——伪造审批、缺 policy_refs/evidence_chain 都静默通过。
+    这里在 enrich **之前**对原始输出跑 jsonschema.validate（enrich 会派生 result/conclusion，
+    而 schema 是 additionalProperties:false 不含这两字段，故必须先于 enrich 校验原始输出）。
+    失败抛 JSONContractError，被 ``server/audit/runner.py`` 的重试环接住（文本/结构化两路都经此）。
+
+    无对应 schema 文件的 schema_name（如测试用未注册 schema）跳过，保持向后兼容。
+    """
+    try:
+        schema = load_output_schema(schema_name)
+    except JSONContractError:
+        return  # 无对应 schema 文件 → 不强加校验
+    try:
+        jsonschema.validate(structured_output, schema)
+    except jsonschema.ValidationError as exc:
+        location = "/".join(str(p) for p in exc.absolute_path) or "(root)"
+        raise JSONContractError(
+            f"模型输出不满足 schema {schema_name} 于 `{location}`: {exc.message}"
+        ) from exc
+
+
 def apply_schema_semantics(schema_name: str, structured_output: StructuredJSON) -> StructuredJSON:
     """Run the registered validate + enrich for schema_name; unregistered ⇒ returned as-is.
 
     This is the single entry the SDK bridge calls — it stays schema-name agnostic.
+    G1 验证闸：先按 JSON Schema 硬校验『形』(enrich 前、原始输出须自洽)，再跑语义 validate + enrich。
     """
+    # G1（round4 F1）：JSON Schema 形校验先于一切语义处理。
+    _validate_against_json_schema(schema_name, structured_output)
     processor = _SCHEMA_PROCESSORS.get(schema_name)
     if processor is None:
         return structured_output
