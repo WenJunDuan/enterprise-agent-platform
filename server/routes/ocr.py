@@ -74,8 +74,8 @@ async def ocr_extract(
     authorization: str | None = Header(None),
     run_seal: bool = Query(False, description="是否对扫描件追加印章识别"),
 ) -> dict[str, Any]:
-    """同步纯识别：upload（multipart）或 directory（data/ 下）→ {request_id, results, block}。"""
-    verify_tenant(authorization)
+    """同步纯识别：upload（multipart）或 directory（tenant 子树）→ {request_id, results, block}。"""
+    tenant = verify_tenant(authorization)
     request_id = new_request_id()
 
     content_type = request.headers.get("content-type", "")
@@ -89,11 +89,12 @@ async def ocr_extract(
             req_payload = DirectoryExtractRequest.model_validate(raw_body)
         except ValidationError as exc:
             raise RequestValidationError(exc.errors()) from exc
-        case_path = validate_directory_case_path(req_payload.directory_path)
+        case_path = validate_directory_case_path(req_payload.directory_path, tenant)
     elif content_type.startswith("multipart/form-data"):
         form_data = await request.form()
         case_path = await materialize_ocr_upload(
             request_id=request_id,
+            tenant=tenant,
             files=form_data.getlist("files"),
         )
         cleanup_path = case_path  # 上传件识别后清理，directory 模式不动用户目录
@@ -156,6 +157,7 @@ async def ocr_fill(
     form_schema = _parse_form_schema(form_data.get("form_schema"))
     case_path = await materialize_ocr_upload(
         request_id=request_id,
+        tenant=tenant,
         files=form_data.getlist("files"),
     )
 

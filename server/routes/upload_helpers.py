@@ -18,7 +18,9 @@ from server.platform.config import get_app_settings
 from server.platform.paths import PROJECT_ROOT, SUBMISSION_ROOT_DIR
 from server.platform.storage import append_json_file
 
-ALLOWED_DIRECTORY_ROOT = (PROJECT_ROOT / "data").resolve()
+def tenant_submission_root(tenant: str) -> Path:
+    """每租户提交子树根 ``data/submissions/<tenant>/``（round4 F2 隔离边界）。"""
+    return (SUBMISSION_ROOT_DIR / tenant).resolve()
 
 
 def serialize_case_path(path: Path) -> str:
@@ -29,8 +31,12 @@ def serialize_case_path(path: Path) -> str:
         return str(path)
 
 
-def validate_directory_case_path(case_path: str) -> str:
-    """Validate that *case_path* exists, is a directory, and is inside the allowed root."""
+def validate_directory_case_path(case_path: str, tenant: str) -> str:
+    """Validate *case_path* exists, is a directory, inside the tenant's submissions subtree.
+
+    round4 F2：directory 模式原仅校验"在 data/ 下"，可读 data/db / data/sessions / 跨租户提交。
+    现限定在 ``data/submissions/<tenant>/`` 子树（隐式校验归属）——服务内部目录与他租户数据均不可达。
+    """
     path = Path(case_path)
     if not path.exists() or not path.is_dir():
         raise HTTPException(
@@ -38,10 +44,10 @@ def validate_directory_case_path(case_path: str) -> str:
         )
     resolved = path.resolve()
     try:
-        resolved.relative_to(ALLOWED_DIRECTORY_ROOT)
+        resolved.relative_to(tenant_submission_root(tenant))
     except ValueError as exc:
         raise HTTPException(
-            status_code=400, detail="directory_path is outside allowed roots"
+            status_code=400, detail="directory_path is outside the tenant submissions root"
         ) from exc
     return serialize_case_path(resolved)
 
@@ -115,10 +121,11 @@ def parse_optional_form_json(form_json: str | None) -> dict[str, Any]:
 async def materialize_upload_submission(
     *,
     request_id: str,
+    tenant: str,
     form_json: str | None,
     form_data: Any,
 ) -> str:
-    """Write uploaded files and form metadata to a new submission directory.
+    """Write uploaded files and form metadata to the tenant's submission directory.
 
     Returns the serialized case path (project-relative string).
     """
@@ -130,7 +137,7 @@ async def materialize_upload_submission(
             status_code=400, detail="upload mode requires form_json, form fields, or files"
         )
 
-    case_dir = SUBMISSION_ROOT_DIR / request_id
+    case_dir = SUBMISSION_ROOT_DIR / tenant / request_id
     case_dir.mkdir(parents=True, exist_ok=True)
 
     attachments: list[dict[str, Any]] = []
@@ -156,8 +163,8 @@ async def materialize_upload_submission(
     return serialize_case_path(case_dir)
 
 
-async def materialize_ocr_upload(*, request_id: str, files: list[Any]) -> str:
-    """Write uploaded files (no metadata sidecar) to a new submission directory.
+async def materialize_ocr_upload(*, request_id: str, tenant: str, files: list[Any]) -> str:
+    """Write uploaded files (no metadata sidecar) to the tenant's submission directory.
 
     与 materialize_upload_submission 的区别：OCR 纯识别只需要原始文件，**不写**
     audit-request.json —— 否则该 sidecar 会被 extract_dir 当成待识别文件，污染结果。
@@ -166,7 +173,7 @@ async def materialize_ocr_upload(*, request_id: str, files: list[Any]) -> str:
     """
     if not files:
         raise HTTPException(status_code=400, detail="ocr extract requires at least one file")
-    case_dir = SUBMISSION_ROOT_DIR / request_id
+    case_dir = SUBMISSION_ROOT_DIR / tenant / request_id
     case_dir.mkdir(parents=True, exist_ok=True)
     used_names: set[str] = set()
     try:
