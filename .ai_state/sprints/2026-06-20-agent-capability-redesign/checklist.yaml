@@ -66,11 +66,17 @@ tasks:
 
   - id: G0
     title: （前置）删 legal/HR 死域，收敛三层 ~600 行复制粘贴
-    status: todo
+    status: in_progress      # G0a 删死域 done；G0b 泛型化 TaskPipeline 延后
     files:
-      - .claude/CLAUDE.md                    # 摘掉 legal/HR 路由
-      - server/api.py                        # 摘 /contract 路由
-      - server/routes/contract*.py
-      - server/stores/contract*.py
+      - .claude/CLAUDE.md                    # 摘掉 legal/HR 路由+多域示例 [done]
+      - .claude/commands/audit.md            # 摘 HR/legal 辅助域调度 [done]
+      - server/api.py                        # 摘 /contract 路由+lifespan [done]
+      - server/cli.py                        # 摘 review-contract 命令+persist 导入 [done]
+      - server/platform/paths.py             # 摘 CONTRACTS_DATA_DIR [done]
+      - tests/test_routes_smoke.py           # 摘 3 /contract 基线 [done]
+      - .ai_state/architecture/ARCHITECTURE.md  # 删 contract 子系统档 [done]
+    deleted: "contract.py/contract_worker.py/contract_store.py/contract_task_store.py + review-contract.md + agents/legal/ + agents/hr/ + contracts/legal/ + 4 contract 测试 + system-contract-audit.md (15 文件)"
     accept: "死域从路由与 plumbing 移除；task store/route/worker 收敛为泛型 TaskPipeline"
+    result_g0a: "死域删除完成；260 passed/ruff clean；无残留死域引用(contract schema 系统 server/common/contract.py 保留，与 legal 域无关)"
+    g0b_deferred: "泛型化 TaskPipeline 延后：删 contract 后仅剩 audit/tender 2 份副本(非3)，价值降；触及 working audit 路径有风险；按 round4 优先级(F7/F8=P5 < F1=P1)让位 G1。列 backlog"
     note: "round4 F7+F8；先减熵后抽象，先于 G2/G3"

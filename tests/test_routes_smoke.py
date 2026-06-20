@@ -19,10 +19,6 @@ _BASELINE_ROUTES: list[tuple[str, tuple[str, ...]]] = [
     ("/audit/tasks/{request_id}", ("GET",)),
     ("/audit/tasks/{request_id}/result", ("GET",)),
     ("/audit/tasks/{request_id}/retry", ("POST",)),
-    # contract 审查路由（2026-06-19 item3 新增，镜像 tender 异步任务三件套）
-    ("/contract/review", ("POST",)),
-    ("/contract/tasks/{request_id}", ("GET",)),
-    ("/contract/tasks/{request_id}/result", ("GET",)),
     ("/docs", ("GET", "HEAD")),
     ("/docs/oauth2-redirect", ("GET", "HEAD")),
     ("/health", ("GET",)),

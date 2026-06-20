@@ -26,8 +26,6 @@ allowed-tools: Read, Write, Glob, Skill, Task
 ## 复核与辅助域
 
 - 【暂时关闭复核】一律只做一次性审核，**不调度 `expense-reviewer`**；即使命中高风险、证据冲突或 `manual_review`，也只在结论中如实标注，交人工另行处理，不在本流程内发起第二轮 SDK 复核。
-- 仅在以下条件才调度 HR 辅助域（`attendance-checker` / `leave-auditor`）：差旅 / 交通报销涉及周末、节假日、打卡、请假、调休、加班或出勤冲突，或需要“考勤 / 出勤事实”作为旁证。
-- 仅在以下条件才调度 legal 辅助域（`contract-reviewer`）：材料包含合同 / 协议 / 付款约定，或高额付款、采购、合作、供应商结算需要合同条款佐证。
 
 ## 输出契约
 
