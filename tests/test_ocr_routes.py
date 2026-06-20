@@ -44,6 +44,16 @@ def test_extract_upload_native_text_returns_results(client):
     assert "差旅费" in body["block"]
 
 
+def test_extract_upload_single_file_field(client):
+    """支持单 `file` 字段(besides files[])——单文件 multipart 上传（用户需求 #29）。"""
+    files = [("file", ("single.txt", "单文件字段内容".encode(), "text/plain"))]
+    resp = client.post("/ocr/extract", files=files, headers=_AUTH)
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert len(body["results"]) == 1
+    assert "单文件字段内容" in body["block"]
+
+
 def test_extract_multiple_files(client):
     files = [
         ("files", ("a.txt", b"first file", "text/plain")),
