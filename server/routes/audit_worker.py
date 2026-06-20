@@ -1,7 +1,7 @@
 """Background task execution for directory audits.
 
-Handles the async fire-and-forget lifecycle: semaphore gating, run, and
-task-record update on success / timeout / error.  Isolated here so the
+Handles the async fire-and-forget lifecycle: admission cap, semaphore gating,
+run, and task-record update on success / timeout / error.  Isolated here so the
 route handlers in audit.py stay focused on HTTP concerns.
 """
 
@@ -26,6 +26,25 @@ AUDIT_TIMEOUT_SEC = float(os.getenv("AUDIT_TIMEOUT_SEC", "180"))
 # 超额的提交在信号量处排队，任务状态保持 accepted 直到有空位（排队时间不计入 AUDIT_TIMEOUT_SEC）。
 MAX_CONCURRENT_AUDITS = int(os.getenv("MAX_CONCURRENT_AUDITS", "2"))
 _AUDIT_SEMAPHORE = asyncio.Semaphore(MAX_CONCURRENT_AUDITS)
+
+# 准入上限（round4 F5）：信号量只限执行(2)，但 accepted 任务会在信号量处无界堆积 → 内存 DoS。
+# 在途(排队+执行)任务数达此上限时，submit/retry 直接回 503，不再无界接单。
+MAX_PENDING_AUDITS = int(os.getenv("MAX_PENDING_AUDITS", "50"))
+
+# round4 F5：裸 asyncio.create_task 不留引用 → 待定任务可被 GC 静默回收。这里留强引用集，
+# 完成即自清；集合大小兼作"在途任务数"供准入闸用。
+_BACKGROUND_TASKS: set[asyncio.Task[None]] = set()
+
+
+def _track_task(task: asyncio.Task[None]) -> None:
+    """留强引用防 fire-and-forget 任务被 GC 回收；done 时自清（round4 F5）。"""
+    _BACKGROUND_TASKS.add(task)
+    task.add_done_callback(_BACKGROUND_TASKS.discard)
+
+
+def admission_available() -> bool:
+    """round4 F5 准入闸：在途任务数低于上限才接新单，否则路由回 503（防 accepted 无界堆积）。"""
+    return len(_BACKGROUND_TASKS) < MAX_PENDING_AUDITS
 
 
 async def _run_directory_audit(*, request_id: str, tenant: str, directory_path: str):
@@ -63,7 +82,9 @@ async def _execute_inner(
 ) -> None:
     started_at = utc_now()
     with logging_context(request_id=request_id, tenant=tenant):
-        upsert_audit_task(
+        # round4 F4：同步 SQLite 写经 to_thread 移出事件循环，写争用时不阻塞整个 loop。
+        await asyncio.to_thread(
+            upsert_audit_task,
             {
                 "request_id": request_id,
                 "tenant": tenant,
@@ -78,7 +99,7 @@ async def _execute_inner(
                 "progress_message": "Agent 正在运行中",
                 "started_at": started_at,
                 "updated_at": started_at,
-            }
+            },
         )
         try:
             payload, meta = await asyncio.wait_for(
@@ -90,7 +111,8 @@ async def _execute_inner(
                 timeout=AUDIT_TIMEOUT_SEC,
             )
             finished_at = utc_now()
-            upsert_audit_task(
+            await asyncio.to_thread(
+                upsert_audit_task,
                 {
                     "request_id": request_id,
                     "tenant": tenant,
@@ -105,7 +127,7 @@ async def _execute_inner(
                     "progress_message": "审核完成",
                     "finished_at": finished_at,
                     "updated_at": finished_at,
-                }
+                },
             )
         except asyncio.TimeoutError:
             logger.warning(
@@ -118,7 +140,8 @@ async def _execute_inner(
                 },
             )
             finished_at = utc_now()
-            upsert_audit_task(
+            await asyncio.to_thread(
+                upsert_audit_task,
                 {
                     "request_id": request_id,
                     "tenant": tenant,
@@ -136,7 +159,7 @@ async def _execute_inner(
                     "progress_message": "审核超时",
                     "finished_at": finished_at,
                     "updated_at": finished_at,
-                }
+                },
             )
         except Exception as exc:
             logger.exception(
@@ -144,7 +167,8 @@ async def _execute_inner(
                 extra={"request_id": request_id, "tenant": tenant, "route": "/audit/submit"},
             )
             finished_at = utc_now()
-            upsert_audit_task(
+            await asyncio.to_thread(
+                upsert_audit_task,
                 {
                     "request_id": request_id,
                     "tenant": tenant,
@@ -159,7 +183,7 @@ async def _execute_inner(
                     "progress_message": "审核失败",
                     "finished_at": finished_at,
                     "updated_at": finished_at,
-                }
+                },
             )
 
 
@@ -170,8 +194,8 @@ def schedule_directory_audit_task(
     directory_path: str,
     source_mode: str,
 ) -> None:
-    """Fire-and-forget: schedule the audit task as an asyncio background task."""
-    asyncio.create_task(
+    """Fire-and-forget: schedule the audit task as a tracked asyncio background task."""
+    task = asyncio.create_task(
         execute_directory_audit_task(
             request_id=request_id,
             tenant=tenant,
@@ -179,3 +203,4 @@ def schedule_directory_audit_task(
             source_mode=source_mode,
         )
     )
+    _track_task(task)  # round4 F5：留引用防 GC + 计入在途（准入闸）
