@@ -4,10 +4,10 @@
 version: "9.6.4"
 
 # === PACE 路由状态 ===
-path: "Feature"                   # 活动 sprint=contract-audit-api(Feature,纯加法暴露 contract 子系统); item2 已 completed
-stage: "ship"                     # item3 contract-audit-api 交叉审查 PASS，F1/F2/F3 已修，completed；roadmap contract-audit-platform 主体达成(仅 tender T4 materials-gated 悬挂)
-current_sprint_slug: "2026-06-19-contract-audit-api"
-current_roadmap_slug: "contract-audit-platform"
+path: "System"                    # 活动 sprint=agent-capability-redesign(System,跨切面架构); contract-audit-platform 主体已达成
+stage: "impl"                     # goal=完成 agent-capability-redesign 全 sprint(G0-G5)；用户授权长任务自治→review→merge→push→cleanup
+current_sprint_slug: "2026-06-20-agent-capability-redesign"
+current_roadmap_slug: ""          # 跨切面 goal，非单一 roadmap item
 skip_polish: false
 skip_architecture_check: false
 
@@ -48,7 +48,7 @@ counts:
   features_count: 2
   issues_count: 0
   refactors_count: 0
-  systems_count: 1
+  systems_count: 2
   reviews_count: 30
   cleanup_count: 1
   compound:
@@ -67,7 +67,7 @@ pointers:
   latest_architecture_update: "2026-06-19T10:35:39.441Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "roadmap-complete:contract-audit-platform (仅 tender T4 materials-gated 悬挂)"
+next_action: "goal:agent-capability-redesign:G0-delete-dead-domains"
 last_subagent: "generator"
 last_subagent_at: "2026-06-02T09:25:27.661Z"
 active_worktrees: []

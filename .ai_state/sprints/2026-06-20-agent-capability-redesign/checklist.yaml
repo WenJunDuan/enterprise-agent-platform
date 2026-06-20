@@ -1,0 +1,76 @@
+sprint: 2026-06-20-agent-capability-redesign
+title: Agent 五能力重构 — 五诉求收敛为两脊椎（验证闸 + 记忆轴）
+path: System
+owner: claude-code
+design: design.md
+roadmap: n/a                                  # 跨切面架构，非单一 roadmap item
+status: planned                               # 落档先于实现，尚未动代码
+
+decisions:
+  - "五诉求（拆解/多工具/记忆/幻觉抑制/反馈修正）收敛为两脊椎：四项共用『类型化契约+过闸验证』，记忆独立"
+  - "验证闸 = round4 F1 的修复；既关幻觉，又是反馈修正的便宜层；脊椎一先于脊椎二"
+  - "案例记忆从属制度记忆；召回只当建议、判决前按当前规则复检；带衰减+规则版本绑定"
+  - "不重开全量二次复核（ROI 负）；不引入向量库（案例量级小，结构化 key 够用）"
+  - "删 legal/HR 死域（F8）先于 G2/G3，避免为死代码做抽象"
+
+tasks:
+  - id: G1
+    title: 验证闸最便宜三件（schema 校验 + 引用解析器 + 算术重算）
+    status: todo
+    files:
+      - server/common/contract.py            # apply_schema_semantics 内加 jsonschema.validate
+      - server/common/output_contracts.py    # policy_refs⊆规则集 + evidence_chain 出处解析
+      - server/audit/runner.py               # 把命中规则 ID 集合传入校验器
+      - tests/test_core_pure.py              # 伪造 refs / 缺字段 → 拒/降级 用例
+    accept: "缺 policy_refs/evidence_chain/risk_score 或引用不解析 → JSONContractError 或 manual_review；既有重试环接住"
+    note: "杠杆最高的一刀；同时关闭 round4 F1（BLOCKER）"
+
+  - id: G2
+    title: PLAN 产出类型化任务图（过 schema，替代散文计划）
+    status: todo
+    files:
+      - .claude/contracts/common/            # 新增 plan.schema.json
+      - .claude/commands/audit.md
+      - .claude/commands/tender-evaluate.md
+    accept: "命令 S1 产出可过 schema 的结构化 plan；每节点声明 inputs/tools/output-contract"
+    depends_on: [G1]
+
+  - id: G3
+    title: 工具契约化（外部 API 一个强 I/O 契约 + 结果过闸）
+    status: todo
+    files:
+      - .claude/contracts/                   # 新增工具 I/O schema
+      - server/common/                       # 工具结果校验夹层
+    accept: "tender requires_external_data（企业信用）首个真用例：原始 API JSON 先过代码校验再进上下文"
+    depends_on: [G1]
+
+  - id: G4
+    title: 记忆三层 + 衰减 + 规则版本绑定（先修 tender 枚举）
+    status: todo
+    files:
+      - knowledge/_schema/case-memory.schema.json   # 加 tender 域枚举 + valid_until/superseded_by/decided_under_rule_version
+      - server/stores/memory_store.py
+      - .claude/skills/common/memory-query/SKILL.md  # 召回须按当前规则复检
+    accept: "tender 记忆可存可校验；召回带衰减；规则升版后旧版本记忆自动标陈旧"
+    note: "现状 case-memory.schema.json 域枚举缺 tender，tender 记忆存不进（round4 F12）"
+
+  - id: G5
+    title: 人工否决 → 案例记忆 回路（唯一复利反馈）
+    status: todo
+    files:
+      - server/routes/audit.py               # 人工 override 入口
+      - server/stores/memory_store.py
+      - .claude/hooks/review-output.py        # 二次复核维持 gated（不改默认关闭）
+    accept: "人否决一次产出一条高置信案例记忆；下次同型案件召回为建议"
+    depends_on: [G4]
+
+  - id: G0
+    title: （前置）删 legal/HR 死域，收敛三层 ~600 行复制粘贴
+    status: todo
+    files:
+      - .claude/CLAUDE.md                    # 摘掉 legal/HR 路由
+      - server/api.py                        # 摘 /contract 路由
+      - server/routes/contract*.py
+      - server/stores/contract*.py
+    accept: "死域从路由与 plumbing 移除；task store/route/worker 收敛为泛型 TaskPipeline"
+    note: "round4 F7+F8；先减熵后抽象，先于 G2/G3"
