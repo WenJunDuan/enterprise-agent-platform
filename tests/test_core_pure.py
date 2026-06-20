@@ -27,6 +27,14 @@ from server.core import (
     resolve_output_schema_path,
     validate_structured_output_semantics,
 )
+import server.common.output_contracts as _oc
+
+
+@pytest.fixture(autouse=True)
+def _neutralize_ambient_rules(monkeypatch):
+    """真伪闸默认开后（hardening H1），用合成 policy_refs 的用例把 ``_load_known_rule_ids``
+    置空集 → 优雅跳过，不依赖 gitignored ``knowledge/``（CI/本地一致）。"""
+    monkeypatch.setattr(_oc, "_load_known_rule_ids", lambda: set())
 
 
 # ═════════════════════════════════════════════════════════════════════════════

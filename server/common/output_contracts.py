@@ -36,9 +36,10 @@ _KNOWLEDGE_DIR = PROJECT_ROOT / "knowledge"
 
 
 def _rule_ref_check_enabled() -> bool:
-    """G1b-full 幻觉闸开关。默认关——避免无 knowledge/ 的 CI/fixture 误挂；
-    部署侧 knowledge/ 规则稳定后设 ``RULE_REF_CHECK=1`` 即启用。"""
-    return os.getenv("RULE_REF_CHECK", "").strip().lower() in {"1", "true", "yes", "on"}
+    """G1b-full 幻觉闸开关。**默认开**（hardening sprint H1）——空规则集自动跳过
+    （见 ``_load_known_rule_ids``：无 gitignored ``knowledge/`` 的 CI/fixture 不会误挂），
+    设 ``RULE_REF_CHECK=0`` 可关。"""
+    return os.getenv("RULE_REF_CHECK", "1").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _load_known_rule_ids() -> set[str]:

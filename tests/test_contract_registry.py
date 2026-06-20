@@ -16,6 +16,15 @@ from server.common.contract import (
     apply_schema_semantics,
     register_schema_processor,
 )
+import server.common.output_contracts as _oc
+
+
+@pytest.fixture(autouse=True)
+def _neutralize_ambient_rules(monkeypatch):
+    """真伪闸默认开后（hardening H1），本模块多数用例用合成 policy_refs（非真实 rule_id）。
+    置 ``_load_known_rule_ids`` 为空集 → 真伪闸优雅跳过（不依赖 gitignored ``knowledge/``，
+    CI/本地一致）；专测真伪闸的用例在体内 monkeypatch 覆盖为非空集。"""
+    monkeypatch.setattr(_oc, "_load_known_rule_ids", lambda: set())
 
 
 def test_unregistered_schema_is_passthrough():
@@ -111,9 +120,22 @@ def test_manual_review_allowed_with_empty_policy_refs():
 # ── G1b-full（env-gated 引用存在性闸 RULE_REF_CHECK）─────────────────────────
 
 
-def test_rule_ref_check_off_by_default_allows_unknown_ref(monkeypatch):
-    # 默认关：即便引用不存在的 rule_id 也放行（向后兼容，无 knowledge/ 的 CI 不误挂）。
+def test_rule_ref_check_on_by_default_rejects_unknown_ref(monkeypatch):
+    # 默认开（hardening H1）：env 未设即生效，编造的 rule_id 被拒（空集仍优雅跳过，见下）。
+    import server.common.output_contracts as oc
+
     monkeypatch.delenv("RULE_REF_CHECK", raising=False)
+    monkeypatch.setattr(oc, "_load_known_rule_ids", lambda: {"expense_travel_001"})
+    with pytest.raises(JSONContractError):
+        apply_schema_semantics(DEFAULT_OUTPUT_SCHEMA_NAME, _valid_audit_result(policy_refs=["NOPE-999"]))
+
+
+def test_rule_ref_check_disabled_allows_unknown_ref(monkeypatch):
+    # 显式 RULE_REF_CHECK=0 逃生阀：即便引用不存在的 rule_id 也放行。
+    import server.common.output_contracts as oc
+
+    monkeypatch.setenv("RULE_REF_CHECK", "0")
+    monkeypatch.setattr(oc, "_load_known_rule_ids", lambda: {"expense_travel_001"})
     apply_schema_semantics(DEFAULT_OUTPUT_SCHEMA_NAME, _valid_audit_result(policy_refs=["NOPE-999"]))
 
 
