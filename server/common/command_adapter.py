@@ -41,16 +41,19 @@ async def run_command_json(
     *arguments: str,
     schema_name: str,
     project_id: str | None = None,
+    archive_to_results: bool = True,
     **opts: Any,
 ):
     """Invoke a Claude slash command and return structured JSON output.
 
     ``project_id`` 显式透传到归档（tender 招标项目分组键）；显式参数而非 ``**opts``，
     避免被下游 ``build_options`` 当成 SDK 选项（codex P1.3）。
+    ``archive_to_results=False`` 时结论不进 ``results`` 表（compare 用，codex P1.1）。
     """
     return await run_agent_json(
         build_command_prompt(command_name, *arguments),
         schema_name=schema_name,
         project_id=project_id,
+        archive_to_results=archive_to_results,
         **opts,
     )
