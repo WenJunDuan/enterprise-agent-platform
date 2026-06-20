@@ -6,23 +6,31 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any, Literal
 
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, Header, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, ValidationError
 
 from server.core import enrich_audit_decision
 from server.routes.deps import verify_tenant
-from server.routes.tender_worker import schedule_tender_evaluation_task
+from server.routes.tender_worker import admission_available, schedule_tender_evaluation_task
 from server.routes.upload_helpers import (
     materialize_upload_submission,
+    remove_submission_dir,
     validate_directory_case_path,
 )
 from server.stores.request_store import new_request_id, utc_now
 from server.stores.result_store import get_result_payload_by_request_id
-from server.stores.tender_task_store import get_tender_task, upsert_tender_task
+from server.stores.tender_task_store import (
+    delete_tender_task_if_idle,
+    get_tender_task,
+    list_tender_tasks,
+    try_transition_tender_task,
+    upsert_tender_task,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +86,9 @@ async def tender_evaluate(
     authorization: str | None = Header(None),
 ) -> TenderSubmitAcceptedResponse:
     tenant = verify_tenant(authorization)
+    # round4 F5：准入闸——在途任务满则早拒（在写上传文件/建任务记录之前），不再无界接单。
+    if not admission_available():
+        raise HTTPException(status_code=503, detail="评标队列已满，请稍后重试")
     request_id = new_request_id()
 
     content_type = request.headers.get("content-type", "")
@@ -103,7 +114,9 @@ async def tender_evaluate(
         raise HTTPException(status_code=415, detail="Unsupported Content-Type")
 
     submitted_at = utc_now()
-    upsert_tender_task(
+    # round4 F4：与 worker 一致，同步 SQLite 写经 to_thread 移出事件循环（不阻塞 async 路由）。
+    await asyncio.to_thread(
+        upsert_tender_task,
         {
             "request_id": request_id,
             "tenant": tenant,
@@ -120,7 +133,7 @@ async def tender_evaluate(
             "started_at": None,
             "finished_at": None,
             "updated_at": submitted_at,
-        }
+        },
     )
     schedule_tender_evaluation_task(
         request_id=request_id,
@@ -134,6 +147,18 @@ async def tender_evaluate(
         mode=mode,
         task_status_url=f"/tender/tasks/{request_id}",
     )
+
+
+@router.get("/tasks", response_model=list[TenderTaskStatusResponse])
+async def list_tender_tasks_endpoint(
+    authorization: str | None = Header(None),
+    status: str | None = Query(None),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+) -> list[TenderTaskStatusResponse]:
+    tenant = verify_tenant(authorization)
+    records = list_tender_tasks(tenant, status=status, limit=limit, offset=offset)
+    return [_public_tender_task(r) for r in records]
 
 
 @router.get("/tasks/{request_id}", response_model=TenderTaskStatusResponse)
@@ -164,3 +189,65 @@ async def tender_task_result(
     # 归一化结论（reasons / policy_refs 拍平），与 audit 出口一致，避免前端按字符串渲染对象。
     response = enrich_audit_decision(payload["response"])
     return response if isinstance(response, dict) else payload["response"]
+
+
+@router.post("/tasks/{request_id}/retry", response_model=TenderTaskStatusResponse)
+async def retry_tender_task(
+    request_id: str,
+    authorization: str | None = Header(None),
+) -> TenderTaskStatusResponse:
+    tenant = verify_tenant(authorization)
+    record = get_tender_task(request_id, tenant=tenant)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Tender task not found")
+    case_path = str(record.get("case_path") or "").strip()
+    if not case_path:
+        raise HTTPException(status_code=400, detail="Tender task has no source path to re-evaluate")
+    mode = str(record.get("mode") or "directory")
+    # round4 F5：准入闸——在途任务满则拒，不在转移为 running 之前先把队列撑爆。
+    if not admission_available():
+        raise HTTPException(status_code=503, detail="评标队列已满，请稍后重试")
+    started_at = utc_now()
+    # round4 F6：原子状态转移替代"读 status→判→写"。并发两次 retry 只有一次成功，
+    # 另一次回 409，杜绝双重排程 / 双重成本。
+    claimed = try_transition_tender_task(
+        request_id,
+        tenant,
+        updates={
+            "status": "running",
+            "claim_id": None,
+            "result_file": None,
+            "session_id": None,
+            "error_detail": None,
+            "progress_message": "重新评标中",
+            "started_at": started_at,
+            "finished_at": None,
+            "updated_at": started_at,
+        },
+    )
+    if not claimed:
+        raise HTTPException(status_code=409, detail="Tender task is still running")
+    schedule_tender_evaluation_task(
+        request_id=request_id,
+        tenant=tenant,
+        directory_path=case_path,
+        source_mode=mode,
+    )
+    refreshed = get_tender_task(request_id, tenant=tenant)
+    return _public_tender_task(refreshed if refreshed is not None else record)
+
+
+@router.delete("/tasks/{request_id}")
+async def delete_tender_task_endpoint(
+    request_id: str,
+    authorization: str | None = Header(None),
+) -> dict[str, Any]:
+    tenant = verify_tenant(authorization)
+    record = get_tender_task(request_id, tenant=tenant)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Tender task not found")
+    # round4 F6：原子守卫删除——running 时删不动（回 409），避免与并发 retry 竞态。
+    if not delete_tender_task_if_idle(request_id, tenant):
+        raise HTTPException(status_code=409, detail="Cannot delete a running tender task")
+    remove_submission_dir(record.get("case_path"))
+    return {"request_id": request_id, "status": "deleted"}

@@ -219,3 +219,105 @@ def test_worker_forwards_to_evaluate_bid_and_persists(monkeypatch):
     assert record is not None and record["status"] == "completed"
     assert record["result_file"] == "logs/service/tender-result.json"
     assert record["claim_id"] == "T-1"
+
+
+# ── 任务列表 / retry / delete / 准入闸（本 sprint 补齐，对齐 audit 三件套）────────
+
+
+def test_list_tasks_returns_submitted(client):
+    case = _make_dir_case("test-tender-list")
+    try:
+        rid = _submit_directory(client, case)
+        resp = client.get("/tender/tasks", headers=_AUTH)
+        assert resp.status_code == 200, resp.text
+        assert rid in [t["request_id"] for t in resp.json()]
+    finally:
+        shutil.rmtree(case, ignore_errors=True)
+
+
+def test_list_tasks_filter_by_status(client):
+    case = _make_dir_case("test-tender-list-filter")
+    try:
+        rid = _submit_directory(client, case)
+        accepted = client.get("/tender/tasks?status=accepted", headers=_AUTH).json()
+        assert rid in [t["request_id"] for t in accepted]
+        completed = client.get("/tender/tasks?status=completed", headers=_AUTH).json()
+        assert rid not in [t["request_id"] for t in completed]
+    finally:
+        shutil.rmtree(case, ignore_errors=True)
+
+
+def test_list_requires_auth(client):
+    assert client.get("/tender/tasks").status_code == 401
+
+
+def test_retry_idle_task_reschedules(client):
+    case = _make_dir_case("test-tender-retry")
+    try:
+        rid = _submit_directory(client, case)  # accepted
+        resp = client.post(f"/tender/tasks/{rid}/retry", headers=_AUTH)
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["status"] == "running"  # 原子转移占位
+    finally:
+        shutil.rmtree(case, ignore_errors=True)
+
+
+def test_retry_running_task_returns_409(client):
+    case = _make_dir_case("test-tender-retry-running")
+    try:
+        rid = _submit_directory(client, case)
+        upsert_tender_task(
+            {"request_id": rid, "status": "running", "updated_at": "2026-06-19T00:00:00+00:00"}
+        )
+        resp = client.post(f"/tender/tasks/{rid}/retry", headers=_AUTH)
+        assert resp.status_code == 409  # 正在跑，不可重试（原子守卫）
+    finally:
+        shutil.rmtree(case, ignore_errors=True)
+
+
+def test_retry_unknown_returns_404(client):
+    assert client.post("/tender/tasks/nope-rid/retry", headers=_AUTH).status_code == 404
+
+
+def test_delete_idle_task_removes_it(client):
+    case = _make_dir_case("test-tender-delete")
+    try:
+        rid = _submit_directory(client, case)
+        resp = client.delete(f"/tender/tasks/{rid}", headers=_AUTH)
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["status"] == "deleted"
+        assert client.get(f"/tender/tasks/{rid}", headers=_AUTH).status_code == 404
+    finally:
+        shutil.rmtree(case, ignore_errors=True)
+
+
+def test_delete_running_task_returns_409(client):
+    case = _make_dir_case("test-tender-delete-running")
+    try:
+        rid = _submit_directory(client, case)
+        upsert_tender_task(
+            {"request_id": rid, "status": "running", "updated_at": "2026-06-19T00:00:00+00:00"}
+        )
+        resp = client.delete(f"/tender/tasks/{rid}", headers=_AUTH)
+        assert resp.status_code == 409  # running 删不动（与并发 retry 竞态守护）
+    finally:
+        shutil.rmtree(case, ignore_errors=True)
+
+
+def test_delete_unknown_returns_404(client):
+    assert client.delete("/tender/tasks/nope-rid", headers=_AUTH).status_code == 404
+
+
+def test_evaluate_queue_full_returns_503(client, monkeypatch):
+    # round4 F5 准入闸：在途任务满 → 503，不再无界接单。
+    monkeypatch.setattr("server.routes.tender.admission_available", lambda: False)
+    case = _make_dir_case("test-tender-503")
+    try:
+        resp = client.post(
+            "/tender/evaluate",
+            json={"mode": "directory", "directory_path": str(case)},
+            headers=_AUTH,
+        )
+        assert resp.status_code == 503
+    finally:
+        shutil.rmtree(case, ignore_errors=True)
