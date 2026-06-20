@@ -49,7 +49,7 @@ counts:
   issues_count: 0
   refactors_count: 0
   systems_count: 5
-  reviews_count: 38
+  reviews_count: 40
   cleanup_count: 1
   compound:
     learning: 4
@@ -78,7 +78,7 @@ pointers:
   latest_architecture_update: "2026-06-20T01:29:08.936Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "tender-data-model goal Phase1 实现完成并 commit(429bf5d,325 passed/ruff):招标项目实体+多投标人追加+结果回看;codex 设计评审 APPROVE-WITH-CHANGES(5 findings 全纳入)。下一步候选(待用户定):①Phase2(价格横比/排名/recommendedBidder+POST /projects/{id}/compare,见 checklist phase2_backlog) ②前端 features/contract/tender-review 接真实 /tender/projects API(前后端对接) ③impl 后代码级交叉审查(codex+cc)。另:tender-criteria 的 codex review 仍待网关补跑(codex review --base 13d58a7)"
+next_action: "tender-data-model goal Phase1 实现 + 代码级交叉审查全完成(330 passed/ruff)。设计评审 codex APPROVE-WITH-CHANGES;代码评审 codex REWORK→fixed(P1.1 retry 丢 project_id 覆盖结论/P1.2 空 tender_no 500)+ cc CONCERNS→fixed(P1 删后回看详情 404),3 P1 全修+回归测试。下一步候选(待用户定):①Phase2(价格横比/排名/recommendedBidder+/compare,见 checklist phase2_backlog) ②前端 features/contract/tender-review 接真实 /tender/projects API。另:tender-criteria 的 codex review 仍待网关补跑(codex review --base 13d58a7)"
 last_subagent: "generator"
 last_subagent_at: "2026-06-02T09:25:27.661Z"
 active_worktrees: []
@@ -228,6 +228,7 @@ slug 拆分为独立 sprint 目录；`lessons.md` 整体保留为
 - `docs/` — 项目参考文档 (开发指南 / 前端对接 / audit-skills)，非状态机文件
 
 ## 历史 (由 pace-continuator hook 自动追加, 最多保留近 10 条)
+- `2026-06-20 08:32:52`: stage=impl sprint=2026-06-20-tender-data-model turn-end
 - `2026-06-20 07:57:58`: stage=review sprint=2026-06-20-tender-task-api-parity turn-end
 - `2026-06-20 06:53:12`: stage=design sprint=2026-06-20-tender-criteria-from-bid-doc turn-end
 
@@ -238,6 +239,5 @@ slug 拆分为独立 sprint 目录；`lessons.md` 整体保留为
 - `2026-06-19 08:33:33`: stage=impl sprint=2026-06-19-tender-ingestion-workflow turn-end
 - `2026-06-19 08:18:16`: stage=ship sprint=2026-06-19-review-backend-refactor turn-end
 - `2026-06-19 01:40:10`: stage=review sprint=2026-06-19-review-backend-refactor turn-end
-- `2026-06-18 15:25:31`: stage=ship sprint=2026-06-18-tender-domain turn-end
 
 - 2026-06-02 [migrate] v9.6.2(legacy flat) → v9.6.4. 备份见 `.ai_state.backup-*`。

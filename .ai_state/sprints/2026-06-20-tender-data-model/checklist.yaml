@@ -3,8 +3,12 @@ title: Tender 数据模型优化 — 招标项目实体 + 多投标人追加 + �
 path: System
 owner: claude-code
 design: design.md
-status: phase1_done              # 设计+codex review+Phase1 实现全完成(325 passed/ruff);P1-T1~T6 全绿,1 commit(429bf5d);Phase2 留 backlog
-phase1_result: "tender_project_store(幂等)+TaskStore group_id+results project_id(显式参数透传)+5 端点(projects CRUD/详情名册/追加评标/回看)+命令钉字段。名册合并 results∪tasks(删任务不丢人)。codex P1.1 回归已测。325 passed"
+status: phase1_reviewed          # Phase1 实现+代码级交叉审查(REWORK→fixed)全完成;330 passed/ruff;Phase2 留 backlog
+phase1_result: "tender_project_store(幂等)+TaskStore group_id+results project_id(显式参数透传)+6 端点(projects CRUD/详情名册/追加评标/回看列表+详情)+命令钉字段。名册合并 results∪tasks(删任务不丢人)。429bf5d"
+review_impl:                     # 代码级交叉审查(2026-06-20)
+  codex: "REWORK→fixed:P1.1 retry 丢 project_id(覆盖结论)/P1.2 空 tender_no 500。见 reviews/codex-impl-review.md"
+  cc: "CONCERNS→fixed:P1 删任务后回看详情 404(加 /projects/{id}/results/{request_id} 直读 results)。见 reviews/cc-impl-review.md"
+  outcome: "3 P1 全修 + worker透传/跨租户/schedule 透传回归测试补齐;330 passed/ruff(commit 收口)"
 goal: true                       # 用户 2026-06-20「设为 goal 开始实施」
 
 review_design:
