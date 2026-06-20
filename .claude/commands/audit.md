@@ -7,7 +7,7 @@ allowed-tools: Read, Write, Glob, Skill, Task
 
 ## 执行方式（低延迟：单 agent 内联，不嵌套子 agent）
 
-为把单次审核压进 ~2 分钟，**默认不再 spawn `expense-extractor` / `expense-auditor` 子 agent**，由你在本会话内一次性完成“事实提取 + 合规判断 + 输出”。只有在确需多业务域协同（HR / legal 辅助域）时才调度子 agent。
+为把单次审核压进 ~2 分钟，**默认不再 spawn `expense-extractor` / `expense-auditor` 子 agent**，由你在本会话内一次性完成“事实提取 + 合规判断 + 输出”。只有在确需跨域旁证（如报销材料是扫描件需先 OCR 识别）时才按需协同。
 
 1. 解析输入，尽量少往返：
    - 目录：用**一次** `Glob` 列出目录内文件，再 `Read` 关键材料（`audit-request.json`、申请单、报销单、发票、行程单、酒店单据等），综合全部材料，不要只看第一个文件。
