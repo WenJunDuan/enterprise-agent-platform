@@ -135,6 +135,16 @@ def remove_submission_dir(case_path: str | None) -> None:
     shutil.rmtree(resolved, ignore_errors=True)
 
 
+def collect_uploaded_files(form_data: Any) -> list[Any]:
+    """收集 multipart 上传文件——同时支持 ``files``(多文件列表) 与 ``file``(单文件字段)。
+
+    两种都是 multipart/form-data（客户端推字节，无 SSRF），仅字段名约定不同：
+    前端/批量用 ``files[]``；单文件 / 简单客户端用 ``file``。两者合并，调用方任选其一。
+    """
+    files = [*form_data.getlist("files"), *form_data.getlist("file")]
+    return [f for f in files if hasattr(f, "filename")]
+
+
 def sanitize_upload_name(name: str, index: int) -> str:
     """Strip directory components from an uploaded filename; raise 400 if empty."""
     sanitized = Path(name).name
@@ -205,7 +215,7 @@ async def materialize_upload_submission(
     """
     parsed_form = parse_optional_form_json(form_json)
     scalar_fields = collect_scalar_form_fields(form_data)
-    files = form_data.getlist("files")
+    files = collect_uploaded_files(form_data)  # files[] 多文件 或 file 单文件
     if not parsed_form and not scalar_fields and not files:
         raise HTTPException(
             status_code=400, detail="upload mode requires form_json, form fields, or files"

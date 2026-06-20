@@ -25,6 +25,7 @@ from server.ocr import OcrError
 from server.ocr.runner import map_extraction_to_form, run_doc_recognize
 from server.routes.deps import verify_tenant
 from server.routes.upload_helpers import (
+    collect_uploaded_files,
     materialize_ocr_upload,
     remove_submission_dir,
     validate_directory_case_path,
@@ -97,7 +98,7 @@ async def ocr_extract(
         case_path = await materialize_ocr_upload(
             request_id=request_id,
             tenant=tenant,
-            files=form_data.getlist("files"),
+            files=collect_uploaded_files(form_data),
         )
         cleanup_path = case_path  # 上传件识别后清理，directory 模式不动用户目录
     else:
@@ -160,7 +161,7 @@ async def ocr_fill(
     case_path = await materialize_ocr_upload(
         request_id=request_id,
         tenant=tenant,
-        files=form_data.getlist("files"),
+        files=collect_uploaded_files(form_data),
     )
 
     try:

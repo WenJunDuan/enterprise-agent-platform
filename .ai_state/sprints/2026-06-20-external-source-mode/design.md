@@ -1,7 +1,12 @@
-# 全地址读取模式 — 外部源对接友好（设计 · 待下会话实现）
+# 全地址读取模式 — 外部源对接友好（**已废弃 · 决策记录**）
 
-> Sprint 2026-06-20-external-source-mode · Path: **System**（触及 H4 路径安全）· 用户需求 #29。
-> 本会话只出设计 + codex review；实现留新会话。
+> Sprint 2026-06-20-external-source-mode · **ABANDONED 2026-06-20**。
+> **结论（用户 2026-06-20 拍板）**：URL/外部路径读取**不做**——SSRF 风险太大（server 去 fetch 任意地址，
+> 可打内网/litellm/云元数据偷凭证）。外部对接统一走**现有 `upload` 模式**：multipart FormData + 异步后台
+> 评标——客户端推文件字节上来（不是 server fetch），无 SSRF 面，已实现（前端 `new FormData()` + 后端
+> upload 分支 + worker）。本文档保留作"为何不加 URL 读取"的决策记录。下方为当初的设计草案（不实施）。
+
+---
 
 ## 1. 现状（已查证）
 
