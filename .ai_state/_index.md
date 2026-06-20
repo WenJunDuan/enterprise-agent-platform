@@ -49,7 +49,7 @@ counts:
   issues_count: 0
   refactors_count: 0
   systems_count: 1
-  reviews_count: 29
+  reviews_count: 30
   cleanup_count: 1
   compound:
     learning: 4
@@ -58,9 +58,9 @@ counts:
     explore: 0
 # === Pointers (指向最新相关文件) ===
 pointers:
-  latest_design: "sprints/2026-06-19-tender-ingestion-workflow/design.md"
-  latest_review: "sprints/2026-06-19-review-backend-refactor/reviews/summary.md"
-  latest_cleanup: ""
+  latest_design: "sprints/2026-06-19-contract-audit-api/design.md"
+  latest_review: "sprints/2026-06-19-contract-audit-api/reviews/summary.md"
+  latest_cleanup: "sprints/2026-06-19-contract-audit-feature/cleanup-pass.md"
   latest_brainstorm: ""
   latest_decisions: ["compound/2026-06-19-decision-ops-below-routes-layering.md", "compound/2026-06-19-decision-agent-front-cc-out-of-scope.md"]
   latest_lessons: ["compound/2026-06-18-learning-absence-is-not-zero.md", "compound/2026-06-17-learning-cross-review-and-soft-timeout.md", "compound/2026-06-17-learning-classify-fix-exposes-latent-bug.md", "compound/2026-06-02-learning-legacy-v962-migration.md"]
