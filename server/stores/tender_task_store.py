@@ -20,3 +20,20 @@ list_tender_tasks = _STORE.list
 get_tender_task_admin = _STORE.get_admin
 list_tender_tasks_admin = _STORE.list_admin
 recover_stale_tender_tasks = _STORE.recover_stale
+
+
+def list_tender_tasks_by_project(
+    tenant: str,
+    project_id: str,
+    status: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> list[dict]:
+    """列某招标项目下的投标评标任务。
+
+    tender 边界统一用 ``project_id``（codex P2.4）——泛型 TaskStore 内部以 ``group_id`` 落库，
+    本 wrapper 把 project_id 映射成 group_id 过滤，使 ``group_id`` 不泄漏到路由层 DTO。
+    """
+    return _STORE.list(
+        tenant, status=status, limit=limit, offset=offset, group_id=project_id
+    )

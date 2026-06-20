@@ -23,11 +23,17 @@ from server.routes.upload_helpers import (
     validate_directory_case_path,
 )
 from server.stores.request_store import new_request_id, utc_now
-from server.stores.result_store import get_result_payload_by_request_id
+from server.stores.result_store import get_result_payload_by_request_id, list_results_by_project
+from server.stores.tender_project_store import (
+    get_or_create_project,
+    get_project,
+    list_projects,
+)
 from server.stores.tender_task_store import (
     delete_tender_task_if_idle,
     get_tender_task,
     list_tender_tasks,
+    list_tender_tasks_by_project,
     try_transition_tender_task,
     upsert_tender_task,
 )
@@ -77,15 +83,103 @@ def _public_tender_task(record: dict[str, Any]) -> TenderTaskStatusResponse:
     )
 
 
+# ── 招标项目实体 DTO + 名册聚合 ────────────────────────────────────────────────
+
+
+class TenderProjectCreateRequest(BaseModel):
+    tender_no: str | None = None
+    title: str | None = None
+    tenderee: str | None = None
+    method: str | None = None
+    control_price: str | None = None
+
+
+class TenderProjectResponse(BaseModel):
+    project_id: str
+    tender_no: str | None = None
+    title: str | None = None
+    tenderee: str | None = None
+    method: str | None = None
+    control_price: str | None = None
+    status: str
+    created_at: str
+    updated_at: str
+
+
+class TenderProjectBid(BaseModel):
+    request_id: str
+    claim_id: str | None = None
+    status: str  # completed / running / accepted / failed
+    verdict: str | None = None
+
+
+class TenderProjectDetailResponse(TenderProjectResponse):
+    bidder_count: int
+    bids: list[TenderProjectBid]
+
+
+def _public_project(record: dict[str, Any]) -> TenderProjectResponse:
+    return TenderProjectResponse(
+        project_id=str(record["project_id"]),
+        tender_no=record.get("tender_no"),
+        title=record.get("title"),
+        tenderee=record.get("tenderee"),
+        method=record.get("method"),
+        control_price=record.get("control_price"),
+        status=str(record["status"]),
+        created_at=str(record["created_at"]),
+        updated_at=str(record["updated_at"]),
+    )
+
+
+def _project_bid_roster(tenant: str, project_id: str) -> list[TenderProjectBid]:
+    """招标项目投标人名册 = ``results.project_id``(已完成,durable) ∪ 活跃 ``tender_tasks``(在途)。
+
+    删任务不丢已完成投标人（结论仍在 results，codex P1.1）；按 request_id 去重，优先 results。
+    """
+    bids: list[TenderProjectBid] = []
+    seen: set[str] = set()
+    for r in list_results_by_project(tenant, project_id):
+        rid = str(r["request_id"])
+        seen.add(rid)
+        bids.append(
+            TenderProjectBid(
+                request_id=rid,
+                claim_id=r.get("claim_id"),
+                status="completed",
+                verdict=r.get("verdict"),
+            )
+        )
+    for t in list_tender_tasks_by_project(tenant, project_id):
+        rid = str(t["request_id"])
+        if rid in seen or t.get("status") == "completed":
+            continue  # 已在 results / 残留完成态 → 跳过
+        bids.append(
+            TenderProjectBid(
+                request_id=rid,
+                claim_id=t.get("claim_id"),
+                status=str(t["status"]),
+                verdict=None,
+            )
+        )
+    return bids
+
+
 # ── route handlers ────────────────────────────────────────────────────────────
 
 
-@router.post("/evaluate", response_model=TenderSubmitAcceptedResponse)
-async def tender_evaluate(
+async def _submit_bid_evaluation(
     request: Request,
-    authorization: str | None = Header(None),
+    tenant: str,
+    *,
+    project_id: str | None,
 ) -> TenderSubmitAcceptedResponse:
-    tenant = verify_tenant(authorization)
+    """共享提交流程：解析 directory/upload → 建任务(挂 project) → 排程后台评标。
+
+    ``project_id`` 为该招标项目（``POST /projects/{id}/evaluate``）；旧 ``/tender/evaluate``
+    传 None（legacy 散单，不挂 project，codex §7.3）。落 ``tender_tasks.group_id`` 作链接键，
+    并透传给 worker → 结论落 ``results.project_id``。
+    """
     # round4 F5：准入闸——在途任务满则早拒（在写上传文件/建任务记录之前），不再无界接单。
     if not admission_available():
         raise HTTPException(status_code=503, detail="评标队列已满，请稍后重试")
@@ -125,6 +219,7 @@ async def tender_evaluate(
             "source_mode": mode,
             "case_path": case_path,
             "claim_id": None,
+            "group_id": project_id,  # 招标项目链接键（tender 边界叫 project_id）
             "result_file": None,
             "session_id": None,
             "error_detail": None,
@@ -140,6 +235,7 @@ async def tender_evaluate(
         tenant=tenant,
         directory_path=case_path,
         source_mode=mode,
+        project_id=project_id,
     )
     return TenderSubmitAcceptedResponse(
         request_id=request_id,
@@ -147,6 +243,16 @@ async def tender_evaluate(
         mode=mode,
         task_status_url=f"/tender/tasks/{request_id}",
     )
+
+
+@router.post("/evaluate", response_model=TenderSubmitAcceptedResponse)
+async def tender_evaluate(
+    request: Request,
+    authorization: str | None = Header(None),
+) -> TenderSubmitAcceptedResponse:
+    """旧单投标人评标入口（向后兼容）：不挂招标项目（project_id=NULL）。"""
+    tenant = verify_tenant(authorization)
+    return await _submit_bid_evaluation(request, tenant, project_id=None)
 
 
 @router.get("/tasks", response_model=list[TenderTaskStatusResponse])
@@ -251,3 +357,92 @@ async def delete_tender_task_endpoint(
         raise HTTPException(status_code=409, detail="Cannot delete a running tender task")
     remove_submission_dir(record.get("case_path"))
     return {"request_id": request_id, "status": "deleted"}
+
+
+# ── 招标项目资源（多投标人追加 / 按招标查看 / 结果回看）────────────────────────
+
+
+@router.post("/projects", response_model=TenderProjectResponse)
+async def create_tender_project(
+    body: TenderProjectCreateRequest,
+    authorization: str | None = Header(None),
+) -> TenderProjectResponse:
+    """建招标项目；get-or-create 幂等（同 tenant+tender_no 已存在则返回现有，codex P1.2）。"""
+    tenant = verify_tenant(authorization)
+    record = await asyncio.to_thread(
+        get_or_create_project,
+        tenant=tenant,
+        tender_no=body.tender_no,
+        title=body.title,
+        tenderee=body.tenderee,
+        method=body.method,
+        control_price=body.control_price,
+    )
+    return _public_project(record)
+
+
+@router.get("/projects", response_model=list[TenderProjectResponse])
+async def list_tender_projects_endpoint(
+    authorization: str | None = Header(None),
+    status: str | None = Query(None),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+) -> list[TenderProjectResponse]:
+    tenant = verify_tenant(authorization)
+    records = list_projects(tenant, status=status, limit=limit, offset=offset)
+    return [_public_project(r) for r in records]
+
+
+@router.get("/projects/{project_id}", response_model=TenderProjectDetailResponse)
+async def get_tender_project_detail(
+    project_id: str,
+    authorization: str | None = Header(None),
+) -> TenderProjectDetailResponse:
+    """项目详情 + 投标人名册（合并 results∪活跃 tasks）+ bidder_count。"""
+    tenant = verify_tenant(authorization)
+    record = get_project(project_id, tenant)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Tender project not found")
+    bids = _project_bid_roster(tenant, project_id)
+    base = _public_project(record)
+    return TenderProjectDetailResponse(**base.model_dump(), bidder_count=len(bids), bids=bids)
+
+
+@router.post("/projects/{project_id}/evaluate", response_model=TenderSubmitAcceptedResponse)
+async def tender_project_evaluate(
+    project_id: str,
+    request: Request,
+    authorization: str | None = Header(None),
+) -> TenderSubmitAcceptedResponse:
+    """追加一家投标评标到该招标项目（挂 project_id）。"""
+    tenant = verify_tenant(authorization)
+    if get_project(project_id, tenant) is None:
+        raise HTTPException(status_code=404, detail="Tender project not found")
+    return await _submit_bid_evaluation(request, tenant, project_id=project_id)
+
+
+@router.get("/projects/{project_id}/results")
+async def get_tender_project_results(
+    project_id: str,
+    authorization: str | None = Header(None),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+) -> list[dict[str, Any]]:
+    """该招标下所有结论回看（走 results.project_id，**独立于任务删除**）。
+
+    返回结论摘要列表；完整 payload 仍走 ``GET /tender/tasks/{request_id}/result``。
+    """
+    tenant = verify_tenant(authorization)
+    if get_project(project_id, tenant) is None:
+        raise HTTPException(status_code=404, detail="Tender project not found")
+    rows = list_results_by_project(tenant, project_id, limit=limit, offset=offset)
+    return [
+        {
+            "request_id": r["request_id"],
+            "claim_id": r.get("claim_id"),
+            "verdict": r.get("verdict"),
+            "manual_review_reason": r.get("manual_review_reason"),
+            "created_at": r.get("created_at"),
+        }
+        for r in rows
+    ]
