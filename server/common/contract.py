@@ -60,10 +60,15 @@ def build_output_format(schema_name: str = DEFAULT_OUTPUT_SCHEMA_NAME) -> dict[s
 class SchemaProcessor:
     """Per-schema output-conformance hooks (registry entry).
 
-    validate: raise JSONContractError when model output violates the contract.
-    enrich:   return a normalised/derived output (e.g. derive result from verdict).
+    normalize: stamp server-authoritative metadata (claim_id/reviewed_by/timestamp) +
+               coerce envelope format, **before** the hard JSON Schema check — so the
+               gate never forces the model to fabricate server-owned fields. Receives
+               the task ``request_id`` (claim_id falls back to it when the model omits it).
+    validate:  raise JSONContractError when model output violates the contract.
+    enrich:    return a normalised/derived output (e.g. derive result from verdict).
     """
 
+    normalize: Callable[[StructuredJSON, str | None], StructuredJSON] | None = None
     validate: Callable[[StructuredJSON], None] | None = None
     enrich: Callable[[StructuredJSON], StructuredJSON] | None = None
 
@@ -74,6 +79,7 @@ _SCHEMA_PROCESSORS: dict[str, SchemaProcessor] = {}
 def register_schema_processor(
     schema_name: str,
     *,
+    normalize: Callable[[StructuredJSON, str | None], StructuredJSON] | None = None,
     validate: Callable[[StructuredJSON], None] | None = None,
     enrich: Callable[[StructuredJSON], StructuredJSON] | None = None,
 ) -> None:
@@ -82,7 +88,9 @@ def register_schema_processor(
     New schemas register here (from the owning module) instead of editing a central
     if/elif — open for extension, closed for modification.
     """
-    _SCHEMA_PROCESSORS[schema_name] = SchemaProcessor(validate=validate, enrich=enrich)
+    _SCHEMA_PROCESSORS[schema_name] = SchemaProcessor(
+        normalize=normalize, validate=validate, enrich=enrich
+    )
 
 
 def _validate_against_json_schema(schema_name: str, structured_output: StructuredJSON) -> None:
@@ -113,15 +121,28 @@ def _validate_against_json_schema(schema_name: str, structured_output: Structure
         raise JSONContractError(f"契约 schema {schema_name} 自身非法: {exc.message}") from exc
 
 
-def apply_schema_semantics(schema_name: str, structured_output: StructuredJSON) -> StructuredJSON:
-    """Run the registered validate + enrich for schema_name; unregistered ⇒ returned as-is.
+def apply_schema_semantics(
+    schema_name: str,
+    structured_output: StructuredJSON,
+    *,
+    request_id: str | None = None,
+) -> StructuredJSON:
+    """Run the registered normalize + validate + enrich for schema_name; unregistered ⇒ as-is.
 
     This is the single entry the SDK bridge calls — it stays schema-name agnostic.
-    G1 验证闸：先按 JSON Schema 硬校验『形』(enrich 前、原始输出须自洽)，再跑语义 validate + enrich。
+    顺序（round4 F1 G1 闸 + metadata 加固）：
+      1. normalize：盖 server 权威元数据（claim_id/reviewed_by/timestamp）+ 拍平 envelope 格式，
+         **先于**硬 schema 校验——这些是服务端职责，不该逼模型产出（否则模型漏一个就反复重试至失败）。
+      2. _validate_against_json_schema：硬『形』校验（normalize 后、enrich 前；enrich 会派生 schema 外
+         的 result/conclusion，故仍须先校验原始输出的形）。
+      3. processor.validate：语义承重闸（verdict/policy_refs/评分一致性，**不放松**）。
+      4. processor.enrich：派生 result/conclusion。
     """
-    # G1（round4 F1）：JSON Schema 形校验先于一切语义处理。
-    _validate_against_json_schema(schema_name, structured_output)
     processor = _SCHEMA_PROCESSORS.get(schema_name)
+    if processor is not None and processor.normalize is not None:
+        structured_output = processor.normalize(structured_output, request_id)
+    # G1（round4 F1）：JSON Schema 形校验先于语义处理（normalize 后、enrich 前）。
+    _validate_against_json_schema(schema_name, structured_output)
     if processor is None:
         return structured_output
     if processor.validate is not None:

@@ -319,6 +319,65 @@ class TestEnrichAuditDecision:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
+# normalize_audit_result — server metadata stamping (G1 pre-validate)
+# ═════════════════════════════════════════════════════════════════════════════
+
+
+class TestNormalizeAuditResult:
+    def test_stamps_missing_server_metadata(self):
+        out = _oc.normalize_audit_result({"verdict": "manual_review"}, request_id="req-123")
+        assert out["claim_id"] == "req-123"  # claim_id 缺 → 回落 request_id
+        assert out["reviewed_by"]  # 服务端盖章
+        assert out["timestamp"]
+        assert out["extracted_data"] == {}  # 漏给 → 空对象
+
+    def test_keeps_model_supplied_claim_id(self):
+        out = _oc.normalize_audit_result(
+            {"claim_id": "EXP-9", "verdict": "approved"}, request_id="req-1"
+        )
+        assert out["claim_id"] == "EXP-9"  # 模型给了就不覆盖
+
+    def test_no_request_id_falls_back_to_placeholder(self):
+        out = _oc.normalize_audit_result({"verdict": "approved"})
+        assert out["claim_id"] == "UNKNOWN"
+
+    def test_risk_dimensions_object_coerced_and_invalid_dropped(self):
+        # live eval 实测形状：对象映射 + 0-100 量纲 + 非枚举名 'compliance'
+        out = _oc.normalize_audit_result(
+            {"verdict": "manual_review", "risk_dimensions": {"anomaly": 60, "compliance": 45}},
+            request_id="r",
+        )
+        assert isinstance(out["risk_dimensions"], list)
+        names = [d["name"] for d in out["risk_dimensions"]]
+        assert names == ["anomaly"]  # 'compliance' 非枚举被清
+        assert out["risk_dimensions"][0]["score"] == 6  # 0-100 → 0-10
+
+    def test_full_pipeline_validates_live_failure_shape(self):
+        """复现 live eval 的失败输出（缺 claim_id/metadata + 对象 risk_dimensions）→ 经
+        apply_schema_semantics 应通过硬校验并补全/派生，不再抛 'claim_id is required'。"""
+        from server.common.contract import (
+            DEFAULT_OUTPUT_SCHEMA_NAME,
+            apply_schema_semantics,
+        )
+
+        raw: dict[str, Any] = {
+            "verdict": "manual_review",
+            "manual_review_reason": "data_conflict",
+            "explanation": "字段冲突需人工核实",
+            "reasons": ["出差同日却住宿2晚"],
+            "policy_refs": [],
+            "risk_score": 62,
+            "risk_dimensions": {"anomaly": 60, "compliance": 45},
+            "evidence_chain": [{"source": "a", "finding": "b", "conclusion": "c"}],
+        }
+        out = apply_schema_semantics(DEFAULT_OUTPUT_SCHEMA_NAME, raw, request_id="req-xyz")
+        assert out["claim_id"] == "req-xyz"
+        assert out["verdict"] == "manual_review"
+        assert out["result"] is False  # enrich 派生
+        assert out["conclusion"] == "待人工复核"
+
+
+# ═════════════════════════════════════════════════════════════════════════════
 # validate_structured_output_semantics — audit schema
 # ═════════════════════════════════════════════════════════════════════════════
 
