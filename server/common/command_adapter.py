@@ -40,11 +40,17 @@ async def run_command_json(
     command_name: str,
     *arguments: str,
     schema_name: str,
+    project_id: str | None = None,
     **opts: Any,
 ):
-    """Invoke a Claude slash command and return structured JSON output."""
+    """Invoke a Claude slash command and return structured JSON output.
+
+    ``project_id`` 显式透传到归档（tender 招标项目分组键）；显式参数而非 ``**opts``，
+    避免被下游 ``build_options`` 当成 SDK 选项（codex P1.3）。
+    """
     return await run_agent_json(
         build_command_prompt(command_name, *arguments),
         schema_name=schema_name,
+        project_id=project_id,
         **opts,
     )

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import shutil
+import uuid
 from pathlib import Path
 
 import pytest
@@ -319,5 +320,114 @@ def test_evaluate_queue_full_returns_503(client, monkeypatch):
             headers=_AUTH,
         )
         assert resp.status_code == 503
+    finally:
+        shutil.rmtree(case, ignore_errors=True)
+
+
+# ── 招标项目资源（数据模型优化：多投标人追加 / 按招标查看 / 结果回看）──────────
+
+
+def _create_project(client: TestClient, tender_no: str | None = None, **kw) -> dict:
+    resp = client.post("/tender/projects", json={"tender_no": tender_no, **kw}, headers=_AUTH)
+    assert resp.status_code == 200, resp.text
+    return resp.json()
+
+
+def test_create_project_idempotent(client):
+    # get-or-create 幂等(codex P1.2)：同 tenant+tender_no 两次建 → 同一 project_id。
+    tn = f"R-{uuid.uuid4().hex[:8]}"
+    p1 = _create_project(client, tender_no=tn, title="烛照标段一", method="综合评估法")
+    p2 = _create_project(client, tender_no=tn, title="重复提交")
+    assert p1["project_id"] == p2["project_id"]
+    assert p1["status"] == "doing" and p1["title"] == "烛照标段一"
+
+
+def test_list_projects(client):
+    p = _create_project(client, tender_no=f"R-{uuid.uuid4().hex[:8]}")
+    rows = client.get("/tender/projects", headers=_AUTH).json()
+    assert p["project_id"] in [x["project_id"] for x in rows]
+
+
+def test_project_detail_not_found(client):
+    assert client.get("/tender/projects/nope-pid", headers=_AUTH).status_code == 404
+
+
+def test_evaluate_under_project_appears_in_roster(client):
+    case = _make_dir_case("test-proj-eval")
+    try:
+        pid = _create_project(client, tender_no=f"R-{uuid.uuid4().hex[:8]}")["project_id"]
+        resp = client.post(
+            f"/tender/projects/{pid}/evaluate",
+            json={"mode": "directory", "directory_path": str(case)},
+            headers=_AUTH,
+        )
+        assert resp.status_code == 200, resp.text
+        rid = resp.json()["request_id"]
+        detail = client.get(f"/tender/projects/{pid}", headers=_AUTH).json()
+        assert detail["bidder_count"] == 1
+        assert rid in [b["request_id"] for b in detail["bids"]]
+        assert detail["bids"][0]["status"] == "accepted"  # 在途(schedule 被 mock no-op)
+    finally:
+        shutil.rmtree(case, ignore_errors=True)
+
+
+def test_evaluate_unknown_project_404(client):
+    case = _make_dir_case("test-proj-404")
+    try:
+        resp = client.post(
+            "/tender/projects/nope-pid/evaluate",
+            json={"mode": "directory", "directory_path": str(case)},
+            headers=_AUTH,
+        )
+        assert resp.status_code == 404
+    finally:
+        shutil.rmtree(case, ignore_errors=True)
+
+
+def test_results_recall_survives_task_deletion(client):
+    """codex P1.1 回归：删任务后该招标下已完成结论仍可回看(走 results.project_id)。"""
+    from server.stores.result_store import archive_result_payload
+
+    case = _make_dir_case("test-proj-recall")
+    try:
+        pid = _create_project(client, tender_no=f"R-{uuid.uuid4().hex[:8]}")["project_id"]
+        rid = client.post(
+            f"/tender/projects/{pid}/evaluate",
+            json={"mode": "directory", "directory_path": str(case)},
+            headers=_AUTH,
+        ).json()["request_id"]
+        # 模拟评标完成 + 归档结论(带 project_id)
+        upsert_tender_task(
+            {
+                "request_id": rid,
+                "status": "completed",
+                "claim_id": "BID-X",
+                "finished_at": "2026-06-20T00:00:00+00:00",
+                "updated_at": "2026-06-20T00:00:00+00:00",
+            }
+        )
+        archive_result_payload(
+            request_id=rid,
+            tenant="acme",
+            project_id=pid,
+            conversation_id="c1",
+            claude_session_id=None,
+            resume_session_id=None,
+            fork_from_session_id=None,
+            schema_name=EVAL_SCHEMA,
+            request_mode="structured",
+            result_subtype="success",
+            cost_usd=0.0,
+            prompt_preview="x",
+            response={"verdict": "manual_review", "claim_id": "BID-X"},
+        )
+        # 删任务后：任务没了，但结论回看 + 名册仍在(durable)
+        assert client.delete(f"/tender/tasks/{rid}", headers=_AUTH).status_code == 200
+        assert client.get(f"/tender/tasks/{rid}", headers=_AUTH).status_code == 404
+        results = client.get(f"/tender/projects/{pid}/results", headers=_AUTH).json()
+        assert rid in [r["request_id"] for r in results]
+        assert results[0]["verdict"] == "manual_review"
+        detail = client.get(f"/tender/projects/{pid}", headers=_AUTH).json()
+        assert "BID-X" in [b["claim_id"] for b in detail["bids"]]
     finally:
         shutil.rmtree(case, ignore_errors=True)

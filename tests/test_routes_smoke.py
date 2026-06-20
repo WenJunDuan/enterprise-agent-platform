@@ -26,8 +26,13 @@ _BASELINE_ROUTES: list[tuple[str, tuple[str, ...]]] = [
     ("/ocr/fill", ("POST",)),
     ("/openapi.json", ("GET", "HEAD")),
     ("/redoc", ("GET", "HEAD")),
-    # tender 评标路由（2026-06-19 T2 新增；2026-06-20 补齐 list/retry/delete 对齐 audit 三件套）
+    # tender 评标路由（2026-06-19 T2 新增；2026-06-20 补 list/retry/delete + 招标项目资源 5 端点）
     ("/tender/evaluate", ("POST",)),
+    ("/tender/projects", ("GET",)),
+    ("/tender/projects", ("POST",)),
+    ("/tender/projects/{project_id}", ("GET",)),
+    ("/tender/projects/{project_id}/evaluate", ("POST",)),
+    ("/tender/projects/{project_id}/results", ("GET",)),
     ("/tender/tasks", ("GET",)),
     ("/tender/tasks/{request_id}", ("DELETE",)),
     ("/tender/tasks/{request_id}", ("GET",)),

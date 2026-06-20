@@ -25,6 +25,7 @@ class ResultRecord:
     schema_name: str | None
     result_file: str
     tenant: str | None = None
+    project_id: str | None = None  # 招标项目分组键（tender）；非 tender 域留空
     claude_session_id: str | None = None
     session_id: str | None = None
     resume_session_id: str | None = None
@@ -65,6 +66,14 @@ class ResultStore(Protocol):
         tenant: str,
     ) -> dict[str, Any] | None: ...
 
+    def list_results_by_project(
+        self,
+        tenant: str,
+        project_id: str,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]: ...
+
     def list_records_admin(
         self,
         conversation_id: str | None = None,
@@ -93,6 +102,7 @@ class SQLiteResultStore:
         "schema_name",
         "result_file",
         "tenant",
+        "project_id",
         "claude_session_id",
         "session_id",
         "resume_session_id",
@@ -176,6 +186,22 @@ class SQLiteResultStore:
             return None
         return json.loads(row["payload"])
 
+    def list_results_by_project(
+        self,
+        tenant: str,
+        project_id: str,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        # 招标项目下所有结论回看：走 results.project_id，独立于任务删除（codex P1.1）。
+        with connect_sqlite(self.db_path) as connection:
+            rows = connection.execute(
+                "SELECT * FROM results WHERE tenant = ? AND project_id = ? "
+                "ORDER BY created_at DESC, request_id DESC LIMIT ? OFFSET ?",
+                (tenant, project_id, limit, offset),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def list_records_admin(
         self,
         conversation_id: str | None = None,
@@ -241,6 +267,7 @@ class SQLiteResultStore:
                     schema_name TEXT,
                     result_file TEXT NOT NULL,
                     tenant TEXT,
+                    project_id TEXT,
                     claude_session_id TEXT,
                     session_id TEXT,
                     resume_session_id TEXT,
@@ -265,6 +292,8 @@ class SQLiteResultStore:
                 )
             if "payload" not in existing_columns:
                 connection.execute("ALTER TABLE results ADD COLUMN payload TEXT")
+            if "project_id" not in existing_columns:
+                connection.execute("ALTER TABLE results ADD COLUMN project_id TEXT")
             connection.executescript(
                 """
                 CREATE INDEX IF NOT EXISTS idx_results_tenant_created
@@ -275,6 +304,8 @@ class SQLiteResultStore:
                     ON results (tenant, claim_id, created_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_results_verdict_reason
                     ON results (tenant, verdict, manual_review_reason, created_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_results_project
+                    ON results (tenant, project_id, created_at DESC);
                 """
             )
 
@@ -300,8 +331,13 @@ def archive_result_payload(
     prompt_preview: str | None,
     response: StructuredJSON,
     created_at: str | None = None,
+    project_id: str | None = None,
 ) -> ResultRecord:
-    """Persist a structured result and return its metadata record."""
+    """Persist a structured result and return its metadata record.
+
+    ``project_id`` 是 tender 招标项目分组键，由调用链显式透传（codex P1.3：显式参数，
+    不走 ``**opts`` 以免被当成 SDK 选项）；非 tender 域留 None。
+    """
     created_at = created_at or datetime.now(timezone.utc).isoformat()
     claim_id = response.get("claim_id") if isinstance(response, dict) else None
     verdict = response.get("verdict") if isinstance(response, dict) else None
@@ -309,6 +345,7 @@ def archive_result_payload(
     payload = {
         "request_id": request_id,
         "tenant": tenant,
+        "project_id": project_id,
         "conversation_id": conversation_id,
         "claude_session_id": claude_session_id,
         "resume_session_id": resume_session_id,
@@ -324,6 +361,7 @@ def archive_result_payload(
     record = ResultRecord(
         request_id=request_id,
         tenant=tenant,
+        project_id=project_id,
         conversation_id=conversation_id,
         claude_session_id=claude_session_id,
         session_id=claude_session_id,
@@ -376,6 +414,18 @@ def get_result_payload_by_request_id(
     tenant: str,
 ) -> dict[str, Any] | None:
     return RESULT_STORE.get_payload_by_request_id(request_id=request_id, tenant=tenant)
+
+
+def list_results_by_project(
+    tenant: str,
+    project_id: str,
+    limit: int = 100,
+    offset: int = 0,
+) -> list[dict[str, Any]]:
+    """招标项目下所有结论回看（走 results.project_id，独立于任务删除）。"""
+    return RESULT_STORE.list_results_by_project(
+        tenant=tenant, project_id=project_id, limit=limit, offset=offset
+    )
 
 
 def list_result_records_admin(

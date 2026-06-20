@@ -48,13 +48,16 @@ def admission_available() -> bool:
     return len(_BACKGROUND_TASKS) < MAX_PENDING_TENDERS
 
 
-async def _run_evaluation(*, request_id: str, tenant: str, directory_path: str):
+async def _run_evaluation(
+    *, request_id: str, tenant: str, directory_path: str, project_id: str | None = None
+):
     return await run_command_json(
         "tender-evaluate",
         directory_path,
         schema_name=DEFAULT_OUTPUT_SCHEMA_NAME,
         request_id=request_id,
         tenant=tenant,
+        project_id=project_id,  # 显式透传 → 结论落 results.project_id（codex P1.3）
         conversation_id=new_conversation_id(),
     )
 
@@ -65,6 +68,7 @@ async def execute_tender_evaluation_task(
     tenant: str,
     directory_path: str,
     source_mode: str = "directory",
+    project_id: str | None = None,
 ) -> None:
     """Gate on the concurrency semaphore, then run the evaluation task."""
     # 并发闸：拿不到名额就在此 await 排队，排队期间任务保持 accepted（不计入评标超时）。
@@ -74,6 +78,7 @@ async def execute_tender_evaluation_task(
             tenant=tenant,
             directory_path=directory_path,
             source_mode=source_mode,
+            project_id=project_id,
         )
 
 
@@ -83,6 +88,7 @@ async def _execute_inner(
     tenant: str,
     directory_path: str,
     source_mode: str,
+    project_id: str | None = None,
 ) -> None:
     started_at = utc_now()
     with logging_context(request_id=request_id, tenant=tenant):
@@ -111,6 +117,7 @@ async def _execute_inner(
                     request_id=request_id,
                     tenant=tenant,
                     directory_path=directory_path,
+                    project_id=project_id,
                 ),
                 timeout=TENDER_TIMEOUT_SEC,
             )
@@ -197,6 +204,7 @@ def schedule_tender_evaluation_task(
     tenant: str,
     directory_path: str,
     source_mode: str,
+    project_id: str | None = None,
 ) -> None:
     """Fire-and-forget: schedule the evaluation task as a tracked asyncio background task."""
     task = asyncio.create_task(
@@ -205,6 +213,7 @@ def schedule_tender_evaluation_task(
             tenant=tenant,
             directory_path=directory_path,
             source_mode=source_mode,
+            project_id=project_id,
         )
     )
     _track_task(task)  # round4 F5：留引用防 GC + 计入在途（准入闸）

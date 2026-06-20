@@ -102,6 +102,7 @@ async def run_agent_json(
     structured: bool = True,
     request_id: str | None = None,
     tenant: str | None = None,
+    project_id: str | None = None,
     **opts: Any,
 ) -> tuple[StructuredJSON, AgentRunMeta]:
     """Run Claude and return the parsed JSON object.
@@ -199,6 +200,7 @@ async def run_agent_json(
             result_record = archive_result_payload(
                 request_id=request_id,
                 tenant=tenant,
+                project_id=project_id,
                 conversation_id=conversation_id,
                 claude_session_id=final_claude_session_id,
                 resume_session_id=resolved_resume_session_id,

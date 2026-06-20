@@ -36,6 +36,7 @@ class TaskRecord:
     source_mode: str
     case_path: str
     claim_id: str | None = None
+    group_id: str | None = None  # 领域分组键（tender=招标 project_id）；TaskStore 内部字段，不外泄到路由 DTO
     result_file: str | None = None
     error_detail: str | None = None
     progress_message: str | None = None
@@ -98,6 +99,7 @@ class TaskStore:
                     source_mode TEXT NOT NULL,
                     case_path TEXT NOT NULL,
                     claim_id TEXT,
+                    group_id TEXT,
                     result_file TEXT,
                     error_detail TEXT,
                     progress_message TEXT,
@@ -106,10 +108,27 @@ class TaskStore:
                     finished_at TEXT,
                     updated_at TEXT NOT NULL DEFAULT ''
                 );
+                """  # noqa: S608 - table 名经白名单校验，无外部输入
+            )
+            # 既有表（建于 group_id 加入前）按需补列，幂等（仿 result_store PRAGMA 检查）。
+            existing_columns = {
+                row["name"]
+                for row in connection.execute(
+                    f"PRAGMA table_info({self.table})"  # noqa: S608
+                ).fetchall()
+            }
+            if "group_id" not in existing_columns:
+                connection.execute(
+                    f"ALTER TABLE {self.table} ADD COLUMN group_id TEXT"  # noqa: S608
+                )
+            connection.executescript(
+                f"""
                 CREATE INDEX IF NOT EXISTS idx_{self.table}_tenant
                     ON {self.table} (tenant, submitted_at DESC);
                 CREATE INDEX IF NOT EXISTS idx_{self.table}_status
                     ON {self.table} (status);
+                CREATE INDEX IF NOT EXISTS idx_{self.table}_group
+                    ON {self.table} (tenant, group_id);
                 """  # noqa: S608 - table 名经白名单校验，无外部输入
             )
 
@@ -212,12 +231,16 @@ class TaskStore:
         status: str | None = None,
         limit: int = 20,
         offset: int = 0,
+        group_id: str | None = None,
     ) -> list[dict[str, Any]]:
         query = f"SELECT * FROM {self.table} WHERE tenant = ?"  # noqa: S608
         params: list[Any] = [tenant]
         if status:
             query += " AND status = ?"
             params.append(status)
+        if group_id:
+            query += " AND group_id = ?"
+            params.append(group_id)
         query += " ORDER BY COALESCE(submitted_at, updated_at) DESC LIMIT ? OFFSET ?"
         params.extend([limit, offset])
         with connect_sqlite(PLATFORM_DB_FILE) as connection:
