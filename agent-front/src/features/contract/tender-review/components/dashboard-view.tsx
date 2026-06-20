@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import {
   type ColumnDef,
   type ColumnFiltersState,
@@ -11,13 +11,27 @@ import {
   type OnChangeFn,
   type PaginationState,
   type Row,
+  type RowSelectionState,
   useReactTable,
   type VisibilityState,
 } from '@tanstack/react-table'
-import { CircleAlert, Clock3, FileSearch } from 'lucide-react'
+import { CircleAlert, Clock3, FileSearch, Plus, RotateCcw, Trash2, UploadCloud } from 'lucide-react'
+import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { DataTablePagination, DataTableToolbar } from '@/components/data-table'
 import {
   Card,
@@ -36,6 +50,24 @@ import {
 } from '@/components/ui/table'
 import type { DashboardSummary, TenderProject } from '../types'
 import { StatusBadge } from './status-badge'
+
+const ACCEPTED_BIDDER_FILE_TYPES = [
+  '.pdf',
+  '.doc',
+  '.docx',
+  '.xls',
+  '.xlsx',
+  '.ppt',
+  '.pptx',
+  '.txt',
+  '.jpg',
+  '.jpeg',
+  '.png',
+  '.webp',
+  '.heic',
+  'image/*',
+  'application/pdf',
+].join(',')
 
 const statToneClass = {
   blue: 'bg-blue-500',
@@ -62,15 +94,39 @@ export function DashboardView({
   summary,
   projects,
   onOpenProject,
+  onCreateReview,
+  onBatchDelete,
+  onBatchRetry,
+  onAppendBidder,
 }: {
   summary: DashboardSummary
   projects: TenderProject[]
   onOpenProject: (projectId: string) => void
+  /** B③: 创建评审 按钮 callback */
+  onCreateReview: () => void
+  /** B⑤: batch delete selected project task ids */
+  onBatchDelete: (projectIds: string[]) => Promise<void>
+  /** B⑤: batch retry selected project task ids */
+  onBatchRetry: (projectIds: string[]) => Promise<void>
+  /** B⑥: append a new bidder to an existing project */
+  onAppendBidder: (
+    projectId: string,
+    bidderName: string | undefined,
+    tenderFiles: File[],
+    bidderFiles: File[]
+  ) => Promise<void>
 }) {
   return (
     <div className='space-y-4'>
       <DashboardMetrics summary={summary} />
-      <ProjectTable projects={projects} onOpenProject={onOpenProject} />
+      <ProjectTable
+        projects={projects}
+        onOpenProject={onOpenProject}
+        onCreateReview={onCreateReview}
+        onBatchDelete={onBatchDelete}
+        onBatchRetry={onBatchRetry}
+        onAppendBidder={onAppendBidder}
+      />
     </div>
   )
 }
@@ -98,12 +154,51 @@ function DashboardMetrics({ summary }: { summary: DashboardSummary }) {
 function ProjectTable({
   projects,
   onOpenProject,
+  onCreateReview,
+  onBatchDelete,
+  onBatchRetry,
+  onAppendBidder,
 }: {
   projects: TenderProject[]
   onOpenProject: (projectId: string) => void
+  onCreateReview: () => void
+  onBatchDelete: (projectIds: string[]) => Promise<void>
+  onBatchRetry: (projectIds: string[]) => Promise<void>
+  onAppendBidder: (
+    projectId: string,
+    bidderName: string | undefined,
+    tenderFiles: File[],
+    bidderFiles: File[]
+  ) => Promise<void>
 }) {
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
+  const [isBatchAction, setIsBatchAction] = useState(false)
+
   const columns = useMemo<ColumnDef<TenderProject>[]>(
     () => [
+      // B①: checkbox column for multi-selection
+      {
+        id: 'select',
+        header: ({ table }) => (
+          <Checkbox
+            checked={
+              table.getIsAllPageRowsSelected() ||
+              (table.getIsSomePageRowsSelected() && 'indeterminate')
+            }
+            onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
+            aria-label='全选'
+          />
+        ),
+        cell: ({ row }) => (
+          <Checkbox
+            checked={row.getIsSelected()}
+            onCheckedChange={(value) => row.toggleSelected(!!value)}
+            aria-label='选择行'
+          />
+        ),
+        enableSorting: false,
+        enableHiding: false,
+      },
       {
         id: 'searchText',
         accessorFn: (project) =>
@@ -197,6 +292,7 @@ function ProjectTable({
       {
         id: 'actions',
         header: () => <div className='text-right'>操作</div>,
+        // B②: 行内不再显示 重新审核/删除 按钮，只保留查看详情
         cell: ({ row }) => (
           <div className='text-right'>
             <Button
@@ -238,16 +334,50 @@ function ProjectTable({
       columnFilters,
       columnVisibility,
       pagination,
+      rowSelection,
     },
     onColumnFiltersChange: handleColumnFiltersChange,
     onColumnVisibilityChange: setColumnVisibility,
     onPaginationChange: setPagination,
+    onRowSelectionChange: setRowSelection,
     getCoreRowModel: getCoreRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     getFacetedRowModel: getFacetedRowModel(),
     getFacetedUniqueValues: getFacetedUniqueValues(),
   })
+
+  const selectedProjects = table
+    .getSelectedRowModel()
+    .rows.map((row) => row.original)
+
+  /** B⑤: batch delete — delegates to parent which has access to raw bid request_ids */
+  async function handleBatchDelete() {
+    if (selectedProjects.length === 0) return
+    setIsBatchAction(true)
+    try {
+      await onBatchDelete(selectedProjects.map((project) => project.id))
+      setRowSelection({})
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '批量删除失败，请重试。')
+    } finally {
+      setIsBatchAction(false)
+    }
+  }
+
+  /** B⑤: batch retry — delegates to parent which has access to raw bid request_ids */
+  async function handleBatchRetry() {
+    if (selectedProjects.length === 0) return
+    setIsBatchAction(true)
+    try {
+      await onBatchRetry(selectedProjects.map((project) => project.id))
+      setRowSelection({})
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '批量重新审核失败，请重试。')
+    } finally {
+      setIsBatchAction(false)
+    }
+  }
 
   return (
     <Card>
@@ -306,7 +436,11 @@ function ProjectTable({
             <TableBody>
               {table.getRowModel().rows.length > 0 ? (
                 table.getRowModel().rows.map((row) => (
-                  <TableRow key={row.id} className='group/row'>
+                  <TableRow
+                    key={row.id}
+                    className='group/row'
+                    data-state={row.getIsSelected() ? 'selected' : undefined}
+                  >
                     {row.getVisibleCells().map((cell) => (
                       <TableCell
                         key={cell.id}
@@ -338,8 +472,213 @@ function ProjectTable({
           </Table>
         </div>
         <DataTablePagination table={table} />
+
+        {/* B③/B④/B⑤/B⑥: 底部操作区（居右） */}
+        <div className='flex flex-wrap items-center justify-end gap-2 pt-1'>
+          {selectedProjects.length > 0 ? (
+            <span className='mr-auto text-sm text-muted-foreground'>
+              已选 {selectedProjects.length} 个项目
+            </span>
+          ) : null}
+
+          {/* B⑤: 批量删除 */}
+          <Button
+            variant='outline'
+            size='sm'
+            disabled={selectedProjects.length === 0 || isBatchAction}
+            onClick={handleBatchDelete}
+          >
+            <Trash2 className='size-4' />
+            删除
+          </Button>
+
+          {/* B④: 重新审核 */}
+          <Button
+            variant='outline'
+            size='sm'
+            disabled={selectedProjects.length === 0 || isBatchAction}
+            onClick={handleBatchRetry}
+          >
+            <RotateCcw className='size-4' />
+            重新审核
+          </Button>
+
+          {/* B⑥: 追加公司审核（仅单选时出现） */}
+          {selectedProjects.length === 1 ? (
+            <AppendBidderDialog
+              projectId={selectedProjects[0]!.id}
+              onAppend={onAppendBidder}
+              onSuccess={() => setRowSelection({})}
+            />
+          ) : null}
+
+          {/* B③: 创建评审（居右，列表下方） */}
+          <Button size='sm' onClick={onCreateReview}>
+            <Plus className='size-4' />
+            创建评审
+          </Button>
+        </div>
       </CardContent>
     </Card>
+  )
+}
+
+/**
+ * B⑥: Append-bidder dialog.
+ * Calls POST /tender/projects/{id}/evaluate with mode=upload + files via onAppend.
+ */
+function AppendBidderDialog({
+  projectId,
+  onAppend,
+  onSuccess,
+}: {
+  projectId: string
+  onAppend: (
+    projectId: string,
+    bidderName: string | undefined,
+    tenderFiles: File[],
+    bidderFiles: File[]
+  ) => Promise<void>
+  onSuccess: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [bidderName, setBidderName] = useState('')
+  const [tenderFiles, setTenderFiles] = useState<File[]>([])
+  const [bidderFiles, setBidderFiles] = useState<File[]>([])
+  const [submitting, setSubmitting] = useState(false)
+  const tenderInputRef = useRef<HTMLInputElement>(null)
+  const bidderInputRef = useRef<HTMLInputElement>(null)
+
+  function handleClose() {
+    setOpen(false)
+    setBidderName('')
+    setTenderFiles([])
+    setBidderFiles([])
+  }
+
+  async function handleSubmit() {
+    if (bidderFiles.length === 0) {
+      toast.error('请至少上传一个投标文件。')
+      return
+    }
+    setSubmitting(true)
+    try {
+      await onAppend(
+        projectId,
+        bidderName.trim() || undefined,
+        tenderFiles,
+        bidderFiles
+      )
+      toast.success('已追加投标人审核，任务已提交。')
+      handleClose()
+      onSuccess()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '追加失败，请重试。')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant='outline' size='sm'>
+          <UploadCloud className='size-4' />
+          追加公司审核
+        </Button>
+      </DialogTrigger>
+      <DialogContent className='sm:max-w-md'>
+        <DialogHeader>
+          <DialogTitle>追加公司审核</DialogTitle>
+          <DialogDescription>
+            为当前招标项目追加一家投标人的文件，提交后自动触发评标。
+          </DialogDescription>
+        </DialogHeader>
+        <div className='space-y-4'>
+          <div>
+            <Label htmlFor='append-bidder-name' className='mb-2 block text-sm font-medium'>
+              投标单位名称（选填）
+            </Label>
+            <Input
+              id='append-bidder-name'
+              value={bidderName}
+              onChange={(event) => setBidderName(event.target.value)}
+              placeholder='如：中铁五局'
+            />
+          </div>
+          <div>
+            <Label
+              htmlFor='append-tender-files'
+              className='mb-2 block text-sm font-medium'
+            >
+              招标文件（选填，已有可不再上传）
+            </Label>
+            <input
+              id='append-tender-files'
+              ref={tenderInputRef}
+              multiple
+              type='file'
+              accept={ACCEPTED_BIDDER_FILE_TYPES}
+              className='hidden'
+              onChange={(event) =>
+                setTenderFiles(Array.from(event.target.files ?? []))
+              }
+            />
+            <Button
+              type='button'
+              variant='outline'
+              size='sm'
+              className='w-full'
+              onClick={() => tenderInputRef.current?.click()}
+            >
+              <UploadCloud className='size-4' />
+              {tenderFiles.length > 0
+                ? `已选 ${tenderFiles.length} 个招标文件`
+                : '选择招标文件'}
+            </Button>
+          </div>
+          <div>
+            <Label
+              htmlFor='append-bidder-files'
+              className='mb-2 block text-sm font-medium'
+            >
+              投标文件（必传）
+            </Label>
+            <input
+              id='append-bidder-files'
+              ref={bidderInputRef}
+              multiple
+              type='file'
+              accept={ACCEPTED_BIDDER_FILE_TYPES}
+              className='hidden'
+              onChange={(event) =>
+                setBidderFiles(Array.from(event.target.files ?? []))
+              }
+            />
+            <Button
+              type='button'
+              variant='outline'
+              size='sm'
+              className='w-full'
+              onClick={() => bidderInputRef.current?.click()}
+            >
+              <UploadCloud className='size-4' />
+              {bidderFiles.length > 0
+                ? `已选 ${bidderFiles.length} 个投标文件`
+                : '选择投标文件'}
+            </Button>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button type='button' variant='outline' onClick={handleClose}>
+            取消
+          </Button>
+          <Button type='button' disabled={submitting} onClick={handleSubmit}>
+            {submitting ? '提交中...' : '提交审核'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -376,3 +715,4 @@ function getProjectActionLabel(status: TenderProject['status']) {
   if (status === 'doing') return '查看进度'
   return '查看详情'
 }
+

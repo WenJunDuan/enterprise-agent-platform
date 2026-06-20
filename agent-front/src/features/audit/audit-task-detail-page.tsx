@@ -1,7 +1,6 @@
 import { useState } from 'react'
-import { Link, useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { Copy, RotateCcw, Trash2 } from 'lucide-react'
+import { Copy, RotateCcw } from 'lucide-react'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -13,12 +12,11 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
-import { deleteTask, getTask, getTaskResult, retryTask } from './api'
+import { getTask, getTaskResult, retryTask } from './api'
 import {
   formatDate,
   normalizeRiskDimensions,
   toDisplayText,
-  truncateId,
 } from './format'
 import { getSubmissionSummary } from './lib/submission-summary'
 import { TaskStatusBadge, VerdictBadge } from './status-badge'
@@ -181,8 +179,7 @@ function EvidenceCards({ result }: { result: AuditResult }) {
 }
 
 export function AuditTaskDetailPage({ taskId }: { taskId: string }) {
-  const navigate = useNavigate()
-  const [action, setAction] = useState<'retry' | 'delete' | null>(null)
+  const [action, setAction] = useState<'retry' | null>(null)
   const summary = getSubmissionSummary(taskId)
 
   const taskQuery = useQuery({
@@ -201,20 +198,17 @@ export function AuditTaskDetailPage({ taskId }: { taskId: string }) {
     enabled: taskQuery.data?.status === 'completed',
   })
 
-  async function copyId() {
+  /** C④: copy full (untruncated) task id to clipboard */
+  async function copyFullId() {
     await navigator.clipboard.writeText(taskId)
   }
 
-  async function runTaskAction(kind: 'retry' | 'delete') {
-    setAction(kind)
+  /** C②: "重新审核" stays in the detail card; "删除任务" is removed */
+  async function runRetry() {
+    setAction('retry')
     try {
-      if (kind === 'retry') {
-        await retryTask(taskId)
-        await taskQuery.refetch()
-      } else {
-        await deleteTask(taskId)
-        await navigate({ to: '/audit' })
-      }
+      await retryTask(taskId)
+      await taskQuery.refetch()
     } finally {
       setAction(null)
     }
@@ -224,18 +218,23 @@ export function AuditTaskDetailPage({ taskId }: { taskId: string }) {
     <>
       <Header fixed />
       <Main constrained className='space-y-5'>
-        <div className='flex flex-col gap-3 md:flex-row md:items-end md:justify-between'>
-          <div>
-            <h1 className='text-2xl font-semibold tracking-tight'>任务详情</h1>
-            <p className='font-mono text-sm text-muted-foreground'>{truncateId(taskId, 32)}</p>
-          </div>
-          <div className='flex flex-wrap gap-2'>
-            <Button variant='outline' onClick={copyId}>
-              <Copy className='size-4' />
-              复制 ID
-            </Button>
-            <Button variant='outline' asChild>
-              <Link to='/audit'>返回列表</Link>
+        {/* C②: 移除"复制id""返回列表"按钮 — 只保留标题区 */}
+        <div>
+          <h1 className='text-2xl font-semibold tracking-tight'>任务详情</h1>
+          {/* C④: 完整显示任务 ID（不截断），其后跟小复制 icon */}
+          <div className='flex items-center gap-1.5'>
+            <span className='break-all font-mono text-sm text-muted-foreground'>
+              {taskId}
+            </span>
+            <Button
+              type='button'
+              variant='ghost'
+              size='icon'
+              className='size-6 shrink-0'
+              aria-label='复制任务 ID'
+              onClick={copyFullId}
+            >
+              <Copy className='size-3.5' />
             </Button>
           </div>
         </div>
@@ -279,43 +278,23 @@ export function AuditTaskDetailPage({ taskId }: { taskId: string }) {
                     <div>{formatDate(taskQuery.data.updated_at)}</div>
                   </div>
                 </div>
+                {/* C②: "重新审核"挪进详情卡；"删除任务"已移除 */}
                 <div className='flex flex-wrap gap-2'>
                   <Button
                     variant='outline'
                     disabled={action === 'retry'}
-                    onClick={() => runTaskAction('retry')}
+                    onClick={runRetry}
                   >
                     <RotateCcw className='size-4' />
                     重新审核
-                  </Button>
-                  <Button
-                    variant='destructive'
-                    disabled={action === 'delete'}
-                    onClick={() => runTaskAction('delete')}
-                  >
-                    <Trash2 className='size-4' />
-                    删除任务
                   </Button>
                 </div>
               </CardContent>
             </Card>
 
+            {/* C③: 移除"提交摘要"区块 */}
             {resultQuery.data ? <ResultCards result={resultQuery.data} /> : null}
             {resultQuery.data ? <EvidenceCards result={resultQuery.data} /> : null}
-
-            {summary ? (
-              <Card>
-                <CardHeader>
-                  <CardTitle>提交摘要</CardTitle>
-                  <CardDescription>最近一次提交的信息。</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <pre className='max-h-[420px] overflow-auto rounded-md border bg-muted/30 p-4 text-xs'>
-                    {JSON.stringify(summary, null, 2)}
-                  </pre>
-                </CardContent>
-              </Card>
-            ) : null}
           </>
         ) : taskQuery.isLoading ? (
           <Card>

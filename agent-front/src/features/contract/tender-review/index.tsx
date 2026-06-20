@@ -25,7 +25,6 @@ export function TenderReviewPage({
         {showPageHeading ? (
           <PageHeading
             activeScreen={page.screen}
-            onCreate={() => page.setScreen('create')}
             onBack={() => page.setScreen(initialScreen)}
           />
         ) : null}

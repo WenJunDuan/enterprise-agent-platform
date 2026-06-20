@@ -15,12 +15,16 @@ export function ScreenContent({ page }: { page: TenderReviewPageState }) {
           summary={page.viewModel.summary}
           projects={page.viewModel.data.projects}
           onOpenProject={(projectId) => page.openAnalysis('detail', projectId)}
+          onCreateReview={() => page.setScreen('create')}
+          onBatchDelete={page.batchDeleteProjects}
+          onBatchRetry={page.batchRetryProjects}
+          onAppendBidder={page.appendBidder}
         />
       )
     case 'create':
       return (
         <CreateReviewView
-          projectInfo={page.viewModel.data.projectInfo}
+          projectForm={page.projectForm}
           tenderFiles={page.tenderFiles}
           uploadBidders={page.uploadBidders}
           progress={page.progress}
@@ -29,7 +33,11 @@ export function ScreenContent({ page }: { page: TenderReviewPageState }) {
           submitError={page.submitError}
           canStart={page.canStartReview}
           onStart={page.startReview}
-          onCancel={() => page.setScreen('dashboard')}
+          onCancel={() => {
+            page.resetProjectForm()
+            page.setScreen('dashboard')
+          }}
+          onUpdateProjectForm={page.updateProjectForm}
           onAddTenderFile={page.addTenderFile}
           onRemoveTenderFile={page.removeTenderFile}
           onAddBidder={page.addBidder}

@@ -11,7 +11,7 @@ export type TenderProjectCreateRequest = {
   tenderee?: string | null
   method?: string | null
   control_price?: string | null
-  funding_type?: 'state_funded' | 'other' | 'unknown' | string | null
+  funding_type?: 'state_funded' | 'other' | 'unknown' | null
 }
 
 export type TenderProjectResponse = {

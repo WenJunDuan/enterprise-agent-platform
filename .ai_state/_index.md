@@ -49,7 +49,7 @@ counts:
   issues_count: 0
   refactors_count: 0
   systems_count: 6
-  reviews_count: 47
+  reviews_count: 48
   cleanup_count: 1
   compound:
     learning: 4
@@ -81,7 +81,7 @@ pointers:
 next_action: "本会话(2026-06-20 深夜)收尾,358 passed/ruff,已 push origin/main(后端+state);前端集成已 commit 未 push(待用户测)。完成:tender-data-model goal ship + tender-task-api-parity + 第三章硬编码修 + 存储改造(submissions 域命名空间+tender 项目层级,codex REWORK→fixed symlink逃逸)+ 单 file 字段上传(URL 外读废弃-SSRF)+ 前端 tender-review 接真实 API(codex 集成)。**新会话起点**:①用户端到端测前端(需先把 .env 第 11 行 MODEL_BASE_URL=127.0.0.1:4000 删掉,让 line4 anyrouter 生效;后端 serve+前端 dev,proxy 已配 /tender)有问题就修 ②前端联调若 OK 则 push agent-front。遗留:tender-criteria codex review 待补(codex review --base 13d58a7);dependabot 10 漏洞(依赖,另议)"
 last_subagent: "generator"
 last_subagent_at: "2026-06-02T09:25:27.661Z"
-active_worktrees: []
+active_worktrees: ["agent-ab48b114f14b94af4"]
 last_critic_round: 0
 design_changed_after_impl: true
 
@@ -117,6 +117,24 @@ fingerprint: ""
 > 本文件由 Athena 自动维护. 不要手工修改 frontmatter 字段以外的部分除非你知道你在做什么.
 
 ## 当前状态
+
+2026-06-20（深夜末2 · e2e 联调 + UI 改造分工，**进行中**）: 用户端到端测前端。起后端 9999 +
+前端 5173(vite)，proxy 指本机，全链路 200 通。修真 bug：① `.env` line11 误置
+`MODEL_BASE_URL=127.0.0.1:4000` 覆盖 line4 anyrouter(dotenv 后值生效)→ 已注释（OCR 自走
+`OCR_VL_SERVER_URL`，见 `server/ocr/engine.py`，与 MODEL_BASE_URL 无关）；② `agent-front/.env.dev`
+proxy `192.168.1.47`→`127.0.0.1:9999`。**模型(待验证)**：anyrouter 拒纯 `claude-opus-4-8` 强制 1m；
+用户改 `MODEL_NAME=claude-opus-4-8[1M]` 可路由但报销 180s 超时 → 加 `AUDIT_TIMEOUT_SEC=600`
+（评标本就 `TENDER_TIMEOUT_SEC=600`）。**真实评标/审核尚未成功跑通一次**（"投标人假名"=评标 failed
+占位，待跑通验证；回退备选小写 `[1m]`）。**UI 改造分工(用户测试反馈~10 项)**：契约
+`sprints/2026-06-20-tender-ui-rework/codex-handoff.md`（A 创建项目可填字段／B 列表复选框+批量删重审+
+追加审核入口／C 报销页精简+顶部步骤可点／D tender 步骤样式对齐／E compare 404 前端静默）——
+后端仅加 `AUDIT_TIMEOUT_SEC=600`（A①/B⑥ 后端早就绪）。**前端最终由 CC 实现**（用户中途从 codex 收回）：
+generator subagent 在 worktree 出第一版（A/B/C/D/E 全项，lint/build/38测绿）→ **交叉审查**（reviewer +
+spec-compliance 一致 **REWORK**，唯一阻塞 **B⑤ 批量删/重审**因 `GET /tender/projects` 不返回 bids[] 静默无效）
+→ CC 修 F1/F2（批量先 `fetchQuery(getTenderProject)` 取真实 request_id）/F4（allSettled+报失败）/F5/F6/F7/F8/F9，
+F3 留（mock `'accepted'` 实为后端真状态）→ patch 合入 main，lint/build/**38 测全绿** → 提交+推送+删 worktree。
+评审记录见 `sprints/2026-06-20-tender-ui-rework/reviews/cross-review-pass1.md`。服务仍停（用户要求退出终端）；
+**真实评标/审核仍未成功跑通一次，待用户回来验**。**勘误**：更早写的"已 push origin/main"失准，本次推送一并补齐。
 
 2026-06-20（深夜末 · 收尾会话，三候选 + 存储改造 + 前端集成）: 多块连续交付，**358 passed/ruff，36+ commit 已 push origin/main**。
 - **tender 评标改造链**(早段)：criteria 直读招标文件第三章→后改为"评标办法位置以实际标书为准"(删第三章硬编码) + tender 任务三件套对齐 audit + tender-data-model goal(招标项目实体+多投标人追加+回看+价格横比 Phase1/2) **已 ship**。
@@ -235,6 +253,7 @@ slug 拆分为独立 sprint 目录；`lessons.md` 整体保留为
 - `docs/` — 项目参考文档 (开发指南 / 前端对接 / audit-skills)，非状态机文件
 
 ## 历史 (由 pace-continuator hook 自动追加, 最多保留近 10 条)
+- `2026-06-20 13:56:20`: stage=ship sprint=2026-06-20-external-source-mode turn-end
 - `2026-06-20 10:49:49`: stage=ship sprint=2026-06-20-tender-data-model turn-end
 - `2026-06-20 08:32:52`: stage=impl sprint=2026-06-20-tender-data-model turn-end
 - `2026-06-20 07:57:58`: stage=review sprint=2026-06-20-tender-task-api-parity turn-end
@@ -245,6 +264,5 @@ slug 拆分为独立 sprint 目录；`lessons.md` 整体保留为
 - `2026-06-19 12:07:21`: stage=ship sprint=2026-06-19-contract-audit-api turn-end
 - `2026-06-19 10:20:54`: stage=impl sprint=2026-06-19-contract-audit-feature turn-end
 - `2026-06-19 08:33:33`: stage=impl sprint=2026-06-19-tender-ingestion-workflow turn-end
-- `2026-06-19 08:18:16`: stage=ship sprint=2026-06-19-review-backend-refactor turn-end
 
 - 2026-06-02 [migrate] v9.6.2(legacy flat) → v9.6.4. 备份见 `.ai_state.backup-*`。
