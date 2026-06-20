@@ -118,6 +118,23 @@ fingerprint: ""
 
 ## 当前状态
 
+2026-06-21（凌晨 · 真实评测验证 + 两后端 bug 修复）: 用户授权经 **server API** 跑真实 audit/tender 评测
+（不直连 Claude）。首轮**两单皆 failed**，抽出两真 bug：① **audit schema 闸误杀**——`[1M]` 模型输出常漏
+server 元数据(claim_id/reviewed_by/timestamp)+ risk_dimensions 给成对象，G1 在 enrich 前硬校验原始输出 →
+反复重试至失败；② **tender 600s 超时**(单步 `[1M]`≈114s × 五步 > 600s)。**两个都修+重跑验证**：
+- 修复 `517ca1f`（已 push origin/main）：`contract.py` SchemaProcessor 加 `normalize` 相(硬校验前盖元数据)+
+  线程 request_id(顺序 normalize→硬校验→语义闸→enrich)；`output_contracts.py` `normalize_audit_result`
+  (claim_id 缺→request_id / reviewed_by / timestamp / extracted_data 默认 + 复用 coerce/cleanse 规整)；
+  `json_bridge.py` 透传 request_id；语义承重闸(verdict/policy_ref/评分一致性)**不放松**。363 passed/ruff。
+- tender 超时 600→1200 走 `.env`(本机 gitignored；audit 亦 600)。
+- **重跑两单皆 completed**：audit 真实 `manual_review`(claim_id=request_id 服务端盖章=修复生效铁证)；
+  tender 真实投标人 **示例云平台有限公司**(不再假名)，schema 合规。
+- ⚠️ **新发现第 3 问题(backlog,本次未修)**：tender **评分为空**=agent 子进程**读不了 PDF**
+  (结论 `extracted_data.blocker`/explanation："本机缺少 PDF 解析能力"，卡 S1 取评标办法)→ 正确降级 manual_review。
+  日志线索：`CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` 硬化强制权限 default，疑 Read 工具/PDF 读取被挡；audit 不受影响
+  (读 audit-request.json 非 PDF)。**用户选"先 push，PDF 暂缓"**。下次起点：查子进程 PDF 读取(env-scrub/allowedTools)
+  或 tender 接 OCR。服务已停；评测结论持久化在 `data/db`，重启可回看。
+
 2026-06-20（深夜末2 · e2e 联调 + UI 改造分工，**进行中**）: 用户端到端测前端。起后端 9999 +
 前端 5173(vite)，proxy 指本机，全链路 200 通。修真 bug：① `.env` line11 误置
 `MODEL_BASE_URL=127.0.0.1:4000` 覆盖 line4 anyrouter(dotenv 后值生效)→ 已注释（OCR 自走
