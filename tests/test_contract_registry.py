@@ -108,6 +108,73 @@ def test_manual_review_allowed_with_empty_policy_refs():
     assert out["verdict"] == "manual_review"
 
 
+# ── G1b-full（env-gated 引用存在性闸 RULE_REF_CHECK）─────────────────────────
+
+
+def test_rule_ref_check_off_by_default_allows_unknown_ref(monkeypatch):
+    # 默认关：即便引用不存在的 rule_id 也放行（向后兼容，无 knowledge/ 的 CI 不误挂）。
+    monkeypatch.delenv("RULE_REF_CHECK", raising=False)
+    apply_schema_semantics(DEFAULT_OUTPUT_SCHEMA_NAME, _valid_audit_result(policy_refs=["NOPE-999"]))
+
+
+def test_rule_ref_check_on_rejects_fabricated_ref(monkeypatch):
+    import server.common.output_contracts as oc
+
+    monkeypatch.setenv("RULE_REF_CHECK", "1")
+    monkeypatch.setattr(oc, "_load_known_rule_ids", lambda: {"expense_travel_001"})
+    with pytest.raises(JSONContractError):
+        apply_schema_semantics(
+            DEFAULT_OUTPUT_SCHEMA_NAME, _valid_audit_result(policy_refs=["TRAVEL-RULE-999"])
+        )
+
+
+def test_rule_ref_check_on_allows_real_ref(monkeypatch):
+    import server.common.output_contracts as oc
+
+    monkeypatch.setenv("RULE_REF_CHECK", "1")
+    monkeypatch.setattr(oc, "_load_known_rule_ids", lambda: {"expense_travel_001"})
+    out = apply_schema_semantics(
+        DEFAULT_OUTPUT_SCHEMA_NAME, _valid_audit_result(policy_refs=["expense_travel_001"])
+    )
+    assert out["result"] is True
+
+
+def test_rule_ref_check_on_but_no_rules_loaded_skips(monkeypatch):
+    import server.common.output_contracts as oc
+
+    monkeypatch.setenv("RULE_REF_CHECK", "1")
+    monkeypatch.setattr(oc, "_load_known_rule_ids", lambda: set())  # 无 knowledge → 跳过
+    apply_schema_semantics(DEFAULT_OUTPUT_SCHEMA_NAME, _valid_audit_result(policy_refs=["ANYTHING"]))
+
+
+# ── G1c 评分项内部一致性（score ≤ max，验证非判断）──────────────────────────
+
+
+def test_scoring_consistency_rejects_score_over_max():
+    bad = _valid_audit_result(
+        extracted_data={"scoring": [{"item": "技术", "max": 10, "score": 15, "status": "scored"}]}
+    )
+    with pytest.raises(JSONContractError):
+        apply_schema_semantics(DEFAULT_OUTPUT_SCHEMA_NAME, bad)
+
+
+def test_scoring_consistency_allows_null_score():
+    # 不可判定项 score=null（manual_review）→ 跳过，不报错（呼应"绝不判 0"）。
+    ok = _valid_audit_result(
+        extracted_data={"scoring": [{"item": "答辩", "max": 10, "score": None, "status": "manual_review"}]}
+    )
+    out = apply_schema_semantics(DEFAULT_OUTPUT_SCHEMA_NAME, ok)
+    assert out["result"] is True
+
+
+def test_scoring_consistency_allows_valid_score():
+    ok = _valid_audit_result(
+        extracted_data={"scoring": [{"item": "技术", "max": 10, "score": 8, "status": "scored"}]}
+    )
+    out = apply_schema_semantics(DEFAULT_OUTPUT_SCHEMA_NAME, ok)
+    assert out["result"] is True
+
+
 def test_register_new_schema_takes_effect_without_editing_dispatcher():
     schema = "test/widget.schema.json"
     calls: list[str] = []
