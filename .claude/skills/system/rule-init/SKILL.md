@@ -11,7 +11,7 @@ description: Use when 需要把本地制度源文件初始化为结构化规则�
 2. 读取 `knowledge/_schema/rule.schema.json`，严格按照该结构组织结果。
 3. 只提取与目标业务域直接相关、可执行、可审计的规则、标准、门槛和必备材料。
 4. 将规则按类别整理；若一个制度覆盖多个类别，应拆分为多个 `knowledge/{domain}/{category}.rules.json` 文件。
-5. 生成稳定的 `rule_id`，格式为 `{domain}.{category}.{序号}`，并确保同一文件内顺序连续。
+5. 生成稳定的 `rule_id`，格式为 `{domain}_{category}_{序号}`（下划线连接，如 `tender_evalmethod_001`、`expense_travel_003`），并确保同一文件内顺序连续。
 6. 每个规则文档都必须填写顶层 `source_path`、`source_version`、`generated_at`（字段以 `knowledge/_schema/rule.schema.json` 为准）：
    - `source_path` 是真实本地文件路径，例如 `knowledge/external/南通高新区接待管理办法.docx`
    - `source_version` 是制度标题 / 文号 / 版本
@@ -36,7 +36,9 @@ description: Use when 需要把本地制度源文件初始化为结构化规则�
   - 工作餐（`南通高新区工作餐管理制度.docx`）→ `meal` → `knowledge/expense/meal.rules.json`
   - 接待（`南通高新区接待管理办法.docx`）→ `entertainment` → `knowledge/expense/entertainment.rules.json`
 - 若单个制度源覆盖多个类别，按类别拆分为多个目标文件，每个子任务只负责一个类别和一个目标文件。
-- `tender`（招投标评标）域分两层，`category` 轴用法特殊：
-  - 通则 / 法规（招标投标法、政府采购法、综合评分法通则等，置于 `knowledge/external/`）→ category 取 `statute` → `knowledge/tender/statute.rules.json`
-  - 单个项目招标文件第三章《评标办法》→ category 取**招标编号**（如 `r2024007`）→ `knowledge/tender/{招标编号}.rules.json`
-  - 评分项若属"单份投标文件无法判定"，须在该规则 `tags` 标注 `requires_live_event`（现场答辩）/ `requires_external_data`（外部信用等）/ `requires_cross_bid_comparison`（价格分需横向比较），并在 `notes` 说明所需外部输入。`rule_id` 用下划线，如 `tender_statute_001`、`tender_r2024007_004`。
+- `tender`（招投标评标）域：`/init-rules` **只生成通则层国家法规**（`category` 按法规简称，一法一文件，置于 `knowledge/external/` 的源文件）：
+  - 《评标委员会和评标方法暂行规定》→ category 取 `evalmethod` → `knowledge/tender/evalmethod.rules.json`
+  - 《招标投标法实施条例》→ category 取 `regulation` → `knowledge/tender/regulation.rules.json`
+  - `rule_id` 用下划线，如 `tender_evalmethod_001` / `tender_regulation_003`。
+  - **项目评分标准不在此初始化**：单个项目的评分项 / 分值就在它自己的招标文件第三章《评标办法》里，由 `/tender-evaluate`（S1）评标时**直读解析为会话 `criteria`**，不预建 `{招标编号}.rules.json`。
+  - 通则层法规中若有"单份投标文件无法判定"的条款，可在该规则 `tags` 标注 `requires_live_event`（现场答辩）/ `requires_external_data`（外部信用等）/ `requires_cross_bid_comparison`（价格分需横向比较），并在 `notes` 说明所需外部输入。

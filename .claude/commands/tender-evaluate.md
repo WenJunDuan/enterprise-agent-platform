@@ -13,16 +13,21 @@ allowed-tools: Read, Glob, Skill, Task
 - 用**一次** `Glob` 列目录文件。按文件名/内容分类：招标文件、投标文件各章节、投标人标识。
 - 形成文件清单（章节号 → 文件）。不要逐字深读，先建索引。
 
-### S1 评分计划
-- `Read` 本案适用的本地规则（两层，可一并读）：
-  - 项目层：`knowledge/tender/{招标编号}.rules.json`（该项目第三章评标办法的分值/权重）
-  - 通则层：`knowledge/tender/{法规简称}.rules.json`（如 `evalmethod` 评标方法暂行规定、`regulation` 招标投标法实施条例）
-- 把评分办法逐项展开为评分计划：每项记 `{item, max, rule_ids, 需读章节, tag}`。
-- （可选 · G2 类型化计划）把计划同时以结构化节点写入 `extracted_data.plan`，满足 `.claude/contracts/common/plan.schema.json`（每节点 `{step, intent, reads, tools, produces, tag}`，tag ∈ sequential/parallel/external_data/manual_review）。平台会校验其形；便于审计与（未来）按 `parallel` 节点并行拆分。
-- 项目层规则缺失时，对相关评分项按降级走 `manual_review`（`rule_gap`），**不要现场从招标文件 PDF 编造评分规则**。
+### S1 取本项目评分标准（读招标文件第三章《评标办法》→ criteria）
+- 本项目的评分标准**就在它自己的招标文件第三章《评标办法》里**（价格 X 分 / 技术 Y 分 / 信用 Z 分…全是项目专属）。`Read` 招标文件、定位第三章《评标办法》，**直读解析**出本项目评分标准，结构化写入 `extracted_data.criteria`，对齐 `.claude/contracts/tender/criteria.schema.json`：
+  - `source_ref`（第三章出处：文件+页）、`method`（综合评估法 / 经评审的最低投标价法 / 其他）、`total_max`（满分合计）
+  - `items[]`：每项 `{item 评分项名, max 满分, scoring_rule 评分规则原文/转述, source_ref 出处页, tag}`
+  - `tag` 标"可判定性"：可依投标文件判定 → `scored`；命中 `requires_live_event`（现场答辩）/ `requires_external_data`（外部信用）/ `requires_cross_bid_comparison`（价格横比）→ 留待 S3 走 `manual_review`。
+- 这份 `criteria` 就是本次评标的**会话项目规则**，随结论持久化（落 data/）；S3 据它逐项评分。
+- 同时 `Read` 通则层国家法规作**法律底座**（注意：**不是**项目评分标准，而是废标 / 资格 / 一致性 / 程序的法定依据，跨项目稳定）：
+  - `knowledge/tender/evalmethod.rules.json`（《评标委员会和评标方法暂行规定》，发改委12号令）
+  - `knowledge/tender/regulation.rules.json`（《招标投标法实施条例》）
+  - 读取每个文件顶层 `source_path` / `source_version` 作追溯。
+- （可选 · G2 类型化计划）把读取 / 评分计划以结构化节点写入 `extracted_data.plan`，满足 `.claude/contracts/common/plan.schema.json`（每节点 `{step, intent, reads, tools, produces, tag}`，tag ∈ sequential/parallel/external_data/manual_review）。平台会校验其形；便于审计与（未来）按 `parallel` 节点并行拆分。
+- **护栏**：招标文件第三章的评分标准**直读即权威**——这是评标的法定方式（依据 `tender_evalmethod_001`：评标只依据招标文件规定的标准和方法；`tender_evalmethod_003`：综合评估法需量化的因素及权重应在招标文件中明确规定）。招标文件**没有写**的标准，不得用训练记忆或臆测补充。**缺招标文件、或读不出第三章《评标办法》** → 相关评分项降级 `manual_review`（`rule_gap`），并写清缺什么。
 
 ### S2 事实抽取（把大文件压成小底稿）
-- 按计划里"需读章节"，逐个/分批 `Read` 相关投标文件，抽取评标所需事实，对齐 `.claude/contracts/tender/extract-result.schema.json`：
+- 按 `extracted_data.criteria` 各评分项所需的证据（及可选 `plan` 标注的"需读章节"），逐个/分批 `Read` 相关投标文件，抽取评标所需事实，对齐 `.claude/contracts/tender/extract-result.schema.json`：
   - 投标人、统一社会信用代码、法定代表人
   - 拟派项目负责人：姓名 / 注册证号 / 出处（文件+页）
   - 业绩：每条 `项目名称 / 项目经理 / 出处（文件+页）`
@@ -31,7 +36,7 @@ allowed-tools: Read, Glob, Skill, Task
 - 只抽事实，不在本步给分。
 
 ### S3 逐项评判
-- 对评分计划每一项，结合事实底稿（必要时按页码回读该章节原文）判定，写入 `extracted_data.scoring`，每项 `{item, max, score, status, basis}`：
+- 对照 S1 得到的 `extracted_data.criteria` 每一项（`item` / `max` / `scoring_rule` / `tag`），结合事实底稿（必要时按页码回读该章节原文）判定，写入 `extracted_data.scoring`，每项 `{item, max, score, status, basis}`（`item` / `max` 须与 criteria 对应项一致）：
   - 规则可依文档判定 → `status:"scored"`，给 `score` 与 `basis`
   - 命中"不可判定"标签 → `status:"manual_review"`、`score:null`，**绝不判 0**：
     - `requires_live_event`（项目负责人答辩等现场环节）
@@ -45,7 +50,9 @@ allowed-tools: Read, Glob, Skill, Task
   - 命中任一废标/资格否决 → `rejected`
   - 存在任一 `manual_review` 评分项，或关键证据缺失/规则缺口/证据冲突 → `manual_review`（填 `manual_review_reason`）
   - 全部评分项 `scored` 且无否决项 → `approved`
-- 给出 `policy_refs`（来自命中的 `rule_id`，如 `tender_evalmethod_005` / `tender_r2024007_004`）、页级 `evidence_chain`、`risk_score`，并把逐项 `scoring` 留在 `extracted_data` 中。
+- **承重结论（`approved` / `rejected`）的 `policy_refs` 只引通则层真实 `rule_id`**（如 `tender_evalmethod_001` 评标依招标文件、`tender_evalmethod_003` / `tender_evalmethod_004` 综合评估法量化加权、`tender_evalmethod_005` / `tender_evalmethod_006` / `tender_evalmethod_008` 废标 / 资格否决）——这些才是平台真伪闸认可的法定依据。
+- **`criteria` 各评分项的具体标准与命中**（来自招标文件第三章、无 knowledge `rule_id`）**写进 `evidence_chain`**（同时引招标文件第三章页 + 投标文件页），**不要塞进 `policy_refs`**（会被真伪闸当编造 `rule_id` 拒掉）。
+- 给出页级 `evidence_chain`、`risk_score`，并把逐项 `scoring` 与 `criteria` 一并留在 `extracted_data` 中。
 
 ## 输出契约
 

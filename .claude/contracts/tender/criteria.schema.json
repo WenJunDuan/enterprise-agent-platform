@@ -1,0 +1,67 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "tender_criteria",
+  "description": "会话项目评分标准：从该项目招标文件第三章《评标办法》直读解析得到，作为本次评标的项目规则，随结论写入 extracted_data.criteria 持久化。区别于通则层 knowledge/tender/{evalmethod,regulation}.rules.json（国家法规，跨项目稳定）。",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "source_ref": {
+      "type": "string",
+      "minLength": 1,
+      "description": "评分标准出处：招标文件第三章《评标办法》的文件名 + 页码，如 '烛照-标段一v3.pdf 第三章 p.18'。"
+    },
+    "method": {
+      "type": "string",
+      "enum": ["综合评估法", "经评审的最低投标价法", "其他"],
+      "description": "本项目评标方法（招标文件载明）。法定依据 tender_evalmethod_002。"
+    },
+    "total_max": {
+      "type": "number",
+      "minimum": 0,
+      "description": "评分满分合计（通常 100）。"
+    },
+    "items": {
+      "type": "array",
+      "minItems": 1,
+      "description": "逐评分项标准，来自招标文件第三章。每项的具体分值/权重是项目专属，法定来源 tender_evalmethod_003（需量化因素及权重应在招标文件中明确规定）。",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["item", "max", "scoring_rule", "source_ref", "tag"],
+        "properties": {
+          "item": {
+            "type": "string",
+            "minLength": 1,
+            "description": "评分项名称，如 '价格分' / '技术方案' / '业绩' / '项目负责人答辩'。"
+          },
+          "max": {
+            "type": "number",
+            "minimum": 0,
+            "description": "该项满分。"
+          },
+          "scoring_rule": {
+            "type": "string",
+            "minLength": 1,
+            "description": "该项评分规则原文/转述（直引招标文件，不得臆造）。如 '价格分=最低有效报价/本报价×40'。"
+          },
+          "source_ref": {
+            "type": "string",
+            "minLength": 1,
+            "description": "该项标准在招标文件第三章的出处（文件+页）。"
+          },
+          "tag": {
+            "type": "string",
+            "enum": [
+              "scored",
+              "requires_live_event",
+              "requires_external_data",
+              "requires_cross_bid_comparison"
+            ],
+            "description": "可判定性标签。scored=可依投标文件判定；其余三类不可依单份投标文件判定，S3 须 score:null + manual_review，绝不判 0：requires_live_event(现场答辩/演示)、requires_external_data(企业信用等外部公示数据)、requires_cross_bid_comparison(价格分等需横向比较所有投标)。"
+          }
+        }
+      }
+    }
+  },
+  "required": ["source_ref", "method", "total_max", "items"]
+}
