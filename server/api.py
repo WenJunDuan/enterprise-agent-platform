@@ -32,7 +32,11 @@ from starlette.routing import Match
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from server.platform.config import get_app_settings
-from server.platform.logging_setup import configure_logging, logging_context
+from server.platform.logging_setup import (
+    configure_logging,
+    install_access_log_filter,
+    logging_context,
+)
 from server.platform.paths import PROJECT_ROOT
 from server.routes.deps import TENANT_KEYS, verify_tenant  # noqa: F401  re-export
 from server.stores.audit_task_store import recover_stale_audit_tasks
@@ -56,6 +60,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def app_lifespan(_: FastAPI):
     settings = get_app_settings()
+    install_access_log_filter()  # 清 uvicorn access log 噪音（/health 健康探测刷屏等）
     recover_stale_audit_tasks(settings.audit_task_running_timeout_seconds)
     recover_stale_tender_tasks(settings.audit_task_running_timeout_seconds)
     yield

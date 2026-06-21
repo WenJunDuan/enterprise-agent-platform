@@ -20,6 +20,7 @@ list_tender_tasks = _STORE.list
 get_tender_task_admin = _STORE.get_admin
 list_tender_tasks_admin = _STORE.list_admin
 recover_stale_tender_tasks = _STORE.recover_stale
+update_tender_progress = _STORE.update_progress           # 思考流式：评标进度轻量写
 
 
 def list_tender_tasks_by_project(

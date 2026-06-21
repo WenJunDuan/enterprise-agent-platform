@@ -1,4 +1,5 @@
 import { Brain, Loader2 } from 'lucide-react'
+import { useEffect, useRef } from 'react'
 import {
   Card,
   CardContent,
@@ -14,11 +15,21 @@ import {
  */
 export function AnalyzingView({
   progress,
+  progressText,
   title,
 }: {
   progress: number
+  progressText?: string
   title?: string
 }) {
+  const scrollRef = useRef<HTMLDivElement>(null)
+  // 思考流式：新进度到达时自动滚到底，始终展示最新分析片段。
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+    }
+  }, [progressText])
+
   return (
     <div className='space-y-4'>
       <Card>
@@ -48,9 +59,13 @@ export function AnalyzingView({
               <Brain className='size-4 text-primary' />
               实时分析输出
             </div>
-            <div className='max-h-80 min-h-32 overflow-auto px-4 py-3 font-mono text-xs leading-relaxed text-muted-foreground'>
-              {/* TODO(sse): 接入后端 SSE 流式输出，逐条追加 AI 评标分析（取标准/抽取/逐项扣分/证据定位） */}
-              分析进行中，实时输出即将接入…
+            <div
+              ref={scrollRef}
+              className='max-h-80 min-h-32 overflow-auto whitespace-pre-wrap px-4 py-3 font-mono text-xs leading-relaxed text-muted-foreground'
+            >
+              {progressText?.trim()
+                ? progressText
+                : '分析进行中，等待 AI 评标实时输出…'}
             </div>
           </div>
         </CardContent>

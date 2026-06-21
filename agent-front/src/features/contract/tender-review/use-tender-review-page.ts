@@ -83,6 +83,7 @@ export function useTenderReviewPage(
   const [query, setQuery] = useState('')
   const [timeRange, setTimeRange] = useState<HistoryTimeRange>('all')
   const [progress, setProgress] = useState(0)
+  const [progressText, setProgressText] = useState('') // 思考流式：后端实时分析进度
   const [uploadError, setUploadError] = useState(false)
   const [submitError, setSubmitError] = useState('')
   const [tenderFiles, setTenderFiles] = useState<TenderFile[]>([])
@@ -399,6 +400,7 @@ export function useTenderReviewPage(
           onUpdate: (status) => {
             if (status.progress_message) {
               setSubmitError('')
+              setProgressText(status.progress_message) // 推到 analyzing「实时分析输出」区
             }
           },
         }).then((status) => {
@@ -498,6 +500,7 @@ export function useTenderReviewPage(
     setQuery,
     setTimeRange,
     progress,
+    progressText,
     isAnalyzing: startReviewMutation.isPending,
     uploadError,
     submitError,

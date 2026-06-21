@@ -201,6 +201,19 @@ class TaskStore:
             )
             return cursor.rowcount == 1
 
+    def update_progress(self, request_id: str, message: str) -> None:
+        """思考流式：轻量更新 progress_message（评标进行中的实时分析进度，喂前端 analyzing）。
+
+        只更 progress_message、不动 status，仅作用于 ``running`` 行（已完成/失败/超时不被覆盖）。
+        flusher 高频调用（每 ~1.5s），故走最薄单条 UPDATE，不读不 merge。
+        """
+        with connect_sqlite(PLATFORM_DB_FILE, immediate=True) as connection:
+            connection.execute(
+                f"UPDATE {self.table} SET progress_message = ? "  # noqa: S608 - 字面列名
+                f"WHERE request_id = ? AND status = 'running'",
+                (message, request_id),
+            )
+
     def delete_if_idle(
         self, request_id: str, tenant: str, *, busy_status: str = "running"
     ) -> bool:

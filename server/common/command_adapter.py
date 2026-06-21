@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, Callable
 
 from server.common.agent_bridge import run_agent_full
 from server.common.json_bridge import run_agent_json
@@ -47,6 +47,7 @@ async def run_command_json(
     project_id: str | None = None,
     archive_to_results: bool = True,
     context: str | None = None,
+    on_progress: Callable[[str], None] | None = None,
     **opts: Any,
 ):
     """Invoke a Claude slash command and return structured JSON output.
@@ -61,5 +62,6 @@ async def run_command_json(
         schema_name=schema_name,
         project_id=project_id,
         archive_to_results=archive_to_results,
+        on_progress=on_progress,
         **opts,
     )

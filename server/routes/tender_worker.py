@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+from typing import Callable
 
 from server.common.command_adapter import run_command_json
 from server.common.contract import DEFAULT_OUTPUT_SCHEMA_NAME
@@ -18,7 +19,7 @@ from server.ocr.pipeline import ocr_preprocess_block
 from server.platform.logging_setup import logging_context
 from server.stores.request_store import utc_now
 from server.stores.session_store import new_conversation_id
-from server.stores.tender_task_store import upsert_tender_task
+from server.stores.tender_task_store import update_tender_progress, upsert_tender_task
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,11 @@ MAX_PENDING_TENDERS = int(os.getenv("MAX_PENDING_TENDERS", "50"))
 # 写坏 JSON（间歇性，同标重跑可成功）。audit 早有重试环，tender 此前缺失 → 单次 flaky 即失败。
 # 默认 2（共 3 次尝试，比 audit 的 1 更宽，因 tender 输出更易 flaky）；OCR 预处理只做一次不重跑。
 TENDER_CONTRACT_MAX_RETRY = int(os.getenv("TENDER_CONTRACT_MAX_RETRY", "2"))
+
+# 思考流式（轮询伪流式）：on_progress 累积 agent 文本片段；flusher 节流写 task.progress_message。
+_PROGRESS_FLUSH_SEC = float(os.getenv("TENDER_PROGRESS_FLUSH_SEC", "1.5"))  # 写 DB 节流间隔
+_PROGRESS_MAX_CHARS = int(os.getenv("TENDER_PROGRESS_MAX_CHARS", "4000"))  # progress_message 留最新尾部
+_PROGRESS_LOG_SNIPPET = 500  # 每片段落思考日志的截断长度
 
 # 评标场景 OCR 目的（治"OCR 无目的性"）：让 OCR 引擎在通用文本提取之外，重点完整、结构化地
 # 还原评分标准/评标办法/扣分细则/废标条款等【表格】——评分表是评标命脉，通用提取易丢表格行列
@@ -64,7 +70,12 @@ def admission_available() -> bool:
 
 
 async def _run_evaluation(
-    *, request_id: str, tenant: str, directory_path: str, project_id: str | None = None
+    *,
+    request_id: str,
+    tenant: str,
+    directory_path: str,
+    project_id: str | None = None,
+    on_progress: Callable[[str], None] | None = None,
 ):
     # P4：先确定性 OCR 预处理（pymupdf 直读 / 云 OCR），把底稿注入命令上下文 → 模型不再自己 Read
     # PDF（绕开模型 Read 脆弱点 + poppler 依赖）。经 to_thread 不阻塞事件循环；失败/关闭 → None 回落。
@@ -90,6 +101,7 @@ async def _run_evaluation(
                 project_id=project_id,  # 显式透传 → 结论落 results.project_id（codex P1.3）
                 conversation_id=new_conversation_id(),
                 context=context,
+                on_progress=on_progress,  # 思考流式：agent 文本片段实时回调给 worker
                 # 文本模式（与 audit 对齐）：大底稿(百页标书)下 SDK 结构化输出会 error_max_structured_
                 # output_retries；文本模式由服务端抽 JSON，对大输入更稳。配合命令里的 JSON 输出硬化。
                 structured=False,
@@ -159,6 +171,33 @@ async def _execute_inner(
                 "updated_at": started_at,
             },
         )
+        # 思考流式：on_progress 累积 agent 文本片段（含 deepseek 思考/分析）到内存；flusher 每
+        # _PROGRESS_FLUSH_SEC 把最新尾部写 task.progress_message（节流，防每片段写 DB），前端轮询取。
+        progress_state = {"text": ""}
+
+        def on_progress(text: str) -> None:
+            snippet = text.strip()
+            if not snippet:
+                return
+            progress_state["text"] = (progress_state["text"] + snippet + "\n")[-_PROGRESS_MAX_CHARS:]
+            logger.info(
+                "tender_progress",
+                extra={
+                    "request_id": request_id,
+                    "tenant": tenant or "default",
+                    "snippet": snippet[:_PROGRESS_LOG_SNIPPET],
+                },
+            )
+
+        async def _flush_progress() -> None:
+            while True:
+                await asyncio.sleep(_PROGRESS_FLUSH_SEC)
+                if progress_state["text"]:
+                    await asyncio.to_thread(
+                        update_tender_progress, request_id, progress_state["text"]
+                    )
+
+        flusher = asyncio.create_task(_flush_progress())
         try:
             payload, meta = await asyncio.wait_for(
                 _run_evaluation(
@@ -166,6 +205,7 @@ async def _execute_inner(
                     tenant=tenant,
                     directory_path=directory_path,
                     project_id=project_id,
+                    on_progress=on_progress,
                 ),
                 timeout=TENDER_TIMEOUT_SEC,
             )
@@ -244,6 +284,8 @@ async def _execute_inner(
                     "updated_at": finished_at,
                 },
             )
+        finally:
+            flusher.cancel()
 
 
 def schedule_tender_evaluation_task(
