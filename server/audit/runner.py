@@ -12,6 +12,13 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from server.common.domain_profile import (
+    DomainProfile,
+    assemble_domain_prompt,
+    load_case_block as _assemble_case_block,
+    load_rules as _assemble_rules,
+    resolve_case_dir as _assemble_resolve_case_dir,
+)
 from server.core import (
     DEFAULT_OUTPUT_SCHEMA_NAME,
     AgentRunMeta,
@@ -60,69 +67,55 @@ AUDIT_INSTRUCTIONS = """你是企业报销审核员。下方已提供本案的�
 """
 
 
-def _read_text(path: Path) -> str | None:
-    try:
-        return path.read_text(encoding="utf-8")
-    except OSError:
-        return None
+# 兜底文案：无材料 / 无规则时仍要让模型走 manual_review，而非脑补。
+CASE_MISSING_FALLBACK = "（未找到本案材料，请据此输出 manual_review）"
+RULES_MISSING_FALLBACK = "（本地规则缺失，无适用规则时输出 manual_review / rule_gap）"
+RESULT_CONTRACT = "common/audit-result.schema.json"
+
+
+def _expense_profile() -> DomainProfile:
+    """Build the expense DomainProfile from current module config.
+
+    构造时读模块全局（PROJECT_ROOT 间接、EXPENSE_RULES_DIR 直接），使测试 monkeypatch
+    这些全局后立即生效；profile 本身廉价，每次审核重建无虞。
+    """
+    return DomainProfile(
+        domain="expense",
+        instructions=AUDIT_INSTRUCTIONS,
+        rules_dir=EXPENSE_RULES_DIR,
+        request_file=CASE_REQUEST_FILE,
+        case_missing_fallback=CASE_MISSING_FALLBACK,
+        rules_missing_fallback=RULES_MISSING_FALLBACK,
+        result_contract=RESULT_CONTRACT,
+    )
+
+
+# 注册表项：供未来的域装配消费者引用（生产路径经 build_inline_audit_prompt 即时重建以尊重 monkeypatch）。
+EXPENSE_PROFILE = _expense_profile()
 
 
 def load_expense_rules() -> str:
     """Concatenate every local expense rule file, with filename provenance headers."""
-    if not EXPENSE_RULES_DIR.is_dir():
-        return ""
-    blocks: list[str] = []
-    for path in sorted(EXPENSE_RULES_DIR.glob("*.json")):
-        text = _read_text(path)
-        if text is not None:
-            blocks.append(f"### {path.name}\n{text}")
-    return "\n\n".join(blocks)
+    return _assemble_rules(EXPENSE_RULES_DIR)
 
 
 def _resolve_case_dir(directory_path: str) -> Path | None:
-    candidate = Path(directory_path)
-    resolved = (candidate if candidate.is_absolute() else PROJECT_ROOT / candidate).resolve()
-    try:
-        resolved.relative_to(PROJECT_ROOT.resolve())
-    except ValueError:
-        return None
-    return resolved if resolved.is_dir() else None
+    return _assemble_resolve_case_dir(directory_path, PROJECT_ROOT)
 
 
 def load_case_block(directory_path: str) -> str:
     """Read the case request JSON inline and list any attachments by name."""
-    case_dir = _resolve_case_dir(directory_path)
-    if case_dir is None:
-        return ""
-    blocks: list[str] = []
-    request_text = _read_text(case_dir / CASE_REQUEST_FILE)
-    if request_text is not None:
-        blocks.append(f"### {CASE_REQUEST_FILE}\n{request_text}")
-    attachments = [
-        p.name for p in sorted(case_dir.iterdir()) if p.is_file() and p.name != CASE_REQUEST_FILE
-    ]
-    if attachments:
-        listing = "\n".join(f"- {directory_path}/{name}" for name in attachments)
-        blocks.append(f"### 附件文件清单（如需查看原件可用 Read 读取）\n{listing}")
-    return "\n\n".join(blocks)
+    return _assemble_case_block(directory_path, PROJECT_ROOT, CASE_REQUEST_FILE)
 
 
 def build_inline_audit_prompt(directory_path: str, *, ocr_block: str | None = None) -> str:
     """Compose a self-contained audit prompt: instructions + case materials + all rules.
 
     ``ocr_block``（P4）：附件的确定性 OCR/直读底稿（发票/收据等）；有则注入，模型无需再 Read。
+    经 ``assemble_domain_prompt`` 通用装配（expense 域 profile）；输出与旧专版字节一致。
     """
-    case_block = load_case_block(directory_path) or "（未找到本案材料，请据此输出 manual_review）"
-    rules_block = load_expense_rules() or "（本地规则缺失，无适用规则时输出 manual_review / rule_gap）"
-    ocr_section = (
-        f"\n\n=== 附件 OCR/直读底稿（确定性预处理，优先用此文本，无需再 Read）===\n{ocr_block}"
-        if ocr_block
-        else ""
-    )
-    return (
-        f"{AUDIT_INSTRUCTIONS}\n"
-        f"=== 本案材料 ===\n{case_block}{ocr_section}\n\n"
-        f"=== 本地规则（唯一依据）===\n{rules_block}\n"
+    return assemble_domain_prompt(
+        _expense_profile(), directory_path, project_root=PROJECT_ROOT, ocr_block=ocr_block
     )
 
 
