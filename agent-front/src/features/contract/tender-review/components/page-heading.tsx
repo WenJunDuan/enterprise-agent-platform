@@ -16,6 +16,10 @@ const headingCopy: Record<TenderReviewScreen, { title: string; desc: string }> =
       title: '历史评审',
       desc: '已完成的评审项目，可查看分析中心与完整审核报告。',
     },
+    analyzing: {
+      title: '开始分析',
+      desc: '正在分析投标文件，实时输出评标过程。',
+    },
     analysis: {
       title: '分析中心',
       desc: '查看评审要点、评分对比和投标文件原文。',

@@ -1,5 +1,6 @@
 import type { useTenderReviewPage } from '../use-tender-review-page'
 import { AnalysisWorkbenchView } from './analysis-workbench-view'
+import { AnalyzingView } from './analyzing-view'
 import { CreateReviewView } from './create-review-view'
 import { DashboardView } from './dashboard-view'
 import { HistoryView } from './history-view'
@@ -45,6 +46,13 @@ export function ScreenContent({ page }: { page: TenderReviewPageState }) {
           onUpdateBidderName={page.updateBidderName}
           onAddBidderFile={page.addBidderFile}
           onRemoveBidderFile={page.removeBidderFile}
+        />
+      )
+    case 'analyzing':
+      return (
+        <AnalyzingView
+          progress={page.progress}
+          title={page.projectForm.title ?? undefined}
         />
       )
     case 'history':

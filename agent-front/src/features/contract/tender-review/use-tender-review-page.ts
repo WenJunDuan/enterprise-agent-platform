@@ -248,6 +248,7 @@ export function useTenderReviewPage(
     onError: (error) => {
       setSubmitError(error instanceof Error ? error.message : '分析失败，请稍后重试。')
       setProgress(0)
+      setScreen('create') // 乐观跳 analyzing 后提交失败 → 回 create 显示错误，让用户重试
     },
   })
 
@@ -356,6 +357,7 @@ export function useTenderReviewPage(
     setUploadError(false)
     setSubmitError('')
     setProgress(0)
+    setScreen('analyzing') // 乐观跳第三步"开始分析"界面；提交在后台跑，失败由 onError 回 create
     startReviewMutation.mutate()
   }
 
