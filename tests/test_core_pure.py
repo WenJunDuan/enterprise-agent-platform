@@ -352,6 +352,19 @@ class TestNormalizeAuditResult:
         assert names == ["anomaly"]  # 'compliance' 非枚举被清
         assert out["risk_dimensions"][0]["score"] == 6  # 0-100 → 0-10
 
+    def test_manual_review_reason_stripped_when_not_manual_review(self):
+        # 模型在 approved/rejected 时偶带 manual_review_reason → 应剥离，避免脏枚举残留。
+        out = _oc.normalize_audit_result(
+            {"verdict": "rejected", "manual_review_reason": "data_conflict"}, request_id="r"
+        )
+        assert "manual_review_reason" not in out
+
+    def test_manual_review_reason_kept_when_manual_review(self):
+        out = _oc.normalize_audit_result(
+            {"verdict": "manual_review", "manual_review_reason": "data_conflict"}, request_id="r"
+        )
+        assert out["manual_review_reason"] == "data_conflict"
+
     def test_full_pipeline_validates_live_failure_shape(self):
         """复现 live eval 的失败输出（缺 claim_id/metadata + 对象 risk_dimensions）→ 经
         apply_schema_semantics 应通过硬校验并补全/派生，不再抛 'claim_id is required'。"""
