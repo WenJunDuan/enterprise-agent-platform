@@ -1,0 +1,7 @@
+sprint_slug: 2026-06-20-external-source-mode
+worktrees:
+  - name: "agent-ab48b114f14b94af4"
+    path: ""
+    branch: ""
+    created_at: "2026-06-20T15:22:29.819Z"
+    status: active
