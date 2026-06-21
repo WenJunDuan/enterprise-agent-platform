@@ -139,6 +139,26 @@ def test_falsy_disqualification_does_not_coerce(disq):
     assert out["verdict"] == "approved"
 
 
+def test_evidence_chain_extra_fields_normalized_not_rejected():
+    """R3：evidence_chain 项含未知字段(rule_ref/relevance)或漏 conclusion → 归一到
+    {source,finding,conclusion} 而非整单契约失败（实测 qwen/deepseek 评标反复挂 `evidence_chain/N`）。"""
+    out = apply_schema_semantics(
+        DEFAULT_OUTPUT_SCHEMA_NAME,
+        _valid_audit_result(
+            evidence_chain=[
+                {"source": "招标文件第14页", "finding": "实质性未响应", "rule_ref": "tender_evalmethod_005"},
+                {"source": "p.62", "finding": "评分标准", "relevance": "不适用本项目"},
+            ]
+        ),
+    )
+    ec = out["evidence_chain"]
+    assert len(ec) == 2
+    for item in ec:
+        assert set(item.keys()) == {"source", "finding", "conclusion"}  # 未知字段已剥
+    assert ec[0]["source"] == "招标文件第14页"
+    assert ec[0]["conclusion"] == ""  # 缺失必填补空串
+
+
 @pytest.mark.parametrize("status", ["FAIL", "fail ", " Fail"])
 def test_eligibility_fail_case_insensitive_coerces(status):
     """codex R2 P2：eligibility status 大小写/空白容错（FAIL/fail /Fail 均算 fail→rejected）。"""
