@@ -86,8 +86,10 @@ logger = logging.getLogger(__name__)
 # P1-2: 强引用集防 fire-and-forget OCR 任务被 GC 回收；done 后自清（镜像 tender_worker._BACKGROUND_TASKS）。
 _UPLOAD_OCR_TASKS: set[asyncio.Task[None]] = set()
 
-# P1-2: 上传即 OCR 并发上限（云 OCR 有限流；本地并行也消耗内存）；OCR_PREWARM_MAX env 可调，默认 2。
-_UPLOAD_OCR_SEMAPHORE = asyncio.Semaphore(int(__import__("os").getenv("OCR_PREWARM_MAX", "2")))
+# P1-2: 上传即 OCR 并发上限（云 OCR 有限流；本地并行也消耗内存）；OCR_PREWARM_MAX env 可调。
+# R4-B 提速：默认 2→4（招标 + 多投标同时 OCR，多家上传不再串行排队）。云 PaddleOCR(aistudio) 限流时
+# 可经 .env 调回/再调高（实测云端并发上限后定值）。
+_UPLOAD_OCR_SEMAPHORE = asyncio.Semaphore(int(__import__("os").getenv("OCR_PREWARM_MAX", "4")))
 
 
 def _track_upload_ocr_task(task: asyncio.Task[None]) -> None:

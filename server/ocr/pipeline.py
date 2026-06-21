@@ -39,11 +39,14 @@ OCR_PREPROCESS = os.getenv("OCR_PREPROCESS", "1").lower() in {"1", "true", "yes"
 # 甚至撞 TENDER_TIMEOUT_SEC；多文件并行把墙钟从"求和"压到"最慢单个"。数字 PDF 走 native 本就快。
 # 受云服务并发上限约束，默认 4 保守（防触发云限流）；高并发云 / 全本地可经 env 调大。
 def _ocr_max_workers() -> int:
-    """防御解析 OCR_MAX_WORKERS：非法值回退默认、clamp ≥1（防 0/负数破坏 ThreadPoolExecutor，codex P2-5）。"""
+    """防御解析 OCR_MAX_WORKERS：非法值回退默认、clamp ≥1（防 0/负数破坏 ThreadPoolExecutor，codex P2-5）。
+
+    R4-B 提速：默认 4→6（一份文档多文件并行 OCR 把墙钟压到"最慢单个"）。env OCR_MAX_WORKERS 可调。
+    """
     try:
-        value = int(os.getenv("OCR_MAX_WORKERS", "4"))
+        value = int(os.getenv("OCR_MAX_WORKERS", "6"))
     except (TypeError, ValueError):
-        return 4
+        return 6
     return max(1, value)
 
 
