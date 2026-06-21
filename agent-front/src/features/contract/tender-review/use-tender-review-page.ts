@@ -432,6 +432,43 @@ export function useTenderReviewPage(
     setScreen('analysis')
   }
 
+  /**
+   * B-C 修复：从列表点开项目时按状态路由——仍在评标中（有未终态投标）→ 重进「分析中」界面并
+   * 重建 activeEval 让独立轮询 re-attach（恢复实时进度），而非落到空的分析中心；已全部完成 → 进
+   * 分析中心。治"返回列表再回到分析中的界面，回不到真正的分析中的界面"。
+   *
+   * 取项目详情失败 / 无投标 → 安全回退到 openAnalysis（分析中心）。
+   */
+  async function resumeOrOpenProject(projectId: string) {
+    setSelectedProjectId(projectId)
+    try {
+      const detail = await queryClient.fetchQuery({
+        queryKey: ['tender-project', projectId],
+        queryFn: () => getTenderProject(projectId),
+      })
+      const bids = detail.bids ?? []
+      const inProgress = bids.filter(
+        (bid) => bid.status !== 'completed' && bid.status !== 'failed'
+      )
+      if (inProgress.length > 0) {
+        // 重建进行中态 → activeEvalQuery（按 requestIds）re-attach 轮询，analyzing 屏恢复实时进度。
+        setProgressByRid({})
+        setProgress(30)
+        setActiveEval({
+          projectId,
+          requestIds: inProgress.map((bid) => bid.request_id),
+          hasCompare: bids.length >= 2,
+        })
+        setReviewMode(bids.length >= 2 ? 'compare' : 'detail')
+        setScreen('analyzing')
+        return
+      }
+    } catch {
+      // 详情拉取失败 → 回退分析中心（不阻断用户打开项目）
+    }
+    openAnalysis('detail', projectId)
+  }
+
   function openReport(projectId = selectedProjectIdForQuery) {
     if (projectId) setSelectedProjectId(projectId)
     setScreen('report')
@@ -773,6 +810,7 @@ export function useTenderReviewPage(
     addBidderFile,
     removeBidderFile,
     openAnalysis,
+    resumeOrOpenProject,
     openReport,
     batchDeleteProjects,
     batchRetryProjects,

@@ -15,7 +15,7 @@ export function ScreenContent({ page }: { page: TenderReviewPageState }) {
         <DashboardView
           summary={page.viewModel.summary}
           projects={page.viewModel.data.projects}
-          onOpenProject={(projectId) => page.openAnalysis('detail', projectId)}
+          onOpenProject={(projectId) => page.resumeOrOpenProject(projectId)}
           onCreateReview={() => page.setScreen('create')}
           onBatchDelete={page.batchDeleteProjects}
           onBatchRetry={page.batchRetryProjects}
@@ -73,7 +73,7 @@ export function ScreenContent({ page }: { page: TenderReviewPageState }) {
           history={page.viewModel.history}
           onQuery={page.setQuery}
           onTimeRange={page.setTimeRange}
-          onAnalysis={(projectId) => page.openAnalysis('detail', projectId)}
+          onAnalysis={(projectId) => page.resumeOrOpenProject(projectId)}
           onReport={(projectId) => page.openReport(projectId)}
         />
       )
