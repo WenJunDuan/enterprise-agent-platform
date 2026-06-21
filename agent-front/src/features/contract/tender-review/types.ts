@@ -9,6 +9,12 @@ export type TenderReviewScreen =
 export type TenderReviewMode = 'detail' | 'compare'
 export type ReviewCategory = 'qual' | 'tech' | 'comm'
 export type ReviewItemStatus = 'pass' | 'warning' | 'fail'
+export type TenderResultVerdict = 'approved' | 'rejected' | 'manual_review' | string
+export type TenderScoringStatus =
+  | 'scored'
+  | 'manual_review'
+  | 'rejected'
+  | string
 
 export type TenderProject = {
   id: string
@@ -63,6 +69,33 @@ export type ReviewCategoryData = {
   items: ReviewItem[]
 }
 
+export type TenderScoringItem = {
+  id: string
+  item: string
+  max: number
+  score: number | null
+  status: TenderScoringStatus
+  basis: string
+  category: ReviewCategory
+}
+
+export type TenderScoreIssue = {
+  item: string
+  max: number
+  score: number | null
+  status: TenderScoringStatus
+  deduction: number | null
+  basis: string
+}
+
+export type TenderScoreSummary = {
+  maxTotal: number
+  earnedTotal: number
+  deductedItems: TenderScoreIssue[]
+  rejectedItems: TenderScoreIssue[]
+  pendingItems: TenderScoreIssue[]
+}
+
 export type DocumentParagraph = {
   loc: number
   label: string
@@ -96,6 +129,12 @@ export type TenderReviewMockData = {
   categories: ReviewCategoryData[]
   paragraphs: DocumentParagraph[]
   compareGroups: CompareGroup[]
+  resultVerdict?: TenderResultVerdict
+  resultExplanation?: string
+  resultReasons?: string[]
+  resultPolicyRefs?: string[]
+  scoringItems?: TenderScoringItem[]
+  scoreSummary?: TenderScoreSummary
   compareNotice?: {
     stale: boolean
     provisional: boolean

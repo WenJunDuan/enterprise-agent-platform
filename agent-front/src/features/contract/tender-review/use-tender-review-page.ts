@@ -1,5 +1,10 @@
 import { useMemo, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  useMutation,
+  useQueries,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query'
 import {
   createTenderProject,
   deleteTenderTask,
@@ -14,6 +19,7 @@ import {
   waitForTenderCompare,
   waitForTenderTask,
   type TenderProjectCreateRequest,
+  type TenderProjectDetailResponse,
 } from './api'
 import {
   buildDashboardSummary,
@@ -108,6 +114,22 @@ export function useTenderReviewPage(
     enabled: shouldLoadSelectedProject,
   })
 
+  const projectDetailById = useQueries({
+    queries: (projectsQuery.data ?? []).map((project) => ({
+      queryKey: ['tender-project', project.project_id],
+      queryFn: () => getTenderProject(project.project_id),
+      enabled: Boolean(projectsQuery.data),
+      staleTime: 5000,
+    })),
+    combine: (results) => {
+      const details = new Map<string, TenderProjectDetailResponse>()
+      results.forEach((result) => {
+        if (result.data) details.set(result.data.project_id, result.data)
+      })
+      return details
+    },
+  })
+
   const resultsQuery = useQuery({
     queryKey: ['tender-project-results', selectedProjectIdForQuery],
     queryFn: () => listTenderProjectResults(selectedProjectIdForQuery, { limit: 200 }),
@@ -117,10 +139,12 @@ export function useTenderReviewPage(
   const compareQuery = useQuery({
     queryKey: ['tender-project-compare', selectedProjectIdForQuery],
     queryFn: () => getTenderCompareOrNull(selectedProjectIdForQuery),
-    enabled: shouldLoadSelectedProject,
+    enabled:
+      shouldLoadSelectedProject && (projectDetailQuery.data?.bidder_count ?? 0) >= 2,
     refetchInterval: (query) => {
       const compare = query.state.data
-      return compare == null || compare.stale ? 3000 : false
+      if (compare == null) return false
+      return compare.stale ? 3000 : false
     },
   })
 
@@ -154,10 +178,11 @@ export function useTenderReviewPage(
     return rawProjects.map((project) =>
       selectedDetail?.project_id === project.project_id
         ? mapTenderProject(selectedDetail, compare, summaries)
-        : mapTenderProject(project)
+        : mapTenderProject(projectDetailById.get(project.project_id) ?? project)
     )
   }, [
     compareQuery.data,
+    projectDetailById,
     projectDetailQuery.data,
     projectsQuery.data,
     resultsQuery.data,
@@ -176,6 +201,7 @@ export function useTenderReviewPage(
 
   const selectedProject =
     projectDetailQuery.data ??
+    projectDetailById.get(selectedProjectIdForQuery) ??
     projectsQuery.data?.find((project) => project.project_id === selectedProjectIdForQuery) ??
     null
   const viewData = useMemo(

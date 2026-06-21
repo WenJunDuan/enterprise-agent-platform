@@ -1,8 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Copy, RotateCcw } from 'lucide-react'
-import { Header } from '@/components/layout/header'
-import { Main } from '@/components/layout/main'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import {
@@ -12,10 +10,13 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import { Header } from '@/components/layout/header'
+import { Main } from '@/components/layout/main'
 import { getTask, getTaskResult, retryTask } from './api'
 import {
   formatDate,
   normalizeRiskDimensions,
+  riskDimensionLabels,
   toDisplayText,
 } from './format'
 import { getSubmissionSummary } from './lib/submission-summary'
@@ -25,7 +26,8 @@ import type { AuditResult, AuditTask } from './types'
 function RiskScore({ score }: { score?: number }) {
   if (score == null) return null
   const pct = Math.max(0, Math.min(100, score))
-  const tone = pct >= 70 ? 'bg-destructive' : pct >= 40 ? 'bg-amber-500' : 'bg-emerald-500'
+  const tone =
+    pct >= 70 ? 'bg-destructive' : pct >= 40 ? 'bg-amber-500' : 'bg-emerald-500'
   return (
     <div className='space-y-2'>
       <div className='flex items-center justify-between text-sm'>
@@ -45,7 +47,9 @@ function StatusBanner({ task }: { task: AuditTask }) {
       <Alert>
         <RotateCcw className='size-4 animate-spin' />
         <AlertTitle>审核运行中</AlertTitle>
-        <AlertDescription>{task.progress_message || '审核服务正在处理材料。'}</AlertDescription>
+        <AlertDescription>
+          {task.progress_message || '审核服务正在处理材料。'}
+        </AlertDescription>
       </Alert>
     )
   }
@@ -54,7 +58,9 @@ function StatusBanner({ task }: { task: AuditTask }) {
     return (
       <Alert variant='destructive'>
         <AlertTitle>审核失败</AlertTitle>
-        <AlertDescription>{task.error_detail || '任务执行失败，请稍后重试。'}</AlertDescription>
+        <AlertDescription>
+          {task.error_detail || '任务执行失败，请稍后重试。'}
+        </AlertDescription>
       </Alert>
     )
   }
@@ -87,22 +93,20 @@ function ResultCards({ result }: { result: AuditResult }) {
         </CardHeader>
         <CardContent className='space-y-4'>
           {result.explanation ? (
-            <p className='text-sm leading-6 text-muted-foreground'>{result.explanation}</p>
+            <p className='text-sm leading-6 text-muted-foreground'>
+              {result.explanation}
+            </p>
           ) : null}
           <RiskScore score={result.risk_score} />
-          {result.manual_review_reason ? (
-            <Alert>
-              <AlertTitle>人工复核原因</AlertTitle>
-              <AlertDescription>{result.manual_review_reason}</AlertDescription>
-            </Alert>
-          ) : null}
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
           <CardTitle>风险维度</CardTitle>
-          <CardDescription>按 0-10 量纲展示模型返回的分项风险。</CardDescription>
+          <CardDescription>
+            按 0-10 量纲展示模型返回的分项风险。
+          </CardDescription>
         </CardHeader>
         <CardContent className='space-y-3'>
           {dimensions.length === 0 ? (
@@ -111,11 +115,16 @@ function ResultCards({ result }: { result: AuditResult }) {
             dimensions.map((dimension) => (
               <div key={dimension.name} className='space-y-1'>
                 <div className='flex justify-between text-sm'>
-                  <span>{dimension.name}</span>
+                  <span>
+                    {riskDimensionLabels[dimension.name] ?? dimension.name}
+                  </span>
                   <span className='font-medium'>{dimension.score}/10</span>
                 </div>
                 <div className='h-2 overflow-hidden rounded-full bg-muted'>
-                  <div className='h-full bg-primary' style={{ width: `${dimension.score * 10}%` }} />
+                  <div
+                    className='h-full bg-primary'
+                    style={{ width: `${dimension.score * 10}%` }}
+                  />
                 </div>
               </div>
             ))
@@ -130,7 +139,8 @@ function EvidenceCards({ result }: { result: AuditResult }) {
   const reasons = result.reasons ?? []
   const refs = result.policy_refs ?? []
   const evidence = result.evidence_chain ?? []
-  if (reasons.length === 0 && refs.length === 0 && evidence.length === 0) return null
+  if (reasons.length === 0 && refs.length === 0 && evidence.length === 0)
+    return null
 
   return (
     <Card>
@@ -139,38 +149,60 @@ function EvidenceCards({ result }: { result: AuditResult }) {
         <CardDescription>保留本地制度引用、审核理由和证据链。</CardDescription>
       </CardHeader>
       <CardContent className='space-y-3'>
-        {reasons.length > 0 ? (
+        {reasons.length > 0 || evidence.length > 0 ? (
           <details open className='rounded-md border p-4'>
-            <summary className='cursor-pointer font-medium'>审核理由（{reasons.length}）</summary>
-            <ul className='mt-3 space-y-2 text-sm text-muted-foreground'>
-              {reasons.map((reason, index) => (
-                <li key={`${index}-${toDisplayText(reason)}`}>{toDisplayText(reason)}</li>
-              ))}
-            </ul>
+            <summary className='cursor-pointer font-medium'>
+              审核理由与证据链（{reasons.length + evidence.length}）
+            </summary>
+            <div className='mt-3 space-y-4'>
+              {reasons.length > 0 ? (
+                <ul className='space-y-2 text-sm text-muted-foreground'>
+                  {reasons.map((reason, index) => (
+                    <li key={`${index}-${toDisplayText(reason)}`}>
+                      {toDisplayText(reason)}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              {evidence.length > 0 ? (
+                <div className='space-y-3'>
+                  {evidence.map((item, index) => (
+                    <div
+                      key={index}
+                      className='rounded-md bg-muted/40 p-3 text-sm'
+                    >
+                      {item.source ? (
+                        <div className='font-medium'>{item.source}</div>
+                      ) : null}
+                      {item.finding ? (
+                        <div className='mt-1 text-muted-foreground'>
+                          {item.finding}
+                        </div>
+                      ) : null}
+                      {item.conclusion ? (
+                        <div className='mt-1 text-xs text-muted-foreground'>
+                          {item.conclusion}
+                        </div>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
           </details>
         ) : null}
         {refs.length > 0 ? (
           <details className='rounded-md border p-4'>
-            <summary className='cursor-pointer font-medium'>策略引用（{refs.length}）</summary>
+            <summary className='cursor-pointer font-medium'>
+              策略引用（{refs.length}）
+            </summary>
             <ul className='mt-3 space-y-2 font-mono text-xs text-muted-foreground'>
               {refs.map((ref, index) => (
-                <li key={`${index}-${toDisplayText(ref)}`}>{toDisplayText(ref)}</li>
+                <li key={`${index}-${toDisplayText(ref)}`}>
+                  {toDisplayText(ref)}
+                </li>
               ))}
             </ul>
-          </details>
-        ) : null}
-        {evidence.length > 0 ? (
-          <details className='rounded-md border p-4'>
-            <summary className='cursor-pointer font-medium'>证据链（{evidence.length}）</summary>
-            <div className='mt-3 space-y-3'>
-              {evidence.map((item, index) => (
-                <div key={index} className='rounded-md bg-muted/40 p-3 text-sm'>
-                  {item.source ? <div className='font-medium'>{item.source}</div> : null}
-                  {item.finding ? <div className='mt-1 text-muted-foreground'>{item.finding}</div> : null}
-                  {item.conclusion ? <div className='mt-1 text-xs text-muted-foreground'>{item.conclusion}</div> : null}
-                </div>
-              ))}
-            </div>
           </details>
         ) : null}
       </CardContent>
@@ -186,10 +218,14 @@ export function AuditTaskDetailPage({ taskId }: { taskId: string }) {
     queryKey: ['audit-task', taskId],
     queryFn: () => getTask(taskId),
     refetchInterval:
-      taskId && taskId.length > 0 && taskId !== '-' ? (query) => {
-        const task = query.state.data
-        return task?.status === 'completed' || task?.status === 'failed' ? false : 3000
-      } : false,
+      taskId && taskId.length > 0 && taskId !== '-'
+        ? (query) => {
+            const task = query.state.data
+            return task?.status === 'completed' || task?.status === 'failed'
+              ? false
+              : 3000
+          }
+        : false,
   })
 
   const resultQuery = useQuery({
@@ -203,7 +239,7 @@ export function AuditTaskDetailPage({ taskId }: { taskId: string }) {
     await navigator.clipboard.writeText(taskId)
   }
 
-  /** C②: "重新审核" stays in the detail card; "删除任务" is removed */
+  /** C②: "删除任务" is removed; retry remains available from the task status card. */
   async function runRetry() {
     setAction('retry')
     try {
@@ -223,7 +259,7 @@ export function AuditTaskDetailPage({ taskId }: { taskId: string }) {
           <h1 className='text-2xl font-semibold tracking-tight'>任务详情</h1>
           {/* C④: 完整显示任务 ID（不截断），其后跟小复制 icon */}
           <div className='flex items-center gap-1.5'>
-            <span className='break-all font-mono text-sm text-muted-foreground'>
+            <span className='font-mono text-sm break-all text-muted-foreground'>
               {taskId}
             </span>
             <Button
@@ -243,7 +279,9 @@ export function AuditTaskDetailPage({ taskId }: { taskId: string }) {
           <Alert variant='destructive'>
             <AlertTitle>任务加载失败</AlertTitle>
             <AlertDescription>
-              {taskQuery.error instanceof Error ? taskQuery.error.message : '加载失败'}
+              {taskQuery.error instanceof Error
+                ? taskQuery.error.message
+                : '加载失败'}
             </AlertDescription>
           </Alert>
         ) : null}
@@ -251,12 +289,25 @@ export function AuditTaskDetailPage({ taskId }: { taskId: string }) {
         {taskQuery.data ? (
           <>
             <Card>
-              <CardHeader className='gap-3 md:flex-row md:items-start md:justify-between'>
-                <div>
+              <CardHeader className='flex flex-row items-center justify-between gap-3'>
+                <div className='min-w-0'>
                   <CardDescription>任务状态</CardDescription>
-                  <CardTitle>{summary?.form.case_id ?? taskQuery.data.claim_id ?? taskId}</CardTitle>
+                  <CardTitle className='break-all'>
+                    {summary?.form.case_id ?? taskQuery.data.claim_id ?? taskId}
+                  </CardTitle>
                 </div>
-                <TaskStatusBadge status={taskQuery.data.status} />
+                <div className='flex shrink-0 items-center gap-2'>
+                  <TaskStatusBadge status={taskQuery.data.status} />
+                  <Button
+                    variant='outline'
+                    size='sm'
+                    disabled={action === 'retry'}
+                    onClick={runRetry}
+                  >
+                    <RotateCcw className='size-4' />
+                    重新审核
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent className='space-y-4'>
                 <StatusBanner task={taskQuery.data} />
@@ -278,27 +329,22 @@ export function AuditTaskDetailPage({ taskId }: { taskId: string }) {
                     <div>{formatDate(taskQuery.data.updated_at)}</div>
                   </div>
                 </div>
-                {/* C②: "重新审核"挪进详情卡；"删除任务"已移除 */}
-                <div className='flex flex-wrap gap-2'>
-                  <Button
-                    variant='outline'
-                    disabled={action === 'retry'}
-                    onClick={runRetry}
-                  >
-                    <RotateCcw className='size-4' />
-                    重新审核
-                  </Button>
-                </div>
               </CardContent>
             </Card>
 
             {/* C③: 移除"提交摘要"区块 */}
-            {resultQuery.data ? <ResultCards result={resultQuery.data} /> : null}
-            {resultQuery.data ? <EvidenceCards result={resultQuery.data} /> : null}
+            {resultQuery.data ? (
+              <ResultCards result={resultQuery.data} />
+            ) : null}
+            {resultQuery.data ? (
+              <EvidenceCards result={resultQuery.data} />
+            ) : null}
           </>
         ) : taskQuery.isLoading ? (
           <Card>
-            <CardContent className='py-12 text-center text-muted-foreground'>正在加载任务...</CardContent>
+            <CardContent className='py-12 text-center text-muted-foreground'>
+              正在加载任务...
+            </CardContent>
           </Card>
         ) : null}
       </Main>

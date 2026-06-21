@@ -161,20 +161,45 @@ function DetailWorkbench(props: AnalysisWorkbenchViewProps) {
   const activeLoc = activeItem?.loc ?? -1
   const scoreBlocks = getScoreBlocks(props.data)
   const reviewStats = getReviewStats(props.data.categories, selectedBidder)
+  const scoreSummary = props.data.scoreSummary ?? emptyScoreSummary
 
   return (
-    <div className='grid min-h-[620px] xl:grid-cols-[288px_minmax(0,1.2fr)_minmax(340px,1fr)]'>
-      <aside className='border-b bg-muted/20 p-5 xl:border-r xl:border-b-0'>
+    <div className='grid min-h-[620px] xl:h-[calc(100vh-220px)] xl:min-h-[620px] xl:grid-cols-[288px_minmax(0,1.2fr)_minmax(340px,1fr)]'>
+      <aside className='min-h-0 overflow-y-auto border-b bg-muted/20 p-5 xl:border-r xl:border-b-0'>
         <div className='rounded-xl border bg-card p-5 text-center shadow-sm'>
-          <div className='text-xs font-medium text-muted-foreground'>综合得分</div>
+          <div className='text-xs font-medium text-muted-foreground'>评分汇总</div>
           <div className='mt-1 text-5xl font-semibold tracking-tight text-primary'>
-            {selectedBidder.total}
+            {formatScoreValue(scoreSummary.earnedTotal)}
           </div>
-          <div className='text-xs text-muted-foreground'>/ 100 分</div>
-          <Badge className='mt-3 bg-emerald-100 text-emerald-700 hover:bg-emerald-100'>
-            <Award className='size-3' />
-            排名第 {selectedBidder.rank} / {props.data.reviewBidders.length}
-          </Badge>
+          <div className='text-xs text-muted-foreground'>
+            / {formatScoreValue(scoreSummary.maxTotal)} 分
+          </div>
+          <div className='mt-3 grid grid-cols-2 gap-2 text-left text-xs'>
+            <div className='rounded-lg bg-muted/50 p-2'>
+              <div className='text-muted-foreground'>扣分/未得分</div>
+              <div className='mt-1 font-semibold'>
+                {scoreSummary.deductedItems.length +
+                  scoreSummary.rejectedItems.length}{' '}
+                项
+              </div>
+            </div>
+            <div className='rounded-lg bg-muted/50 p-2'>
+              <div className='text-muted-foreground'>待人工输入</div>
+              <div className='mt-1 font-semibold'>
+                {scoreSummary.pendingItems.length} 项
+              </div>
+            </div>
+          </div>
+          {props.data.resultVerdict !== 'rejected' ? (
+            <Badge className='mt-3 bg-emerald-100 text-emerald-700 hover:bg-emerald-100'>
+              <Award className='size-3' />
+              排名第 {selectedBidder.rank} / {props.data.reviewBidders.length}
+            </Badge>
+          ) : (
+            <Badge className='mt-3 bg-red-100 text-red-700 hover:bg-red-100'>
+              整标废标
+            </Badge>
+          )}
         </div>
 
         <div className='mt-5 space-y-4'>
@@ -214,8 +239,8 @@ function DetailWorkbench(props: AnalysisWorkbenchViewProps) {
         </div>
       </aside>
 
-      <section className='min-w-0 border-b xl:border-r xl:border-b-0'>
-        <div className='flex gap-1 overflow-x-auto px-5 pt-4'>
+      <section className='flex min-h-0 min-w-0 flex-col border-b xl:border-r xl:border-b-0'>
+        <div className='flex shrink-0 gap-1 overflow-x-auto px-5 pt-4'>
           {props.data.categories.map((category) => (
             <button
               key={category.key}
@@ -235,7 +260,7 @@ function DetailWorkbench(props: AnalysisWorkbenchViewProps) {
             </button>
           ))}
         </div>
-        <div className='space-y-3 p-5'>
+        <div className='min-h-0 flex-1 space-y-3 overflow-y-auto p-5'>
           {activeCategory.items.map((item, index) => (
             <ReviewItemCard
               key={item.id}
@@ -248,17 +273,17 @@ function DetailWorkbench(props: AnalysisWorkbenchViewProps) {
         </div>
       </section>
 
-      <section className='min-w-0 bg-muted/20'>
-        <div className='border-b px-5 py-4'>
+      <section className='flex min-h-0 min-w-0 flex-col bg-muted/20'>
+        <div className='shrink-0 border-b px-5 py-4'>
           <div className='flex items-center gap-2 text-sm font-semibold'>
             <FileText className='size-4 text-violet-600' />
-            投标文件原文
+            证据与底稿
           </div>
           <div className='mt-1 text-xs text-muted-foreground'>
-            {selectedBidder.name} · 点击左侧要点自动定位证据
+            {selectedBidder.name} · 点击左侧要点自动定位依据
           </div>
         </div>
-        <div className='max-h-[560px] space-y-3 overflow-y-auto p-5'>
+        <div className='min-h-0 flex-1 space-y-3 overflow-y-auto p-5'>
           {props.data.paragraphs.map((paragraph) => {
             const active = paragraph.loc === activeLoc
             return (
@@ -336,6 +361,22 @@ function ReviewItemCard({
         <span className='mt-1 block text-sm leading-6 text-muted-foreground'>
           {item.desc}
         </span>
+        {typeof item.max === 'number' ? (
+          <span className='mt-3 grid grid-cols-3 gap-2 rounded-lg bg-muted/40 p-2 text-xs'>
+            <span>
+              <span className='block text-muted-foreground'>满分</span>
+              <b>{formatScoreValue(item.max)}</b>
+            </span>
+            <span>
+              <span className='block text-muted-foreground'>实得</span>
+              <b>{item.got == null ? '待判定' : formatScoreValue(item.got)}</b>
+            </span>
+            <span>
+              <span className='block text-muted-foreground'>扣分</span>
+              <b>{getDeductionLabel(item)}</b>
+            </span>
+          </span>
+        ) : null}
         <span className='mt-2 flex gap-2 rounded-lg bg-primary/5 p-2 text-xs leading-5 text-primary'>
           <Brain className='mt-0.5 size-3 shrink-0' />
           <span>
@@ -545,6 +586,23 @@ function getScoreBlocks(data: TenderReviewMockData) {
       }
     })
     .filter((block) => block.max > 0)
+}
+
+const emptyScoreSummary = {
+  maxTotal: 0,
+  earnedTotal: 0,
+  deductedItems: [],
+  rejectedItems: [],
+  pendingItems: [],
+}
+
+function getDeductionLabel(item: ReviewItem) {
+  if (item.got == null || item.max == null) return '待人工'
+  return formatScoreValue(Math.max(0, item.max - item.got))
+}
+
+function formatScoreValue(score: number) {
+  return Number.isInteger(score) ? String(score) : score.toFixed(1)
 }
 
 function getReviewStats(
