@@ -13,6 +13,7 @@ from typing import Any, Callable
 from claude_agent_sdk import (
     AssistantMessage,
     ResultMessage,
+    StreamEvent,
     SystemMessage,
     TextBlock,
     query,
@@ -96,6 +97,22 @@ def _apply_result_message_text(
     return None, None
 
 
+def _stream_event_text(event: StreamEvent) -> str:
+    """Extract incremental text from a partial StreamEvent (Anthropic content_block_delta).
+
+    遗留①：include_partial_messages 开时，端点逐字吐 ``content_block_delta``，delta.type 为
+    ``text_delta``(正文) 或 ``thinking_delta``(扩展思考)。取其增量文本喂进度流；其它事件
+    （message_start/content_block_start/...）返回空串忽略。
+    """
+    raw = getattr(event, "event", None)
+    if not isinstance(raw, dict) or raw.get("type") != "content_block_delta":
+        return ""
+    delta = raw.get("delta")
+    if not isinstance(delta, dict):
+        return ""
+    return str(delta.get("text") or delta.get("thinking") or "")
+
+
 async def run_agent_json(
     prompt: str,
     conversation_id: str | None = None,
@@ -156,6 +173,9 @@ async def run_agent_json(
         final_structured_output: StructuredJSON | None = None
         text_accum: list[str] = []
 
+        # 遗留①：include_partial_messages 开时端点逐字吐 StreamEvent partial。saw_partial 标记本轮
+        # assistant 是否已逐字流过 → 随后完整 AssistantMessage 不再整段重发 on_progress（防重复）。
+        saw_partial = False
         try:
             async for message in query(prompt=prompt, options=options):
                 session_logger.log_message(message)
@@ -166,20 +186,37 @@ async def run_agent_json(
                     )
                     continue
 
+                if isinstance(message, StreamEvent):
+                    # 思考流式实时（遗留①）：取 content_block_delta 的 text/thinking 增量喂 on_progress
+                    # （仅展示，**不进 text_accum**——权威全文由随后完整 AssistantMessage 给，避免重复）。
+                    if on_progress is not None:
+                        delta_text = _stream_event_text(message)
+                        if delta_text:
+                            saw_partial = True
+                            try:
+                                on_progress(delta_text)
+                            except Exception:  # noqa: BLE001
+                                logging.getLogger(__name__).debug(
+                                    "on_progress(partial) failed", exc_info=True
+                                )
+                    continue
+
                 if isinstance(message, AssistantMessage):
                     for block in getattr(message, "content", []):
                         if isinstance(block, TextBlock):
                             text_accum.append(block.text)
-                            if on_progress is not None:
-                                # 进度流式：assistant 文本片段实时回调给 worker → 喂前端 analyzing +
-                                # 落分析日志。deepseek 文本模式下思考过程(<think>)也在 TextBlock 内，
-                                # 故此处即覆盖思考流；回调失败不中断评标主流程（codex r4 P2）。
+                            # 进度流式：assistant 文本片段实时回调给 worker → 喂前端 analyzing +
+                            # 落分析日志。deepseek 文本模式下思考过程(<think>)也在 TextBlock 内，
+                            # 故此处即覆盖思考流；回调失败不中断评标主流程（codex r4 P2）。
+                            # 已逐字 partial 流过则跳过整段重发（遗留①，防重复双喂）。
+                            if on_progress is not None and not saw_partial:
                                 try:
                                     on_progress(block.text)
                                 except Exception:  # noqa: BLE001
                                     logging.getLogger(__name__).debug(
                                         "on_progress failed", exc_info=True
                                     )
+                    saw_partial = False  # 下个 assistant 轮次重新判定
                     continue
 
                 if not isinstance(message, ResultMessage):
