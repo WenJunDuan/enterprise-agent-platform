@@ -122,5 +122,9 @@ OCR 上传（`tender.py:741` POST .../tender-doc）只产 `ocr_text` 原文 blob
   - **日志按日期目录分区 ✅**（用户诉求 logs/app/<YYYYMMDD>/app.log 便于按日删除）：_DateDirRotatingFileHandler(app/error.log)+app-server stdout/stderr 同式+session 本就 YYYY/MM/DD。
   - 三模型全场景实测：qwen(抽163/评300)、deepseek(抽142/评370)、glm(抽81最快/评290→**D后135**)，均跑通。**用户改完后再跑 3 模型轮询验证中**。610 passed+ruff+前端 lint/build。
 - R5：🟡 **数据存储（compare + delete + criteria 复用）**。①**遗留③ ✅**：compare 首次横比 refetchInterval 在 null 时停轮询→首个横比永不出现，改 null 继续轮询（3s）直到生成。②**遗留④ ✅**：删项目只清各评标 task case_path，P3 上传即 OCR 的 tender-doc/bids 预热目录无 task 残留→新 `remove_project_submission_dir` 删整个 `<tenant>/tender/<project_id>/` 树（安全校验+confine 防穿越）。③遗留② criteria 复用 R1 已落代码，端到端验证待多家同项目实测。608 passed+ruff+前端 build。详见 round-5-data-storage/design.md。
-- R6：_pending_
+- R6：🟡 **评标创建流程 UX 重构 + 信息展示**（用户反馈：卡在 OCR 无法下一步 / 区1区2 没好好展示）。详见 round-6-upload-flow-display/design.md。
+  - **R1 开始分析不被 OCR 阻塞 ✅**：canStartReview 改「文件传完(项目建好+≥1家投标已传)即可」，不等 isOcrReady；按钮去「OCR识别中」拦路态；点后进分析中页，OCR+criteria+评标后台连续跑，可离开。
+  - **R3/R4 区1/区2 展示 ✅**：区1 加「投标单位」列投标公司名；区2 评分项下展开「扣减分数项目」明细（每条扣分情形+扣分值）。
+  - **R2 评标复用预热 OCR ✅**：根因 evaluate 另建 bid_id+重 OCR(OCR 跑两遍5min)；前端透传 prewarm bid_id→后端 evaluate 解析+透传 worker→worker 等预热 OCR ready 复用(免重 OCR)；加 tender_ocr_source 可观测日志。**接口实测复用验证中**。
+  - 610 passed+ruff+前端 lint/build。**⚠️ 前端 UX 需用户 dev 眼验全流程**（上传不卡→开始分析→分析中页 OCR/区1/区2/评标）。
 </content>
