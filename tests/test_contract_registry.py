@@ -139,6 +139,20 @@ def test_falsy_disqualification_does_not_coerce(disq):
     assert out["verdict"] == "approved"
 
 
+def test_missing_envelope_fields_defaulted_not_rejected():
+    """R3：模型漏给信封类必填字段(reasons/risk_score/policy_refs/evidence_chain)→兜底默认而非整单
+    契约失败（实测 deepseek 全量评标漏 reasons 反复重试至失败）。manual_review 不需 policy_refs。"""
+    base = _valid_audit_result(verdict="manual_review", manual_review_reason="insufficient_evidence")
+    for missing in ("reasons", "risk_score", "policy_refs", "evidence_chain"):
+        base.pop(missing, None)
+    out = apply_schema_semantics(DEFAULT_OUTPUT_SCHEMA_NAME, base)
+    assert out["verdict"] == "manual_review"
+    assert out["reasons"] == []
+    assert out["policy_refs"] == []
+    assert out["evidence_chain"] == []
+    assert out["risk_score"] == 50  # 中性兜底,不触发高风险复审
+
+
 def test_evidence_chain_extra_fields_normalized_not_rejected():
     """R3：evidence_chain 项含未知字段(rule_ref/relevance)或漏 conclusion → 归一到
     {source,finding,conclusion} 而非整单契约失败（实测 qwen/deepseek 评标反复挂 `evidence_chain/N`）。"""
