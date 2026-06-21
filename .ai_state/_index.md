@@ -52,7 +52,7 @@ counts:
   reviews_count: 52
   cleanup_count: 1
   compound:
-    learning: 4
+    learning: 5
     trick: 0
     decision: 3
     explore: 0
@@ -69,7 +69,7 @@ pointers:
       "compound/2026-06-19-decision-agent-front-cc-out-of-scope.md",
     ]
   latest_lessons:
-    ["compound/2026-06-18-learning-absence-is-not-zero.md", "compound/2026-06-17-learning-cross-review-and-soft-timeout.md", "compound/2026-06-17-learning-classify-fix-exposes-latent-bug.md", "compound/2026-06-02-learning-legacy-v962-migration.md"]
+    ["compound/2026-06-22-learning-jsonschema-too-brittle-for-llm-output.md", "compound/2026-06-18-learning-absence-is-not-zero.md", "compound/2026-06-17-learning-cross-review-and-soft-timeout.md", "compound/2026-06-17-learning-classify-fix-exposes-latent-bug.md", "compound/2026-06-02-learning-legacy-v962-migration.md"]
       "compound/2026-06-18-learning-absence-is-not-zero.md",
       "compound/2026-06-17-learning-cross-review-and-soft-timeout.md",
       "compound/2026-06-17-learning-classify-fix-exposes-latent-bug.md",
