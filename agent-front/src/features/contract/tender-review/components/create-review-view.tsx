@@ -356,6 +356,8 @@ function UploadFilesCard(props: CreateReviewViewProps) {
           files={props.tenderFiles}
           locked={tenderLocked}
           uploading={props.uploadingTender}
+          // R7-#1：已上传的招标文件仍可删（删→停 OCR→重传）；仅上传中/分析中禁删。
+          removable={!props.uploadingTender && !props.isAnalyzing}
           onAdd={props.onAddTenderFile}
           onRemove={props.onRemoveTenderFile}
         />
@@ -369,12 +371,15 @@ function TenderFilesSection({
   files,
   locked,
   uploading,
+  removable,
   onAdd,
   onRemove,
 }: {
   files: TenderFile[]
   locked?: boolean
   uploading?: boolean
+  /** R7-#1：删除按钮是否可见（与 locked 解耦——已上传的招标文件仍可删以重传）。 */
+  removable?: boolean
   onAdd: (files: FileList | null) => void
   onRemove: (index: number) => void
 }) {
@@ -383,7 +388,7 @@ function TenderFilesSection({
       <SectionTitle
         color='bg-primary'
         title='招标文件'
-        desc='招标公告 · 资格预审 · 评分办法等，选择后自动上传识别'
+        desc='招标公告 · 资格预审 · 评分办法等，选择后自动上传识别（传错可删除重传）'
       />
       {files.map((file, index) => (
         <FileRow
@@ -391,6 +396,7 @@ function TenderFilesSection({
           file={file}
           tone='blue'
           locked={locked}
+          removable={removable}
           onRemove={() => onRemove(index)}
         />
       ))}
@@ -611,14 +617,19 @@ function FileRow({
   tone,
   compact,
   locked,
+  removable,
   onRemove,
 }: {
   file: TenderFile
   tone: 'blue' | 'violet'
   compact?: boolean
   locked?: boolean
+  /** R7-#1：删除按钮可见性，独立于 locked（已上传文件仍可删以重传）。缺省回落 !locked。 */
+  removable?: boolean
   onRemove: () => void
 }) {
+  // 删除按钮可见：显式 removable 优先；未传 removable 时回落旧行为（!locked）。
+  const showRemove = removable ?? !locked
   const toneClass =
     tone === 'blue'
       ? 'bg-primary/10 text-primary'
@@ -644,7 +655,7 @@ function FileRow({
           已选
         </span>
       ) : null}
-      {!locked ? (
+      {showRemove ? (
         <Button
           type='button'
           variant='ghost'

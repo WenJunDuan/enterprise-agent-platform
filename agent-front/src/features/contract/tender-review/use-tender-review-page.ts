@@ -530,8 +530,33 @@ export function useTenderReviewPage(
     }
   }
 
-  function removeTenderFile(index: number) {
-    setTenderFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))
+  /**
+   * R7-#1：删除招标文件。已上传（建了项目 + 触发后台 OCR）→ 删后端项目级联清（停 OCR + 清 DB + 清盘）
+   * 并重置全部上传态，可重新上传正确的招标文件（治"招标文件传错了不能删除"）；未上传则仅去本地暂存项。
+   * 招标先传约束下投标依赖招标，故删招标连带重置投标区（重头来）。
+   */
+  async function removeTenderFile(index: number) {
+    if (!uploadProjectId) {
+      setTenderFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))
+      return
+    }
+    const pid = uploadProjectId
+    // 乐观重置：先清前端态解锁招标区（用户立即可重传），再后台删项目（停 OCR / 级联清）。
+    setUploadProjectId(null)
+    setTenderFiles([])
+    setUploadBidders([DEFAULT_UPLOAD_BIDDER])
+    setUploadedBidderIds(new Set())
+    setUploadingBidderIds(new Set())
+    setPrewarmBidIds({})
+    setSubmitError('')
+    creatingProjectRef.current = false
+    try {
+      await deleteTenderProject(pid)
+    } catch {
+      // 删除失败不阻断重传（孤儿项目可在列表手动删）；如实提示。
+      setSubmitError('已清空当前上传，但后台项目删除失败，可在项目列表中手动删除。')
+    }
+    void queryClient.invalidateQueries({ queryKey: TENDER_PROJECTS_QUERY_KEY })
   }
 
   function addBidder() {
