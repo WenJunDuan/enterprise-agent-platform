@@ -42,15 +42,18 @@ allowed-tools: Read, Glob, Skill, Task
     - `requires_live_event`（项目负责人答辩等现场环节）
     - `requires_external_data`（企业信用等外部公示数据，不在投标文件内）
     - `requires_cross_bid_comparison`（价格分、有效投标数等需横向比较所有投标）
-  - 命中废标 / 资格一票否决（未实质性响应、重大偏差、资格不符等）→ `status:"rejected"`
+  - `status:"rejected"`（该项判 0）**仅当该评分项自身的必交材料缺失或硬性不符**（如该项要求的★承诺函未提供、该项资质完全没有）。**不要因为整单存在废标条件就把本项判 0**——见下条解耦原则。
+- **逐项打分与整单废标解耦（关键，治"全是不通过、没扣分"）**：即便整单可能废标（如投标响应的项目名/项目号与本招标不符），**各评分项仍要按提交材料逐项满分扣减给分**（投标人确实提交了业绩 / 技术方案 / 团队 / 商务等内容，就照 criteria 逐项评、`status:"scored"`、给出有扣有得的 `score`）。**整单废标只体现在最终 `verdict`，不得把 `scoring[]` 各项一律归 0/rejected**。把"项目不符"作为**一条重大风险/扣分点**记入相关项 `basis` 与 `evidence_chain` + `verdict`，而不是抹掉全部逐项评分。
 - 一致性核验：若业绩的项目经理与拟派项目负责人不一致，该业绩项 `manual_review`/不得分，`manual_review_reason:"data_conflict"`，证据链**同时引用业绩页与拟派负责人页**两处出处（依据：实施条例第40/42条、业绩与拟派负责人应一致）。
-- **证据定位准确性（硬要求，定位项必须 = 实际找到的）**：每条 `basis` / `evidence_chain` 的出处**只能引底稿里真实存在的页锚点 `【第N页】`**，且所引页**确实包含**你描述的内容——**严禁凭印象/猜测写页码**。写每条证据前自检一遍：「该原文/字段是否就在我所引的 `【第N页】`？」对不上就改到正确页或降为"未在底稿定位到"。`finding` 尽量摘所引页的**原文片段**，使定位可核验。
+- **证据定位准确性（硬要求，定位项必须 = 实际找到的）**：每条 `basis` / `evidence_chain` 的出处**只能引底稿里真实存在的页锚点 `【第N页】`**，且所引页**确实包含**你描述的内容——**严禁凭印象/猜测写页码**。写每条证据前自检一遍：「该原文/字段是否就在我所引的 `【第N页】`？」对不上就改到正确页或降为"未在底稿定位到"。出处尽量写成**「文件 + 第N页 + 所在章节/标题」**（如「投标文件第6页《应答函》」「招标文件第79页 报价表」），`finding` 摘所引页的**原文片段**，使定位可核验、带上下文。
 
 ### S4 汇总结论
 - 合成最终 `verdict`：
   - 命中任一废标/资格否决 → `rejected`
   - 存在任一 `manual_review` 评分项，或关键证据缺失/规则缺口/证据冲突 → `manual_review`（填 `manual_review_reason`）
   - 全部评分项 `scored` 且无否决项 → `approved`
+- **`verdict` 与 `scoring[]` 解耦**：`verdict` 是整单结论，`scoring[]` 是逐项满分扣减的明细。**即使 `verdict=rejected`（废标），`scoring[]` 仍应保留各项有扣有得的逐项打分**（让评审看到每项扣在哪、扣多少），并在 `explanation` 说明废标主因。不要因 `verdict=rejected` 就把逐项分清零。
+- 另给 `extracted_data.score_summary`：`{total_max, total_score}`（`total_max`=Σ各项 max，`total_score`=Σ `status:"scored"` 项的 `score`；`manual_review`/`null` 项不计入），便于前端右上角展示满分/实得。
 - **承重结论（`approved` / `rejected`）的 `policy_refs` 只引通则层真实 `rule_id`**（如 `tender_evalmethod_001` 评标依招标文件、`tender_evalmethod_003` / `tender_evalmethod_004` 综合评估法量化加权、`tender_evalmethod_005` / `tender_evalmethod_006` / `tender_evalmethod_008` 废标 / 资格否决）——这些才是平台真伪闸认可的法定依据。
 - **`criteria` 各评分项的具体标准与命中**（来自招标文件评标办法、无 knowledge `rule_id`）**写进 `evidence_chain`**（同时引招标文件评标办法出处页 + 投标文件页），**不要塞进 `policy_refs`**（会被真伪闸当编造 `rule_id` 拒掉）。
 - 给出页级 `evidence_chain`、`risk_score`，并把逐项 `scoring` 与 `criteria` 一并留在 `extracted_data` 中。
