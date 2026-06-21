@@ -1,13 +1,11 @@
 import {
   AlertCircle,
-  CheckCircle2,
   FileText,
   Loader2,
   Play,
   Plus,
   Trash2,
   UploadCloud,
-  XCircle,
 } from 'lucide-react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -119,10 +117,8 @@ export function CreateReviewView(props: CreateReviewViewProps) {
         disabled={props.isAnalyzing || props.isUploading || props.hasUploaded}
       />
       <UploadFilesCard {...props} />
-      {/* P3: OCR 状态区 — 上传后显示各文件 OCR 进度 */}
-      {props.hasUploaded && props.docsStatus ? (
-        <OcrStatusCard docsStatus={props.docsStatus} />
-      ) : null}
+      {/* R7：移除"OCR 识别中，请稍候…"提示卡——OCR 全在后台跑、不拦路、前台不提示（用户诉求）。
+          文件各自的 OCR 进度在「分析中」页区2 仍可见，创建页不再弹阻塞感的状态卡。 */}
       {props.isAnalyzing ? <AnalyzingCard progress={props.progress} /> : null}
       {props.uploadError ? <UploadError /> : null}
       {props.submitError ? <SubmitError message={props.submitError} /> : null}
@@ -130,19 +126,14 @@ export function CreateReviewView(props: CreateReviewViewProps) {
         <Button type='button' variant='outline' onClick={props.onCancel}>
           取消
         </Button>
-        {/* R6-R1：开始分析不被 OCR 阻塞——文件传完即可开始；OCR 在后台跑、进分析中页继续，可离开。 */}
+        {/* R7：开始分析只看是否选了文件——不被上传/OCR/预热阻塞。点了就进分析中页、后台跑，可离开。 */}
         <Button
           type='button'
           onClick={props.onStart}
-          disabled={props.isAnalyzing || props.isUploading || !props.canStart}
+          disabled={props.isAnalyzing || !props.canStart}
           aria-label='开始分析'
         >
-          {props.isUploading ? (
-            <>
-              <Loader2 className='size-4 animate-spin' />
-              上传中...
-            </>
-          ) : props.isAnalyzing ? (
+          {props.isAnalyzing ? (
             <>
               <Play className='size-4' />
               分析中...
@@ -667,76 +658,6 @@ function FileRow({
         </Button>
       ) : null}
     </div>
-  )
-}
-
-/**
- * P3 OCR 识别状态卡 — 上传后显示招标/投标文件的 OCR 处理进度。
- *
- * 每个文件显示状态徽章（运行中/就绪/失败）；全部 ready 时提示可"开始分析"。
- */
-function OcrStatusCard({ docsStatus }: { docsStatus: DocsStatusResponse }) {
-  const tenderOcr = docsStatus.tender_doc?.ocr_status
-  const allReady =
-    tenderOcr === 'ready' &&
-    docsStatus.bids.length > 0 &&
-    docsStatus.bids.every((bid) => bid.ocr_status === 'ready')
-
-  return (
-    <Alert className={allReady ? 'border-emerald-200 bg-emerald-50' : 'border-primary/20 bg-primary/5'}>
-      {allReady ? (
-        <CheckCircle2 className='size-4 text-emerald-600' />
-      ) : (
-        <Loader2 className='size-4 animate-spin text-primary' />
-      )}
-      <AlertDescription className='space-y-3'>
-        <div className='font-medium'>
-          {allReady ? 'OCR 识别完成，可以开始分析' : 'OCR 识别中，请稍候…'}
-        </div>
-        <div className='space-y-1.5'>
-          {/* 区2 OCR 识别区：招标文件状态 */}
-          <div className='flex items-center gap-2 text-sm'>
-            <span className='w-16 shrink-0 text-muted-foreground'>招标文件</span>
-            <OcrStatusBadge status={tenderOcr ?? 'pending'} />
-          </div>
-          {/* 各投标人文件状态 */}
-          {docsStatus.bids.map((bid) => (
-            <div key={bid.bid_id} className='flex items-center gap-2 text-sm'>
-              <span className='w-16 shrink-0 truncate text-muted-foreground'>
-                {bid.bidder_name ?? bid.bid_id}
-              </span>
-              <OcrStatusBadge status={bid.ocr_status} />
-            </div>
-          ))}
-        </div>
-      </AlertDescription>
-    </Alert>
-  )
-}
-
-/** OCR 状态徽章：pending/running/ready/failed 对应不同颜色。 */
-function OcrStatusBadge({ status }: { status: string }) {
-  if (status === 'ready') {
-    return (
-      <span className='flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700'>
-        <CheckCircle2 className='size-3' />
-        已就绪
-      </span>
-    )
-  }
-  if (status === 'failed') {
-    return (
-      <span className='flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700'>
-        <XCircle className='size-3' />
-        识别失败
-      </span>
-    )
-  }
-  return (
-    <span className='flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700'>
-      <Loader2 className='size-3 animate-spin' />
-      识别中
-    </span>
   )
 }
 

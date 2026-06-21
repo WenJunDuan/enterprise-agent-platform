@@ -147,6 +147,9 @@ export function useTenderReviewPage(
   const [prewarmBidIds, setPrewarmBidIds] = useState<Record<number, string>>({})
   // 防招标文件多选时并发重复建项目（createTenderProject 异步，第二次 add 在 resolve 前会重复建）。
   const creatingProjectRef = useRef(false)
+  // R7：在途的招标预热上传 promise（resolve 为 project_id）。submitReview 若在它 resolve 前被点，
+  // await 它而非另建项目——治"点开始分析时预热还没传完→重复建项目/孤儿"竞态。
+  const tenderUploadRef = useRef<Promise<string | null> | null>(null)
 
   // A①: editable project form state
   const [projectForm, setProjectForm] = useState<ProjectFormData>(
@@ -336,14 +339,13 @@ export function useTenderReviewPage(
     ]
   )
 
-  // R6-R1：开始分析不被 OCR 阻塞！文件上传完（项目建好 + ≥1 家投标已传）即可开始分析——OCR 在后台
-  // 跑、进分析中页继续，用户可离开。**不再等 isOcrReady**（OCR 近 5min，等它=卡死第二步，用户实测痛点）。
+  // R7：开始分析**只看本地选了文件**，完全不等任何上传/OCR/预热完成（用户："直接传上去,后台做,
+  // 前台不要有提示,不要卡"）。选了招标 + ≥1 家投标文件即可点开始；预热上传/OCR 全在后台，submitReview
+  // 内部兜底（await 在途建项目 / 缺预热则现传），用户一路下一步到「开始分析」即可走人。
   const hasFilesSelected =
     tenderFiles.some(hasNativeFile) &&
     uploadBidders.some((bidder) => bidder.files.some(hasNativeFile))
-  const canStartReview = uploadProjectId
-    ? uploadedBidderIds.size > 0 // 招标已传(uploadProjectId) + ≥1 家投标已传 → 即可开始(不等 OCR)
-    : hasFilesSelected
+  const canStartReview = hasFilesSelected
 
   const startReviewMutation = useMutation({
     mutationFn: submitReview,
@@ -498,6 +500,7 @@ export function useTenderReviewPage(
     setUploadingBidderIds(new Set())
     setPrewarmBidIds({})
     creatingProjectRef.current = false
+    tenderUploadRef.current = null
   }
 
   /**
@@ -516,18 +519,25 @@ export function useTenderReviewPage(
     setSubmitError('')
     creatingProjectRef.current = true
     setUploadingTender(true)
-    try {
-      const project = await createTenderProject(buildCreateProjectBody(projectForm, natives[0]))
-      await uploadTenderDoc(project.project_id, natives) // 触发后台 OCR
-      setUploadProjectId(project.project_id)
-    } catch (error) {
-      // 失败回退：清掉刚 staged 的招标文件，让用户重选
-      setTenderFiles([])
-      setSubmitError(error instanceof Error ? error.message : '招标文件上传失败，请重试')
-    } finally {
-      setUploadingTender(false)
-      creatingProjectRef.current = false
-    }
+    // 后台预热：建项目 + 上传招标 → 触发后台 OCR。promise 存入 ref 供 submitReview 兜底 await。
+    const promise = (async (): Promise<string | null> => {
+      try {
+        const project = await createTenderProject(buildCreateProjectBody(projectForm, natives[0]))
+        await uploadTenderDoc(project.project_id, natives) // 触发后台 OCR
+        setUploadProjectId(project.project_id)
+        return project.project_id
+      } catch (error) {
+        // 失败回退：清掉刚 staged 的招标文件，让用户重选
+        setTenderFiles([])
+        setSubmitError(error instanceof Error ? error.message : '招标文件上传失败，请重试')
+        return null
+      } finally {
+        setUploadingTender(false)
+        creatingProjectRef.current = false
+      }
+    })()
+    tenderUploadRef.current = promise
+    await promise
   }
 
   /**
@@ -550,6 +560,7 @@ export function useTenderReviewPage(
     setPrewarmBidIds({})
     setSubmitError('')
     creatingProjectRef.current = false
+    tenderUploadRef.current = null
     try {
       await deleteTenderProject(pid)
     } catch {
@@ -681,10 +692,12 @@ export function useTenderReviewPage(
       throw new Error('请至少上传 1 个招标文件，并为至少一家投标单位上传文件。')
     }
 
-    // P3 两步拆分：若已有 uploadProjectId（上传阶段完成，OCR ready），复用它；
-    // 否则（直接点"开始分析"旧路径/legacy）继续建项目。
+    // R7：复用已建项目（uploadProjectId）→ 若预热上传仍在途，await 其 promise 拿 project_id（不另建，
+    // 防孤儿/重复）→ 都没有才现建项目（直接点"开始分析"的 legacy 路径）。
+    const inflightProjectId = tenderUploadRef.current ? await tenderUploadRef.current : null
     const projectId =
       uploadProjectId ??
+      inflightProjectId ??
       (await createTenderProject(buildCreateProjectBody(projectForm, nativeTenderFiles[0]))).project_id
 
     setProgress(10)
