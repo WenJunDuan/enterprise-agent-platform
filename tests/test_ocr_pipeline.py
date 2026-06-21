@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 
 import jsonschema
+import pytest
 
 from server.ocr.pipeline import build_extraction_block, extract_one
 from server.platform.paths import PROJECT_ROOT
@@ -17,6 +18,14 @@ _EXTRACT_RESULT_SCHEMA = json.loads(
         encoding="utf-8"
     )
 )
+
+
+@pytest.fixture(autouse=True)
+def _disable_ocr_cache(monkeypatch):
+    """默认禁用 OCR 缓存，避免测试写 data/ocr-cache；缓存专项测试自行 monkeypatch 启用。"""
+    import server.ocr.cache as cache
+
+    monkeypatch.setattr(cache, "OCR_CACHE_ENABLED", False)
 
 
 def test_build_block_native_pdf_with_page_count_does_not_crash():
@@ -158,6 +167,96 @@ def test_audit_ocr_path_has_no_tender_purpose(monkeypatch, tmp_path):
     eng._recognize_via_openai_compatible(img)  # 无 purpose（audit/通用路径）
     assert captured["prompt"] == "Extract all visible document text. Return concise markdown only."
     assert "评标" not in captured["prompt"] and "招投标" not in captured["prompt"]
+
+
+# ── P1 OCR 结果缓存（按文件内容 sha256，格式无关，重评/重试不重复识别）─────────
+
+
+def test_ocr_cache_roundtrip(tmp_path, monkeypatch):
+    """put 后同文件+同 purpose get 命中；不同 purpose / 内容变 → 不命中。"""
+    import server.ocr.cache as cache
+
+    monkeypatch.setattr(cache, "_CACHE_DIR", tmp_path / "ocr-cache")
+    monkeypatch.setattr(cache, "OCR_CACHE_ENABLED", True)
+    doc = tmp_path / "doc.pdf"
+    doc.write_bytes(b"%PDF-fake-content")
+    result = {"kind": "ocr", "pages": [{"markdown": "识别内容"}]}
+
+    assert cache.get_cached(doc, purpose="评标") is None  # 未命中
+    cache.put_cached(doc, purpose="评标", result=result)
+    hit = cache.get_cached(doc, purpose="评标")
+    assert hit is not None and hit["pages"][0]["markdown"] == "识别内容"  # 命中
+    assert cache.get_cached(doc, purpose="别的目的") is None  # 不同 purpose 不复用
+    doc.write_bytes(b"%PDF-changed")
+    assert cache.get_cached(doc, purpose="评标") is None  # 内容变 → 失效
+
+
+def test_extract_one_hits_cache_second_time(tmp_path, monkeypatch):
+    """extract_one 第二次同文件走缓存，不再调底层识别。"""
+    import server.ocr.cache as cache
+    import server.ocr.pipeline as pipeline_mod
+
+    monkeypatch.setattr(cache, "_CACHE_DIR", tmp_path / "c")
+    monkeypatch.setattr(cache, "OCR_CACHE_ENABLED", True)
+    calls = {"n": 0}
+    real_raw = pipeline_mod._extract_one_raw
+
+    def counting_raw(path, **kwargs):
+        calls["n"] += 1
+        return real_raw(path, **kwargs)
+
+    monkeypatch.setattr(pipeline_mod, "_extract_one_raw", counting_raw)
+    note = tmp_path / "note.txt"
+    note.write_text("内容", encoding="utf-8")
+    r1 = pipeline_mod.extract_one(note)
+    r2 = pipeline_mod.extract_one(note)
+    assert calls["n"] == 1  # 第二次命中缓存，不再调底层识别
+    assert r1["kind"] == r2["kind"] == "text"
+
+
+def test_ocr_cache_write_failure_does_not_abort(tmp_path, monkeypatch):
+    """缓存写失败（如 Paddle layout 非 JSON 对象）不向上抛，extract_one 仍返回识别结果（codex P1-3）。"""
+    import server.ocr.cache as cache
+    import server.ocr.pipeline as pipeline_mod
+
+    monkeypatch.setattr(cache, "_CACHE_DIR", tmp_path / "c")
+    monkeypatch.setattr(cache, "OCR_CACHE_ENABLED", True)
+
+    def boom(*_args, **_kwargs):
+        raise TypeError("not JSON serializable")
+
+    monkeypatch.setattr(cache.json, "dump", boom)  # 模拟 json.dump 抛 TypeError
+    note = tmp_path / "n.txt"
+    note.write_text("内容", encoding="utf-8")
+    result = pipeline_mod.extract_one(note)  # 不应抛（put_cached 吞掉写错误）
+    assert result["kind"] == "text"
+
+
+def test_ocr_cache_run_seal_key_separation(tmp_path, monkeypatch):
+    """run_seal 不同 → 缓存键不同，不复用（codex P2-10）。"""
+    import server.ocr.cache as cache
+
+    monkeypatch.setattr(cache, "_CACHE_DIR", tmp_path / "c")
+    monkeypatch.setattr(cache, "OCR_CACHE_ENABLED", True)
+    doc = tmp_path / "d.pdf"
+    doc.write_bytes(b"%PDF-x")
+    cache.put_cached(doc, run_seal=False, result={"kind": "ocr"})
+    assert cache.get_cached(doc, run_seal=False) is not None
+    assert cache.get_cached(doc, run_seal=True) is None  # run_seal 不同不复用
+
+
+def test_ocr_max_workers_clamps_invalid(monkeypatch):
+    """OCR_MAX_WORKERS 非法/0/负 → 回退默认或 clamp ≥1（codex P2-5）。"""
+    import server.ocr.pipeline as pipeline_mod
+
+    monkeypatch.setenv("OCR_MAX_WORKERS", "0")
+    assert pipeline_mod._ocr_max_workers() == 1
+    monkeypatch.setenv("OCR_MAX_WORKERS", "-3")
+    assert pipeline_mod._ocr_max_workers() == 1
+    monkeypatch.setenv("OCR_MAX_WORKERS", "abc")
+    assert pipeline_mod._ocr_max_workers() == 4
+    monkeypatch.setenv("OCR_MAX_WORKERS", "8")
+    assert pipeline_mod._ocr_max_workers() == 8
 
 
 def test_build_block_marks_truncation(monkeypatch):

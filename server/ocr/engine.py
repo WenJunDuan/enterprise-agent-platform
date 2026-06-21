@@ -22,6 +22,7 @@ import urllib.request
 from pathlib import Path
 
 from server.ocr import OcrDependencyError, OcrError
+from server.ocr.locks import FITZ_LOCK, PADDLE_LOCK
 
 # PaddleOCR-VL 完整 pipeline 可选启用；默认由 LiteLLM/OpenAI-compatible 端点做整页识别。
 OCR_VL_PIPELINE_VERSION = os.getenv("OCR_VL_PIPELINE_VERSION", "v1.6")
@@ -133,7 +134,9 @@ def _render_pdf_pages(path: Path) -> list[dict]:
 
     pages: list[dict] = []
     try:
-        with fitz.open(path) as document:
+        # fitz 非线程安全；与 native 直读共享同一把 FITZ_LOCK 串行化（codex P1-1：扫描 PDF
+        # 渲染也调 fitz.open，并行 OCR 时会与 native 直读并发崩）。
+        with FITZ_LOCK, fitz.open(path) as document:
             matrix = fitz.Matrix(OCR_VL_PDF_RENDER_SCALE, OCR_VL_PDF_RENDER_SCALE)
             for index, page in enumerate(document):
                 pixmap = page.get_pixmap(matrix=matrix, alpha=False)
@@ -263,18 +266,21 @@ def _recognize_via_paddle_pipeline(path: Path, *, purpose: str | None = None) ->
     注：purpose 对本地 paddle pipeline 暂不生效（固定版面 OCR，无自定义 prompt 注入点）。
     """
     _ = purpose  # 本地 pipeline 暂无 prompt 注入点，显式忽略避免误导。
-    results = _build_vl_pipeline().predict(str(path))
-    pages = []
-    for res in results:
-        data = res.json if hasattr(res, "json") else {}
-        layout = data.get("parsing_res_list", data.get("layout", []))
-        pages.append(
-            {
-                "markdown": _page_markdown(res),
-                "layout": layout,
-                "confidence": _page_confidence(layout),
-            }
-        )
+    # 本地 PaddleOCR pipeline 非线程安全（全局 predictor/GPU/runtime），并行 OCR 时经 PADDLE_LOCK
+    # 串行化（codex P1-4）。predict + 结果物化都在锁内，防 res 惰性求值跨线程触发 paddle。
+    with PADDLE_LOCK:
+        results = _build_vl_pipeline().predict(str(path))
+        pages = []
+        for res in results:
+            data = res.json if hasattr(res, "json") else {}
+            layout = data.get("parsing_res_list", data.get("layout", []))
+            pages.append(
+                {
+                    "markdown": _page_markdown(res),
+                    "layout": layout,
+                    "confidence": _page_confidence(layout),
+                }
+            )
     return {"kind": "ocr", "pipeline_version": OCR_VL_PIPELINE_VERSION, "pages": pages}
 
 
@@ -410,10 +416,12 @@ def recognize(path: Path, *, purpose: str | None = None) -> dict:
 
 def recognize_seal(path: Path) -> dict:
     """印章 → [{bbox, shape, text, color, confidence}, ...]（字段以版本返回为准）。"""
-    results = _build_seal_pipeline().predict(str(path))
-    seals: list[dict] = []
-    for res in results:
-        data = res.json if hasattr(res, "json") else {}
-        for item in data.get("seal_res_list") or data.get("rec_texts") or []:
-            seals.append(item if isinstance(item, dict) else {"text": item})
+    # 本地印章 pipeline 非线程安全，与 paddle pipeline 共享 PADDLE_LOCK 串行（codex P1-4）。
+    with PADDLE_LOCK:
+        results = _build_seal_pipeline().predict(str(path))
+        seals: list[dict] = []
+        for res in results:
+            data = res.json if hasattr(res, "json") else {}
+            for item in data.get("seal_res_list") or data.get("rec_texts") or []:
+                seals.append(item if isinstance(item, dict) else {"text": item})
     return {"kind": "seal", "seals": seals}
