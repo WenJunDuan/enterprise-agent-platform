@@ -124,9 +124,10 @@ def _render_body(result: dict) -> str:
     # 不在此。isinstance 守卫防止把页数整数误当列表迭代。
     pages = result.get("pages")
     if isinstance(pages, list) and pages:
-        # 每页加页锚点（page_number 缺则用序号），评标/回填可据此精确引页。
+        # 每页加页锚点（page_number 缺/None 才回退序号；不用 `or` 以免 page_number=0 被吞）。
         return "\n\n".join(
-            _page_anchor(page.get("page_number") or idx) + (page.get("markdown") or "")
+            _page_anchor(pn if (pn := page.get("page_number")) is not None else idx)
+            + (page.get("markdown") or "")
             for idx, page in enumerate(pages, start=1)
         )
     # native：blocks(正文) 与 tables(表) 可并存（pdf_text/word 两者都有）→ **都渲染**。
