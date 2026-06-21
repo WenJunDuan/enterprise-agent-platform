@@ -91,10 +91,6 @@ def _expense_profile() -> DomainProfile:
     )
 
 
-# 注册表项：供未来的域装配消费者引用（生产路径经 build_inline_audit_prompt 即时重建以尊重 monkeypatch）。
-EXPENSE_PROFILE = _expense_profile()
-
-
 def load_expense_rules() -> str:
     """Concatenate every local expense rule file, with filename provenance headers."""
     return _assemble_rules(EXPENSE_RULES_DIR)

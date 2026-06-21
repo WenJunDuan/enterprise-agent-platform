@@ -69,3 +69,8 @@
   (「满分6;①得3;②扣3;实得3」)，evidence 带章节(「第一部分 招标公告」「10.1 技术基础运营」「一、应答函」)，
   total_score=11.5/100。**G1「有扣有得+扣分明细」+ G2「章节定位」全部达成**(用中国移动废标标都能出，匹配标只会更完整)。
   commit:迭代2=`95c434e`。**goal 三指标(有扣有得/扣分明细/上下文章节定位)均已实现，待用户 UI 实测最终确认。**
+- 2026-06-21 **交叉 review + cleanup**（codex + reviewer + spec-compliance，本会话全量 5ad4b17..HEAD）：**无 P0**。
+  修掉 4 项：① `pipeline.py` 页锚点 `page_number or idx` → `is not None`(防 0 被吞,F1)；② 删无消费者的
+  `runner.EXPENSE_PROFILE` 模块常量(无效设计,F2)；③ 删 `score_summary` prompt 字段(前端从 scoring[] 自算=冗余,E2)；
+  ④ env.example 补 `TENDER_CONTRACT_MAX_RETRY`(F3)。保留：golden 文件 EOF 空行(字节级 fixture 必须与 prompt 一致,
+  git diff --check 假阳性)；word/text native 不打页锚点(本就无分页)。421 passed/ruff。约束(分层/契约)无问题。
