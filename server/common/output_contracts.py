@@ -373,6 +373,22 @@ def _verify_score_mode_consistency(structured_output: dict[str, Any]) -> None:
                     "detail": f"score={score} 与「{detail}={expected}」不一致，请人工复核",
                 }
             )
+        # A（absence-is-not-zero）：实得 0 分却标 scored，且不是 deduction 真扣减到 0（有 deduction_hits
+        # 明细）→ 多半是"没识别到证据却判 0 通过"，该项更应是 manual_review/rejected，不能算"已评分"。
+        if abs(score) < _SCORE_MODE_TOLERANCE:
+            deducted_to_zero = (
+                mode == "deduction"
+                and isinstance(item.get("deduction_hits"), list)
+                and bool(item.get("deduction_hits"))
+            )
+            if not deducted_to_zero:
+                warnings.append(
+                    {
+                        "code": "scored_zero_suspect",
+                        "item": item.get("item"),
+                        "detail": "实得 0 分却标已评分但无扣减明细——疑似未识别到证据即判 0，应改 manual_review/rejected",
+                    }
+                )
     if warnings:
         existing = extracted.get("validation_warnings")
         if isinstance(existing, list):
@@ -417,6 +433,27 @@ def _validate_init_rules_report(structured_output: StructuredJSON) -> None:
 # 在 G1 硬校验前盖章，避免把"服务端该填的字段"当成模型 bug 反复重试至失败（live eval 实测 [1M] 常漏这些）。
 _DEFAULT_REVIEWED_BY = "expense-auditor"
 
+# audit-result.schema.json 顶层声明的字段（顶层 additionalProperties:false）。normalize 剥离此集合外
+# 的模型多输出字段——实测根因:模型(deepseek)常多带 missing_fields/technical_subtotal 等无关键,顶层
+# additionalProperties:false 会因此把【完整合理的结论整单拒】→反复重试至失败→降级 manual_review/空结论。
+# ⚠ 改 audit-result.schema 顶层 properties 时必须同步此集合（test_output_contracts 有漂移守卫）。
+_AUDIT_SCHEMA_TOP_FIELDS = frozenset(
+    {
+        "claim_id",
+        "verdict",
+        "explanation",
+        "reasons",
+        "policy_refs",
+        "risk_score",
+        "extracted_data",
+        "evidence_chain",
+        "reviewed_by",
+        "timestamp",
+        "manual_review_reason",
+        "risk_dimensions",
+    }
+)
+
 
 def _stamp_server_metadata(output: dict[str, Any], request_id: str | None) -> None:
     """Stamp server-authoritative metadata + default the model-owned envelope (in-place)."""
@@ -459,6 +496,18 @@ def normalize_audit_result(
             _cleanse_risk_dimensions(structured_output)  # 丢非枚举/越界项
             if not structured_output.get("risk_dimensions"):
                 structured_output.pop("risk_dimensions", None)
+    # result/conclusion 是服务端从 verdict 派生的【决策】字段（enrich 后才有）；模型【自报】它们＝
+    # 篡改决策（H1 反幻觉），必须拒、绝不静默剥离。
+    for forbidden in ("result", "conclusion"):
+        if forbidden in structured_output:
+            raise JSONContractError(
+                f"模型不得自报服务端派生的决策字段 `{forbidden}`（由 verdict 派生）"
+            )
+    # 其余 schema 未声明的顶层字段（模型多带 missing_fields/technical_subtotal 等【无害噪音】）→ 剥离，
+    # 不因此整单拒→反复重试至失败（评标"结论根本没产出→降级 manual_review/空"的实测根因）。
+    for key in list(structured_output.keys()):
+        if key not in _AUDIT_SCHEMA_TOP_FIELDS:
+            structured_output.pop(key, None)
     return structured_output
 
 
