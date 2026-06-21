@@ -254,25 +254,40 @@ export function AuditTaskDetailPage({ taskId }: { taskId: string }) {
     <>
       <Header fixed />
       <Main constrained className='space-y-5'>
-        {/* C②: 移除"复制id""返回列表"按钮 — 只保留标题区 */}
-        <div>
-          <h1 className='text-2xl font-semibold tracking-tight'>任务详情</h1>
-          {/* C④: 完整显示任务 ID（不截断），其后跟小复制 icon */}
-          <div className='flex items-center gap-1.5'>
-            <span className='font-mono text-sm break-all text-muted-foreground'>
-              {taskId}
-            </span>
+        {/* C②: 标题区 — 左标题/ID，右"重新审核"（移出状态卡片，与"任务详情"标题左右并排）*/}
+        <div className='flex items-start justify-between gap-3'>
+          <div className='min-w-0'>
+            <h1 className='text-2xl font-semibold tracking-tight'>任务详情</h1>
+            {/* C④: 完整显示任务 ID（不截断），其后跟小复制 icon */}
+            <div className='flex items-center gap-1.5'>
+              <span className='font-mono text-sm break-all text-muted-foreground'>
+                {taskId}
+              </span>
+              <Button
+                type='button'
+                variant='ghost'
+                size='icon'
+                className='size-6 shrink-0'
+                aria-label='复制任务 ID'
+                onClick={copyFullId}
+              >
+                <Copy className='size-3.5' />
+              </Button>
+            </div>
+          </div>
+          {taskQuery.data ? (
             <Button
               type='button'
-              variant='ghost'
-              size='icon'
-              className='size-6 shrink-0'
-              aria-label='复制任务 ID'
-              onClick={copyFullId}
+              variant='outline'
+              size='sm'
+              className='shrink-0'
+              disabled={action === 'retry'}
+              onClick={runRetry}
             >
-              <Copy className='size-3.5' />
+              <RotateCcw className='size-4' />
+              重新审核
             </Button>
-          </div>
+          ) : null}
         </div>
 
         {taskQuery.error ? (
@@ -298,15 +313,6 @@ export function AuditTaskDetailPage({ taskId }: { taskId: string }) {
                 </div>
                 <div className='flex shrink-0 items-center gap-2'>
                   <TaskStatusBadge status={taskQuery.data.status} />
-                  <Button
-                    variant='outline'
-                    size='sm'
-                    disabled={action === 'retry'}
-                    onClick={runRetry}
-                  >
-                    <RotateCcw className='size-4' />
-                    重新审核
-                  </Button>
                 </div>
               </CardHeader>
               <CardContent className='space-y-4'>

@@ -3,6 +3,7 @@ export type HistoryTimeRange = 'all' | 'week' | 'month'
 export type TenderReviewScreen =
   | 'dashboard'
   | 'create'
+  | 'analyzing'
   | 'history'
   | 'analysis'
   | 'report'
