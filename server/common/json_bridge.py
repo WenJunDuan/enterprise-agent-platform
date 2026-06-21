@@ -102,7 +102,7 @@ async def run_agent_json(
     resume_session_id: str | None = None,
     fork_from_session_id: str | None = None,
     continue_recent: bool = False,
-    schema_name: str = DEFAULT_OUTPUT_SCHEMA_NAME,
+    schema_name: str | None = DEFAULT_OUTPUT_SCHEMA_NAME,
     structured: bool = True,
     request_id: str | None = None,
     tenant: str | None = None,
@@ -121,6 +121,11 @@ async def run_agent_json(
     ``tender_compare_results``，**不进 ``results``**，否则会被 ``_project_bid_roster`` 当成
     伪投标人污染名册 / 回看（codex P1.1）。
     """
+    # 不变量（codex R1 P2）：schema_name 为空 = 无命名 schema（仅文本模式 passthrough，见
+    # apply_schema_semantics）。structured=True 仍会 build_output_format(schema_name)→ None 会崩，
+    # 故显式拦截，给出清晰错误而非下游 TypeError。
+    if structured and not schema_name:
+        raise ValueError("schema_name=None/'' requires structured=False (no SDK output_format)")
     conversation_id = conversation_id or new_conversation_id()
     request_id = request_id or str(uuid.uuid4())
     started_at = utc_now()

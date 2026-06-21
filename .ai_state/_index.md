@@ -81,7 +81,7 @@ pointers:
 next_action: "**新Sprint(2026-06-22):多模型评标优化goal** — 见 sprints/2026-06-22-multimodel-tender-optimization/goal.md(完整目标+本会话第1-6轮成果+8个遗留问题+操作备忘)。优化:①OCR速度效率②招投标审核速度准确度(抓招标评分点/分数,应标数据正确抓取对应上下文)③数据存储。多模型轮换:DeepSeek/qwen3.7-max(dashscope)/claude-opus-4-8(anyrouter,偶发429)。每改一版自测+自调优,范围.claude+server+前端,每轮codex配合。**本会话**:第1-6轮(criteria2→20项/G5formula/effort/思考流式/长任务解耦/三层数据+上传即OCR解耦+前端三区),558passed+ruff+前端lint/build,29commits未push,git干净。端到端qwen评标跑通225s(比537s快一半)/rejected正确/20项scoring。**首要遗留**:qwen思考流式不实时(一次性返回,需include_partial_messages或flusher兜底flush)。部署:./deploy/deploy.sh或rsync到mac mini(100.107.151.115)+前端build。"
 last_subagent: "spec-compliance"
 last_subagent_at: "2026-06-21T11:46:34.865037Z"
-active_worktrees: [] # 2026-06-21 核实无活动 worktree(git worktree list 仅 main),清陈旧字段
+active_worktrees: ["agent-a13c533445cf2f1e5"]
 last_critic_round: 0
 design_changed_after_impl: true
 
@@ -386,6 +386,7 @@ slug 拆分为独立 sprint 目录；`lessons.md` 整体保留为
 - `docs/` — 项目参考文档 (开发指南 / 前端对接 / audit-skills)，非状态机文件
 
 ## 历史 (由 pace-continuator hook 自动追加, 最多保留近 10 条)
+- `2026-06-21 15:37:29`: stage=ship sprint=2026-06-22-multimodel-tender-optimization turn-end
 - `2026-06-21 08:11:37`: stage=ship sprint=2026-06-21-tender-harness-redesign turn-end
 - `2026-06-20 13:56:20`: stage=ship sprint=2026-06-20-external-source-mode turn-end
 - `2026-06-20 10:49:49`: stage=ship sprint=2026-06-20-tender-data-model turn-end
@@ -396,6 +397,5 @@ slug 拆分为独立 sprint 目录；`lessons.md` 整体保留为
 - `2026-06-20 02:49:56`: stage=ship sprint=2026-06-20-agent-capability-redesign turn-end
 - `2026-06-20 01:47:27`: stage=impl sprint=2026-06-20-agent-capability-redesign turn-end
 - `2026-06-19 12:07:21`: stage=ship sprint=2026-06-19-contract-audit-api turn-end
-- `2026-06-19 10:20:54`: stage=impl sprint=2026-06-19-contract-audit-feature turn-end
 
 - 2026-06-02 [migrate] v9.6.2(legacy flat) → v9.6.4. 备份见 `.ai_state.backup-*`。

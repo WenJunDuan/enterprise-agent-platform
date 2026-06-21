@@ -61,6 +61,7 @@ export function ScreenContent({ page }: { page: TenderReviewPageState }) {
           title={page.projectForm.title ?? undefined}
           projectForm={page.projectForm}
           docsStatus={page.docsStatus}
+          tenderDocInfo={page.tenderDocInfo}
           onExit={page.exitAnalyzing}
         />
       )

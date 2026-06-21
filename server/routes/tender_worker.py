@@ -165,7 +165,8 @@ async def _run_evaluation(
         try:
             import json as _json
 
-            project_doc = get_project_doc(project_id, tenant)
+            # F4：同步 SQLite 读经 to_thread 移出事件循环（对齐 _load_doc_layer_context / round4 F4）。
+            project_doc = await asyncio.to_thread(get_project_doc, project_id, tenant)
             stored_criteria = (project_doc or {}).get("criteria")
             if stored_criteria:
                 # Ensure Chinese characters are readable in the injected context block.

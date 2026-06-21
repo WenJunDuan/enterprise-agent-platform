@@ -122,7 +122,7 @@ def _validate_against_json_schema(schema_name: str, structured_output: Structure
 
 
 def apply_schema_semantics(
-    schema_name: str,
+    schema_name: str | None,
     structured_output: StructuredJSON,
     *,
     request_id: str | None = None,
@@ -130,6 +130,10 @@ def apply_schema_semantics(
     """Run the registered normalize + validate + enrich for schema_name; unregistered ⇒ as-is.
 
     This is the single entry the SDK bridge calls — it stays schema-name agnostic.
+
+    ``schema_name`` 为空（None/""）= 「无命名 schema」：仅取模型 JSON 原样返回，不做形/语义校验。
+    用于 enrichment 类调用（如 tender-extract-info，输出 {criteria, tender_info} 不对应单一承重
+    契约，best-effort 取用、宁缺毋崩）；否则 ``CONTRACTS_DIR / None`` 会抛 TypeError 致整次调用失败。
     顺序（round4 F1 G1 闸 + metadata 加固）：
       1. normalize：盖 server 权威元数据（claim_id/reviewed_by/timestamp）+ 拍平 envelope 格式，
          **先于**硬 schema 校验——这些是服务端职责，不该逼模型产出（否则模型漏一个就反复重试至失败）。
@@ -138,6 +142,8 @@ def apply_schema_semantics(
       3. processor.validate：语义承重闸（verdict/policy_refs/评分一致性，**不放松**）。
       4. processor.enrich：派生 result/conclusion。
     """
+    if not schema_name:
+        return structured_output
     processor = _SCHEMA_PROCESSORS.get(schema_name)
     if processor is not None and processor.normalize is not None:
         structured_output = processor.normalize(structured_output, request_id)

@@ -10,6 +10,7 @@ import {
   deleteTenderProject,
   evaluateTenderProjectUpload,
   getDocsStatus,
+  getTenderDocInfo,
   getTenderCompareOrNull,
   getTenderProject,
   getTenderProjectResult,
@@ -212,6 +213,28 @@ export function useTenderReviewPage(
             )
           : false
       return allDone ? false : 2500
+    },
+  })
+
+  // R1 招标信息（criteria + tender_info）：创建/分析中按当前项目读 tender-doc 层。
+  // create 屏只在上传后（uploadProjectId）读；analyzing 屏读正在分析的项目。
+  const docInfoProjectId =
+    screen === 'create'
+      ? uploadProjectId
+      : screen === 'analyzing'
+        ? (activeEval?.projectId ?? selectedProjectId ?? uploadProjectId ?? null)
+        : null
+  // criteria_status 非终态时每 2.5s 轮询（OCR 后台抽取进度），ready/failed 即停。
+  const tenderDocInfoQuery = useQuery({
+    queryKey: ['tender-doc-info', docInfoProjectId],
+    queryFn: () => getTenderDocInfo(docInfoProjectId!),
+    enabled: Boolean(docInfoProjectId),
+    refetchInterval: (query) => {
+      const data = query.state.data
+      if (!data) return 2500
+      const terminal =
+        data.criteria_status === 'ready' || data.criteria_status === 'failed'
+      return terminal ? false : 2500
     },
   })
 
@@ -729,6 +752,7 @@ export function useTenderReviewPage(
     isUploading: uploadFilesMutation.isPending || isUploading,
     uploadProjectId,
     docsStatus: docsStatusQuery.data ?? null,
+    tenderDocInfo: tenderDocInfoQuery.data ?? null,
     isOcrReady,
     hasFilesSelected,
     startUpload,
