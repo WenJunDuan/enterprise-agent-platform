@@ -15,6 +15,7 @@ import type {
   TenderInfo,
 } from '../api'
 import type { ProjectFormData } from './create-review-view'
+import { MarkdownView } from './markdown-view'
 
 /**
  * 第三步「开始分析」过程界面 — 三区布局（P3 设计 + R1 招标信息）。
@@ -135,9 +136,12 @@ function Zone1ProjectInfo({
   // fallback 链：OCR 抽取值 → 用户手填值。
   const pick = (extracted?: string | null, form?: string | null) =>
     extracted?.trim() || form?.trim() || ''
-  const fundingValue = projectForm?.funding_type
-    ? (fundingLabel[projectForm.funding_type] ?? projectForm.funding_type)
-    : ''
+  // 资金来源：优先 OCR 抽取的 funding_hint（如「财政资金」），回落用户手填的 funding_type 枚举（R7-#2）。
+  const fundingValue =
+    tenderInfo?.funding_hint?.trim() ||
+    (projectForm?.funding_type
+      ? (fundingLabel[projectForm.funding_type] ?? projectForm.funding_type)
+      : '')
   const extracting = criteriaStatus === 'pending' || criteriaStatus === 'running'
 
   const rows = [
@@ -441,20 +445,23 @@ function Zone3StreamOutput({
           区3 投标评标实时输出
         </CardTitle>
       </CardHeader>
-      <CardContent className='flex-1'>
+      {/* R7-#3：flex 链撑满 → 区3 与左栏（区1+区2）等高（grid 默认 items-stretch）。 */}
+      <CardContent className='flex min-h-0 flex-1 flex-col'>
         {/* 流式输出区：实时展示 AI 评标分析过程，自动滚到最新 */}
-        <div className='rounded-lg border bg-muted/30'>
-          <div className='flex items-center gap-2 border-b px-4 py-2 text-sm font-medium'>
+        <div className='flex h-full flex-col rounded-lg border bg-muted/30'>
+          <div className='flex shrink-0 items-center gap-2 border-b px-4 py-2 text-sm font-medium'>
             <Brain className='size-4 text-primary' />
             实时分析输出
           </div>
-          <div
-            ref={scrollRef}
-            className='max-h-[calc(100vh-420px)] min-h-48 overflow-auto whitespace-pre-wrap px-4 py-3 font-mono text-xs leading-relaxed text-muted-foreground'
-          >
-            {progressText?.trim()
-              ? progressText
-              : '分析进行中，等待 AI 评标实时输出…'}
+          {/* R7-#3：min-h-0 + flex-1 让滚动区随卡片伸缩（去固定 max-h）；markdown 渲染 AI 输出。 */}
+          <div ref={scrollRef} className='min-h-48 flex-1 overflow-auto px-4 py-3'>
+            {progressText?.trim() ? (
+              <MarkdownView>{progressText}</MarkdownView>
+            ) : (
+              <p className='text-xs text-muted-foreground'>
+                分析进行中，等待 AI 评标实时输出…
+              </p>
+            )}
           </div>
         </div>
       </CardContent>
