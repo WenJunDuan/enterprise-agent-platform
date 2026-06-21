@@ -15,3 +15,8 @@
 - Exit: success
 - Last message: # Review Pass 1 — Sprint round-1-tender-info-extraction  ## Findings (按严重度排序)  ### F1 [SEVERITY=P1] criteria_status=running write failure silently reverts ocr_status to failed  - File: `server/routes/
 
+## 2026-06-21T17:40:54.167Z · unknown
+- Duration: 0s
+- Exit: success
+- Last message: Optimizing tender evaluation across 3 models over 6 rounds: Round 1 (招标信息 display fixes) is shipped and committed. Round 2 is underway on deduction-item accuracy. Next: read the running qwen full-eval
+
