@@ -10,6 +10,7 @@ import importlib
 from pathlib import Path
 
 from server.ocr import OcrDependencyError
+from server.ocr.locks import FITZ_LOCK
 
 EXCEL_EXT = {".xlsx", ".xlsm", ".xls"}
 WORD_EXT = {".docx"}
@@ -30,15 +31,17 @@ def _require(module: str, package: str):
 def read_excel(path: Path) -> dict:
     openpyxl = _require("openpyxl", "openpyxl")
     workbook = openpyxl.load_workbook(path, read_only=True, data_only=True)
-    sheets = []
-    for worksheet in workbook.worksheets:
-        rows = []
-        for index, row in enumerate(worksheet.iter_rows(values_only=True)):
-            if index >= MAX_EXCEL_ROWS:
-                break
-            rows.append(["" if cell is None else str(cell) for cell in row])
-        sheets.append({"name": worksheet.title, "rows": rows})
-    workbook.close()
+    try:
+        sheets = []
+        for worksheet in workbook.worksheets:
+            rows = []
+            for index, row in enumerate(worksheet.iter_rows(values_only=True)):
+                if index >= MAX_EXCEL_ROWS:
+                    break
+                rows.append(["" if cell is None else str(cell) for cell in row])
+            sheets.append({"name": worksheet.title, "rows": rows})
+    finally:
+        workbook.close()  # 并行抽取下异常也释放文件句柄（codex P2-9）
     return {"kind": "excel", "tables": sheets}
 
 
@@ -58,11 +61,14 @@ def read_pdf_text(path: Path) -> dict:
 
     比 pypdf 的 ``extract_text``（按 PDF 流顺序拼字符）强在**阅读顺序 / 多栏 / 表格**——
     发票、合同、招标评分表的命门正在这里（pypdf 把表格揉碎、多栏错序）。
+
+    fitz 非线程安全，并行 OCR 时经【共享】``FITZ_LOCK`` 串行化（与 engine 渲染共用同一把锁，
+    见 server/ocr/locks.py）。
     """
     fitz = _require("fitz", "pymupdf")
     blocks: list[str] = []
     tables: list[dict] = []
-    with fitz.open(str(path)) as document:
+    with FITZ_LOCK, fitz.open(str(path)) as document:
         for page in document:
             blocks.append(page.get_text("text", sort=True) or "")
             try:

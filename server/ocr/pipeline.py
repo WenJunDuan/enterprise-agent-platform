@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import logging
 import os
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from server.ocr import cache as ocr_cache
 from server.ocr.classify import classify
 from server.ocr.engine import recognize, recognize_seal
 from server.ocr.native import native_read
@@ -32,6 +34,20 @@ _CLARITY_NOTE = {
 
 # P4：是否对 case 目录做确定性 OCR 预处理后注入模型上下文（=0 关闭，回落模型自己 Read）。
 OCR_PREPROCESS = os.getenv("OCR_PREPROCESS", "1").lower() in {"1", "true", "yes"}
+
+# OCR 文件级并行度：标书常十几个文件，扫描件走云 OCR 是 job-poll（IO 等待为主），串行会数分钟
+# 甚至撞 TENDER_TIMEOUT_SEC；多文件并行把墙钟从"求和"压到"最慢单个"。数字 PDF 走 native 本就快。
+# 受云服务并发上限约束，默认 4 保守（防触发云限流）；高并发云 / 全本地可经 env 调大。
+def _ocr_max_workers() -> int:
+    """防御解析 OCR_MAX_WORKERS：非法值回退默认、clamp ≥1（防 0/负数破坏 ThreadPoolExecutor，codex P2-5）。"""
+    try:
+        value = int(os.getenv("OCR_MAX_WORKERS", "4"))
+    except (TypeError, ValueError):
+        return 4
+    return max(1, value)
+
+
+OCR_MAX_WORKERS = _ocr_max_workers()
 
 
 def _iter_files(case_dir: str) -> list[Path]:
@@ -73,6 +89,22 @@ def _has_extractable_text(native: dict) -> bool:
 
 
 def extract_one(path: Path, *, run_seal: bool = False, purpose: str | None = None) -> dict:
+    """对单个文件识别（带按文件内容 sha256 的结果缓存，P1）。
+
+    缓存命中（重评 / 重试 / 换评分标准时同一文件）直接返回，跳过 OCR/直读——格式无关，慢的
+    扫描件收益最大。键含 purpose/run_seal（影响识别）。识别失败（可能临时故障）不缓存。
+    """
+    cached = ocr_cache.get_cached(path, purpose=purpose, run_seal=run_seal)
+    if cached is not None:
+        cached["path"] = str(path)  # 同内容不同文件名时 path 取当前文件
+        return cached
+    result = _extract_one_raw(path, run_seal=run_seal, purpose=purpose)
+    if result.get("kind") != "error":
+        ocr_cache.put_cached(path, purpose=purpose, run_seal=run_seal, result=result)
+    return result
+
+
+def _extract_one_raw(path: Path, *, run_seal: bool = False, purpose: str | None = None) -> dict:
     """对单个文件分类并按路由直读 / OCR；任何失败归一为 error（per-file 隔离）。
 
     - font-only 扫描 PDF（有字体但 native 抽不到文本）回退 OCR，避免返回空结果。
@@ -100,10 +132,21 @@ def extract_one(path: Path, *, run_seal: bool = False, purpose: str | None = Non
 
 
 def extract_dir(case_dir: str, *, run_seal: bool = False, purpose: str | None = None) -> list[dict]:
-    """对目录下每个文件跑确定性识别，返回结构化产物列表（不调模型）。"""
-    return [
-        extract_one(path, run_seal=run_seal, purpose=purpose) for path in _iter_files(case_dir)
-    ]
+    """对目录下每个文件跑确定性识别（多文件并行），返回结构化产物列表（不调模型）。
+
+    多文件时用线程池并行——扫描件走云 OCR 是 job-poll IO 等待，串行十几个标书文件会数分钟
+    甚至超时，并行把墙钟压到"最慢单个"。``ThreadPoolExecutor.map`` 保持文件顺序（底稿组装依赖
+    顺序）；``extract_one`` 已 per-file 隔离（异常归 error），并行不互相拖垮。并发度 = min(
+    ``OCR_MAX_WORKERS``, 文件数)。单文件直接同步（不值得开池）。
+    """
+    files = _iter_files(case_dir)
+    if len(files) <= 1:
+        return [extract_one(path, run_seal=run_seal, purpose=purpose) for path in files]
+    workers = min(OCR_MAX_WORKERS, len(files))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        return list(
+            pool.map(lambda path: extract_one(path, run_seal=run_seal, purpose=purpose), files)
+        )
 
 
 def _render_tables(tables: list[dict]) -> str:
