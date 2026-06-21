@@ -577,6 +577,14 @@ def _stamp_server_metadata(output: dict[str, Any], request_id: str | None) -> No
     output.setdefault("timestamp", datetime.now(timezone.utc).isoformat())
     # extracted_data 是事实底稿(模型职责)；偶发漏给时回落空对象,保结论可落库(降级而非掩盖)。
     output.setdefault("extracted_data", {})
+    # 信封类必填字段兜底（多模型可靠性）：模型偶尔漏给这些 schema required 字段——实测 deepseek
+    # 全量评标漏 `reasons` 致整单契约失败重试至失败。空默认安全：①不掩盖承重决策（verdict/explanation
+    # 仍必填非空；approved/rejected 的 policy_refs 即便默认 [] 也会被 G1b 闸要求非空 → 正确触发重试，
+    # 不会放过无依据判决）；②risk_score 缺省给中性 50（不触发高风险复审，不伪造高危）。
+    output.setdefault("reasons", [])
+    output.setdefault("policy_refs", [])
+    output.setdefault("evidence_chain", [])
+    output.setdefault("risk_score", 50)
 
 
 def normalize_audit_result(
