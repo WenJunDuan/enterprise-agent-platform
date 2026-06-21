@@ -484,6 +484,77 @@ def test_cross_tenant_project_denied(client):
     assert client.get(f"/tender/projects/{pid}/results", headers=_AUTH).status_code == 404
 
 
+def test_delete_project_cascades_all(client):
+    """删项目级联清掉投标任务 + 结论 + 项目自身；删后 detail 404、任务/结论均不可达。"""
+    from server.stores.result_store import (
+        archive_result_payload,
+        get_result_payload_by_request_id,
+    )
+
+    pid = _create_project(client, tender_no=f"R-{uuid.uuid4().hex[:8]}")["project_id"]
+    case = _make_dir_case("test-proj-del-cascade", pid)
+    try:
+        rid = client.post(
+            f"/tender/projects/{pid}/evaluate",
+            json={"mode": "directory", "directory_path": str(case)},
+            headers=_AUTH,
+        ).json()["request_id"]
+        upsert_tender_task(
+            {"request_id": rid, "status": "completed", "updated_at": "2026-06-20T00:00:00+00:00"}
+        )
+        archive_result_payload(
+            request_id=rid, tenant="acme", project_id=pid, conversation_id="c1",
+            claude_session_id=None, resume_session_id=None, fork_from_session_id=None,
+            schema_name=EVAL_SCHEMA, request_mode="structured", result_subtype="success",
+            cost_usd=0.0, prompt_preview="x",
+            response={"verdict": "approved", "claim_id": "BID-D"},
+        )
+        resp = client.delete(f"/tender/projects/{pid}", headers=_AUTH)
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["status"] == "deleted"
+        assert body["deleted"]["tender_projects"] == 1
+        assert body["deleted"]["tender_tasks"] >= 1
+        assert body["deleted"]["results"] >= 1
+        # 级联确认：项目 404、任务没了、结论没了
+        assert client.get(f"/tender/projects/{pid}", headers=_AUTH).status_code == 404
+        assert get_tender_task_admin(rid) is None
+        assert get_result_payload_by_request_id(request_id=rid, tenant="acme") is None
+    finally:
+        shutil.rmtree(case, ignore_errors=True)
+
+
+def test_delete_project_with_running_bid_returns_409(client):
+    """项目下有 running 投标任务 → 删项目回 409（防与执行中 worker 竞态），项目保留。"""
+    pid = _create_project(client, tender_no=f"R-{uuid.uuid4().hex[:8]}")["project_id"]
+    case = _make_dir_case("test-proj-del-running", pid)
+    try:
+        rid = client.post(
+            f"/tender/projects/{pid}/evaluate",
+            json={"mode": "directory", "directory_path": str(case)},
+            headers=_AUTH,
+        ).json()["request_id"]
+        upsert_tender_task(
+            {"request_id": rid, "status": "running", "updated_at": "2026-06-20T00:00:00+00:00"}
+        )
+        resp = client.delete(f"/tender/projects/{pid}", headers=_AUTH)
+        assert resp.status_code == 409
+        assert client.get(f"/tender/projects/{pid}", headers=_AUTH).status_code == 200
+    finally:
+        shutil.rmtree(case, ignore_errors=True)
+
+
+def test_delete_project_unknown_and_cross_tenant_404(client):
+    """删未知项目 404；跨租户项目对 acme 不可见亦不可删（404）。"""
+    from server.stores.tender_project_store import get_or_create_project
+
+    assert client.delete("/tender/projects/nope-pid", headers=_AUTH).status_code == 404
+    other = get_or_create_project(tenant="other-co", tender_no=f"R-{uuid.uuid4().hex[:8]}")
+    assert (
+        client.delete(f"/tender/projects/{other['project_id']}", headers=_AUTH).status_code == 404
+    )
+
+
 def test_worker_threads_project_id(monkeypatch):
     """codex P1.3 透传链：worker 把 project_id 传给 run_command_json（端到端透传未断）。"""
     import server.routes.tender_worker as worker

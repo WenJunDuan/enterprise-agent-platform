@@ -36,6 +36,8 @@ from server.stores.tender_compare_store import (
     is_stale,
 )
 from server.stores.tender_project_store import (
+    count_running_bids,
+    delete_project_cascade,
     get_or_create_project,
     get_project,
     list_projects,
@@ -451,6 +453,32 @@ async def get_tender_project_detail(
         recommended_bidder=recommended_bidder,
         compare_stale=compare_stale,
     )
+
+
+@router.delete("/projects/{project_id}")
+async def delete_tender_project_endpoint(
+    project_id: str,
+    authorization: str | None = Header(None),
+) -> dict[str, Any]:
+    """删除招标项目及其级联数据（投标任务 / 结论 / 横比 + submission 目录）。
+
+    安全守卫：项目下有 running 投标任务时回 409，避免与执行中的 worker 竞态
+    （对齐单任务删除的 idle 守卫）。删成功后逐个清理各投标的 submission 目录。
+    """
+    tenant = verify_tenant(authorization)
+    if get_project(project_id, tenant) is None:
+        raise HTTPException(status_code=404, detail="Tender project not found")
+    if await asyncio.to_thread(count_running_bids, project_id, tenant) > 0:
+        raise HTTPException(
+            status_code=409,
+            detail="项目下仍有运行中的评标任务，请等其结束后再删除",
+        )
+    outcome = await asyncio.to_thread(delete_project_cascade, project_id, tenant)
+    if outcome is None:
+        raise HTTPException(status_code=404, detail="Tender project not found")
+    for case_path in outcome["case_paths"]:
+        remove_submission_dir(case_path)
+    return {"project_id": project_id, "status": "deleted", "deleted": outcome["deleted"]}
 
 
 @router.post("/projects/{project_id}/evaluate", response_model=TenderSubmitAcceptedResponse)

@@ -319,6 +319,22 @@ export async function deleteTenderTask(requestId: string): Promise<void> {
   if (!res.ok) await handleResponse(res)
 }
 
+/**
+ * 删除整个招标项目（级联删投标任务 / 结论 / 横比）。
+ *
+ * 后端 DELETE /tender/projects/{id}：空项目也能删干净，有运行中任务时回 409。
+ */
+export async function deleteTenderProject(projectId: string): Promise<void> {
+  const res = await fetch(
+    url(`/tender/projects/${encodeURIComponent(projectId)}`),
+    {
+      method: 'DELETE',
+      headers: authHeaders(),
+    }
+  )
+  if (!res.ok) await handleResponse(res)
+}
+
 export async function waitForTenderTask(
   requestId: string,
   options: WaitOptions<TenderTaskStatusResponse> = {}

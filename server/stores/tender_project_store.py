@@ -196,3 +196,74 @@ def update_project_status(project_id: str, tenant: str, status: str) -> bool:
             (status, _utc_now(), project_id, tenant),
         )
         return cursor.rowcount > 0
+
+
+def count_running_bids(project_id: str, tenant: str) -> int:
+    """统计该招标项目下仍在 running 的投标评标任务数（删项目前的安全守卫用）。"""
+    with connect_sqlite(PLATFORM_DB_FILE) as connection:
+        row = connection.execute(
+            "SELECT COUNT(*) AS n FROM tender_tasks "
+            "WHERE tenant = ? AND group_id = ? AND status = 'running'",
+            (tenant, project_id),
+        ).fetchone()
+        return int(row["n"]) if row else 0
+
+
+def delete_project_cascade(project_id: str, tenant: str) -> dict[str, Any] | None:
+    """删除招标项目及其全部级联数据，单事务原子。
+
+    招标项目 owns 多家投标评标，删项目须连带清掉（均按 ``tenant`` 双作用域防越权）：
+      - ``tender_tasks``            (group_id = project_id) —— 投标评标任务
+      - ``results``                 (project_id)            —— 评标结论档
+      - ``tender_compare_results``  (project_id)            —— 价格横比结果
+      - ``tender_compare_tasks``    (group_id = project_id) —— 横比任务
+      - ``tender_projects`` 自身
+
+    Args:
+        project_id: 招标项目 id。
+        tenant: 租户作用域，跨租户不可见亦不可删。
+
+    Returns:
+        命中则返回 ``{"deleted": {表名: 行数}, "case_paths": [...]}``，
+        ``case_paths`` 为被删任务的 submission 目录（供调用方清理磁盘）；
+        项目不存在或不属于该 tenant 时返回 ``None``。
+    """
+    with connect_sqlite(PLATFORM_DB_FILE, immediate=True) as connection:
+        project = connection.execute(
+            "SELECT project_id FROM tender_projects WHERE project_id = ? AND tenant = ?",
+            (project_id, tenant),
+        ).fetchone()
+        if project is None:
+            return None
+        # 先采集 submission 目录（删行后就查不到了），供路由层清理磁盘残留。
+        case_paths = [
+            row["case_path"]
+            for row in connection.execute(
+                "SELECT case_path FROM tender_tasks WHERE tenant = ? AND group_id = ?",
+                (tenant, project_id),
+            ).fetchall()
+            if row["case_path"]
+        ]
+        deleted = {
+            "tender_tasks": connection.execute(
+                "DELETE FROM tender_tasks WHERE tenant = ? AND group_id = ?",
+                (tenant, project_id),
+            ).rowcount,
+            "results": connection.execute(
+                "DELETE FROM results WHERE tenant = ? AND project_id = ?",
+                (tenant, project_id),
+            ).rowcount,
+            "tender_compare_results": connection.execute(
+                "DELETE FROM tender_compare_results WHERE tenant = ? AND project_id = ?",
+                (tenant, project_id),
+            ).rowcount,
+            "tender_compare_tasks": connection.execute(
+                "DELETE FROM tender_compare_tasks WHERE tenant = ? AND group_id = ?",
+                (tenant, project_id),
+            ).rowcount,
+            "tender_projects": connection.execute(
+                "DELETE FROM tender_projects WHERE project_id = ? AND tenant = ?",
+                (project_id, tenant),
+            ).rowcount,
+        }
+    return {"deleted": deleted, "case_paths": case_paths}

@@ -19,7 +19,7 @@ export function AppTitle() {
           asChild
         >
           <Link
-            to='/'
+            to='/contracts/tender-review'
             onClick={() => setOpenMobile(false)}
             className='flex flex-1 items-center gap-2 text-start leading-tight group-data-[collapsible=icon]:justify-center'
           >
