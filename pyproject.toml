@@ -27,6 +27,7 @@ ocr = [
     "python-docx>=1.1",
     "pymupdf>=1.26",
     "pypdf>=5.0",
+    "certifi>=2024.0",  # 线上 OCR(OCR_CLOUD=1)urllib HTTPS 验证 CA 包；缺则 macOS 等环境证书验证失败
 ]
 
 [project.scripts]

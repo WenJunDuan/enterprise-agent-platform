@@ -15,11 +15,13 @@ from __future__ import annotations
 import base64
 import json
 import os
+import ssl
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
 
-from server.ocr import OcrDependencyError
+from server.ocr import OcrDependencyError, OcrError
 
 # PaddleOCR-VL 完整 pipeline 可选启用；默认由 LiteLLM/OpenAI-compatible 端点做整页识别。
 OCR_VL_PIPELINE_VERSION = os.getenv("OCR_VL_PIPELINE_VERSION", "v1.6")
@@ -36,6 +38,28 @@ OCR_VL_USE_PADDLE_PIPELINE = os.getenv("OCR_VL_USE_PADDLE_PIPELINE", "0").lower(
     "yes",
 }
 OCR_SEAL_PIPELINE = os.getenv("OCR_SEAL_PIPELINE", "seal_recognition")
+
+# 线上 PaddleOCR-VL 云服务（aistudio job API）：OCR_CLOUD=1 走云（异步 job-poll，服务端切页+版面，
+# 无需本地渲染/无需本地 paddleocr），=0 走上面的 OpenAI 兼容/本地 pipeline。复用同一套
+# OCR_VL_SERVER_URL(=job url)/OCR_VL_API_KEY/OCR_VL_MODEL_NAME，换 litellm 只改 .env 这三行的值。
+OCR_CLOUD = os.getenv("OCR_CLOUD", "0").lower() in {"1", "true", "yes"}
+OCR_VL_CLOUD_POLL_INTERVAL = float(os.getenv("OCR_VL_CLOUD_POLL_INTERVAL", "5"))
+OCR_VL_CLOUD_MAX_WAIT = float(os.getenv("OCR_VL_CLOUD_MAX_WAIT", "600"))
+
+
+def _make_ssl_context() -> ssl.SSLContext | None:
+    """用 certifi 的 CA 包构造 SSL context——urllib 默认在 macOS 等环境找不到系统 CA 会
+    CERTIFICATE_VERIFY_FAILED（requests 自带 certifi 故无此问题）。缺 certifi 则回落系统默认。
+    """
+    try:
+        import certifi
+
+        return ssl.create_default_context(cafile=certifi.where())
+    except Exception:
+        return None
+
+
+_SSL_CONTEXT = _make_ssl_context()
 
 
 def _build_vl_pipeline():
@@ -160,7 +184,7 @@ def _call_openai_compatible_vlm(*, data_url: str, prompt: str) -> str:
         headers=headers,
     )
     try:
-        with urllib.request.urlopen(request, timeout=OCR_VL_TIMEOUT) as response:
+        with urllib.request.urlopen(request, timeout=OCR_VL_TIMEOUT, context=_SSL_CONTEXT) as response:
             payload = json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         detail = f"HTTP Error {exc.code}: {exc.reason}"
@@ -247,13 +271,124 @@ def _recognize_via_paddle_pipeline(path: Path) -> dict:
     return {"kind": "ocr", "pipeline_version": OCR_VL_PIPELINE_VERSION, "pages": pages}
 
 
+def _post_multipart(
+    url: str, *, fields: dict[str, str], file_path: Path, headers: dict[str, str]
+) -> dict:
+    """urllib 手搓 multipart/form-data 上传（项目不装 requests）。返回解析后的 JSON。"""
+    boundary = "----ocrcloud" + base64.urlsafe_b64encode(os.urandom(12)).decode("ascii")
+    safe_name = f"upload{file_path.suffix.lower()}"  # 避非 ASCII 文件名在 multipart 头里的编码坑
+    parts: list[bytes] = []
+    for key, value in fields.items():
+        parts.append(f"--{boundary}\r\n".encode())
+        parts.append(f'Content-Disposition: form-data; name="{key}"\r\n\r\n'.encode())
+        parts.append(f"{value}\r\n".encode())
+    parts.append(f"--{boundary}\r\n".encode())
+    parts.append(f'Content-Disposition: form-data; name="file"; filename="{safe_name}"\r\n'.encode())
+    parts.append(b"Content-Type: application/octet-stream\r\n\r\n")
+    parts.append(file_path.read_bytes())
+    parts.append(f"\r\n--{boundary}--\r\n".encode())
+    request = urllib.request.Request(
+        url,
+        data=b"".join(parts),
+        headers={**headers, "Content-Type": f"multipart/form-data; boundary={boundary}"},
+    )
+    with urllib.request.urlopen(request, timeout=OCR_VL_TIMEOUT, context=_SSL_CONTEXT) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def _cloud_submit_job(path: Path) -> str:
+    """上传文件建 OCR job（Local File Mode）→ 返回 jobId。"""
+    optional_payload = {
+        "useDocOrientationClassify": False,
+        "useDocUnwarping": False,
+        "useChartRecognition": False,
+    }
+    payload = _post_multipart(
+        OCR_VL_SERVER_URL,
+        fields={"model": OCR_VL_MODEL_NAME or "", "optionalPayload": json.dumps(optional_payload)},
+        file_path=path,
+        headers={"Authorization": f"Bearer {OCR_VL_API_KEY}"},
+    )
+    try:
+        return payload["data"]["jobId"]
+    except (KeyError, TypeError) as exc:
+        raise OcrError(f"PaddleOCR 云：建 job 返回异常 {payload!r}") from exc
+
+
+def _cloud_poll_until_done(job_id: str) -> str:
+    """轮询 job 直到 done → 返回 jsonl url；failed/超时抛 OcrError（总超时 OCR_VL_CLOUD_MAX_WAIT）。"""
+    job_url = f"{OCR_VL_SERVER_URL.rstrip('/')}/{job_id}"
+    headers = {"Authorization": f"Bearer {OCR_VL_API_KEY}"}
+    deadline = time.monotonic() + OCR_VL_CLOUD_MAX_WAIT
+    while True:
+        request = urllib.request.Request(job_url, headers=headers)
+        with urllib.request.urlopen(request, timeout=OCR_VL_TIMEOUT, context=_SSL_CONTEXT) as response:
+            data = json.loads(response.read().decode("utf-8")).get("data", {})
+        state = data.get("state")
+        if state == "done":
+            return data["resultUrl"]["jsonUrl"]
+        if state == "failed":
+            raise OcrError(f"PaddleOCR 云 job 失败：{data.get('errorMsg')}")
+        if time.monotonic() >= deadline:
+            raise OcrError(f"PaddleOCR 云 job 超时（>{int(OCR_VL_CLOUD_MAX_WAIT)}s，末态 {state}）")
+        time.sleep(OCR_VL_CLOUD_POLL_INTERVAL)
+
+
+def _parse_cloud_jsonl(jsonl_text: str) -> list[dict]:
+    """解析 PaddleOCR 云 jsonl：每行 result.layoutParsingResults[] → 页（**只取文本，不下图**）。
+
+    置信度尽力而为：版面里若有逐块 score(prunedResult/layout)，经 _page_confidence 接出；无则 None。
+    """
+    pages: list[dict] = []
+    for line in jsonl_text.strip().split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        result = json.loads(line).get("result", {})
+        for res in result.get("layoutParsingResults", []):
+            markdown = res.get("markdown", {})
+            text = markdown.get("text", "") if isinstance(markdown, dict) else str(markdown or "")
+            layout = res.get("prunedResult") or res.get("layout") or []
+            layout = layout if isinstance(layout, list) else []
+            pages.append(
+                {"markdown": text, "layout": layout, "confidence": _page_confidence(layout)}
+            )
+    return pages
+
+
+def _recognize_via_paddle_cloud(path: Path) -> dict:
+    """线上 PaddleOCR-VL 云服务（aistudio job API）：建 job → 轮询 → 取 jsonl。
+
+    协议与 OpenAI 兼容路径完全不同（异步 job-poll）。服务端切页+版面，**无需本地渲染/本地 paddleocr**。
+    失败/超时抛异常由 pipeline per-file 隔离（→ kind=error / file_clarity=failed），绝不静默。
+    """
+    if not OCR_VL_SERVER_URL or not OCR_VL_API_KEY:
+        raise OcrDependencyError("OCR_CLOUD=1 但 OCR_VL_SERVER_URL / OCR_VL_API_KEY 未配置")
+    try:
+        job_id = _cloud_submit_job(path)
+        jsonl_url = _cloud_poll_until_done(job_id)
+        request = urllib.request.Request(jsonl_url)
+        with urllib.request.urlopen(request, timeout=OCR_VL_TIMEOUT, context=_SSL_CONTEXT) as response:
+            jsonl_text = response.read().decode("utf-8")
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+        raise OcrError(f"PaddleOCR 云调用失败：{exc}") from exc
+    return {
+        "kind": "ocr",
+        "pipeline_version": OCR_VL_PIPELINE_VERSION,
+        "engine": "paddleocr-cloud",
+        "pages": _parse_cloud_jsonl(jsonl_text),
+    }
+
+
 def recognize(path: Path) -> dict:
     """扫描件识别。
 
-    默认走 LiteLLM/OpenAI-compatible 远端 VLM，避开本地 layout predictor 在部分 arm64
-    容器运行时的 native 崩溃；需要完整 PaddleOCRVL pipeline 时显式设
-    OCR_VL_USE_PADDLE_PIPELINE=1。
+    OCR_CLOUD=1 走线上 PaddleOCR-VL 云服务（job-poll）；否则默认走 LiteLLM/OpenAI-compatible
+    远端 VLM，避开本地 layout predictor 在部分 arm64 容器运行时的 native 崩溃；需要完整
+    PaddleOCRVL pipeline 时显式设 OCR_VL_USE_PADDLE_PIPELINE=1。
     """
+    if OCR_CLOUD:  # 显式开关优先：=1 走线上云服务（job-poll），与 litellm/本地解耦
+        return _recognize_via_paddle_cloud(path)
     if OCR_VL_SERVER_URL and not OCR_VL_USE_PADDLE_PIPELINE:
         return _recognize_via_openai_compatible(path)
     return _recognize_via_paddle_pipeline(path)
