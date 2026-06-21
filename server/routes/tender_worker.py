@@ -64,6 +64,8 @@ TENDER_CONTRACT_MAX_RETRY = int(os.getenv("TENDER_CONTRACT_MAX_RETRY", "2"))
 _PROGRESS_FLUSH_SEC = float(os.getenv("TENDER_PROGRESS_FLUSH_SEC", "1.5"))  # 写 DB 节流间隔
 _PROGRESS_MAX_CHARS = int(os.getenv("TENDER_PROGRESS_MAX_CHARS", "4000"))  # progress_message 留最新尾部
 _PROGRESS_LOG_SNIPPET = 500  # 每片段落思考日志的截断长度
+# 思考日志节流：每积累多少字符记一次 INFO（partial 流式逐字回调 1000+ 次，否则日志爆炸）。
+_PROGRESS_LOG_EVERY = int(os.getenv("TENDER_PROGRESS_LOG_EVERY", "800"))
 
 # 评标推理强度（extended thinking）：评标是高难合规判断，默认 xhigh 压 deepseek 随机性（per-call，
 # 不走全局 build_options 默认 → 不拖慢 audit，codex r4 P1）；env 可调或设非法值走端点默认。
@@ -280,23 +282,28 @@ async def _execute_inner(
                 "updated_at": started_at,
             },
         )
-        # 思考流式：on_progress 累积 agent 文本片段（含 deepseek 思考/分析）到内存；flusher 每
+        # 思考流式：on_progress 累积 agent 文本片段（含思考/分析）到内存；flusher 每
         # _PROGRESS_FLUSH_SEC 把最新尾部写 task.progress_message（节流，防每片段写 DB），前端轮询取。
-        progress_state = {"text": ""}
+        # logged_len：日志节流游标——partial 模式逐字回调 1000+ 次，不能每次都 INFO（日志爆炸）。
+        progress_state = {"text": "", "logged_len": 0}
 
         def on_progress(text: str) -> None:
-            snippet = text.strip()
-            if not snippet:
+            # **不 strip**：partial 模式下每个 delta 是句中片段，strip 会吞掉词间空格致显示粘连
+            # （helloworld）；只跳过空串。直接拼接（不再每片段加 \n，否则逐字 delta 会每字一行）。
+            if not text:
                 return
-            progress_state["text"] = (progress_state["text"] + snippet + "\n")[-_PROGRESS_MAX_CHARS:]
-            logger.info(
-                "tender_progress",
-                extra={
-                    "request_id": request_id,
-                    "tenant": tenant or "default",
-                    "snippet": snippet[:_PROGRESS_LOG_SNIPPET],
-                },
-            )
+            progress_state["text"] = (progress_state["text"] + text)[-_PROGRESS_MAX_CHARS:]
+            # 日志节流：仅每积累 ≥ _PROGRESS_LOG_EVERY 字符记一次思考日志（partial 1000+ 次回调不刷屏）。
+            if len(progress_state["text"]) - int(progress_state["logged_len"]) >= _PROGRESS_LOG_EVERY:
+                progress_state["logged_len"] = len(progress_state["text"])
+                logger.info(
+                    "tender_progress",
+                    extra={
+                        "request_id": request_id,
+                        "tenant": tenant or "default",
+                        "snippet": progress_state["text"][-_PROGRESS_LOG_SNIPPET:],
+                    },
+                )
 
         async def _flush_progress() -> None:
             while True:
