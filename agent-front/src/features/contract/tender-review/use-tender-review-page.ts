@@ -7,7 +7,7 @@ import {
 } from '@tanstack/react-query'
 import {
   createTenderProject,
-  deleteTenderTask,
+  deleteTenderProject,
   evaluateTenderProjectUpload,
   getTenderCompareOrNull,
   getTenderProject,
@@ -440,15 +440,14 @@ export function useTenderReviewPage(
     return details.flatMap((detail) => (detail.bids ?? []).map((bid) => bid.request_id))
   }
 
-  /** B⑤: Batch delete — delete every bid task under each selected project. */
+  /** B⑤: Batch delete — 删整个招标项目（后端级联删投标任务/结论/横比），空项目也能删。 */
   async function batchDeleteProjects(projectIds: string[]) {
-    const requestIds = await collectBidRequestIds(projectIds)
-    if (requestIds.length === 0) return
+    if (projectIds.length === 0) return
     const results = await Promise.allSettled(
-      requestIds.map((id) => deleteTenderTask(id))
+      projectIds.map((id) => deleteTenderProject(id))
     )
     await queryClient.invalidateQueries({ queryKey: TENDER_PROJECTS_QUERY_KEY })
-    reportBatchFailures(results, requestIds.length, '删除')
+    reportBatchFailures(results, projectIds.length, '删除')
   }
 
   /** B⑤: Batch retry — re-run every bid task under each selected project. */
