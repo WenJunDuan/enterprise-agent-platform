@@ -118,7 +118,20 @@ fingerprint: ""
 
 ## 当前状态
 
-2026-06-21（**GOAL 立项：评标逐项扣分+证据定位** · ⟵ 从这读起）: 用户实测设为 goal「持续优化直到满足」：
+2026-06-21（**会话收尾归档 · 用户去 mac mini 部署** · ⟵ 从这读起）: 本会话全部代码已 push origin/main、421 passed/ruff、
+进程全关、交叉 review(codex+reviewer+spec) 无 P0 + cleanup 4 项已修(`10fc2ad`)。**可部署**。
+- **评标 goal G1/G2 三指标(有扣有得/扣分明细/上下文章节定位)均已实现并在用户给的 `烛照-标段一v3.pdf` 上跑通**
+  (13 项 scored/6 项部分得分/basis 扣分明细/evidence 章节定位)。
+- **唯一悬空待决(非阻塞)**：用户认为"投标项目号是中国移动 20000020251114074 与本招标不同"**只是名字不一样、不该整单废标**。
+  待用户确认后改 tender-evaluate.md：**项目名/编号不一致 → 重大扣分点+风险标注，不自动废标**(verdict 走正常打分而非 rejected)。
+  下会话起点 = 用户确认这条 → 改 prompt → 起服务 UI 实测。
+- **部署要点(mac mini)**：`uv sync --extra ocr`(纯 uv sync 会卸 pypdf/openpyxl/docx)；配 `.env`(参照
+  `enterprise-agent.env.example`，本机 .env 不入库)：MODEL_BASE_URL/AUTH_TOKEN/MODEL_NAME、OCR_CLOUD+OCR_VL_*、
+  TENANT_KEYS、CORS_ALLOWED_ORIGINS 改成 mac mini 地址；可选 TENDER_TIMEOUT_SEC/CLAUDE_MAX_BUFFER_BYTES/
+  OCR_MAX_FILE_BLOCK_CHARS/TENDER_CONTRACT_MAX_RETRY。前端 `npm --prefix agent-front run build` + 后端
+  `uv run python -m server.cli serve`(或 SERVE_UI_DIST=true 由后端托管 dist)。
+
+2026-06-21（**GOAL 立项：评标逐项扣分+证据定位**）: 用户实测设为 goal「持续优化直到满足」：
 G1 满分扣减(不要一律不通过/0,已识别的问题应扣几分) + G2 证据定位准确(定位项=实际找到的)。详见
 `sprints/2026-06-21-tender-scoring-goal/goal.md`。**已停所有在途任务**(2 tender reclaimed)、代码全在 origin/main。
 **关键约束**:当前测试标(烛照-标段一v3.pdf)封面是中国移动 20000020251114074 项目→对华为南通是真废标(逐项 0 正确),
