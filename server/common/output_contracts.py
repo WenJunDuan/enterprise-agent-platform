@@ -127,6 +127,23 @@ def _coerce_risk_dimensions(value: Any) -> list[dict[str, Any]] | None:
     return normalized or None
 
 
+def _has_hard_disqualification(extracted: Any) -> bool:
+    """True when extracted_data carries a hard 废标/资格否决 (disqualification gate trigger).
+
+    命令 S4：``disqualification_hits`` 非空，或任一 ``eligibility_checks.status == 'fail'`` →
+    整单废标/资格否决（独立 gate）。仅 tender 评标会带这些字段；expense 审核 extracted_data 无此
+    结构，恒 False，故对 expense 无影响。
+    """
+    if not isinstance(extracted, dict):
+        return False
+    if extracted.get("disqualification_hits"):
+        return True
+    checks = extracted.get("eligibility_checks")
+    if isinstance(checks, list):
+        return any(isinstance(ch, dict) and ch.get("status") == "fail" for ch in checks)
+    return False
+
+
 def enrich_audit_decision(structured_output: StructuredJSON) -> StructuredJSON:
     """Inject `result`/`conclusion` derived from `verdict`; normalize string-list fields."""
     if isinstance(structured_output, dict):
@@ -536,6 +553,16 @@ def normalize_audit_result(
     if not isinstance(structured_output, dict):
         return structured_output
     _stamp_server_metadata(structured_output, request_id)
+    # 承重 verdict 一致性（R2）：废标/资格否决独立 gate 优先级最高——extracted_data.disqualification_hits
+    # 非空，或任一 eligibility_checks.status=fail（命中硬废标/资格否决）→ verdict 必须 rejected
+    # （命令 S4 法定规则）。模型偶把"投错标/实质性未响应"判成 manual_review（S4 在"废标→rejected"
+    # 与"有 manual_review 项→manual_review"间优先级含糊，模型择后者，与其自己标的 disqualification_hits
+    # 自相矛盾）→ 此处确定性纠偏。跑在硬校验**前** → 纠偏后的 rejected 仍过 policy_refs 真伪闸
+    # （模型既已据废标条款标 disqualification_hits，通常已带 policy_refs；缺则校验失败触发重试，正确）。
+    if structured_output.get("verdict") != "rejected" and _has_hard_disqualification(
+        structured_output.get("extracted_data")
+    ):
+        structured_output["verdict"] = "rejected"
     # manual_review_reason 仅对 verdict=manual_review 有意义；approved/rejected 时模型偶尔仍带出
     # 旧枚举（如 data_conflict），会残留进结论误导前端/消费者 → 非 manual_review 一律剥离。
     if structured_output.get("verdict") != "manual_review":

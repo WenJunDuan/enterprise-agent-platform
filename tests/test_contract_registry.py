@@ -83,6 +83,45 @@ def test_builtin_audit_schema_rejects_bad_verdict():
         apply_schema_semantics(DEFAULT_OUTPUT_SCHEMA_NAME, {"verdict": "??", "explanation": "x"})
 
 
+def test_disqualification_hits_coerce_verdict_to_rejected():
+    """R2 verdict 一致性：disqualification_hits 非空（硬废标）→ verdict 强制 rejected，即使模型
+    判 manual_review（治"投错标判成 manual_review"，与其自标 disqualification_hits 自相矛盾）。"""
+    out = apply_schema_semantics(
+        DEFAULT_OUTPUT_SCHEMA_NAME,
+        _valid_audit_result(
+            verdict="manual_review",
+            manual_review_reason="insufficient_evidence",
+            policy_refs=["tender_evalmethod_005"],
+            extracted_data={"disqualification_hits": [{"rule_id": "RR2", "finding": "投错标"}]},
+        ),
+    )
+    assert out["verdict"] == "rejected"
+    assert out["result"] is False  # enrich 据 rejected 派生
+    assert "manual_review_reason" not in out  # 非 manual_review 剥离
+
+
+def test_eligibility_fail_coerces_verdict_to_rejected():
+    """R2：任一 eligibility_checks.status=fail（资格否决）→ verdict 强制 rejected。"""
+    out = apply_schema_semantics(
+        DEFAULT_OUTPUT_SCHEMA_NAME,
+        _valid_audit_result(
+            verdict="approved",
+            policy_refs=["tender_evalmethod_006"],
+            extracted_data={"eligibility_checks": [{"check": "资质", "status": "fail"}]},
+        ),
+    )
+    assert out["verdict"] == "rejected"
+
+
+def test_no_disqualification_leaves_verdict_untouched():
+    """无废标/资格否决 → verdict 不被纠偏（expense 域 extracted_data 无此结构，恒不触发）。"""
+    out = apply_schema_semantics(
+        DEFAULT_OUTPUT_SCHEMA_NAME,
+        _valid_audit_result(verdict="approved", extracted_data={"scoring": []}),
+    )
+    assert out["verdict"] == "approved"
+
+
 # ── G1 验证闸（round4 F1）：schema 形校验先于一切语义处理 ──────────────────────
 
 
