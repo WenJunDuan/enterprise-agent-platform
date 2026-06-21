@@ -76,7 +76,7 @@ def test_criteria_backfill_first_writer_wins(monkeypatch):
     upsert_project_doc(project_id=pid, tenant=tenant, tender_files="[]")
 
     original_criteria = {"source_ref": "original", "method": "original_method", "total_max": 50, "items": []}
-    update_project_doc_criteria(pid, json.dumps(original_criteria))
+    update_project_doc_criteria(pid, tenant, json.dumps(original_criteria))
 
     # 尝试用新 criteria 覆盖 → 应不覆盖
     new_criteria = {"source_ref": "new", "method": "new_method", "total_max": 100, "items": []}

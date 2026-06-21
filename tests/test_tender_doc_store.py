@@ -77,7 +77,7 @@ def test_update_project_doc_ocr():
 
     pid = _pid()
     upsert_project_doc(project_id=pid, tenant="t1", tender_files="[]", ocr_status="running")
-    update_project_doc_ocr(pid, ocr_text="底稿文本内容", ocr_clarity="clear", status="ready")
+    update_project_doc_ocr(pid, tenant="t1", ocr_text="底稿文本内容", ocr_clarity="clear", status="ready")
     row = get_project_doc(pid, "t1")
     assert row is not None
     assert row["ocr_text"] == "底稿文本内容"
@@ -94,7 +94,7 @@ def test_update_project_doc_ocr_failed():
 
     pid = _pid()
     upsert_project_doc(project_id=pid, tenant="t1", tender_files="[]", ocr_status="running")
-    update_project_doc_ocr(pid, ocr_text=None, ocr_clarity=None, status="failed")
+    update_project_doc_ocr(pid, tenant="t1", ocr_text=None, ocr_clarity=None, status="failed")
     row = get_project_doc(pid, "t1")
     assert row is not None
     assert row["ocr_status"] == "failed"
@@ -111,7 +111,7 @@ def test_update_project_doc_criteria():
     pid = _pid()
     upsert_project_doc(project_id=pid, tenant="t1", tender_files="[]")
     criteria = json.dumps([{"item": "技术评分", "max": 60}])
-    update_project_doc_criteria(pid, criteria)
+    update_project_doc_criteria(pid, "t1", criteria)
     row = get_project_doc(pid, "t1")
     assert row is not None
     assert row["criteria"] == criteria
@@ -220,7 +220,7 @@ def test_update_bid_doc_ocr():
         bid_files="[]",
         ocr_status="running",
     )
-    update_bid_doc_ocr(pid, bid_id, ocr_text="投标底稿内容", status="ready")
+    update_bid_doc_ocr(pid, bid_id, tenant="t1", ocr_text="投标底稿内容", status="ready")
     row = get_bid_doc(pid, bid_id, "t1")
     assert row is not None
     assert row["ocr_text"] == "投标底稿内容"
@@ -240,7 +240,7 @@ def test_update_bid_doc_ocr_failed():
         bid_files="[]",
         ocr_status="running",
     )
-    update_bid_doc_ocr(pid, bid_id, ocr_text=None, status="failed")
+    update_bid_doc_ocr(pid, bid_id, tenant="t1", ocr_text=None, status="failed")
     row = get_bid_doc(pid, bid_id, "t1")
     assert row is not None
     assert row["ocr_status"] == "failed"
@@ -257,7 +257,7 @@ def test_update_bid_doc_extracted():
     bid_id = _bid()
     upsert_bid_doc(project_id=pid, bid_id=bid_id, tenant="t1", bidder_name="X", bid_files="[]")
     extracted = json.dumps({"bidder": "华为", "price": 1000000})
-    update_bid_doc_extracted(pid, bid_id, extracted)
+    update_bid_doc_extracted(pid, bid_id, "t1", extracted)
     row = get_bid_doc(pid, bid_id, "t1")
     assert row is not None
     assert row["extracted"] == extracted

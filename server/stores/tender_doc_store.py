@@ -135,6 +135,7 @@ def get_project_doc(project_id: str, tenant: str) -> dict[str, Any] | None:
 def update_project_doc_ocr(
     project_id: str,
     *,
+    tenant: str,
     ocr_text: str | None,
     ocr_clarity: str | None,
     status: str,
@@ -143,6 +144,7 @@ def update_project_doc_ocr(
 
     Args:
         project_id: Tender project identifier.
+        tenant: Tenant scope — WHERE clause includes tenant to prevent cross-tenant writes.
         ocr_text: Full text extracted by OCR (None on failure).
         ocr_clarity: Clarity signal (None on failure).
         status: New ocr_status (ready or failed).
@@ -152,23 +154,25 @@ def update_project_doc_ocr(
             """
             UPDATE tender_project_docs
             SET ocr_text = ?, ocr_clarity = ?, ocr_status = ?, updated_at = ?
-            WHERE project_id = ?
+            WHERE project_id = ? AND tenant = ?
             """,
-            (ocr_text, ocr_clarity, status, _utc_now(), project_id),
+            (ocr_text, ocr_clarity, status, _utc_now(), project_id, tenant),
         )
 
 
-def update_project_doc_criteria(project_id: str, criteria_json: str) -> None:
+def update_project_doc_criteria(project_id: str, tenant: str, criteria_json: str) -> None:
     """Back-fill evaluation criteria after first evaluation parses them.
 
     Args:
         project_id: Tender project identifier.
+        tenant: Tenant scope — WHERE clause includes tenant to prevent cross-tenant writes.
         criteria_json: JSON-encoded list of scoring criteria items.
     """
     with connect_sqlite(PLATFORM_DB_FILE, immediate=True) as conn:
         conn.execute(
-            "UPDATE tender_project_docs SET criteria = ?, updated_at = ? WHERE project_id = ?",
-            (criteria_json, _utc_now(), project_id),
+            "UPDATE tender_project_docs SET criteria = ?, updated_at = ? "
+            "WHERE project_id = ? AND tenant = ?",
+            (criteria_json, _utc_now(), project_id, tenant),
         )
 
 
@@ -255,6 +259,7 @@ def update_bid_doc_ocr(
     project_id: str,
     bid_id: str,
     *,
+    tenant: str,
     ocr_text: str | None,
     status: str,
 ) -> None:
@@ -263,6 +268,7 @@ def update_bid_doc_ocr(
     Args:
         project_id: Parent tender project identifier.
         bid_id: Bid document identifier.
+        tenant: Tenant scope — WHERE clause includes tenant to prevent cross-tenant writes.
         ocr_text: Full text extracted by OCR (None on failure).
         status: New ocr_status (ready or failed).
     """
@@ -271,18 +277,19 @@ def update_bid_doc_ocr(
             """
             UPDATE tender_bid_docs
             SET ocr_text = ?, ocr_status = ?, updated_at = ?
-            WHERE project_id = ? AND bid_id = ?
+            WHERE project_id = ? AND bid_id = ? AND tenant = ?
             """,
-            (ocr_text, status, _utc_now(), project_id, bid_id),
+            (ocr_text, status, _utc_now(), project_id, bid_id, tenant),
         )
 
 
-def update_bid_doc_extracted(project_id: str, bid_id: str, extracted_json: str) -> None:
+def update_bid_doc_extracted(project_id: str, bid_id: str, tenant: str, extracted_json: str) -> None:
     """Back-fill extracted fields after evaluation.
 
     Args:
         project_id: Parent tender project identifier.
         bid_id: Bid document identifier.
+        tenant: Tenant scope — WHERE clause includes tenant to prevent cross-tenant writes.
         extracted_json: JSON-encoded extracted fields (bidder/price/qualifications).
     """
     with connect_sqlite(PLATFORM_DB_FILE, immediate=True) as conn:
@@ -290,7 +297,7 @@ def update_bid_doc_extracted(project_id: str, bid_id: str, extracted_json: str) 
             """
             UPDATE tender_bid_docs
             SET extracted = ?, updated_at = ?
-            WHERE project_id = ? AND bid_id = ?
+            WHERE project_id = ? AND bid_id = ? AND tenant = ?
             """,
-            (extracted_json, _utc_now(), project_id, bid_id),
+            (extracted_json, _utc_now(), project_id, bid_id, tenant),
         )
