@@ -33,6 +33,11 @@ _TENDER_SEMAPHORE = asyncio.Semaphore(MAX_CONCURRENT_TENDER)
 # 堆积 → 内存 DoS。在途(排队+执行)任务数达此上限时，evaluate/retry 直接回 503，不再无界接单。
 MAX_PENDING_TENDERS = int(os.getenv("MAX_PENDING_TENDERS", "50"))
 
+# 契约失败重试次数。tender 输出大而复杂（14+项 scoring），deepseek 文本模式偶发不出 JSON /
+# 写坏 JSON（间歇性，同标重跑可成功）。audit 早有重试环，tender 此前缺失 → 单次 flaky 即失败。
+# 默认 2（共 3 次尝试，比 audit 的 1 更宽，因 tender 输出更易 flaky）；OCR 预处理只做一次不重跑。
+TENDER_CONTRACT_MAX_RETRY = int(os.getenv("TENDER_CONTRACT_MAX_RETRY", "2"))
+
 # round4 F5：裸 asyncio.create_task 不留引用 → 待定任务可被 GC 静默回收。留强引用集，完成即
 # 自清；集合大小兼作"在途任务数"供准入闸用。
 _BACKGROUND_TASKS: set[asyncio.Task[None]] = set()
@@ -60,19 +65,38 @@ async def _run_evaluation(
         if ocr_block
         else None
     )
-    return await run_command_json(
-        "tender-evaluate",
-        directory_path,
-        schema_name=DEFAULT_OUTPUT_SCHEMA_NAME,
-        request_id=request_id,
-        tenant=tenant,
-        project_id=project_id,  # 显式透传 → 结论落 results.project_id（codex P1.3）
-        conversation_id=new_conversation_id(),
-        context=context,
-        # 文本模式（与 audit 对齐）：大底稿(百页标书)下 SDK 结构化输出会 error_max_structured_
-        # output_retries；文本模式由服务端抽 JSON，对大输入更稳。配合命令里的 JSON 输出硬化。
-        structured=False,
-    )
+    # 契约失败重试（对齐 audit runner）：deepseek 文本模式偶发不出 JSON / 写坏 JSON，重跑可成功。
+    # OCR 预处理在循环外只做一次（慢且确定性），仅重试模型调用。
+    last_error: Exception | None = None
+    for attempt in range(TENDER_CONTRACT_MAX_RETRY + 1):
+        try:
+            return await run_command_json(
+                "tender-evaluate",
+                directory_path,
+                schema_name=DEFAULT_OUTPUT_SCHEMA_NAME,
+                request_id=request_id,
+                tenant=tenant,
+                project_id=project_id,  # 显式透传 → 结论落 results.project_id（codex P1.3）
+                conversation_id=new_conversation_id(),
+                context=context,
+                # 文本模式（与 audit 对齐）：大底稿(百页标书)下 SDK 结构化输出会 error_max_structured_
+                # output_retries；文本模式由服务端抽 JSON，对大输入更稳。配合命令里的 JSON 输出硬化。
+                structured=False,
+            )
+        except Exception as exc:
+            last_error = exc
+            if attempt >= TENDER_CONTRACT_MAX_RETRY:
+                raise
+            logger.warning(
+                "tender attempt failed (%s, %d/%d), retrying: %s",
+                type(exc).__name__,
+                attempt + 1,
+                TENDER_CONTRACT_MAX_RETRY + 1,
+                exc,
+                extra={"request_id": request_id, "tenant": tenant or "default"},
+            )
+    # 不可达：循环要么 return 要么在最后一次 attempt re-raise。
+    raise AssertionError("unreachable: tender retry loop exited without returning") from last_error
 
 
 async def execute_tender_evaluation_task(
