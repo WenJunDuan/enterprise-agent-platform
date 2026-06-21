@@ -90,6 +90,12 @@ def build_options(**overrides: Any) -> ClaudeAgentOptions:
         # 捕获 bundled CLI 的 stderr，崩溃时把真因落日志（见 _log_cli_stderr）。
         "stderr": _log_cli_stderr,
     }
+    # 推理强度（extended thinking）：评标/审核是高难合规判断，此前从未开扩展思考 → deepseek 判断
+    # 随机性大（同案例两次跑结果差异大）。默认 xhigh；env CLAUDE_REASONING_EFFORT 可调
+    # （low/medium/high/xhigh/max）或设 off/none 走端点默认。仅接受合法档位，非法值忽略不致 CLI 报错。
+    effort = os.getenv("CLAUDE_REASONING_EFFORT", "xhigh").strip().lower()
+    if effort in ("low", "medium", "high", "xhigh", "max"):
+        defaults["effort"] = effort
     defaults.update(overrides)
     return ClaudeAgentOptions(**defaults)
 

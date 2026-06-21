@@ -30,3 +30,28 @@ def test_max_buffer_size_well_above_sdk_default():
 def test_no_budget_cap_set():
     """成本封顶已移除：build_options 不得再设 max_budget_usd（用户要求去掉限制）。"""
     assert build_options().max_budget_usd is None
+
+
+# ── 推理强度（extended thinking）：评标/审核默认 xhigh，治 deepseek 判断随机性 ──
+
+
+def test_effort_default_is_xhigh(monkeypatch):
+    monkeypatch.delenv("CLAUDE_REASONING_EFFORT", raising=False)
+    assert build_options().effort == "xhigh"
+
+
+def test_effort_env_override(monkeypatch):
+    monkeypatch.setenv("CLAUDE_REASONING_EFFORT", "high")
+    assert build_options().effort == "high"
+
+
+def test_effort_off_disables(monkeypatch):
+    # 设 off → 不设 effort（None），走端点默认（保留可关闭逃生口）。
+    monkeypatch.setenv("CLAUDE_REASONING_EFFORT", "off")
+    assert build_options().effort is None
+
+
+def test_effort_invalid_value_ignored(monkeypatch):
+    # 非法档位 → 忽略不设，不致 ClaudeAgentOptions/CLI 报错。
+    monkeypatch.setenv("CLAUDE_REASONING_EFFORT", "ultra")
+    assert build_options().effort is None
