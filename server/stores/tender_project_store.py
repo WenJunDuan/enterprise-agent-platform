@@ -198,6 +198,49 @@ def update_project_status(project_id: str, tenant: str, status: str) -> bool:
         return cursor.rowcount > 0
 
 
+# Columns allowed to be auto-filled from OCR-derived tender_info (R1).
+# Only existing tender_projects columns — unknown keys are ignored to prevent SQL injection.
+_FILLABLE_PROJECT_FIELDS = frozenset({"tender_no", "tenderee", "control_price", "method"})
+
+
+def update_project_fields_if_empty(
+    project_id: str,
+    tenant: str,
+    fields: dict[str, str | None],
+) -> None:
+    """Fill tender_projects columns that are currently NULL or empty string.
+
+    User-entered values always win: a field is only updated when the current DB value
+    IS NULL or IS an empty string, so manual edits are never overwritten by OCR-derived
+    metadata.  Unknown field names are silently ignored to avoid SQL injection.
+
+    Args:
+        project_id: Tender project identifier.
+        tenant: Tenant scope — WHERE clause includes tenant to prevent cross-tenant writes.
+        fields: Mapping of column name → new value.  Only keys present in
+                ``_FILLABLE_PROJECT_FIELDS`` are acted upon.
+    """
+    # Filter to allowed columns and non-empty candidate values only.
+    candidates = {
+        col: val
+        for col, val in fields.items()
+        if col in _FILLABLE_PROJECT_FIELDS and val
+    }
+    if not candidates:
+        return
+    with connect_sqlite(PLATFORM_DB_FILE, immediate=True) as connection:
+        now = _utc_now()
+        for col, val in candidates.items():
+            # Per-column conditional update: only set when current value is NULL or ''.
+            connection.execute(
+                f"UPDATE tender_projects "  # noqa: S608 — col is from allowlist, not user input
+                f"SET {col} = ?, updated_at = ? "
+                f"WHERE project_id = ? AND tenant = ? "
+                f"AND ({col} IS NULL OR {col} = '')",
+                (val, now, project_id, tenant),
+            )
+
+
 def count_active_bids(project_id: str, tenant: str) -> int:
     """统计该招标项目下在途（非终态 completed/failed）的投标评标任务数（删项目安全守卫用）。
 

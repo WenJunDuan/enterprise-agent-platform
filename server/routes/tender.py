@@ -7,6 +7,11 @@ P2 新增：
 - ``POST /tender/projects/{id}/tender-doc`` — 上传招标文件 + 后台 OCR 预热。
 - ``POST /tender/projects/{id}/bids`` — 上传投标文件 + 后台 OCR 预热。
 - ``GET  /tender/projects/{id}/docs-status`` — 轮询 OCR 状态（前端用）。
+
+R1 新增：
+- ``_extract_project_doc_info`` — OCR ready 后立即抽取 criteria + tender_info。
+- ``GET /tender/projects/{id}/tender-doc`` — 读取招标层 OCR + criteria + tender_info。
+- ``get_docs_status`` — 增加 criteria_status。
 """
 
 from __future__ import annotations
@@ -45,11 +50,13 @@ from server.stores.tender_compare_store import (
     get_compare_result,
     is_stale,
 )
+from server.common.command_adapter import run_command_json
 from server.stores.tender_doc_store import (
     get_project_doc,
     list_bid_docs,
     new_bid_id,
     update_bid_doc_ocr,
+    update_project_doc_criteria_extracted,
     update_project_doc_ocr,
     upsert_bid_doc,
     upsert_project_doc,
@@ -60,6 +67,7 @@ from server.stores.tender_project_store import (
     get_or_create_project,
     get_project,
     list_projects,
+    update_project_fields_if_empty,
 )
 from server.stores.tender_task_store import (
     delete_tender_task_if_idle,
@@ -609,6 +617,100 @@ def _is_ocr_text_valid(text: str) -> bool:
     return bool(stripped) and not stripped.startswith(_OCR_ERROR_PREFIX)
 
 
+async def _extract_project_doc_info(
+    project_id: str,
+    case_path: str,
+    ocr_text: str,
+    tenant: str,
+) -> None:
+    """R1: Extract criteria + tender_info from OCR text after OCR completes.
+
+    Calls the tender-extract-info command with the OCR text as context.  On success
+    writes criteria_json, tender_info_json, and criteria_status=ready to
+    tender_project_docs, then back-fills empty fields in tender_projects from
+    tender_info (user-entered values are never overwritten).
+
+    On ANY exception writes criteria_status=failed and leaves ocr_status=ready —
+    extraction failure is non-fatal and must not affect the OCR-ready signal.
+
+    Args:
+        project_id: Tender project identifier.
+        case_path: Directory path (used as the command argument for file context).
+        ocr_text: The OCR text already extracted — injected as command context.
+        tenant: Tenant scope for all DB writes.
+    """
+    context = (
+        "=== 招标文件 OCR 底稿（确定性预处理，优先用此文本，无需再 Read 文件）===\n"
+        + ocr_text
+    )
+    try:
+        payload, _meta = await run_command_json(
+            "tender-extract-info",
+            case_path,
+            schema_name=None,
+            tenant=tenant,
+            context=context,
+            structured=False,
+            archive_to_results=False,
+        )
+        # payload must be a dict with a 'criteria' key to be considered valid
+        if not isinstance(payload, dict) or "criteria" not in payload:
+            raise ValueError(f"tender-extract-info returned unexpected payload shape: {payload!r}")
+
+        criteria_obj = payload.get("criteria")
+        tender_info_obj = payload.get("tender_info")
+
+        import json as _json
+
+        criteria_json = _json.dumps(criteria_obj, ensure_ascii=False) if criteria_obj else None
+        tender_info_json = (
+            _json.dumps(tender_info_obj, ensure_ascii=False) if tender_info_obj else None
+        )
+
+        await asyncio.to_thread(
+            update_project_doc_criteria_extracted,
+            project_id,
+            tenant,
+            criteria_json=criteria_json,
+            tender_info_json=tender_info_json,
+            status="ready",
+        )
+
+        # Back-fill empty project metadata fields from tender_info (user values win).
+        if isinstance(tender_info_obj, dict):
+            fill_fields: dict[str, str | None] = {
+                k: tender_info_obj.get(k)
+                for k in ("tender_no", "tenderee", "control_price", "method")
+            }
+            await asyncio.to_thread(
+                update_project_fields_if_empty,
+                project_id,
+                tenant,
+                fill_fields,
+            )
+        logger.info(
+            "tender_doc_info_extracted",
+            extra={"project_id": project_id, "tenant": tenant or "default"},
+        )
+    except Exception:
+        logger.warning(
+            "tender_doc_info_extraction_failed",
+            extra={"project_id": project_id, "case_path": case_path},
+            exc_info=True,
+        )
+        try:
+            await asyncio.to_thread(
+                update_project_doc_criteria_extracted,
+                project_id,
+                tenant,
+                criteria_json=None,
+                tender_info_json=None,
+                status="failed",
+            )
+        except Exception:
+            logger.debug("failed to write criteria_status=failed", exc_info=True)
+
+
 async def _run_project_doc_ocr(
     project_id: str,
     case_path: str,
@@ -621,6 +723,11 @@ async def _run_project_doc_ocr(
     Runs prewarm_and_text under the upload-OCR semaphore (P1-2 concurrency cap).
     On success AND valid text writes ocr_status=ready; on any exception or error
     text writes ocr_status=failed (P1-3 — ensures read layer never sees stale ready).
+
+    R1 extension: after a successful OCR write, sets criteria_status=running and
+    immediately awaits _extract_project_doc_info.  Extraction failure is non-fatal
+    (criteria_status=failed) and never touches ocr_status=ready.
+
     Always writes tenant-scoped (P2).
 
     Args:
@@ -643,6 +750,16 @@ async def _run_project_doc_ocr(
                 ocr_clarity=None,
                 status="ready",
             )
+            # R1: set criteria_status=running, then kick off extraction (non-blocking to caller).
+            await asyncio.to_thread(
+                update_project_doc_criteria_extracted,
+                project_id,
+                tenant,
+                criteria_json=None,
+                tender_info_json=None,
+                status="running",
+            )
+            await _extract_project_doc_info(project_id, case_path, text, tenant)
         except Exception:
             logger.warning(
                 "tender_project_doc_ocr_failed",
@@ -861,6 +978,56 @@ async def upload_bid_doc(
     return {"bid_id": bid_id, "ocr_status": "running"}
 
 
+@router.get("/projects/{project_id}/tender-doc")
+async def get_tender_doc_info(
+    project_id: str,
+    authorization: str | None = Header(None),
+) -> dict[str, Any]:
+    """R1: 读取招标层文档信息（OCR 状态 + criteria + tender_info）。
+
+    Returns:
+        {
+            ocr_status, ocr_clarity,
+            criteria_status,
+            criteria: <object | null>,
+            tender_info: <object | null>,
+            tender_files: <list>
+        }
+
+    Raises:
+        404: Project not found or no tender-doc row exists.
+        401: Missing / invalid authorization header.
+    """
+    tenant = verify_tenant(authorization)
+    if get_project(project_id, tenant) is None:
+        raise HTTPException(status_code=404, detail="Tender project not found")
+
+    project_doc = await asyncio.to_thread(get_project_doc, project_id, tenant)
+    if project_doc is None:
+        raise HTTPException(
+            status_code=404, detail="No tender document uploaded for this project"
+        )
+
+    # Decode JSON blobs; return null when absent or unparseable.
+    def _safe_json(blob: str | None) -> Any:
+        if not blob:
+            return None
+        try:
+            return json.loads(blob)
+        except (json.JSONDecodeError, TypeError):
+            return None
+
+    tender_files_raw = project_doc.get("tender_files") or "[]"
+    return {
+        "ocr_status": project_doc.get("ocr_status"),
+        "ocr_clarity": project_doc.get("ocr_clarity"),
+        "criteria_status": project_doc.get("criteria_status", "pending"),
+        "criteria": _safe_json(project_doc.get("criteria")),
+        "tender_info": _safe_json(project_doc.get("tender_info")),
+        "tender_files": _safe_json(tender_files_raw) or [],
+    }
+
+
 @router.get("/projects/{project_id}/docs-status")
 async def get_docs_status(
     project_id: str,
@@ -868,9 +1035,11 @@ async def get_docs_status(
 ) -> dict[str, Any]:
     """返回招标层 + 各投标层的 OCR 状态（前端轮询用，P2）。
 
+    R1 extension: tender_doc dict now includes criteria_status for front-end polling.
+
     Returns:
         {
-            tender_doc: {ocr_status} | None,
+            tender_doc: {ocr_status, criteria_status} | None,
             bids: [{bid_id, bidder_name, ocr_status}]
         }
     """
@@ -883,7 +1052,10 @@ async def get_docs_status(
 
     tender_doc_status: dict[str, Any] | None = None
     if project_doc is not None:
-        tender_doc_status = {"ocr_status": project_doc["ocr_status"]}
+        tender_doc_status = {
+            "ocr_status": project_doc["ocr_status"],
+            "criteria_status": project_doc.get("criteria_status", "pending"),
+        }
 
     bids_status = [
         {

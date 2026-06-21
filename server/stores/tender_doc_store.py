@@ -34,20 +34,31 @@ def new_bid_id() -> str:
 
 
 def _initialize_schema() -> None:
-    """Create both doc tables idempotently; add missing columns for existing DBs."""
+    """Create both doc tables idempotently; add missing columns for existing DBs.
+
+    R1 migration: tender_project_docs gains two columns for the tender-info-extraction
+    feature. Both are added idempotently via PRAGMA table_info + ALTER TABLE so
+    pre-existing databases upgrade without data loss.
+      - criteria_status: tracks the info-extraction pipeline state (pending→running→ready|failed),
+        independent of ocr_status.
+      - tender_info: JSON-encoded tender metadata extracted from the OCR text
+        (tender_no, tenderee, control_price, method, funding_hint).
+    """
     with connect_sqlite(PLATFORM_DB_FILE) as conn:
         conn.executescript(
             """
             CREATE TABLE IF NOT EXISTS tender_project_docs (
-                project_id  TEXT PRIMARY KEY,
-                tenant      TEXT NOT NULL,
-                tender_files TEXT NOT NULL DEFAULT '[]',
-                ocr_text    TEXT,
-                ocr_clarity TEXT,
-                ocr_status  TEXT NOT NULL DEFAULT 'pending',
-                criteria    TEXT,
-                created_at  TEXT NOT NULL,
-                updated_at  TEXT NOT NULL
+                project_id      TEXT PRIMARY KEY,
+                tenant          TEXT NOT NULL,
+                tender_files    TEXT NOT NULL DEFAULT '[]',
+                ocr_text        TEXT,
+                ocr_clarity     TEXT,
+                ocr_status      TEXT NOT NULL DEFAULT 'pending',
+                criteria        TEXT,
+                criteria_status TEXT NOT NULL DEFAULT 'pending',
+                tender_info     TEXT,
+                created_at      TEXT NOT NULL,
+                updated_at      TEXT NOT NULL
             );
             CREATE TABLE IF NOT EXISTS tender_bid_docs (
                 project_id  TEXT NOT NULL,
@@ -68,6 +79,22 @@ def _initialize_schema() -> None:
                 ON tender_bid_docs (project_id, tenant);
             """
         )
+        # Idempotent ALTER TABLE for existing DBs that pre-date the R1 migration.
+        existing_cols = {
+            row["name"]
+            for row in conn.execute(
+                "PRAGMA table_info(tender_project_docs)"
+            ).fetchall()
+        }
+        if "criteria_status" not in existing_cols:
+            conn.execute(
+                "ALTER TABLE tender_project_docs "
+                "ADD COLUMN criteria_status TEXT NOT NULL DEFAULT 'pending'"
+            )
+        if "tender_info" not in existing_cols:
+            conn.execute(
+                "ALTER TABLE tender_project_docs ADD COLUMN tender_info TEXT"
+            )
 
 
 _initialize_schema()
@@ -85,6 +112,8 @@ def upsert_project_doc(
     ocr_text: str | None = None,
     ocr_clarity: str | None = None,
     criteria: str | None = None,
+    criteria_status: str = "pending",
+    tender_info: str | None = None,
 ) -> None:
     """Insert or replace a tender project doc record.
 
@@ -96,6 +125,8 @@ def upsert_project_doc(
         ocr_text: Full OCR text blob (None until OCR completes).
         ocr_clarity: Clarity signal from OCR pipeline (clear/low/unknown/failed).
         criteria: JSON-encoded evaluation criteria (None until first evaluation).
+        criteria_status: R1 info-extraction state: pending/running/ready/failed.
+        tender_info: R1 JSON-encoded tender metadata extracted from the OCR text.
     """
     now = _utc_now()
     with connect_sqlite(PLATFORM_DB_FILE, immediate=True) as conn:
@@ -108,12 +139,14 @@ def upsert_project_doc(
             """
             INSERT OR REPLACE INTO tender_project_docs
                 (project_id, tenant, tender_files, ocr_text, ocr_clarity,
-                 ocr_status, criteria, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 ocr_status, criteria, criteria_status, tender_info,
+                 created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 project_id, tenant, tender_files, ocr_text, ocr_clarity,
-                ocr_status, criteria, created_at, now,
+                ocr_status, criteria, criteria_status, tender_info,
+                created_at, now,
             ),
         )
 
@@ -173,6 +206,37 @@ def update_project_doc_criteria(project_id: str, tenant: str, criteria_json: str
             "UPDATE tender_project_docs SET criteria = ?, updated_at = ? "
             "WHERE project_id = ? AND tenant = ?",
             (criteria_json, _utc_now(), project_id, tenant),
+        )
+
+
+def update_project_doc_criteria_extracted(
+    project_id: str,
+    tenant: str,
+    *,
+    criteria_json: str | None,
+    tender_info_json: str | None,
+    status: str,
+) -> None:
+    """Write criteria + tender_info + criteria_status in one tenant-scoped UPDATE.
+
+    Called after the R1 tender-extract-info command completes (or fails).  Does NOT
+    touch ocr_status — extraction failure must never affect the OCR-ready signal.
+
+    Args:
+        project_id: Tender project identifier.
+        tenant: Tenant scope — WHERE clause includes tenant to prevent cross-tenant writes.
+        criteria_json: JSON-encoded criteria object, or None on failure.
+        tender_info_json: JSON-encoded tender_info object, or None on failure.
+        status: New criteria_status value (ready or failed).
+    """
+    with connect_sqlite(PLATFORM_DB_FILE, immediate=True) as conn:
+        conn.execute(
+            """
+            UPDATE tender_project_docs
+            SET criteria = ?, tender_info = ?, criteria_status = ?, updated_at = ?
+            WHERE project_id = ? AND tenant = ?
+            """,
+            (criteria_json, tender_info_json, status, _utc_now(), project_id, tenant),
         )
 
 

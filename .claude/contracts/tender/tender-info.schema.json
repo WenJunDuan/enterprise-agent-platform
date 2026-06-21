@@ -1,0 +1,33 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "tender_info",
+  "description": "招标基本信息：从招标文件 OCR 底稿一次性抽取的项目元数据，全字段 optional string。用于回填 tender_projects 中用户未手填的空字段（用户手填优先，OCR 派生只填空），并在分析中「区1 基本信息」展示。",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "tender_no": {
+      "type": "string",
+      "description": "招标编号（如 ZBZS-2024-001），通常在招标文件封面、招标公告或正文标题处注明。"
+    },
+    "project_name": {
+      "type": "string",
+      "description": "项目名称（全称），如「某市智慧城市综合管理平台建设项目」。"
+    },
+    "tenderee": {
+      "type": "string",
+      "description": "招标人（采购人/建设单位），如「某市政务服务和大数据管理局」。"
+    },
+    "control_price": {
+      "type": "string",
+      "description": "控制价 / 最高限价 / 预算金额（字符串，保留原文单位，如「1500万元」「1500.00万元人民币」）。"
+    },
+    "method": {
+      "type": "string",
+      "description": "评标方法（如「综合评估法」「经评审的最低投标价法」），与 criteria.method 保持一致。"
+    },
+    "funding_hint": {
+      "type": "string",
+      "description": "资金来源提示（如「财政资金」「国有资金」「社会资本」），辅助判断国家审计/合规口径，非必填。"
+    }
+  }
+}
