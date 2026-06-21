@@ -11,7 +11,8 @@ import asyncio
 import logging
 import os
 
-from server.audit.runner import run_inline_directory_audit
+from server.audit.runner import CASE_REQUEST_FILE, run_inline_directory_audit
+from server.ocr.pipeline import ocr_preprocess_block
 from server.platform.logging_setup import logging_context
 from server.stores.audit_task_store import upsert_audit_task
 from server.stores.request_store import utc_now
@@ -48,10 +49,16 @@ def admission_available() -> bool:
 
 
 async def _run_directory_audit(*, request_id: str, tenant: str, directory_path: str):
+    # P4：附件确定性 OCR 预处理放路由层做（routes 可依赖 ocr 域；feature 域 audit/ 不可跨域 import，
+    # 见 test_layering）。经 to_thread 不阻塞事件循环；失败/关闭 → None，runner 回落模型自己 Read。
+    ocr_block = await asyncio.to_thread(
+        ocr_preprocess_block, directory_path, skip={CASE_REQUEST_FILE}
+    )
     return await run_inline_directory_audit(
         directory_path,
         request_id=request_id,
         tenant=tenant,
+        ocr_block=ocr_block,
     )
 
 

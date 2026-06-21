@@ -299,3 +299,72 @@ def test_recognize_routes_to_cloud_when_ocr_cloud(monkeypatch):
     )
     engine_mod.recognize(_Path("x.pdf"))
     assert calls.get("cloud")
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# P4：OCR 预处理底稿注入 audit / tender
+# ═════════════════════════════════════════════════════════════════════════════
+
+
+def test_ocr_preprocess_block_returns_draft(tmp_path):
+    from server.ocr.pipeline import ocr_preprocess_block
+
+    (tmp_path / "note.txt").write_text("发票号 INV-001 金额 1200", encoding="utf-8")
+    block = ocr_preprocess_block(str(tmp_path))
+    assert block and "INV-001" in block
+
+
+def test_ocr_preprocess_block_disabled_returns_none(tmp_path, monkeypatch):
+    import server.ocr.pipeline as pipe
+
+    monkeypatch.setattr(pipe, "OCR_PREPROCESS", False)
+    (tmp_path / "note.txt").write_text("x", encoding="utf-8")
+    assert pipe.ocr_preprocess_block(str(tmp_path)) is None
+
+
+def test_ocr_preprocess_block_skip_filters_file(tmp_path):
+    from server.ocr.pipeline import ocr_preprocess_block
+
+    (tmp_path / "audit-request.json").write_text('{"a":1}', encoding="utf-8")
+    (tmp_path / "inv.txt").write_text("INV-XYZ", encoding="utf-8")
+    block = ocr_preprocess_block(str(tmp_path), skip={"audit-request.json"})
+    assert block and "INV-XYZ" in block and "audit-request.json" not in block
+
+
+def test_ocr_preprocess_block_failure_returns_none(tmp_path, monkeypatch):
+    # 降级铁律：OCR 失败绝不拖垮审核/评标 → None（回落模型自己 Read）。
+    import server.ocr.pipeline as pipe
+
+    def boom(_d):
+        raise RuntimeError("engine down")
+
+    monkeypatch.setattr(pipe, "extract_dir", boom)
+    assert pipe.ocr_preprocess_block(str(tmp_path)) is None
+
+
+def test_build_command_prompt_appends_context():
+    from server.common.command_adapter import build_command_prompt
+
+    p = build_command_prompt("tender-evaluate", "data/x", context="底稿内容")
+    assert p.startswith("/tender-evaluate data/x")
+    assert "底稿内容" in p
+
+
+def test_build_command_prompt_no_context_unchanged():
+    from server.common.command_adapter import build_command_prompt
+
+    assert build_command_prompt("tender-evaluate", "data/x") == "/tender-evaluate data/x"
+
+
+def test_build_inline_audit_prompt_injects_ocr_block(tmp_path):
+    from server.audit.runner import build_inline_audit_prompt
+
+    p = build_inline_audit_prompt(str(tmp_path), ocr_block="发票OCR底稿XYZ")
+    assert "发票OCR底稿XYZ" in p
+    assert "OCR/直读底稿" in p
+
+
+def test_build_inline_audit_prompt_no_ocr_block_omits_section(tmp_path):
+    from server.audit.runner import build_inline_audit_prompt
+
+    assert "OCR/直读底稿" not in build_inline_audit_prompt(str(tmp_path))

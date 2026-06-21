@@ -14,6 +14,7 @@ import os
 
 from server.common.command_adapter import run_command_json
 from server.common.contract import DEFAULT_OUTPUT_SCHEMA_NAME
+from server.ocr.pipeline import ocr_preprocess_block
 from server.platform.logging_setup import logging_context
 from server.stores.request_store import utc_now
 from server.stores.session_store import new_conversation_id
@@ -51,6 +52,14 @@ def admission_available() -> bool:
 async def _run_evaluation(
     *, request_id: str, tenant: str, directory_path: str, project_id: str | None = None
 ):
+    # P4：先确定性 OCR 预处理（pymupdf 直读 / 云 OCR），把底稿注入命令上下文 → 模型不再自己 Read
+    # PDF（绕开模型 Read 脆弱点 + poppler 依赖）。经 to_thread 不阻塞事件循环；失败/关闭 → None 回落。
+    ocr_block = await asyncio.to_thread(ocr_preprocess_block, directory_path)
+    context = (
+        f"=== OCR/直读底稿（确定性预处理，优先用此文本，无需再 Read 文件）===\n{ocr_block}"
+        if ocr_block
+        else None
+    )
     return await run_command_json(
         "tender-evaluate",
         directory_path,
@@ -59,6 +68,7 @@ async def _run_evaluation(
         tenant=tenant,
         project_id=project_id,  # 显式透传 → 结论落 results.project_id（codex P1.3）
         conversation_id=new_conversation_id(),
+        context=context,
     )
 
 
