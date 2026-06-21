@@ -40,6 +40,8 @@ _BASELINE_ROUTES: list[tuple[str, tuple[str, ...]]] = [
     ("/tender/projects/{project_id}/evaluate", ("POST",)),
     ("/tender/projects/{project_id}/results", ("GET",)),
     ("/tender/projects/{project_id}/results/{request_id}", ("GET",)),
+    # R1 招标信息抽取（2026-06-22 新增：GET 读招标层 OCR+criteria+tender_info）
+    ("/tender/projects/{project_id}/tender-doc", ("GET",)),
     ("/tender/projects/{project_id}/tender-doc", ("POST",)),
     ("/tender/tasks", ("GET",)),
     ("/tender/tasks/{request_id}", ("DELETE",)),

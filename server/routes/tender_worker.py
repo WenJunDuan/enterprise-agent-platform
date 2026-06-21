@@ -158,6 +158,29 @@ async def _run_evaluation(
         if ocr_block
         else None
     )
+
+    # R1 criteria 注入（治②）：若招标层已有 criteria（上传时预抽），追加到 context，
+    # 指示模型 S1 直接采用、无需重解析。降级安全：无 criteria/project_id/异常 → 不注入。
+    if project_id and context:
+        try:
+            import json as _json
+
+            project_doc = get_project_doc(project_id, tenant)
+            stored_criteria = (project_doc or {}).get("criteria")
+            if stored_criteria:
+                # Ensure Chinese characters are readable in the injected context block.
+                try:
+                    parsed = _json.loads(stored_criteria)
+                    readable = _json.dumps(parsed, ensure_ascii=False, indent=2)
+                except (ValueError, TypeError):
+                    readable = stored_criteria
+                criteria_block = (
+                    "\n\n=== 已解析评分标准 criteria（S1 直接采用，勿重新解析）===\n"
+                    + readable
+                )
+                context = context + criteria_block
+        except Exception:
+            logger.debug("criteria context injection failed, continuing without", exc_info=True)
     # 契约失败重试（对齐 audit runner）：deepseek 文本模式偶发不出 JSON / 写坏 JSON，重跑可成功。
     # OCR 预处理在循环外只做一次（慢且确定性），仅重试模型调用。
     last_error: Exception | None = None
