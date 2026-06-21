@@ -206,7 +206,7 @@ export function useTenderReviewPage(
     },
   })
 
-  // P3 OCR 就绪轮询：上传后 docs-status 每 2.5s 轮询一次，直到招标+所有投标均 ready/failed。
+  // P3 OCR 就绪轮询：上传后 docs-status 每 2.5s 轮询一次，直到招标+至少一家投标均 ready/failed。
   const docsStatusQuery = useQuery({
     queryKey: ['tender-docs-status', uploadProjectId],
     queryFn: () => getDocsStatus(uploadProjectId!),
@@ -215,8 +215,9 @@ export function useTenderReviewPage(
       const data = query.state.data
       if (!data) return 2500
       const allDone =
-        data.tender_doc?.ocr_status === 'ready' ||
-        data.tender_doc?.ocr_status === 'failed'
+        data.bids.length > 0 &&
+        (data.tender_doc?.ocr_status === 'ready' ||
+          data.tender_doc?.ocr_status === 'failed')
           ? data.bids.every(
               (bid) => bid.ocr_status === 'ready' || bid.ocr_status === 'failed'
             )
@@ -333,12 +334,14 @@ export function useTenderReviewPage(
     ]
   )
 
-  // P3 两步拆分：文件已上传且 OCR 就绪时才允许"开始分析"（上传阶段仅判断文件存在）。
+  // R6-R1：开始分析不被 OCR 阻塞！文件上传完（项目建好 + ≥1 家投标已传）即可开始分析——OCR 在后台
+  // 跑、进分析中页继续，用户可离开。**不再等 isOcrReady**（OCR 近 5min，等它=卡死第二步，用户实测痛点）。
   const hasFilesSelected =
     tenderFiles.some(hasNativeFile) &&
     uploadBidders.some((bidder) => bidder.files.some(hasNativeFile))
-  // 已完成上传且 OCR ready → 允许提交评标；尚未上传 → 用文件选取判断（显示上传按钮语义）。
-  const canStartReview = uploadProjectId ? isOcrReady : hasFilesSelected
+  const canStartReview = uploadProjectId
+    ? uploadedBidderIds.size > 0 // 招标已传(uploadProjectId) + ≥1 家投标已传 → 即可开始(不等 OCR)
+    : hasFilesSelected
 
   const startReviewMutation = useMutation({
     mutationFn: submitReview,
@@ -584,6 +587,7 @@ export function useTenderReviewPage(
     try {
       await uploadBid(uploadProjectId, bidderName, natives) // 触发后台 OCR
       setUploadedBidderIds((prev) => new Set(prev).add(id))
+      void queryClient.invalidateQueries({ queryKey: ['tender-docs-status', uploadProjectId] })
     } catch (error) {
       // 失败回退：清掉该家刚 staged 的文件，让用户重选
       setUploadBidders((current) =>

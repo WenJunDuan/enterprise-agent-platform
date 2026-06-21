@@ -30,3 +30,13 @@
 - Exit: success
 - Last message: Optimizing tender evaluation across 3 models (qwen/deepseek/openrouter). I've finished rounds 1-3 (all your bugs fixed, streaming, openrouter, eval reliability), committed and green. Next: confirm the
 
+## 2026-06-21T21:40:10.512Z · unknown
+- Duration: 0s
+- Exit: success
+- Last message: Goal: optimize the multi-model tender system. I shipped frontend upload-immediate, date-based log rotation, eval-retry fixes (glm 290→135s), and concurrency bumps. Next: the 3-model rotation test (qwe
+
+## 2026-06-21T21:57:48.619Z · unknown
+- Duration: 0s
+- Exit: success
+- Last message: I now have the complete picture. Here is the structured report.  ---  ## Tender Evaluation Flow: Structured Investigation Report  ### Q1. Does `evaluate(mode=upload)` create a NEW bid_id Y or reuse th
+

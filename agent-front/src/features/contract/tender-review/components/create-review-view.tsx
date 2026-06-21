@@ -130,33 +130,27 @@ export function CreateReviewView(props: CreateReviewViewProps) {
         <Button type='button' variant='outline' onClick={props.onCancel}>
           取消
         </Button>
-        {/* A 上传即 OCR：去掉手动"上传文件"按钮——选文件即自动建项目+上传+OCR。仅留"开始分析"，
-            OCR 全就绪前禁用并显状态。 */}
+        {/* R6-R1：开始分析不被 OCR 阻塞——文件传完即可开始；OCR 在后台跑、进分析中页继续，可离开。 */}
         <Button
           type='button'
           onClick={props.onStart}
-          disabled={props.isAnalyzing || props.isUploading || !props.isOcrReady}
-          aria-label={props.isOcrReady ? '开始分析' : 'OCR 识别中，请稍候'}
+          disabled={props.isAnalyzing || props.isUploading || !props.canStart}
+          aria-label='开始分析'
         >
           {props.isUploading ? (
             <>
               <Loader2 className='size-4 animate-spin' />
-              上传识别中...
+              上传中...
             </>
           ) : props.isAnalyzing ? (
             <>
               <Play className='size-4' />
               分析中...
             </>
-          ) : props.isOcrReady ? (
+          ) : (
             <>
               <Play className='size-4' />
               开始分析
-            </>
-          ) : (
-            <>
-              <Loader2 className='size-4 animate-spin' />
-              OCR 识别中...
             </>
           )}
         </Button>
