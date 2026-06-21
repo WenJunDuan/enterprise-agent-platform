@@ -118,7 +118,72 @@ fingerprint: ""
 
 ## 当前状态
 
-2026-06-21（会话边界 · 重开起点 ⟵ 从这读起）: 上一长会话两件大事到位，状态全 push origin/main。
+2026-06-21（**GOAL 立项：评标逐项扣分+证据定位** · ⟵ 从这读起）: 用户实测设为 goal「持续优化直到满足」：
+G1 满分扣减(不要一律不通过/0,已识别的问题应扣几分) + G2 证据定位准确(定位项=实际找到的)。详见
+`sprints/2026-06-21-tender-scoring-goal/goal.md`。**已停所有在途任务**(2 tender reclaimed)、代码全在 origin/main。
+**关键约束**:当前测试标(烛照-标段一v3.pdf)封面是中国移动 20000020251114074 项目→对华为南通是真废标(逐项 0 正确),
+**G1 满分扣减路径必须用真投华为南通的标才能验**(用户侧 TODO 提供匹配标)。下一步=等匹配标→改 tender-evaluate.md
+G1/G2 指令→真标实测验收。
+
+另:本会话稍早还修了 tender 零重试(`763dbeb` 加重试环,治 deepseek 文本模式偶发不出 JSON,同标重跑可成)。
+
+2026-06-21（实测驱动修复会话）: 用户端到端实测 audit/tender/ocr，连续修一批真问题，全部 push origin/main，
+418 passed/ruff/前端 lint+build 过。
+
+**已上线（origin/main，最新→旧）**：
+- `0a0d1bb` 报销+评标前端实测修复（**codex 按契约实施**：报销 7 项 + 评标 T1-T5 废标显因/右上角评分汇总/进度按名册派生/compare 停轮询/评分区高度+左侧逐项扣分）。
+- `eed8765` **OCR 自适应抽取**：`/ocr/fill` 无 schema → 字段集由文档决定（修"回填被写死项目备案表框死、文档不匹配全空"）。前后端全栈 + 5 单测。
+- `774feb7` tender 文本模式 + JSON 硬化 + 输出 token（修大底稿 165K 下 SDK 结构化输出 error_max_structured_output_retries）。
+- `2c693b0` OCR 截断 40K→200K（百页扫描标书不再被静默砍；env OCR_MAX_FILE_BLOCK_CHARS 可调）。
+- `1b2d289` 报销 prompt 硬化（字符串值禁半角双引号→防非法 JSON 解析失败）。
+- `21dd161` audit 非 manual_review 剥离残留 manual_review_reason。
+- `9f06853` 移除 MAX_BUDGET_USD 成本封顶 + max_buffer_size 默认 20MiB（深度交叉 review PASS）。
+
+**实测结论**：audit 通过；OCR 自适应通过（**慢，待优化**）；tender 评标技术链路通（能读全标书+提取 14 项 scoring+逐项判定）。
+**tender 数据已彻底清空**（用户重测起点，projects/tasks/results/compare 全清 + 提交目录删；DB 备份 logs/platform.sqlite3.bak-before-tender-wipe）。
+
+**Backlog（待优化，非阻塞）**：
+- **OCR 速度慢**（用户 2026-06-21 实测反馈，待优化）：/ocr/fill 自适应一次识别+模型映射较慢；云 OCR(158 页扫描)+大底稿(200K)+模型映射串行。优化方向候选：识别/映射并行或流式、分页增量、底稿按需截断、云 OCR 并发、命中缓存。
+- tender 评分"满分扣减"路径**仍未用真实匹配标验证过**：现有测试标(烛照-标段一v3.pdf)封面是中国移动 20000020251114074 项目(非华为南通)→ 正确废标；需一份真投华为南通的标才能验逐项扣分非 0。
+- 老遗留：tender-criteria codex review 待补；dependabot 11 漏洞(依赖)。
+
+---
+
+2026-06-21（A/B/C 连做会话）: 用户指令"先 A 做完 → B → C"，三项全落地，409 passed/ruff，
+A+B 已 commit（`dfec5fe`/`fe6f3dc`，**未 push**，等用户确认后推）。
+
+**A —— .claude 域装配 sprint P1 完成**（`dfec5fe`）：抽 `server/common/domain_profile.py` =
+`DomainProfile` 注册表 + `assemble_domain_prompt` 通用装配器（仅依赖 platform，满足分层 common 不 import 域）；
+`EXPENSE_PROFILE` 留 `audit/runner.py`；runner 公共面（build_inline_audit_prompt / load_case_block /
+load_expense_rules / _resolve_case_dir）改薄委托，调用点+旧测试零破坏。**纯重构零行为变化**：critic F2
+字节级回归——重构前对固定 fixture 生成 golden 快照（`tests/fixtures/domain_profile/golden_*.txt`），
+装配器与委托后的 build 两路均逐字节一致。**下一步 = P2**（audit 指令外移 `.claude/domains/expense/instructions.md`）。
+
+**B —— OCR P4 端到端验证通过 + 修真 bug**（`fe6f3dc`）：retry tender `772aa513`。首轮 **failed**，抽出新真 bug：
+claude-agent-sdk 默认单条 stdout JSON **1MiB 缓冲上限**被突破（注入数十 KB OCR 底稿 + agent 直读大 PDF
+的 tool_result）→ `JSON message exceeded maximum buffer size`。修复：`build_options` 设
+`max_buffer_size=10MiB`（env `CLAUDE_MAX_BUFFER_BYTES` 可调）。**重跑 completed**：agent 经 OCR 底稿
+读懂招标/投标两份文件，给出**有据结论**（投标文件"烛照-标段一v3.pdf"实为另一项目[中国移动 20000020251114074]
+应答 + 逾期 → `rejected`，引 `tender_evalmethod_005/006/008`，claim_id=示例云平台有限公司）。
+**P4 OCR 注入确证生效，不再因读不了 PDF 降级**。注：该 fixture 投标是错投标，正确废标而非打分；要演示评分路径
+需一份真正对应本招标的投标文件。
+
+**C —— 前端端到端联调（自动部分全通）**：前端集成早已在 origin/main（旧"未 push"是勘误）。lint ✓ / build ✓
+（tender-review chunk 编译过）/ vite dev(5173) proxy → 后端(9999) 转发取 tender 结论 ✓ / SPA 首页 200 ✓。
+`agent-front/.env.dev` 本地指向改 `127.0.0.1:9999`（本地 dev 覆盖，含 key，**不入库**）。**剩用户手动点 UI 验收**
+（无浏览器无法代跑）；agent-front 无实质待 push 内容。服务已停。
+
+**C2 —— 移除成本封顶 + buffer 20MiB + 深度交叉 review**（`9f06853`）：按用户要求彻底删 `MAX_BUDGET_USD`
+成本封顶（build_options defaults + enterprise-agent.env.example + 本地 .env + README 全清），成本改由
+`AUDIT_INLINE_MAX_TURNS=8`+`AUDIT_TIMEOUT_SEC`+`MAX_CONCURRENT_AUDITS` 三闸约束（示例配置已注明）；
+`max_buffer_size` 默认 10→20MiB（env `CLAUDE_MAX_BUFFER_BYTES` 可调），文档化进示例+README。
+**深度交叉 review**（reviewer+spec-compliance+evaluator）**VERDICT=PASS 4.25/5,无 P0**;P1（README 残留/
+运维边界说明）当场修掉;P2 留下 sprint（EXPENSE_PROFILE 接入消费点 / load_expense_rules 走 profile）。
+
+**当前状态 = 本地领先 origin/main 3 commit（A `dfec5fe` / B `fe6f3dc` / C `9f06853`），410 passed/ruff，
+可部署。用户准备叫 codex 部署。待决**：① 是否 push origin/main（codex 远端拉取需要）；② 是否继续 A 的 P2/P3（tender lean）。
+
+2026-06-21（会话边界 · 重开起点）: 上一长会话两件大事到位，状态全 push origin/main。
 
 **① OCR 域强化 sprint —— P1+P2+云+P4 全完成**（`6aa3792`→`63e0bb8`→`a5c4bcd`，385 passed/ruff）：
 - P1 pymupdf 文本层直读(find_tables) / P2 置信度 `file_clarity` / 云 OCR(`OCR_CLOUD` 开关, aistudio PaddleOCR-VL,
