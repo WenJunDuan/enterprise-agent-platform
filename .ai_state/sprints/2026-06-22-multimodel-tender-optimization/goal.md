@@ -116,6 +116,6 @@ OCR 上传（`tender.py:741` POST .../tender-doc）只产 `ocr_text` 原文 blob
   370s/retries=1（**曾 3 重试失败**→现稳过）；openrouter 抽取 81s 最快。**三模型评标现均可靠跑通。**
   606 passed+ruff+前端 lint/build。
 - R4：_pending_
-- R5：_pending_
+- R5：🟡 **数据存储（compare + delete + criteria 复用）**。①**遗留③ ✅**：compare 首次横比 refetchInterval 在 null 时停轮询→首个横比永不出现，改 null 继续轮询（3s）直到生成。②**遗留④ ✅**：删项目只清各评标 task case_path，P3 上传即 OCR 的 tender-doc/bids 预热目录无 task 残留→新 `remove_project_submission_dir` 删整个 `<tenant>/tender/<project_id>/` 树（安全校验+confine 防穿越）。③遗留② criteria 复用 R1 已落代码，端到端验证待多家同项目实测。608 passed+ruff+前端 build。详见 round-5-data-storage/design.md。
 - R6：_pending_
 </content>
