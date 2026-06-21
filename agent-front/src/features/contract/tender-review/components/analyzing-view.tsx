@@ -92,11 +92,12 @@ export function AnalyzingView({
       <div className='grid gap-4 xl:grid-cols-[minmax(300px,2fr)_minmax(400px,3fr)]'>
         {/* ─ 左栏：区1 基本信息 + 区2 招标信息 ─ */}
         <div className='space-y-4'>
-          {/* 区1：基本信息（OCR 抽取优先，回落手填表单） */}
+          {/* 区1：基本信息（OCR 抽取优先，回落手填表单）+ 投标公司名 */}
           <Zone1ProjectInfo
             projectForm={projectForm}
             tenderInfo={tenderDocInfo?.tender_info ?? null}
             criteriaStatus={tenderDocInfo?.criteria_status}
+            bidders={docsStatus?.bids ?? []}
           />
           {/* 区2：招标信息（OCR 状态 + 评分标准 criteria） */}
           <Zone2TenderInfo docsStatus={docsStatus} tenderDocInfo={tenderDocInfo} />
@@ -119,10 +120,12 @@ function Zone1ProjectInfo({
   projectForm,
   tenderInfo,
   criteriaStatus,
+  bidders,
 }: {
   projectForm?: ProjectFormData | null
   tenderInfo?: TenderInfo | null
   criteriaStatus?: CriteriaStatus
+  bidders?: DocsStatusResponse['bids']
 }) {
   const fundingLabel: Record<string, string> = {
     state_funded: '国资',
@@ -161,7 +164,7 @@ function Zone1ProjectInfo({
           区1 基本信息
         </CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className='space-y-3'>
         {hasAny || extracting ? (
           <dl className='grid gap-2 text-sm'>
             {rows.map((row) => (
@@ -176,6 +179,24 @@ function Zone1ProjectInfo({
         ) : (
           <p className='text-sm text-muted-foreground'>项目信息未填写。</p>
         )}
+        {/* R6-R3：投标公司名称 */}
+        {bidders && bidders.length > 0 ? (
+          <div className='border-t pt-3'>
+            <div className='mb-1.5 text-xs font-medium text-muted-foreground'>
+              投标单位（{bidders.length} 家）
+            </div>
+            <div className='flex flex-col gap-1'>
+              {bidders.map((bid) => (
+                <div key={bid.bid_id} className='flex items-center gap-2 text-sm'>
+                  <span className='size-1.5 shrink-0 rounded-full bg-violet-500' />
+                  <span className='truncate font-medium'>
+                    {bid.bidder_name?.trim() || bid.bid_id}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </CardContent>
     </Card>
   )
@@ -342,6 +363,27 @@ function CriteriaSummary({ criteria }: { criteria: TenderCriteria }) {
                 {detailBits.length > 0 ? (
                   <span className='text-xs text-muted-foreground'>
                     {detailBits.join(' · ')}
+                  </span>
+                ) : null}
+                {/* R6-R4：扣减分数项目明细（每条扣分情形 + 扣分值） */}
+                {deductionCount > 0 ? (
+                  <span className='mt-1 block space-y-0.5'>
+                    {item.deductions!.slice(0, 4).map((ded, dedIndex) => (
+                      <span
+                        key={dedIndex}
+                        className='block text-xs leading-4 text-muted-foreground'
+                      >
+                        <b className='text-red-600'>
+                          −{ded.points != null ? ded.points : '?'}
+                        </b>{' '}
+                        {ded.condition || '扣分情形'}
+                      </span>
+                    ))}
+                    {deductionCount > 4 ? (
+                      <span className='block text-xs text-muted-foreground'>
+                        …另 {deductionCount - 4} 条扣分项
+                      </span>
+                    ) : null}
                   </span>
                 ) : null}
               </span>
