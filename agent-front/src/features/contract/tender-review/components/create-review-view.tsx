@@ -1,10 +1,13 @@
 import {
   AlertCircle,
+  CheckCircle2,
   FileText,
+  Loader2,
   Play,
   Plus,
   Trash2,
   UploadCloud,
+  XCircle,
 } from 'lucide-react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -25,7 +28,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import type { TenderFile, UploadBidder } from '../types'
-import type { TenderProjectCreateRequest } from '../api'
+import type { DocsStatusResponse, TenderProjectCreateRequest } from '../api'
 
 const ACCEPTED_REVIEW_FILE_TYPES = [
   '.pdf',
@@ -67,10 +70,19 @@ type CreateReviewViewProps = {
   uploadBidders: UploadBidder[]
   progress: number
   isAnalyzing: boolean
+  /** P3: 文件上传中（触发后台 OCR）。 */
+  isUploading: boolean
+  /** P3: 文件已上传并 OCR 就绪，可点"开始分析"。 */
+  isOcrReady: boolean
+  /** P3: 已触发上传（uploadProjectId 非 null）。 */
+  hasUploaded: boolean
+  /** P3: docs-status 轮询结果（显示各文件 OCR 状态）。 */
+  docsStatus: DocsStatusResponse | null
   uploadError: boolean
   submitError: string
   canStart: boolean
   onStart: () => void
+  onUpload: () => void
   onCancel: () => void
   onUpdateProjectForm: (field: keyof ProjectFormData, value: string) => void
   onAddTenderFile: (files: FileList | null) => void
@@ -83,18 +95,29 @@ type CreateReviewViewProps = {
 }
 
 export function CreateReviewView(props: CreateReviewViewProps) {
+  // P3: 步骤状态推导
+  const currentStep = props.isAnalyzing
+    ? 'analyze'
+    : props.hasUploaded
+      ? 'analyze'
+      : 'files'
+
   return (
     <div className='space-y-4'>
       <StepBar
         analyzing={props.isAnalyzing}
-        currentStep={props.isAnalyzing ? 'analyze' : 'files'}
+        currentStep={currentStep}
       />
       <ProjectInfoFormCard
         form={props.projectForm}
         onUpdate={props.onUpdateProjectForm}
-        disabled={props.isAnalyzing}
+        disabled={props.isAnalyzing || props.isUploading || props.hasUploaded}
       />
       <UploadFilesCard {...props} />
+      {/* P3: OCR 状态区 — 上传后显示各文件 OCR 进度 */}
+      {props.hasUploaded && props.docsStatus ? (
+        <OcrStatusCard docsStatus={props.docsStatus} />
+      ) : null}
       {props.isAnalyzing ? <AnalyzingCard progress={props.progress} /> : null}
       {props.uploadError ? <UploadError /> : null}
       {props.submitError ? <SubmitError message={props.submitError} /> : null}
@@ -102,15 +125,40 @@ export function CreateReviewView(props: CreateReviewViewProps) {
         <Button type='button' variant='outline' onClick={props.onCancel}>
           取消
         </Button>
-        <Button
-          type='button'
-          onClick={props.onStart}
-          disabled={props.isAnalyzing}
-          className={!props.canStart ? 'opacity-70' : undefined}
-        >
-          <Play className='size-4' />
-          {props.isAnalyzing ? '分析中...' : '开始分析'}
-        </Button>
+        {/* P3 两步拆分：未上传显示"上传文件"，上传后显示"开始分析" */}
+        {!props.hasUploaded ? (
+          <Button
+            type='button'
+            onClick={props.onUpload}
+            disabled={props.isUploading}
+          >
+            {props.isUploading ? (
+              <>
+                <Loader2 className='size-4 animate-spin' />
+                上传中...
+              </>
+            ) : (
+              <>
+                <UploadCloud className='size-4' />
+                上传文件
+              </>
+            )}
+          </Button>
+        ) : (
+          <Button
+            type='button'
+            onClick={props.onStart}
+            disabled={props.isAnalyzing || !props.isOcrReady}
+            aria-label={props.isOcrReady ? '开始分析' : 'OCR 识别中，请稍候'}
+          >
+            <Play className='size-4' />
+            {props.isAnalyzing
+              ? '分析中...'
+              : props.isOcrReady
+                ? '开始分析'
+                : 'OCR 识别中...'}
+          </Button>
+        )}
       </div>
     </div>
   )
@@ -295,6 +343,8 @@ function ProjectInfoFormCard({
 }
 
 function UploadFilesCard(props: CreateReviewViewProps) {
+  // P3: 上传中/已上传后禁止修改文件
+  const locked = props.isUploading || props.hasUploaded || props.isAnalyzing
   return (
     <Card>
       <CardHeader className='gap-2 md:flex-row md:items-center md:justify-between'>
@@ -308,10 +358,11 @@ function UploadFilesCard(props: CreateReviewViewProps) {
       <CardContent className='space-y-6'>
         <TenderFilesSection
           files={props.tenderFiles}
+          locked={locked}
           onAdd={props.onAddTenderFile}
           onRemove={props.onRemoveTenderFile}
         />
-        <BidderFilesSection {...props} />
+        <BidderFilesSection {...props} locked={locked} />
       </CardContent>
     </Card>
   )
@@ -319,10 +370,12 @@ function UploadFilesCard(props: CreateReviewViewProps) {
 
 function TenderFilesSection({
   files,
+  locked,
   onAdd,
   onRemove,
 }: {
   files: TenderFile[]
+  locked?: boolean
   onAdd: (files: FileList | null) => void
   onRemove: (index: number) => void
 }) {
@@ -338,35 +391,38 @@ function TenderFilesSection({
           key={`${file.name}-${index}`}
           file={file}
           tone='blue'
+          locked={locked}
           onRemove={() => onRemove(index)}
         />
       ))}
-      <label
-        className='flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed bg-muted/20 p-3 text-sm font-medium text-primary transition-colors hover:bg-primary/5'
-        onDragOver={(event) => event.preventDefault()}
-        onDrop={(event) => {
-          event.preventDefault()
-          onAdd(event.dataTransfer.files)
-        }}
-      >
-        <UploadCloud className='size-4' />
-        点击或拖拽上传招标文件
-        <input
-          multiple
-          type='file'
-          accept={ACCEPTED_REVIEW_FILE_TYPES}
-          className='hidden'
-          onChange={(event) => {
-            onAdd(event.target.files)
-            event.currentTarget.value = ''
+      {!locked ? (
+        <label
+          className='flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed bg-muted/20 p-3 text-sm font-medium text-primary transition-colors hover:bg-primary/5'
+          onDragOver={(event) => event.preventDefault()}
+          onDrop={(event) => {
+            event.preventDefault()
+            onAdd(event.dataTransfer.files)
           }}
-        />
-      </label>
+        >
+          <UploadCloud className='size-4' />
+          点击或拖拽上传招标文件
+          <input
+            multiple
+            type='file'
+            accept={ACCEPTED_REVIEW_FILE_TYPES}
+            className='hidden'
+            onChange={(event) => {
+              onAdd(event.target.files)
+              event.currentTarget.value = ''
+            }}
+          />
+        </label>
+      ) : null}
     </section>
   )
 }
 
-function BidderFilesSection(props: CreateReviewViewProps) {
+function BidderFilesSection(props: CreateReviewViewProps & { locked?: boolean }) {
   return (
     <section className='space-y-3'>
       <div className='flex flex-wrap items-center gap-3'>
@@ -376,10 +432,12 @@ function BidderFilesSection(props: CreateReviewViewProps) {
           desc='每家投标单位单独管理，每家可上传多个文件'
         />
         <div className='flex-1' />
-        <Button type='button' size='sm' onClick={props.onAddBidder}>
-          <Plus className='size-4' />
-          添加投标单位
-        </Button>
+        {!props.locked ? (
+          <Button type='button' size='sm' onClick={props.onAddBidder}>
+            <Plus className='size-4' />
+            添加投标单位
+          </Button>
+        ) : null}
       </div>
 
       {props.uploadBidders.length === 0 ? (
@@ -393,6 +451,7 @@ function BidderFilesSection(props: CreateReviewViewProps) {
               key={bidder.id}
               bidder={bidder}
               index={index}
+              locked={props.locked}
               onUpdateName={(name) => props.onUpdateBidderName(bidder.id, name)}
               onAddFile={(files) => props.onAddBidderFile(bidder.id, files)}
               onRemove={() => props.onRemoveBidder(bidder.id)}
@@ -410,6 +469,7 @@ function BidderFilesSection(props: CreateReviewViewProps) {
 function BidderCard({
   bidder,
   index,
+  locked,
   onUpdateName,
   onAddFile,
   onRemove,
@@ -417,6 +477,7 @@ function BidderCard({
 }: {
   bidder: UploadBidder
   index: number
+  locked?: boolean
   onUpdateName: (name: string) => void
   onAddFile: (files: FileList | null) => void
   onRemove: () => void
@@ -434,20 +495,23 @@ function BidderCard({
           value={bidder.name}
           onChange={(event) => onUpdateName(event.target.value)}
           placeholder='点击输入投标单位名称...'
+          disabled={locked}
           className='border-0 bg-transparent px-1 font-medium shadow-none focus-visible:ring-0'
         />
         <span className='shrink-0 text-xs font-medium text-muted-foreground'>
           {bidder.files.length} 个文件
         </span>
-        <Button
-          type='button'
-          variant='ghost'
-          size='icon'
-          aria-label={`删除投标单位 ${bidder.name || tag}`}
-          onClick={onRemove}
-        >
-          <Trash2 className='size-4' />
-        </Button>
+        {!locked ? (
+          <Button
+            type='button'
+            variant='ghost'
+            size='icon'
+            aria-label={`删除投标单位 ${bidder.name || tag}`}
+            onClick={onRemove}
+          >
+            <Trash2 className='size-4' />
+          </Button>
+        ) : null}
       </div>
       <div className='mt-3 space-y-2'>
         {bidder.files.map((file, fileIndex) => (
@@ -456,30 +520,33 @@ function BidderCard({
             file={file}
             tone='violet'
             compact
+            locked={locked}
             onRemove={() => onRemoveFile(fileIndex)}
           />
         ))}
-        <label
-          className='flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed bg-background p-2.5 text-sm font-medium text-violet-600 transition-colors hover:bg-violet-50'
-          onDragOver={(event) => event.preventDefault()}
-          onDrop={(event) => {
-            event.preventDefault()
-            onAddFile(event.dataTransfer.files)
-          }}
-        >
-          <UploadCloud className='size-4' />
-          添加该单位的投标文件
-          <input
-            multiple
-            type='file'
-            accept={ACCEPTED_REVIEW_FILE_TYPES}
-            className='hidden'
-            onChange={(event) => {
-              onAddFile(event.target.files)
-              event.currentTarget.value = ''
+        {!locked ? (
+          <label
+            className='flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed bg-background p-2.5 text-sm font-medium text-violet-600 transition-colors hover:bg-violet-50'
+            onDragOver={(event) => event.preventDefault()}
+            onDrop={(event) => {
+              event.preventDefault()
+              onAddFile(event.dataTransfer.files)
             }}
-          />
-        </label>
+          >
+            <UploadCloud className='size-4' />
+            添加该单位的投标文件
+            <input
+              multiple
+              type='file'
+              accept={ACCEPTED_REVIEW_FILE_TYPES}
+              className='hidden'
+              onChange={(event) => {
+                onAddFile(event.target.files)
+                event.currentTarget.value = ''
+              }}
+            />
+          </label>
+        ) : null}
       </div>
     </div>
   )
@@ -510,11 +577,13 @@ function FileRow({
   file,
   tone,
   compact,
+  locked,
   onRemove,
 }: {
   file: TenderFile
   tone: 'blue' | 'violet'
   compact?: boolean
+  locked?: boolean
   onRemove: () => void
 }) {
   const toneClass =
@@ -539,19 +608,91 @@ function FileRow({
       </div>
       {!compact ? (
         <span className='rounded-full bg-emerald-100 px-3 py-1 text-xs font-medium text-emerald-700'>
-          已上传
+          已选
         </span>
       ) : null}
-      <Button
-        type='button'
-        variant='ghost'
-        size='icon'
-        aria-label={`删除文件 ${file.name}`}
-        onClick={onRemove}
-      >
-        <Trash2 className='size-4' />
-      </Button>
+      {!locked ? (
+        <Button
+          type='button'
+          variant='ghost'
+          size='icon'
+          aria-label={`删除文件 ${file.name}`}
+          onClick={onRemove}
+        >
+          <Trash2 className='size-4' />
+        </Button>
+      ) : null}
     </div>
+  )
+}
+
+/**
+ * P3 OCR 识别状态卡 — 上传后显示招标/投标文件的 OCR 处理进度。
+ *
+ * 每个文件显示状态徽章（运行中/就绪/失败）；全部 ready 时提示可"开始分析"。
+ */
+function OcrStatusCard({ docsStatus }: { docsStatus: DocsStatusResponse }) {
+  const tenderOcr = docsStatus.tender_doc?.ocr_status
+  const allReady =
+    tenderOcr === 'ready' &&
+    docsStatus.bids.length > 0 &&
+    docsStatus.bids.every((bid) => bid.ocr_status === 'ready')
+
+  return (
+    <Alert className={allReady ? 'border-emerald-200 bg-emerald-50' : 'border-primary/20 bg-primary/5'}>
+      {allReady ? (
+        <CheckCircle2 className='size-4 text-emerald-600' />
+      ) : (
+        <Loader2 className='size-4 animate-spin text-primary' />
+      )}
+      <AlertDescription className='space-y-3'>
+        <div className='font-medium'>
+          {allReady ? 'OCR 识别完成，可以开始分析' : 'OCR 识别中，请稍候…'}
+        </div>
+        <div className='space-y-1.5'>
+          {/* 区2 OCR 识别区：招标文件状态 */}
+          <div className='flex items-center gap-2 text-sm'>
+            <span className='w-16 shrink-0 text-muted-foreground'>招标文件</span>
+            <OcrStatusBadge status={tenderOcr ?? 'pending'} />
+          </div>
+          {/* 各投标人文件状态 */}
+          {docsStatus.bids.map((bid) => (
+            <div key={bid.bid_id} className='flex items-center gap-2 text-sm'>
+              <span className='w-16 shrink-0 truncate text-muted-foreground'>
+                {bid.bidder_name ?? bid.bid_id}
+              </span>
+              <OcrStatusBadge status={bid.ocr_status} />
+            </div>
+          ))}
+        </div>
+      </AlertDescription>
+    </Alert>
+  )
+}
+
+/** OCR 状态徽章：pending/running/ready/failed 对应不同颜色。 */
+function OcrStatusBadge({ status }: { status: string }) {
+  if (status === 'ready') {
+    return (
+      <span className='flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700'>
+        <CheckCircle2 className='size-3' />
+        已就绪
+      </span>
+    )
+  }
+  if (status === 'failed') {
+    return (
+      <span className='flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700'>
+        <XCircle className='size-3' />
+        识别失败
+      </span>
+    )
+  }
+  return (
+    <span className='flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700'>
+      <Loader2 className='size-3 animate-spin' />
+      识别中
+    </span>
   )
 }
 

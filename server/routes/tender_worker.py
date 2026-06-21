@@ -20,7 +20,11 @@ from server.ocr.pipeline import ocr_preprocess_block
 from server.platform.logging_setup import logging_context
 from server.stores.request_store import utc_now
 from server.stores.session_store import new_conversation_id
-from server.stores.tender_doc_store import get_project_doc, list_bid_docs
+from server.stores.tender_doc_store import (
+    get_project_doc,
+    list_bid_docs,
+    update_project_doc_criteria,
+)
 from server.stores.tender_task_store import update_tender_progress, upsert_tender_task
 
 logger = logging.getLogger(__name__)
@@ -269,6 +273,13 @@ async def _execute_inner(
                 ),
                 timeout=TENDER_TIMEOUT_SEC,
             )
+            # criteria 项目级回填（P3 A1）：评标 completed 后，首次把会话解析的 criteria
+            # 写到招标层 → 同项目后续家评标 S1 读层命中复用，不再重复解析。异常不崩主流程。
+            if project_id and isinstance(payload, dict):
+                criteria = (payload.get("extracted_data") or {}).get("criteria")
+                await asyncio.to_thread(
+                    _backfill_criteria, project_id, tenant, criteria
+                )
             finished_at = utc_now()
             await asyncio.to_thread(
                 upsert_tender_task,
@@ -348,6 +359,47 @@ async def _execute_inner(
             flusher.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await flusher  # 等 cancel 真正落地（cancel 仅在下个 loop cycle 注入 CancelledError）
+
+
+def _backfill_criteria(
+    project_id: str | None,
+    tenant: str,
+    criteria: object,
+) -> None:
+    """回填评标 criteria 到招标层（首个写入者赢，已存不覆盖，散单/异常静默跳过）。
+
+    评标 completed 后，若 payload.extracted_data.criteria 存在，调本函数把评分标准
+    持久化到 tender_project_docs.criteria（项目级复用，后续家评标 S1 可读层命中秒过）。
+
+    Args:
+        project_id: 招标项目 ID；为 None（散单）时直接返回。
+        tenant: 租户作用域。
+        criteria: 已解析的 criteria 对象（dict）；为 None/空时跳过。
+    """
+    if not project_id or not criteria:
+        return
+    try:
+        import json as _json
+
+        existing = get_project_doc(project_id, tenant)
+        if existing is None:
+            # 招标层记录不存在（旧散单迁移等），安全跳过。
+            return
+        if existing.get("criteria"):
+            # 已存非空 → 首个写入者赢，不覆盖。
+            return
+        criteria_json = _json.dumps(criteria, ensure_ascii=False)
+        update_project_doc_criteria(project_id, criteria_json)
+        logger.info(
+            "tender_criteria_backfilled",
+            extra={"project_id": project_id, "tenant": tenant or "default"},
+        )
+    except Exception:
+        logger.warning(
+            "tender_criteria_backfill_failed",
+            extra={"project_id": project_id, "tenant": tenant or "default"},
+            exc_info=True,
+        )
 
 
 def schedule_tender_evaluation_task(

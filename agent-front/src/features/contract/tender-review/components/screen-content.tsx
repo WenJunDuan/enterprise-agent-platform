@@ -30,10 +30,15 @@ export function ScreenContent({ page }: { page: TenderReviewPageState }) {
           uploadBidders={page.uploadBidders}
           progress={page.progress}
           isAnalyzing={page.isAnalyzing}
+          isUploading={page.isUploading}
+          isOcrReady={page.isOcrReady}
+          hasUploaded={page.uploadProjectId !== null}
+          docsStatus={page.docsStatus}
           uploadError={page.uploadError}
           submitError={page.submitError}
           canStart={page.canStartReview}
           onStart={page.startReview}
+          onUpload={page.startUpload}
           onCancel={() => {
             page.resetProjectForm()
             page.setScreen('dashboard')
@@ -54,6 +59,8 @@ export function ScreenContent({ page }: { page: TenderReviewPageState }) {
           progress={page.progress}
           progressText={page.progressText}
           title={page.projectForm.title ?? undefined}
+          projectForm={page.projectForm}
+          docsStatus={page.docsStatus}
         />
       )
     case 'history':
