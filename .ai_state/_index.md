@@ -81,7 +81,7 @@ pointers:
 next_action: "本会话(2026-06-20 深夜)收尾,358 passed/ruff,已 push origin/main(后端+state);前端集成已 commit 未 push(待用户测)。完成:tender-data-model goal ship + tender-task-api-parity + 第三章硬编码修 + 存储改造(submissions 域命名空间+tender 项目层级,codex REWORK→fixed symlink逃逸)+ 单 file 字段上传(URL 外读废弃-SSRF)+ 前端 tender-review 接真实 API(codex 集成)。**新会话起点**:①用户端到端测前端(需先把 .env 第 11 行 MODEL_BASE_URL=127.0.0.1:4000 删掉,让 line4 anyrouter 生效;后端 serve+前端 dev,proxy 已配 /tender)有问题就修 ②前端联调若 OK 则 push agent-front。遗留:tender-criteria codex review 待补(codex review --base 13d58a7);dependabot 10 漏洞(依赖,另议)"
 last_subagent: "generator"
 last_subagent_at: "2026-06-02T09:25:27.661Z"
-active_worktrees: ["agent-ab48b114f14b94af4"]
+active_worktrees: [] # 2026-06-21 核实无活动 worktree(git worktree list 仅 main),清陈旧字段
 last_critic_round: 0
 design_changed_after_impl: true
 
