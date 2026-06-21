@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 from typing import Callable
@@ -43,6 +44,10 @@ TENDER_CONTRACT_MAX_RETRY = int(os.getenv("TENDER_CONTRACT_MAX_RETRY", "2"))
 _PROGRESS_FLUSH_SEC = float(os.getenv("TENDER_PROGRESS_FLUSH_SEC", "1.5"))  # 写 DB 节流间隔
 _PROGRESS_MAX_CHARS = int(os.getenv("TENDER_PROGRESS_MAX_CHARS", "4000"))  # progress_message 留最新尾部
 _PROGRESS_LOG_SNIPPET = 500  # 每片段落思考日志的截断长度
+
+# 评标推理强度（extended thinking）：评标是高难合规判断，默认 xhigh 压 deepseek 随机性（per-call，
+# 不走全局 build_options 默认 → 不拖慢 audit，codex r4 P1）；env 可调或设非法值走端点默认。
+_TENDER_EFFORT = os.getenv("TENDER_REASONING_EFFORT", "xhigh")
 
 # 评标场景 OCR 目的（治"OCR 无目的性"）：让 OCR 引擎在通用文本提取之外，重点完整、结构化地
 # 还原评分标准/评标办法/扣分细则/废标条款等【表格】——评分表是评标命脉，通用提取易丢表格行列
@@ -102,6 +107,7 @@ async def _run_evaluation(
                 conversation_id=new_conversation_id(),
                 context=context,
                 on_progress=on_progress,  # 思考流式：agent 文本片段实时回调给 worker
+                effort=_TENDER_EFFORT,  # 评标 per-call 扩展思考（不全局默认，避免拖慢 audit）
                 # 文本模式（与 audit 对齐）：大底稿(百页标书)下 SDK 结构化输出会 error_max_structured_
                 # output_retries；文本模式由服务端抽 JSON，对大输入更稳。配合命令里的 JSON 输出硬化。
                 structured=False,
@@ -193,9 +199,12 @@ async def _execute_inner(
             while True:
                 await asyncio.sleep(_PROGRESS_FLUSH_SEC)
                 if progress_state["text"]:
-                    await asyncio.to_thread(
-                        update_tender_progress, request_id, progress_state["text"]
-                    )
+                    try:
+                        await asyncio.to_thread(
+                            update_tender_progress, request_id, progress_state["text"]
+                        )
+                    except Exception:  # noqa: BLE001 - 进度写失败不影响评标，仅记 debug
+                        logger.debug("progress flush failed", exc_info=True)
 
         flusher = asyncio.create_task(_flush_progress())
         try:
@@ -286,6 +295,8 @@ async def _execute_inner(
             )
         finally:
             flusher.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await flusher  # 等 cancel 真正落地（cancel 仅在下个 loop cycle 注入 CancelledError）
 
 
 def schedule_tender_evaluation_task(

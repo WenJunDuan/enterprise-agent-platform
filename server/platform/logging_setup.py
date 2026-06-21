@@ -6,6 +6,7 @@ import gzip
 import json
 import logging
 import os
+import re
 import shutil
 import sys
 from contextlib import contextmanager
@@ -83,16 +84,30 @@ class _ContextFilter(logging.Filter):
         return True
 
 
+# uvicorn access 行解析：取 exact path（去 query）+ status code，避免子串误伤（codex r4 P1）。
+_ACCESS_LINE = re.compile(r'"\w+\s+(?P<path>[^\s?]+)[^"]*"\s+(?P<status>\d{3})')
+
+
 class _AccessNoiseFilter(logging.Filter):
     """过滤 uvicorn access log 里的健康检查/轮询噪音（默认 GET /health），防 cloudflared 健康探测
-    与前端轮询刷屏。保留业务请求。env ACCESS_LOG_NOISE_PATHS（逗号分隔）可扩展过滤路径。"""
+    与前端轮询刷屏。env ACCESS_LOG_NOISE_PATHS（逗号分隔）可扩展。
+
+    只过滤【exact path 命中 + 成功响应 2xx/3xx】的行：4xx/5xx 一律保留（便于排查），query 串里
+    含噪音路径也不误伤（codex r4 P1：原子串匹配会吞掉 /tasks 的错误响应、误伤 ?redirect=/health）。
+    """
 
     def __init__(self, noise_paths: tuple[str, ...]) -> None:
         super().__init__()
-        self._noise = noise_paths
+        self._noise = frozenset(noise_paths)
 
     def filter(self, record: logging.LogRecord) -> bool:
-        return not any(path in record.getMessage() for path in self._noise)
+        match = _ACCESS_LINE.search(record.getMessage())
+        if not match:
+            return True  # 非标准 access 行（启动日志等），保留
+        path, status = match.group("path"), int(match.group("status"))
+        # exact 或带边界的前缀匹配（/tender/tasks 命中 /tender/tasks/{id} 轮询，但不误伤 /x?to=/health）。
+        is_noise = any(path == p or path.startswith(p + "/") for p in self._noise)
+        return not (is_noise and 200 <= status < 400)
 
 
 def install_access_log_filter() -> None:

@@ -56,3 +56,15 @@ dogfood 华为南通标 + 烛照标：看 session log 有无 thinking 块、评�
 - 单测：on_progress 被 TextBlock 触发；update_tender_progress 写 DB；audit 不传 on_progress 零变化。
 - dogfood：analyzing 界面实时滚动出评标分析片段（取标准/抽取/逐项）；serve.log 无 /health 刷屏。
 - 回归：全套 passed + ruff。
+
+## codex r4 review：REWORK → 全修
+
+3 P1 + 3 P2 全采纳：
+- **P1-1** 前端 `progressByRid` 按 request_id 存（防多 bidder 并发覆盖），多家并行按序号分段拼接、单家直接显示。
+- **P1-2** effort 不全局默认 xhigh（拖慢 audit 180s 超时）→ 全局只认 env `CLAUDE_REASONING_EFFORT`（默认不设）+ 统一校验；评标 `tender_worker` per-call 传 `effort=xhigh`（`TENDER_REASONING_EFFORT`），audit 不受影响。
+- **P1-3** access filter 改正则解析 exact path + status，只过滤 noise 路径的 2xx/3xx（保留 4xx/5xx），前缀边界匹配（`/tender/tasks` 命中轮询但不误伤 `?to=/health`）。
+- **P2-4** flusher：DB 写异常 catch 不致 flusher 死；`finally` cancel 后 `await` + suppress `CancelledError`（cancel 仅下个 loop cycle 生效）。
+- **P2-5** json_bridge 注释明确「文本模式思考在 TextBlock 内」。
+- **P2-6** 补测试：command_adapter on_progress 透传（链不断 + audit 默认 None 零变化）+ effort per-call + access exact path/status。
+
+471 passed/ruff/前端 lint+build。
