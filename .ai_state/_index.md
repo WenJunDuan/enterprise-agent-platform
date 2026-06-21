@@ -118,6 +118,22 @@ fingerprint: ""
 
 ## 当前状态
 
+2026-06-21（OCR 域强化 sprint · P1+P2+云路径落地）: 依用户设计 `sprints/2026-06-21-ocr-domain-hardening/
+design.md` 实施。**P1**(`6aa3792`)：native `read_pdf_text` pypdf→**pymupdf**(get_text 阅读顺序 + find_tables
+抽表)；`_render_body` 同渲染 blocks+tables(旧逻辑 tables 分支吃掉 blocks 丢正文)。**P2**：`file_clarity`
+(clear/low/unknown/failed)确定性置信度信号 + 底稿显式标注；engine `_page_confidence` 把 PaddleOCR-VL 逐块
+score 接出。**云 OCR**(`63e0bb8`)：LiteLLM 内网不可用 → 接 **aistudio 线上 PaddleOCR-VL**(异步 job-poll)。
+`OCR_CLOUD=1` 走云 / =0 走 litellm/本地，一套 `OCR_VL_SERVER_URL/API_KEY/MODEL_NAME` 换值即切；
+`_recognize_via_paddle_cloud`(urllib multipart→轮询带总超时→取 jsonl，只取文本不下图)+ certifi 修 SSL
+(macOS CERTIFICATE_VERIFY_FAILED)。**活体验证 5.9s 出真实中文底稿**(河道护栏概算/590万，印章检出)。**377 passed/ruff**。
+- 依赖坑：OCR 全在 `ocr` extra，装 **`uv sync --extra ocr`**(纯 uv sync 会卸 pypdf/openpyxl/docx)；pymupdf
+  之前声明未装(P1 才暴露)；certifi 已进 ocr extra。
+- 遗留(非阻塞)：云响应 `clarity=unknown`(逐块 score 字段没对上 `_page_confidence`，文本完美；照实际 jsonl
+  结构再接)；3 个 OCR commit(`ed74bc8`→`6aa3792`→`63e0bb8`)本地未推。
+- **下一步 = P4**：把 `extract_dir+build_extraction_block` 接进 `tender_worker`(run_command_json 前) +
+  `audit_worker`(build_inline_audit_prompt 内)做确定性 OCR 预处理 → 发票/标书审核真用上 OCR，且彻底绕开模型
+  自己 Read PDF 卡 poppler 的脆弱点(round4「OCR 未接」缺口)。
+
 2026-06-21（凌晨 · 真实评测验证 + 两后端 bug 修复）: 用户授权经 **server API** 跑真实 audit/tender 评测
 （不直连 Claude）。首轮**两单皆 failed**，抽出两真 bug：① **audit schema 闸误杀**——`[1M]` 模型输出常漏
 server 元数据(claim_id/reviewed_by/timestamp)+ risk_dimensions 给成对象，G1 在 enrich 前硬校验原始输出 →
