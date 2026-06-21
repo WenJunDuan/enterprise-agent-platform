@@ -22,7 +22,7 @@ skills:
    - **通则层国家法规（法律底座，非项目评分标准）**：`knowledge/tender/evalmethod.rules.json`（评标方法暂行规定）、`knowledge/tender/regulation.rules.json`（招标投标法实施条例），读取顶层 `source_path` / `source_version` 作为追溯。
    招标文件载明的评分标准**直读即权威**；招标文件没写的标准不得臆造补充。**缺招标文件 / 招标文件里定位不到评标办法** → 相关评分项降级输出 `manual_review`（`rule_gap`）。
 3. 如 `knowledge/memory/tender/` 中存在与本案高度相似的案例 / 异常记忆，读取并作为 `memory:` 辅助证据，不能替代结构化规则。
-4. 在**同一次推理**中**对照 `criteria` 逐评分项按其 `score_mode` 判分**，写入 `extracted_data.scoring`（每项 `{item, max, score, status, score_mode, basis, …明细}`，**与 `/tender-evaluate` 命令 S3 一致**）：
+4. 在**同一次推理**中**对照 `criteria` 逐评分项按其 `score_mode` 判分**，写入 `extracted_data.scoring`（每项 `{item, max, score, status, score_mode, basis, …明细}`）。**⚠ S3 评分细则一律以 `/tender-evaluate` 命令为权威**（含 dogfood 后 G1-G7 + A「投标无实质对应内容→manual_review 不判 0」+ G5「限价类 formula 单家算 vs 群体变量横比」）；本 agent 仅在多投标并行抽取等特殊场景按需调度，下面要点为摘录、可能滞后，判分须回到命令 S3：
    - `deduction` 满分扣减 → 逐条核对 `deductions` 命中写 `deduction_hits`（含触发扣分的投标原文 `quote`+`【第N页】`），`score=max−Σ扣`；**已识别问题都落成扣分明细**，禁止笼统"不通过"。
    - `banded` 档次给分 → `selected_band`，`score=该档分`（**不是从满分扣**）；`additive` → `award_hits`，`score=base+Σ加`。
    - `formula`/价格横比/现场答辩/外部数据 等不可判定 → `score:null`+`status:"manual_review"`，**绝不判 0**。

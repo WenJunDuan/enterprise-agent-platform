@@ -302,6 +302,9 @@ def _verify_score_mode_consistency(structured_output: dict[str, Any]) -> None:
     scoring = extracted.get("scoring")
     if not isinstance(scoring, list):
         return
+    # 整单是否实质性不响应/投错标（codex P1-1：只在此情形对"无依据 0"硬降级，避免误伤正常客观 0
+    # ——如 additive「提供才加分」确认没加分内容、规则「未提供不得分」确认缺失，这些 0 是合理的）。
+    has_disqualification = bool(extracted.get("disqualification_hits"))
     # criteria 各项按 item 名索引（取 score_mode / base）。
     criteria_items: dict[str, dict[str, Any]] = {}
     criteria = extracted.get("criteria")
@@ -373,20 +376,38 @@ def _verify_score_mode_consistency(structured_output: dict[str, Any]) -> None:
                     "detail": f"score={score} 与「{detail}={expected}」不一致，请人工复核",
                 }
             )
-        # A（absence-is-not-zero）：实得 0 分却标 scored，且不是 deduction 真扣减到 0（有 deduction_hits
-        # 明细）→ 多半是"没识别到证据却判 0 通过"，该项更应是 manual_review/rejected，不能算"已评分"。
+        # A（absence-is-not-zero 兜底，dogfood 实测证明 prompt 强化不可靠：模型反复把"投标无对应内容"
+        # 判 0 分 scored）：实得 0 分却标 scored 但【无评分依据明细】→ 降级 manual_review（无依据的 0 =
+        # 无法判定，不是客观得 0）。**保留**：deduction 真扣减到 0（有 deduction_hits）、pass_fail
+        # （客观"未满足"是有依据的 0）。
         if abs(score) < _SCORE_MODE_TOLERANCE:
             deducted_to_zero = (
                 mode == "deduction"
                 and isinstance(item.get("deduction_hits"), list)
                 and bool(item.get("deduction_hits"))
             )
-            if not deducted_to_zero:
+            justified = deducted_to_zero or mode == "pass_fail"
+            if not justified and has_disqualification:
+                # 整单实质性不响应/投错标：该项多半无可评事实（投标根本没投这块）→ 硬降级
+                # manual_review，不留"评了判 0 通过"的假象。
+                item["status"] = "manual_review"
+                item["score"] = None
+                item.setdefault("manual_review_reason", "insufficient_evidence")
+                warnings.append(
+                    {
+                        "code": "scored_zero_demoted",
+                        "item": item.get("item"),
+                        "detail": "整单实质性不响应，该项实得 0 且无评分依据明细，已降级 manual_review",
+                    }
+                )
+            elif not justified:
+                # 正常案例：实得 0 但无明细，可能是合理客观 0（招标规则"提供才加分/不满足不得分"且
+                # 确认缺失），也可能漏判 → 仅告警、不强改判断（codex P1-1：避免误伤客观 0）。
                 warnings.append(
                     {
                         "code": "scored_zero_suspect",
                         "item": item.get("item"),
-                        "detail": "实得 0 分却标已评分但无扣减明细——疑似未识别到证据即判 0，应改 manual_review/rejected",
+                        "detail": "实得 0 分但无评分依据明细，请人工确认是规则性 0（确认缺失）还是漏判",
                     }
                 )
     if warnings:

@@ -14,15 +14,17 @@ allowed-tools: Read, Glob, Skill, Task
 - 形成文件清单（章节号 → 文件）。不要逐字深读，先建索引。
 
 ### S1 取本项目评分标准（定位招标文件里的评标办法 → criteria）
+- **定位线索与排除（这步错则全错）**：评分标准通常用**评分表**承载——找列含「序号 / 评分点名称 / 评审标准 / 最高分 / 最低分 / 主客观分」或「评分项 / 分值 / 权重」的表；章节标题含 **开标 / 评标 / 评审 / 资格审查 / 商务技术标 / 报价标** 即是，**不限于《评标办法》字样**（本类标书常把评分表放在「第 X 部分 开标和评标」里，而非单独的《评标办法》章）。**关键排除**：评分标准是评标委员会对**投标文件**打分用的（资格审查 + 商务技术 + 报价三类分，合计 = 满分）；**必须排除中标后的「考核方案 / 考核指标 / 季度考核 / 绩效考核 / 履约考核 / KPI」表**——它们多挂在「附件·考核方案」、同样列分值，但属中标**后**履约阶段，**误取会让整套 criteria 取错**。定位后自检：各项 `max` 之和是否 = 总分（如 70 + 30 = 100）；对不上 = 漏取或取错表，回去重定位。
 - 本项目的评分标准**就在它自己的招标文件里**（价格 X 分 / 技术 Y 分 / 信用 Z 分…全是项目专属）。`Read` 招标文件，**定位其中规定评分标准的部分**——它常以《评标办法》《评标标准》《评分办法》《评分细则》《评标方法》《评分标准》等为标题，**所在位置因标书而异**（可能在正文某章、评标须知、或附录；招标编号、章节号、标题写法各家不同），**以本招标文件实际结构为准，不要预设固定在"第三章"或某个固定标题**。必要时先读目录 / 浏览章节标题来定位。把定位到的评标办法**直读解析**为本项目评分标准，结构化写入 `extracted_data.criteria`，对齐 `.claude/contracts/tender/criteria.schema.json`：
   - `source_ref`（评标办法在本招标文件的**实际出处**：文件 + 章节/标题 + 页）、`method`（综合评估法 / 经评审的最低投标价法 / 其他）、`total_max`（满分合计）
   - `items[]`：每项除 `{item, max, scoring_rule 原文, source_ref, tag}` 外，**必须判定该项评分方式 `score_mode` 并按方式提取结构化细则**（对齐 criteria.schema v2）：
     - `deduction` 满分扣减 → `deductions[]`：逐条 `{condition 何情况扣, points 扣几分, unit(per_item/per_occurrence/per_percent), max_times 最多扣几次, max_deduct 封顶, source_quote 原文, source_ref}`。**这是"第一次读标书就把扣分项全摘出来"的落点**——招标文件列了几条扣分、每条扣几分/最多几次，逐条钉死，不留到 S3 临场猜。
     - `banded` 档次给分（如优10良7中4 等离散档，**不是从满分扣减**）→ `bands[]`：`{level, points, criteria 评定标准, source_quote}`。
     - `additive` 基础分+加分累计 → `base` + `awards[]`：`{condition, points, cap 封顶, source_quote}`（`max` 须为含加分封顶的最高分）。
-    - `formula` 公式分（价格分等）→ `formula` 公式原文（通常 `tag:requires_cross_bid_comparison`）。
+    - `formula` 公式分（价格分等）→ `formula` 公式原文。**价格分须按依据分两类**：① 依「基准价 / 评标平均价 / 与其他投标横比」算 → `tag:requires_cross_bid_comparison`（S3 单家算不了，manual_review + null）；② 依「招标文件已载明的最高限价 / 限价表」算（如「每低于限价 2.5% 得 1 分」「限价 300 元/用户·月每高 10% 得 1 分」）→ `tag:scored`、`score_mode:formula`，**限价是招标文件给的常量、单家即可算分，不要误判为需横比**。混为一谈会把可算的分（本标报价 30 分里的 4+3+3 = 10 分）白丢给人工。
     - `pass_fail` 客观通过得满分否则 0 / `manual` 主观/现场/外部不可判定。
     - `evaluator_type`：`objective`/`subjective`/`mixed`——主观档次项标 `subjective`（S3 给建议分+依据，留低置信人工复核，不冒充客观分）。
+    - **复合评分行 → 拆成多条 items**：招标文件一个评分行含多个**独立子规则**（如「基础响应分 + ▲加分」「驻场人员计分 + 资格证书计分」「质量体系 + 服务承诺 + 培训」）时，**拆成多条 criteria items**、各自取最贴切的 `score_mode`，各 item `max` 之和 = 原行满分（契约一项只允许一种 `score_mode`，**不要把扣减与加分混进同一项**）。例：「运营平台 24 分 = 三平台功能响应 18 分（deduction：每缺一功能点扣 0.5、单平台封顶 6）+ ▲检测报告佐证加 6 分（additive：每▲项 +0.5、封顶 6）」→ 拆成两条 items。
   - **废标/资格条款 → 顶层 `rejection_rules[]`**（不是评分项！）：逐条提取 `{id, condition 何情况废标/资格不符, source_quote 招标文件原文, source_ref}`，供 S3 走**独立 gate** 判定，与逐项评分解耦。
   - `tag` 标"可判定性"（与 `score_mode` 正交）：可依投标文件判定 → `scored`；命中 `requires_live_event`（现场答辩）/ `requires_external_data`（外部信用）/ `requires_cross_bid_comparison`（价格横比）→ 留待 S3 走 `manual_review`。
 - 这份 `criteria` 就是本次评标的**会话项目规则**，随结论持久化（落 data/）；S3 据它逐项评分。criteria 须**逐字依招标文件评标办法原文**（评分项 / 满分 / 规则不增删改），确保同一招标在不同投标人评标时得到**一致的 criteria**——这是后续多家公平横向比较的前提。
@@ -46,9 +48,18 @@ allowed-tools: Read, Glob, Skill, Task
 - 对照 S1 的 `criteria` 每一项，结合事实底稿（必要时按页锚点 `【第N页】` 回读原文）判定，写入 `extracted_data.scoring`，每项 `{item, max, score, status, score_mode, basis, …按 mode 的明细}`（`item`/`max`/`score_mode` 与 criteria 对应项一致）。**按该项 `score_mode` 判分**：
   - `deduction`（满分扣减）→ **逐条核对该项 `deductions`**：命中写一条 `deduction_hits`：`{deduction_id 回链, condition, points_each, times 命中次数, deducted 本条共扣, evidence:{source 文件+第N页+章节, quote 触发扣分的投标原文片段}}`，未命中不写。`score = max − Σdeducted`（≥0，完全满足=max）。**已识别的每个问题点都要落成一条 `deduction_hits` 并摘上下文 quote**，禁止笼统"扣X分"或只写"不通过"。
   - `banded`（档次给分，优10良7中4 等离散档）→ 依 `bands` 选档写 `selected_band:{level, points, reason}`，`score = 该档 points`。**档次分是离散给分，不要伪造扣分明细**（那个 7 分不是"扣 3 分"）。
+    - **主观档次项（`evaluator_type=subjective`，如技术方案「完整/较完整/基本」、应急响应「完善/部分」）**：`selected_band` 是**初评建议分**，须带 low_confidence，`reason` 写清归此档的依据，并在 `explanation` 注明「主观项为初评建议，最终以评委会评分为准」——**不冒充客观确定分**。
   - `additive`（基础分+加分）→ 逐条核对 `awards` 命中写 `award_hits:{award_id, condition, points_each, times, awarded, evidence:{source, quote}}`，`score = base + Σawarded`（≤max）。
-  - `formula` / `tag:requires_cross_bid_comparison`（价格等需横比）→ `status:"manual_review"`、`score:null`，把本家 `bid_price={amount,currency}` 钉入 `extracted_data`，`basis` 写"横比数据已备，待全部投标汇总后统一算"。
+  - `formula`（公式分）→ **按 `tag` 分两路（治 G5：限价类本可单家算，别全丢人工）**：
+    - `tag:"requires_cross_bid_comparison"`（依基准价 / 评标均价 / 与其他投标横比，单家算不了）→ `status:"manual_review"`、`score:null`，把本家 `bid_price={amount,currency}` 钉入 `extracted_data`，`basis` 写"横比数据已备，待全部投标汇总后统一算"。
+    - `tag:"scored"`（依招标文件**已载明的限价 / 限价表**，限价是常量、单家即可算，示例「每低于最高限价 1% 得 1 分」「每高于限价 X% 扣 1 分」，**实际公式以招标文件明示为准**）→ **用本家报价 + 招标限价代入 `formula` 公式直接算分**：`status:"scored"`、`score` 写算得分，`basis` 写清「限价 X、本家报价 Y、按公式得 Z 分」+ 出处页。**不要把限价类当横比丢人工**（本标报价 30 分里非驻场/增量/营收单价 4+3+3=10 分本可算）。
+    - **判别（codex）**：公式变量只要含「有效投标报价 / 最低价 / 评标均价 / 投标人数量 / 所有投标」等**群体变量** → 必 `requires_cross_bid_comparison`；只有当变量**全部来自招标常量（限价/预算）+ 本家报价**时才 `tag:scored` 单家算。**最高限价 / 预算控制价本身不是评分公式**——若招标只规定"超限价废标"，那是废标线（走 disqualification gate），不是评分项。
   - `pass_fail` → 满足得 `max` 否则 0；命中不可判定标签（`requires_live_event`/`requires_external_data`）或 `manual` → `score:null`+`manual_review`，**绝不判 0**。
+  - **「否则不得分」客观项 → 判 0 前必须二分（治「附件读不清就误判 0」）**：招标文件大量「提供…扫描件，否则不得分 / 未提供不得分」，而业绩合同 / 软著证书 / 资格证书 / 毕业证书等多为**扫描盖章件**。判 0 前先分清：
+    - (a) 底稿完整、**确认投标文件未提供**该材料 → 按规则 `score:0, status:scored`，`basis` 写「已核投标文件无 XX」；
+    - (b) 材料**疑似已提供但底稿读不清 / 扫描件未还原 / 印章压字 / 截断 / 未定位到**（OCR 低置信）→ **不得按「否则不得分」判 0**，该项 `score:null, status:manual_review, manual_review_reason:insufficient_evidence`，`basis` 写「XX 疑似在第 N 页但底稿未清晰还原，需人工 / 多模态核验」。
+    - **「读不清」≠「没提供」**；把未还原的扫描附件当「客观 0 分」是范畴错误（与「不可判定绝不判 0」同源）。
+  - **投标对某评分项「无实质对应内容/未响应该评分维度」→ `manual_review` 不判 0 scored（治"实得 0 却标已评分通过"，absence-is-not-zero）**：区别于上面两种——不是材料读不清(b)、也不是该项必交材料缺失(a)，而是**投标根本没投这块**（如投错项目、该评分维度在投标全文无对应章节/内容）。此时该项 `score:null, status:"manual_review", manual_review_reason:"insufficient_evidence"`，`basis` 写「投标未对该评分维度作实质响应，无法评判」——**绝不判 `score:0, status:"scored"`**（0 分 scored = "评了分、判得 0 分通过"，但"无对应内容"是**无法评判**，不是客观得 0）。仅当 `score_mode` 明确为 `pass_fail` 且投标确实"未满足该客观条件"才判 `score:0, status:"scored"` 并在 basis 写清未满足什么。
   - `status:"rejected"`（该项判 0）**仅当该评分项自身必交材料缺失/硬性不符**；**不要因整单废标就把本项判 0**（见下解耦）。
 - **废标/资格独立 gate（与逐项评分解耦，关键，治"全是不通过没扣分"）**：对照 S1 的 `rejection_rules` 逐条核查投标文件，命中写 `extracted_data.disqualification_hits:[{rule_id 回链, finding, evidence:{source, quote}}]`；资格审查写 `extracted_data.eligibility_checks:[{check, status:pass/fail/manual, basis, evidence}]`。**废标/资格不符只决定最终 `verdict`，绝不把各评分项 `scoring[]` 一律归 0/rejected**——投标人确实交了业绩/方案/团队/商务，就照各项 `score_mode` 逐项给分；把"项目名不符"等记入 `disqualification_hits` + 相关项 `basis`，而非抹掉逐项评分。
 - 一致性核验：若业绩的项目经理与拟派项目负责人不一致，该业绩项 `manual_review`/不得分，`manual_review_reason:"data_conflict"`，证据链**同时引用业绩页与拟派负责人页**两处出处（依据：实施条例第40/42条、业绩与拟派负责人应一致）。
