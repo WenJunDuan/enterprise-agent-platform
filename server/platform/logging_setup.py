@@ -83,6 +83,27 @@ class _ContextFilter(logging.Filter):
         return True
 
 
+class _AccessNoiseFilter(logging.Filter):
+    """过滤 uvicorn access log 里的健康检查/轮询噪音（默认 GET /health），防 cloudflared 健康探测
+    与前端轮询刷屏。保留业务请求。env ACCESS_LOG_NOISE_PATHS（逗号分隔）可扩展过滤路径。"""
+
+    def __init__(self, noise_paths: tuple[str, ...]) -> None:
+        super().__init__()
+        self._noise = noise_paths
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return not any(path in record.getMessage() for path in self._noise)
+
+
+def install_access_log_filter() -> None:
+    """给 uvicorn.access logger 装噪音过滤。在 app lifespan startup 调用（uvicorn 此时已配好 access
+    logger，filter 不被覆盖）。默认过滤 /health；env ACCESS_LOG_NOISE_PATHS 逗号分隔可扩展。"""
+    raw = os.getenv("ACCESS_LOG_NOISE_PATHS", "/health")
+    paths = tuple(p.strip() for p in raw.split(",") if p.strip())
+    if paths:
+        logging.getLogger("uvicorn.access").addFilter(_AccessNoiseFilter(paths))
+
+
 class _JSONFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         payload = {

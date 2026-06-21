@@ -75,3 +75,34 @@ def test_rotation_produces_gzip_backups(tmp_path):
     assert backups, "expected at least one gzipped rotated backup"
     # 备份数受 backup_count 约束
     assert len(backups) <= 3
+
+
+# ── uvicorn access log 噪音过滤（/health 健康探测刷屏）──────────────────────────
+
+
+def _access_record(line: str) -> logging.LogRecord:
+    return logging.LogRecord("uvicorn.access", logging.INFO, "", 0, line, None, None)
+
+
+def test_access_noise_filter_drops_health_keeps_business():
+    from server.platform.logging_setup import _AccessNoiseFilter
+
+    f = _AccessNoiseFilter(("/health",))
+    assert f.filter(_access_record('127.0.0.1 - "GET /health HTTP/1.1" 200')) is False
+    assert f.filter(_access_record('127.0.0.1 - "POST /tender/projects HTTP/1.1" 200')) is True
+
+
+def test_install_access_log_filter_reads_env(monkeypatch):
+    from server.platform.logging_setup import _AccessNoiseFilter, install_access_log_filter
+
+    monkeypatch.setenv("ACCESS_LOG_NOISE_PATHS", "/health,/tender/tasks")
+    acc = logging.getLogger("uvicorn.access")
+    acc.filters = [flt for flt in acc.filters if not isinstance(flt, _AccessNoiseFilter)]
+    try:
+        install_access_log_filter()
+        installed = [flt for flt in acc.filters if isinstance(flt, _AccessNoiseFilter)]
+        assert installed, "应给 uvicorn.access 装一个噪音 filter"
+        # 两个 env 路径都过滤
+        assert installed[0].filter(_access_record('- "GET /tender/tasks/x HTTP/1.1" 200')) is False
+    finally:
+        acc.filters = [flt for flt in acc.filters if not isinstance(flt, _AccessNoiseFilter)]

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import Any
+from typing import Any, Callable
 
 from claude_agent_sdk import (
     AssistantMessage,
@@ -108,6 +108,7 @@ async def run_agent_json(
     tenant: str | None = None,
     project_id: str | None = None,
     archive_to_results: bool = True,
+    on_progress: Callable[[str], None] | None = None,
     **opts: Any,
 ) -> tuple[StructuredJSON, AgentRunMeta]:
     """Run Claude and return the parsed JSON object.
@@ -164,6 +165,15 @@ async def run_agent_json(
                     for block in getattr(message, "content", []):
                         if isinstance(block, TextBlock):
                             text_accum.append(block.text)
+                            if on_progress is not None:
+                                # 思考流式：assistant 文本片段（含 deepseek 思考/分析过程）实时回调给
+                                # worker → 喂前端 analyzing + 落思考日志。回调失败不中断评标主流程。
+                                try:
+                                    on_progress(block.text)
+                                except Exception:  # noqa: BLE001
+                                    logging.getLogger(__name__).debug(
+                                        "on_progress failed", exc_info=True
+                                    )
                     continue
 
                 if not isinstance(message, ResultMessage):

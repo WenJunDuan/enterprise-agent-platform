@@ -132,6 +132,43 @@ def test_result_completed_returns_payload(client, monkeypatch):
         shutil.rmtree(case, ignore_errors=True)
 
 
+def test_update_tender_progress_only_running(client):
+    # 思考流式：update_tender_progress 只更 running 行的 progress_message；completed 不被覆盖。
+    from server.stores.tender_task_store import (
+        get_tender_task_admin,
+        update_tender_progress,
+        upsert_tender_task,
+    )
+
+    upsert_tender_task(
+        {
+            "request_id": "tp-progress-run",
+            "tenant": "acme",
+            "status": "running",
+            "mode": "directory",
+            "source_mode": "directory",
+            "case_path": "/tmp/case",
+            "progress_message": "评标 Agent 正在运行中",
+        }
+    )
+    update_tender_progress("tp-progress-run", "S1 正在定位评标办法…")
+    assert get_tender_task_admin("tp-progress-run")["progress_message"] == "S1 正在定位评标办法…"
+
+    upsert_tender_task(
+        {
+            "request_id": "tp-progress-done",
+            "tenant": "acme",
+            "status": "completed",
+            "mode": "directory",
+            "source_mode": "directory",
+            "case_path": "/tmp/case",
+            "progress_message": "评标完成",
+        }
+    )
+    update_tender_progress("tp-progress-done", "不应覆盖已完成")
+    assert get_tender_task_admin("tp-progress-done")["progress_message"] == "评标完成"
+
+
 def test_submit_requires_auth(client):
     case = _make_dir_case("test-tender-route-auth")
     try:
