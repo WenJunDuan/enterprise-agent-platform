@@ -21,6 +21,7 @@ from server.platform.logging_setup import logging_context
 from server.stores.request_store import utc_now
 from server.stores.session_store import new_conversation_id
 from server.stores.tender_doc_store import (
+    get_bid_doc,
     get_project_doc,
     list_bid_docs,
     update_project_doc_criteria,
@@ -88,31 +89,38 @@ def admission_available() -> bool:
     return len(_BACKGROUND_TASKS) < MAX_PENDING_TENDERS
 
 
-def _load_doc_layer_context(project_id: str, tenant: str) -> str | None:
+def _load_doc_layer_context(project_id: str, bid_id: str | None, tenant: str) -> str | None:
     """P2 评标读层：从 tender_doc_store 取已预热的 OCR 底稿并拼为上下文字符串。
 
-    招标层 + 全部投标层均 ready 时才走读层（任一 pending/running/failed → 回落串行 OCR，
-    确保数据完整性）。任何异常 → 静默返回 None 触发回落，**绝不拖垮评标**。
+    **P1-1 修复**：只加载招标层 + **当前被评标这一家**的投标层（by bid_id）。
+    旧实现拼接所有投标文件 → 多家材料污染同一 context，错乱 claim_id/scoring。
+    无 bid_id（legacy 散单/无法定位当前家）→ 返回 None 回落串行 OCR（天然正确，
+    case_path 就是该家散单目录）。招标层或当前家 not-ready/failed/缺失 → 返回 None。
+    任何异常 → 静默返回 None，**绝不拖垮评标**。
 
     Args:
         project_id: 招标项目 ID。
+        bid_id: 当前被评标的投标文件 ID；为 None 时跳过读层（安全回落）。
         tenant: 租户作用域。
 
     Returns:
-        组装好的 OCR 底稿字符串，或 None 触发回落。
+        "招标底稿 + 当前家投标底稿"组合字符串，或 None 触发回落。
     """
+    # 无 bid_id → 无法精确定位当前家，绝不混入其他家材料，直接回落
+    if not bid_id:
+        return None
     try:
         project_doc = get_project_doc(project_id, tenant)
         if project_doc is None or project_doc.get("ocr_status") != "ready":
             return None
-        bid_rows = list_bid_docs(project_id, tenant)
-        parts: list[str] = [f"=== 招标文件底稿 ===\n{project_doc['ocr_text']}"]
-        for bid in bid_rows:
-            if bid.get("ocr_status") != "ready" or not bid.get("ocr_text"):
-                # 任一投标文件未 ready → 不能保证数据完整，回落兜底
-                return None
-            bidder = bid.get("bidder_name") or bid["bid_id"]
-            parts.append(f"=== 投标文件（{bidder}）底稿 ===\n{bid['ocr_text']}")
+        bid = get_bid_doc(project_id, bid_id, tenant)
+        if bid is None or bid.get("ocr_status") != "ready" or not bid.get("ocr_text"):
+            return None
+        bidder = bid.get("bidder_name") or bid["bid_id"]
+        parts: list[str] = [
+            f"=== 招标文件底稿 ===\n{project_doc['ocr_text']}",
+            f"=== 投标文件（{bidder}）底稿 ===\n{bid['ocr_text']}",
+        ]
         return "\n\n".join(parts)
     except Exception:
         logger.warning("_load_doc_layer_context failed, falling back", exc_info=True)
@@ -125,14 +133,18 @@ async def _run_evaluation(
     tenant: str,
     directory_path: str,
     project_id: str | None = None,
+    bid_id: str | None = None,
     on_progress: Callable[[str], None] | None = None,
 ):
     # P2 评标读层：优先取 tender_doc_store 已 ready 的 OCR 底稿（上传时预热，秒过）。
-    # 未 ready/缺失/异常 → 回落原串行 ocr_preprocess_block（兜底，不破现有路径）。
+    # P1-1 修复：只读招标层 + 当前家(bid_id)投标层，不混全部投标。
+    # 未 ready/缺失/无 bid_id/异常 → 回落原串行 ocr_preprocess_block（兜底，不破现有路径）。
     # 无 project_id（legacy 散单）或开关关闭 → 直接回落。
     doc_layer_text: str | None = None
     if _tender_read_doc_layer_enabled() and project_id:
-        doc_layer_text = await asyncio.to_thread(_load_doc_layer_context, project_id, tenant)
+        doc_layer_text = await asyncio.to_thread(
+            _load_doc_layer_context, project_id, bid_id, tenant
+        )
 
     if doc_layer_text is not None:
         ocr_block: str | None = doc_layer_text
@@ -190,6 +202,7 @@ async def execute_tender_evaluation_task(
     directory_path: str,
     source_mode: str = "directory",
     project_id: str | None = None,
+    bid_id: str | None = None,
 ) -> None:
     """Gate on the concurrency semaphore, then run the evaluation task."""
     # 并发闸：拿不到名额就在此 await 排队，排队期间任务保持 accepted（不计入评标超时）。
@@ -200,6 +213,7 @@ async def execute_tender_evaluation_task(
             directory_path=directory_path,
             source_mode=source_mode,
             project_id=project_id,
+            bid_id=bid_id,
         )
 
 
@@ -210,6 +224,7 @@ async def _execute_inner(
     directory_path: str,
     source_mode: str,
     project_id: str | None = None,
+    bid_id: str | None = None,
 ) -> None:
     started_at = utc_now()
     with logging_context(request_id=request_id, tenant=tenant):
@@ -269,6 +284,7 @@ async def _execute_inner(
                     tenant=tenant,
                     directory_path=directory_path,
                     project_id=project_id,
+                    bid_id=bid_id,
                     on_progress=on_progress,
                 ),
                 timeout=TENDER_TIMEOUT_SEC,
@@ -389,7 +405,7 @@ def _backfill_criteria(
             # 已存非空 → 首个写入者赢，不覆盖。
             return
         criteria_json = _json.dumps(criteria, ensure_ascii=False)
-        update_project_doc_criteria(project_id, criteria_json)
+        update_project_doc_criteria(project_id, tenant, criteria_json)
         logger.info(
             "tender_criteria_backfilled",
             extra={"project_id": project_id, "tenant": tenant or "default"},
@@ -409,6 +425,7 @@ def schedule_tender_evaluation_task(
     directory_path: str,
     source_mode: str,
     project_id: str | None = None,
+    bid_id: str | None = None,
 ) -> None:
     """Fire-and-forget: schedule the evaluation task as a tracked asyncio background task."""
     task = asyncio.create_task(
@@ -418,6 +435,7 @@ def schedule_tender_evaluation_task(
             directory_path=directory_path,
             source_mode=source_mode,
             project_id=project_id,
+            bid_id=bid_id,
         )
     )
     _track_task(task)  # round4 F5：留引用防 GC + 计入在途（准入闸）
