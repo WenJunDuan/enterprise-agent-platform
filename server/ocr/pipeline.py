@@ -50,6 +50,12 @@ def _ocr_max_workers() -> int:
 OCR_MAX_WORKERS = _ocr_max_workers()
 
 
+# P1-4: sidecar files written by materialize_upload_submission must not be OCR-processed.
+# audit-request.json is a metadata sidecar written into every submission dir — it is not
+# a user document and must be excluded to avoid polluting the extraction block.
+_OCR_EXCLUDED_FILENAMES: frozenset[str] = frozenset({"audit-request.json"})
+
+
 def _iter_files(case_dir: str) -> list[Path]:
     base = Path(case_dir)
     if not base.is_dir():
@@ -59,6 +65,8 @@ def _iter_files(case_dir: str) -> list[Path]:
     for p in sorted(base.rglob("*")):
         if not p.is_file() or p.is_symlink():
             continue  # 安全：跳过符号链接，防经 symlink 读取 case 目录外的文件
+        if p.name in _OCR_EXCLUDED_FILENAMES:
+            continue  # P1-4: skip sidecar metadata files
         try:
             p.resolve().relative_to(base_resolved)  # resolved 必须仍在 base 内
         except ValueError:
