@@ -43,7 +43,7 @@ async def run_command_full(
 async def run_command_json(
     command_name: str,
     *arguments: str,
-    schema_name: str,
+    schema_name: str | None,
     project_id: str | None = None,
     archive_to_results: bool = True,
     context: str | None = None,

@@ -21,11 +21,14 @@ import json
 import logging
 from typing import Any, Literal
 
+import jsonschema
 from fastapi import APIRouter, Header, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, ValidationError
 from starlette.requests import ClientDisconnect
 
+from server.common.command_adapter import run_command_json
+from server.common.contract import load_output_schema
 from server.core import enrich_audit_decision
 from server.ocr.pipeline import prewarm_and_text
 from server.routes.deps import verify_tenant
@@ -50,7 +53,6 @@ from server.stores.tender_compare_store import (
     get_compare_result,
     is_stale,
 )
-from server.common.command_adapter import run_command_json
 from server.stores.tender_doc_store import (
     get_project_doc,
     list_bid_docs,
@@ -617,6 +619,99 @@ def _is_ocr_text_valid(text: str) -> bool:
     return bool(stripped) and not stripped.startswith(_OCR_ERROR_PREFIX)
 
 
+# 评标方法枚举归一化（criteria.schema method enum）。模型常把"综合评估法"写成"综合评分法/打分法"，
+# 把法定方法名写成口语变体——这是 enum 校验最常见的漂移点。代码侧确定性归一化比 prompt 约束可靠
+# （跨 qwen/deepseek/opus 一致），避免单字之差让整份合格 criteria 被判 failed（criteria 价值在 items
+# 评分项/扣分点，不在 method 标签）。映射不到的归 "其他"（schema 的兜底枚举），校验恒过、structure 仍判。
+_METHOD_CANON = "综合评估法"
+_METHOD_LOWEST = "经评审的最低投标价法"
+_METHOD_ALIASES = {
+    "综合评估法": _METHOD_CANON,
+    "综合评分法": _METHOD_CANON,
+    "综合打分法": _METHOD_CANON,
+    "综合评议法": _METHOD_CANON,
+    "综合评价法": _METHOD_CANON,
+    "经评审的最低投标价法": _METHOD_LOWEST,
+    "经评审最低投标价法": _METHOD_LOWEST,
+    "最低投标价法": _METHOD_LOWEST,
+    "最低评标价法": _METHOD_LOWEST,
+    "合理低价法": _METHOD_LOWEST,
+}
+# criteria item.tag 枚举（必填）。模型常把 variables[].source 的短名（cross_bid/external_data/
+# live_event/derived）误写成 tag → 别名映射到对应 tag 枚举。
+_TAG_CANON = {
+    "scored",
+    "requires_live_event",
+    "requires_external_data",
+    "requires_cross_bid_comparison",
+}
+_TAG_ALIASES = {
+    "cross_bid": "requires_cross_bid_comparison",
+    "requires_cross_bid": "requires_cross_bid_comparison",
+    "external_data": "requires_external_data",
+    "live_event": "requires_live_event",
+    "derived": "requires_cross_bid_comparison",
+}
+# 不可识别 tag 的兜底：选一个强制人工复核的枚举（绝不默认 scored 冒充可自动判定）。
+_TAG_FALLBACK = "requires_external_data"
+_SCORE_MODES = {"deduction", "banded", "additive", "formula", "pass_fail", "manual"}
+
+
+def _criteria_looks_usable(criteria_obj: object) -> bool:
+    """承重结构 sanity 检查（codex R1 P1）：criteria 是否「能用来评标」。
+
+    刻意**不**用整份 jsonschema 校验——模型输出几乎总有零星叶子瑕疵（enum 漂移、某个
+    formula_spec.cap 写成对象、多一个字段），整份 all-or-nothing 校验会因一个叶子误杀整套
+    14 项合格 criteria，让本功能形同虚设（实测 qwen 三处枚举/类型漂移）。
+
+    评标真正承重的最小结构 = 有评分项 + 每项有名字 + 每项有数值满分（S3 据此逐项判分）；其余
+    枚举/嵌套细节由 _normalize_criteria_enums 尽力归一化、注入评标也只作文本 hint、区2 展示也
+    防御式渲染，零星瑕疵无害。结构性垃圾（无 items / items 非数组 / 项缺名字或满分非数）→ False
+    → criteria_status=failed（评标自行 S1 解析、区2 显"识别失败"）。
+    """
+    if not isinstance(criteria_obj, dict):
+        return False
+    items = criteria_obj.get("items")
+    if not isinstance(items, list) or not items:
+        return False
+    for item in items:
+        if not isinstance(item, dict):
+            return False
+        name = item.get("item")
+        if not isinstance(name, str) or not name.strip():
+            return False
+        if not isinstance(item.get("max"), (int, float)) or isinstance(item.get("max"), bool):
+            return False
+    return True
+
+
+def _normalize_criteria_enums(criteria_obj: object) -> None:
+    """In-place map criteria enum fields (method/item.tag/item.score_mode) to schema enums.
+
+    模型（qwen/deepseek/opus）在枚举上可靠地漂移：method 写"综合评分法"、tag 写 source 短名
+    "cross_bid"。代码侧确定性归一化比 prompt 约束可靠，避免单值之差让整份**结构合格**的 criteria
+    被 schema 校验判 failed（criteria 价值在 items 评分项/扣分点，不在枚举标签）。映射不到的：
+    method→其他、score_mode→manual、tag→强制人工枚举（保守，绝不冒充 scored 自动判分）。
+    """
+    if not isinstance(criteria_obj, dict):
+        return
+    method = criteria_obj.get("method")
+    if isinstance(method, str):
+        criteria_obj["method"] = _METHOD_ALIASES.get(method.strip(), "其他")
+    items = criteria_obj.get("items")
+    if not isinstance(items, list):
+        return
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        tag = item.get("tag")
+        if isinstance(tag, str) and tag not in _TAG_CANON:
+            item["tag"] = _TAG_ALIASES.get(tag.strip(), _TAG_FALLBACK)
+        score_mode = item.get("score_mode")
+        if isinstance(score_mode, str) and score_mode not in _SCORE_MODES:
+            item["score_mode"] = "manual"
+
+
 async def _extract_project_doc_info(
     project_id: str,
     case_path: str,
@@ -660,11 +755,30 @@ async def _extract_project_doc_info(
         criteria_obj = payload.get("criteria")
         tender_info_obj = payload.get("tender_info")
 
-        import json as _json
+        # 承重校验（codex R1 P1）：criteria 会被评标 worker 当权威 S1 注入（"直接采用，勿重解析"）。
+        # 残缺 criteria 注入会污染逐项 scoring/扣分 → 必须先按 criteria.schema 硬校验结构；不合格
+        # 宁可 raise（→ criteria_status=failed，评标自行 S1 解析、区2 显"识别失败"），也不注入垃圾。
+        # 归一化已知枚举漂移（method/tag/score_mode）清洁存储数据，再做承重结构 sanity 检查
+        # （容忍零星叶子瑕疵，但无 items/缺名字/满分非数 → failed，不注入残缺 criteria 污染评分）。
+        _normalize_criteria_enums(criteria_obj)
+        if not _criteria_looks_usable(criteria_obj):
+            raise ValueError("extracted criteria failed structural sanity check (no usable items)")
+        # tender_info 仅作展示/回填，best-effort：不合格只丢弃该对象，不拖垮整体抽取。
+        if tender_info_obj is not None:
+            try:
+                jsonschema.validate(
+                    tender_info_obj, load_output_schema("tender/tender-info.schema.json")
+                )
+            except jsonschema.ValidationError:
+                logger.warning(
+                    "tender_info_validation_failed_dropping",
+                    extra={"project_id": project_id, "tenant": tenant or "default"},
+                )
+                tender_info_obj = None
 
-        criteria_json = _json.dumps(criteria_obj, ensure_ascii=False) if criteria_obj else None
+        criteria_json = json.dumps(criteria_obj, ensure_ascii=False) if criteria_obj else None
         tender_info_json = (
-            _json.dumps(tender_info_obj, ensure_ascii=False) if tender_info_obj else None
+            json.dumps(tender_info_obj, ensure_ascii=False) if tender_info_obj else None
         )
 
         await asyncio.to_thread(
@@ -736,12 +850,18 @@ async def _run_project_doc_ocr(
         tenant: Tenant scope forwarded to update_project_doc_ocr.
         purpose: OCR engine purpose hint.
     """
+    # OCR 与抽取分两段：OCR 在信号量内（限并发的是 OCR 计算），抽取是模型调用，必须在信号量
+    # 外跑——否则一次 criteria 抽取（~30-60s 模型往返）会占住一个 OCR 名额，拖慢同项目投标文件
+    # 的 OCR → 拖慢 isOcrReady → 拖慢「开始分析」（违背 R1「不阻塞开始分析」）。
+    ocr_text: str | None = None
     async with _UPLOAD_OCR_SEMAPHORE:
         try:
             text = await asyncio.to_thread(prewarm_and_text, case_path, purpose=purpose)
             # P1-3: detect error-marker text returned by pipeline on extraction failure
             if not _is_ocr_text_valid(text):
                 raise ValueError(f"OCR returned error/empty text: {text[:100]!r}")
+            # 仅 OCR 写入在此 try（决定 ocr_status）。criteria_status=running 写移出（F1：否则其
+            # 失败会触发下面 except 把已写好的 ocr_status=ready 误覆写成 failed）。
             await asyncio.to_thread(
                 update_project_doc_ocr,
                 project_id,
@@ -750,16 +870,7 @@ async def _run_project_doc_ocr(
                 ocr_clarity=None,
                 status="ready",
             )
-            # R1: set criteria_status=running, then kick off extraction (non-blocking to caller).
-            await asyncio.to_thread(
-                update_project_doc_criteria_extracted,
-                project_id,
-                tenant,
-                criteria_json=None,
-                tender_info_json=None,
-                status="running",
-            )
-            await _extract_project_doc_info(project_id, case_path, text, tenant)
+            ocr_text = text
         except Exception:
             logger.warning(
                 "tender_project_doc_ocr_failed",
@@ -777,6 +888,36 @@ async def _run_project_doc_ocr(
                 )
             except Exception:
                 logger.debug("failed to write project_doc ocr failed status", exc_info=True)
+            # F2：OCR 失败也置 criteria_status=failed，否则它停在 pending，前端 tenderDocInfo 轮询
+            # （只在 ready/failed 停）会对该项目无限轮询。
+            try:
+                await asyncio.to_thread(
+                    update_project_doc_criteria_extracted,
+                    project_id,
+                    tenant,
+                    criteria_json=None,
+                    tender_info_json=None,
+                    status="failed",
+                )
+            except Exception:
+                logger.debug("failed to set criteria_status=failed on ocr failure", exc_info=True)
+
+    # 信号量已释放：抽取（模型调用）不再占 OCR 名额。OCR 成功才抽取。
+    if ocr_text is not None:
+        # OCR ready 即解锁开始分析；置 criteria_status=running（独立 try，F1：失败只记日志，绝不
+        # 触发 OCR failed 路径）。随后抽取在末尾置 ready/failed，故 running 写失败也无碍最终状态。
+        try:
+            await asyncio.to_thread(
+                update_project_doc_criteria_extracted,
+                project_id,
+                tenant,
+                criteria_json=None,
+                tender_info_json=None,
+                status="running",
+            )
+        except Exception:
+            logger.debug("failed to set criteria_status=running", exc_info=True)
+        await _extract_project_doc_info(project_id, case_path, ocr_text, tenant)
 
 
 async def _run_bid_doc_ocr(
@@ -1018,10 +1159,16 @@ async def get_tender_doc_info(
             return None
 
     tender_files_raw = project_doc.get("tender_files") or "[]"
+    # F3 兜底推断：OCR 已 failed 时 criteria 不可能再产出，但若服务在抽取前/中崩溃，criteria_status
+    # 可能停在 pending/running（背景 task 不自动恢复）→ 前端轮询永不停。GET 端对外把这种悬空态推断
+    # 为 failed（终态），让前端停轮询、显"识别失败"；DB 原值不改（重新上传才重置）。
+    criteria_status = project_doc.get("criteria_status", "pending")
+    if project_doc.get("ocr_status") == "failed" and criteria_status not in {"ready", "failed"}:
+        criteria_status = "failed"
     return {
         "ocr_status": project_doc.get("ocr_status"),
         "ocr_clarity": project_doc.get("ocr_clarity"),
-        "criteria_status": project_doc.get("criteria_status", "pending"),
+        "criteria_status": criteria_status,
         "criteria": _safe_json(project_doc.get("criteria")),
         "tender_info": _safe_json(project_doc.get("tender_info")),
         "tender_files": _safe_json(tender_files_raw) or [],

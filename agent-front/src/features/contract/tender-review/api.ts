@@ -342,6 +342,8 @@ export type OcrStatus = 'pending' | 'running' | 'ready' | 'failed'
 
 export type DocsStatusTenderDoc = {
   ocr_status: OcrStatus
+  /** R1: criteria 抽取状态（与 ocr_status 独立轮询）。旧后端可能不返回。 */
+  criteria_status?: CriteriaStatus
 }
 
 export type DocsStatusBid = {
@@ -408,6 +410,72 @@ export async function uploadBid(
     }
   )
   return handleResponse<{ bid_id: string; ocr_status: OcrStatus }>(res)
+}
+
+// ── R1 招标信息抽取（criteria + tender_info）─────────────────────────────────────
+
+/** criteria 抽取状态（与 OCR 状态独立）。 */
+export type CriteriaStatus = 'pending' | 'running' | 'ready' | 'failed'
+
+/** 单个评分项（镜像 .claude/contracts/tender/criteria.schema.json 的 items[]，仅取 UI 所需字段）。 */
+export type TenderCriteriaItem = {
+  item: string
+  max: number
+  scoring_rule?: string
+  source_ref?: string
+  tag?: string
+  score_mode?: 'deduction' | 'banded' | 'additive' | 'formula' | 'pass_fail' | 'manual'
+  evaluator_type?: 'objective' | 'subjective' | 'mixed'
+  deductions?: Array<{ condition?: string; points?: number }>
+  bands?: Array<{ level?: string; points?: number }>
+  awards?: Array<{ condition?: string; points?: number }>
+}
+
+/** 项目评分标准（招标文件评标办法直读解析）。 */
+export type TenderCriteria = {
+  source_ref?: string
+  method?: string
+  total_max?: number
+  items: TenderCriteriaItem[]
+  rejection_rules?: Array<{ condition?: string; source_ref?: string }>
+}
+
+/** 招标基本信息（OCR 抽取，全 optional）。 */
+export type TenderInfo = {
+  tender_no?: string | null
+  project_name?: string | null
+  tenderee?: string | null
+  control_price?: string | null
+  method?: string | null
+  funding_hint?: string | null
+}
+
+/** GET /tender/projects/{id}/tender-doc 响应。 */
+export type TenderDocInfoResponse = {
+  ocr_status: OcrStatus
+  ocr_clarity: string | null
+  criteria_status: CriteriaStatus
+  criteria: TenderCriteria | null
+  tender_info: TenderInfo | null
+  tender_files: string[]
+}
+
+/**
+ * Read the tender (招标) document layer info: OCR status + extracted criteria + tender_info.
+ *
+ * @param projectId - Tender project identifier.
+ * @returns OCR/criteria status plus extracted 招标信息 (null until criteria_status=ready).
+ */
+export async function getTenderDocInfo(
+  projectId: string
+): Promise<TenderDocInfoResponse> {
+  const res = await fetch(
+    url(`/tender/projects/${encodeURIComponent(projectId)}/tender-doc`),
+    {
+      headers: authHeaders(),
+    }
+  )
+  return handleResponse<TenderDocInfoResponse>(res)
 }
 
 /**

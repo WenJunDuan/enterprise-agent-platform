@@ -524,6 +524,77 @@ def test_extract_project_doc_info_bad_payload_sets_criteria_failed(monkeypatch):
     assert row["criteria_status"] == "failed"
 
 
+def _meta_for(rid: str):
+    from server.common.agent_bridge import AgentRunMeta
+
+    return AgentRunMeta(
+        request_id=rid,
+        conversation_id="c",
+        claude_session_id="s",
+        resume_session_id=None,
+        fork_from_session_id=None,
+        schema_name=None,
+        log_file="logs/test.log",
+        result_file="logs/test-result.json",
+        result_subtype="success",
+        cost_usd=0.0,
+        finished_at=None,
+    )
+
+
+def test_extract_project_doc_info_invalid_criteria_sets_failed(monkeypatch):
+    """codex R1 P1: criteria 不符合 criteria.schema（缺 required items/method）→ criteria_status=failed，
+    绝不把残缺 criteria 标 ready 注入评标。"""
+    import server.routes.tender as tender_module
+    from server.stores.tender_doc_store import get_project_doc, upsert_project_doc
+    from server.stores.tender_project_store import get_or_create_project
+
+    tenant = "t-extract-invalidcrit"
+    pid = get_or_create_project(tenant=tenant, tender_no=f"EI-{uuid.uuid4().hex[:8]}")["project_id"]
+    upsert_project_doc(project_id=pid, tenant=tenant, tender_files="[]", ocr_status="ready")
+
+    # criteria 缺 required 字段（method/total_max/items），schema 校验必失败
+    bad = {"criteria": {"source_ref": "招标文件 p.1"}, "tender_info": {"tenderee": "X公司"}}
+
+    async def fake(command_name, *args, **kwargs):
+        return bad, _meta_for("rid-invalid-crit")
+
+    monkeypatch.setattr(tender_module, "run_command_json", fake)
+    asyncio.run(tender_module._extract_project_doc_info(pid, "/fake/path", "OCR text", tenant))
+
+    row = get_project_doc(pid, tenant)
+    assert row["criteria_status"] == "failed"
+    assert row["ocr_status"] == "ready"  # 抽取失败绝不回退 OCR 就绪
+
+
+def test_extract_project_doc_info_invalid_tender_info_dropped_criteria_ready(monkeypatch):
+    """codex R1 P1: criteria 合法但 tender_info 非法 → tender_info 丢弃、criteria 仍 ready
+    （tender_info 仅展示/回填，best-effort，不拖垮整体）。"""
+    import server.routes.tender as tender_module
+    from server.stores.tender_doc_store import get_project_doc, upsert_project_doc
+    from server.stores.tender_project_store import get_or_create_project
+
+    tenant = "t-extract-badinfo"
+    pid = get_or_create_project(tenant=tenant, tender_no=f"EG-{uuid.uuid4().hex[:8]}")["project_id"]
+    upsert_project_doc(project_id=pid, tenant=tenant, tender_files="[]", ocr_status="ready")
+
+    # tender_info 含非法字段（additionalProperties:false）/ 错类型 → 丢弃
+    payload = {
+        "criteria": SAMPLE_CRITERIA,
+        "tender_info": {"tender_no": 12345, "bogus_field": "x"},
+    }
+
+    async def fake(command_name, *args, **kwargs):
+        return payload, _meta_for("rid-badinfo")
+
+    monkeypatch.setattr(tender_module, "run_command_json", fake)
+    asyncio.run(tender_module._extract_project_doc_info(pid, "/fake/path", "OCR text", tenant))
+
+    row = get_project_doc(pid, tenant)
+    assert row["criteria_status"] == "ready"  # criteria 合法 → ready
+    assert row["tender_info"] is None  # 非法 tender_info 被丢弃
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # 6. GET /tender/projects/{id}/tender-doc
 # ──────────────────────────────────────────────────────────────────────────────
@@ -577,6 +648,26 @@ def test_get_tender_doc_returns_expected_shape(client, monkeypatch):
     assert "tender_info" in body
     assert "tender_files" in body
     assert isinstance(body["tender_files"], list)
+
+
+def test_get_tender_doc_infers_failed_when_ocr_failed_and_criteria_stuck(client, monkeypatch):
+    """reviewer R1 F3: ocr_status=failed 但 criteria_status 悬在 pending（崩溃/中断）→ GET 端把
+    criteria_status 推断为 failed（终态），让前端停轮询；DB 原值不改。"""
+    import server.routes.tender as tender_module
+    from server.stores.tender_doc_store import get_project_doc, update_project_doc_ocr, upsert_project_doc
+
+    monkeypatch.setattr(tender_module, "_start_project_doc_ocr_task", lambda *a, **kw: None)
+    pid = _make_project_api(client)
+    upsert_project_doc(project_id=pid, tenant="acme", tender_files="[]", ocr_status="pending")
+    # OCR 失败但（模拟崩溃）criteria_status 仍是默认 pending
+    update_project_doc_ocr(pid, tenant="acme", ocr_text=None, ocr_clarity=None, status="failed")
+    assert get_project_doc(pid, "acme")["criteria_status"] == "pending"  # DB 仍 pending
+
+    body = client.get(f"/tender/projects/{pid}/tender-doc", headers=_AUTH).json()
+    assert body["ocr_status"] == "failed"
+    assert body["criteria_status"] == "failed"  # GET 端推断为终态，前端停轮询
+    # DB 原值不被改写（仅 GET 输出推断）
+    assert get_project_doc(pid, "acme")["criteria_status"] == "pending"
 
 
 def test_get_tender_doc_returns_null_criteria_when_not_ready(client, monkeypatch):

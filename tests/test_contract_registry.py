@@ -32,6 +32,27 @@ def test_unregistered_schema_is_passthrough():
     assert apply_schema_semantics("other/unknown.schema.json", payload) is payload
 
 
+@pytest.mark.parametrize("schema_name", [None, ""])
+def test_empty_schema_name_is_passthrough(schema_name):
+    """R1: schema_name 为 None/"" = 无命名 schema → 原样返回，不得崩（CONTRACTS_DIR / None）。
+
+    用于 enrichment 调用（tender-extract-info 输出 {criteria, tender_info} 不对应单一契约）。
+    """
+    payload = {"criteria": {"items": []}, "tender_info": {"tender_no": "X"}}
+    assert apply_schema_semantics(schema_name, payload) is payload
+
+
+@pytest.mark.parametrize("schema_name", [None, ""])
+def test_empty_schema_name_requires_text_mode(schema_name):
+    """codex R1 P2: schema_name 空 + structured=True 必须显式报错（否则 build_output_format(None) 崩）。"""
+    import asyncio
+
+    from server.common.json_bridge import run_agent_json
+
+    with pytest.raises(ValueError, match="requires structured=False"):
+        asyncio.run(run_agent_json("prompt", schema_name=schema_name, structured=True))
+
+
 def _valid_audit_result(**overrides) -> dict:
     """一份满足 audit-result schema required + additionalProperties:false 的完整结论。"""
     base = {
