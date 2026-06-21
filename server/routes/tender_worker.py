@@ -69,6 +69,9 @@ async def _run_evaluation(
         project_id=project_id,  # 显式透传 → 结论落 results.project_id（codex P1.3）
         conversation_id=new_conversation_id(),
         context=context,
+        # 文本模式（与 audit 对齐）：大底稿(百页标书)下 SDK 结构化输出会 error_max_structured_
+        # output_retries；文本模式由服务端抽 JSON，对大输入更稳。配合命令里的 JSON 输出硬化。
+        structured=False,
     )
 
 
