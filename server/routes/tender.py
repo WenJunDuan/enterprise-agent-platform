@@ -2,11 +2,17 @@
 
 镜像 ``routes/audit.py`` 的异步任务三件套（提交→查任务→取结果）。上传与目录校验复用
 ``upload_helpers``；后台执行在 ``tender_worker.py``。所有路径相对 router 注册时的 /tender 前缀。
+
+P2 新增：
+- ``POST /tender/projects/{id}/tender-doc`` — 上传招标文件 + 后台 OCR 预热。
+- ``POST /tender/projects/{id}/bids`` — 上传投标文件 + 后台 OCR 预热。
+- ``GET  /tender/projects/{id}/docs-status`` — 轮询 OCR 状态（前端用）。
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from typing import Any, Literal
 
@@ -15,18 +21,21 @@ from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, ValidationError
 
 from server.core import enrich_audit_decision
+from server.ocr.pipeline import prewarm_and_text
 from server.routes.deps import verify_tenant
-from server.routes.tender_worker import admission_available, schedule_tender_evaluation_task
-from server.routes.upload_helpers import (
-    UNBOUND_PROJECT,
-    materialize_upload_submission,
-    remove_submission_dir,
-    validate_directory_case_path,
-)
 from server.routes.tender_compare_worker import (
     collect_compare_input,
     has_active_compare,
     schedule_compare_task,
+)
+from server.routes.tender_worker import admission_available, schedule_tender_evaluation_task
+from server.routes.upload_helpers import (
+    UNBOUND_PROJECT,
+    collect_uploaded_files,
+    materialize_upload_submission,
+    remove_submission_dir,
+    sanitize_upload_name,
+    validate_directory_case_path,
 )
 from server.stores.request_store import new_request_id, utc_now
 from server.stores.result_store import get_result_payload_by_request_id, list_results_by_project
@@ -34,6 +43,15 @@ from server.stores.tender_compare_store import (
     compute_input_signature,
     get_compare_result,
     is_stale,
+)
+from server.stores.tender_doc_store import (
+    get_project_doc,
+    list_bid_docs,
+    new_bid_id,
+    update_bid_doc_ocr,
+    update_project_doc_ocr,
+    upsert_bid_doc,
+    upsert_project_doc,
 )
 from server.stores.tender_project_store import (
     count_active_bids,
@@ -52,6 +70,13 @@ from server.stores.tender_task_store import (
 )
 
 logger = logging.getLogger(__name__)
+
+# OCR purpose for background prewarm tasks (mirrors tender_worker.TENDER_OCR_PURPOSE).
+_TENDER_OCR_PURPOSE = (
+    "本批为招投标评标材料。请在完整提取文本之外，特别完整、结构化地还原"
+    "【评分标准/评标办法/评分细则/扣分细则/加分项/废标与资格条款】等表格："
+    "保留表格的行列结构与每一行的分值数字，不要合并或省略任何评分/扣分行。"
+)
 
 router = APIRouter(tags=["tender"])
 
@@ -552,6 +577,228 @@ async def get_tender_project_result_detail(
         raise HTTPException(status_code=404, detail="Tender result not found in this project")
     response = enrich_audit_decision(payload["response"])
     return response if isinstance(response, dict) else payload["response"]
+
+
+# ── P2 OCR 预热辅助（供测试 monkeypatch）──────────────────────────────────────
+
+
+def _start_project_doc_ocr_task(
+    project_id: str, case_path: str, *, purpose: str | None = None
+) -> None:
+    """Fire-and-forget background OCR for a tender project doc upload.
+
+    Runs prewarm_and_text in a thread (OCR is blocking), then writes the result
+    to tender_project_docs via update_project_doc_ocr. OCR failure sets
+    ocr_status=failed and never crashes the main event loop.
+    """
+
+    async def _run() -> None:
+        try:
+            text = await asyncio.to_thread(prewarm_and_text, case_path, purpose=purpose)
+            await asyncio.to_thread(
+                update_project_doc_ocr,
+                project_id,
+                ocr_text=text,
+                ocr_clarity=None,
+                status="ready",
+            )
+        except Exception:
+            logger.warning(
+                "tender_project_doc_ocr_failed",
+                extra={"project_id": project_id, "case_path": case_path},
+                exc_info=True,
+            )
+            try:
+                await asyncio.to_thread(
+                    update_project_doc_ocr,
+                    project_id,
+                    ocr_text=None,
+                    ocr_clarity=None,
+                    status="failed",
+                )
+            except Exception:
+                logger.debug("failed to write ocr failed status", exc_info=True)
+
+    asyncio.create_task(_run())
+
+
+def _start_bid_doc_ocr_task(
+    project_id: str, bid_id: str, case_path: str, *, purpose: str | None = None
+) -> None:
+    """Fire-and-forget background OCR for a bid doc upload.
+
+    Runs prewarm_and_text in a thread, then updates tender_bid_docs.
+    OCR failure sets ocr_status=failed and never crashes the main event loop.
+    """
+
+    async def _run() -> None:
+        try:
+            text = await asyncio.to_thread(prewarm_and_text, case_path, purpose=purpose)
+            await asyncio.to_thread(
+                update_bid_doc_ocr,
+                project_id,
+                bid_id,
+                ocr_text=text,
+                status="ready",
+            )
+        except Exception:
+            logger.warning(
+                "tender_bid_doc_ocr_failed",
+                extra={"project_id": project_id, "bid_id": bid_id, "case_path": case_path},
+                exc_info=True,
+            )
+            try:
+                await asyncio.to_thread(
+                    update_bid_doc_ocr,
+                    project_id,
+                    bid_id,
+                    ocr_text=None,
+                    status="failed",
+                )
+            except Exception:
+                logger.debug("failed to write bid ocr failed status", exc_info=True)
+
+    asyncio.create_task(_run())
+
+
+# ── P2 上传端点（招标文件 / 投标文件 / 轮询状态）────────────────────────────────
+
+
+@router.post("/projects/{project_id}/tender-doc")
+async def upload_tender_doc(
+    project_id: str,
+    request: Request,
+    authorization: str | None = Header(None),
+) -> dict[str, Any]:
+    """上传招标文件并触发后台 OCR 预热（P2 上传即 OCR 解耦）。
+
+    落盘到 tender/<project_id>/<request_id>/ 目录；写招标层 ocr_status=running；
+    后台 asyncio task 跑 prewarm_and_text → update_project_doc_ocr(ready|failed)。
+    不阻塞响应：立即返回 {project_id, ocr_status}。
+    """
+    tenant = verify_tenant(authorization)
+    project = get_project(project_id, tenant)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Tender project not found")
+
+    doc_request_id = new_request_id()
+    form_data = await request.form()
+    case_path = await materialize_upload_submission(
+        request_id=doc_request_id,
+        tenant=tenant,
+        form_json=None,
+        form_data=form_data,
+        domain="tender",
+        project_id=project_id,
+    )
+
+    # Collect uploaded filenames for the files JSON list
+    files = collect_uploaded_files(form_data)
+    file_names = [
+        sanitize_upload_name(getattr(f, "filename", "") or "", i)
+        for i, f in enumerate(files, start=1)
+    ]
+    tender_files_json = json.dumps(file_names)
+
+    await asyncio.to_thread(
+        upsert_project_doc,
+        project_id=project_id,
+        tenant=tenant,
+        tender_files=tender_files_json,
+        ocr_status="running",
+    )
+
+    _start_project_doc_ocr_task(project_id, case_path, purpose=_TENDER_OCR_PURPOSE)
+
+    return {"project_id": project_id, "ocr_status": "running"}
+
+
+@router.post("/projects/{project_id}/bids")
+async def upload_bid_doc(
+    project_id: str,
+    request: Request,
+    authorization: str | None = Header(None),
+) -> dict[str, Any]:
+    """上传投标文件并触发后台 OCR 预热（P2 上传即 OCR 解耦）。
+
+    bidder_name 从 multipart form data 字段读取；落盘写投标层 ocr_status=running；
+    后台 asyncio task 跑 prewarm_and_text → update_bid_doc_ocr(ready|failed)。
+    不阻塞响应：立即返回 {bid_id, ocr_status}。
+    """
+    tenant = verify_tenant(authorization)
+    project = get_project(project_id, tenant)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Tender project not found")
+
+    bid_id = new_bid_id()
+    form_data = await request.form()
+    bidder_name = str(form_data.get("bidder_name") or "").strip() or None
+
+    case_path = await materialize_upload_submission(
+        request_id=bid_id,
+        tenant=tenant,
+        form_json=None,
+        form_data=form_data,
+        domain="tender",
+        project_id=project_id,
+    )
+
+    files = collect_uploaded_files(form_data)
+    file_names = [
+        sanitize_upload_name(getattr(f, "filename", "") or "", i)
+        for i, f in enumerate(files, start=1)
+    ]
+    bid_files_json = json.dumps(file_names)
+
+    await asyncio.to_thread(
+        upsert_bid_doc,
+        project_id=project_id,
+        bid_id=bid_id,
+        tenant=tenant,
+        bidder_name=bidder_name,
+        bid_files=bid_files_json,
+        ocr_status="running",
+    )
+
+    _start_bid_doc_ocr_task(project_id, bid_id, case_path, purpose=_TENDER_OCR_PURPOSE)
+
+    return {"bid_id": bid_id, "ocr_status": "running"}
+
+
+@router.get("/projects/{project_id}/docs-status")
+async def get_docs_status(
+    project_id: str,
+    authorization: str | None = Header(None),
+) -> dict[str, Any]:
+    """返回招标层 + 各投标层的 OCR 状态（前端轮询用，P2）。
+
+    Returns:
+        {
+            tender_doc: {ocr_status} | None,
+            bids: [{bid_id, bidder_name, ocr_status}]
+        }
+    """
+    tenant = verify_tenant(authorization)
+    if get_project(project_id, tenant) is None:
+        raise HTTPException(status_code=404, detail="Tender project not found")
+
+    project_doc = await asyncio.to_thread(get_project_doc, project_id, tenant)
+    bid_rows = await asyncio.to_thread(list_bid_docs, project_id, tenant)
+
+    tender_doc_status: dict[str, Any] | None = None
+    if project_doc is not None:
+        tender_doc_status = {"ocr_status": project_doc["ocr_status"]}
+
+    bids_status = [
+        {
+            "bid_id": r["bid_id"],
+            "bidder_name": r.get("bidder_name"),
+            "ocr_status": r["ocr_status"],
+        }
+        for r in bid_rows
+    ]
+
+    return {"tender_doc": tender_doc_status, "bids": bids_status}
 
 
 # ── 价格横比（Phase 2：多家比选 / 排名 / 推荐中标人）──────────────────────────

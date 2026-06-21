@@ -20,9 +20,17 @@ from server.ocr.pipeline import ocr_preprocess_block
 from server.platform.logging_setup import logging_context
 from server.stores.request_store import utc_now
 from server.stores.session_store import new_conversation_id
+from server.stores.tender_doc_store import get_project_doc, list_bid_docs
 from server.stores.tender_task_store import update_tender_progress, upsert_tender_task
 
 logger = logging.getLogger(__name__)
+
+# P2 评标读层开关：TENDER_READ_DOC_LAYER=1 (默认) 先读 tender_doc_store;
+# =0 回落原串行 ocr_preprocess_block（兜底，不破现有路径）。
+# 注意：每次调用时动态读 env，支持运行时灰度切换 + 测试 monkeypatch。
+def _tender_read_doc_layer_enabled() -> bool:
+    """Return True when the P2 doc layer is active (reads TENDER_READ_DOC_LAYER env live)."""
+    return os.getenv("TENDER_READ_DOC_LAYER", "1").lower() in {"1", "true", "yes"}
 
 # 评标硬超时（秒）。标书大（40MB+/百页）+ 模型 extended thinking，单次评标实测可达 ~9min(537s)。
 # 前端已解耦【不阻塞等待】（提交即返回、analyzing 独立轮询、可离开回来恢复），故后端超时仅作
@@ -76,6 +84,37 @@ def admission_available() -> bool:
     return len(_BACKGROUND_TASKS) < MAX_PENDING_TENDERS
 
 
+def _load_doc_layer_context(project_id: str, tenant: str) -> str | None:
+    """P2 评标读层：从 tender_doc_store 取已预热的 OCR 底稿并拼为上下文字符串。
+
+    招标层 + 全部投标层均 ready 时才走读层（任一 pending/running/failed → 回落串行 OCR，
+    确保数据完整性）。任何异常 → 静默返回 None 触发回落，**绝不拖垮评标**。
+
+    Args:
+        project_id: 招标项目 ID。
+        tenant: 租户作用域。
+
+    Returns:
+        组装好的 OCR 底稿字符串，或 None 触发回落。
+    """
+    try:
+        project_doc = get_project_doc(project_id, tenant)
+        if project_doc is None or project_doc.get("ocr_status") != "ready":
+            return None
+        bid_rows = list_bid_docs(project_id, tenant)
+        parts: list[str] = [f"=== 招标文件底稿 ===\n{project_doc['ocr_text']}"]
+        for bid in bid_rows:
+            if bid.get("ocr_status") != "ready" or not bid.get("ocr_text"):
+                # 任一投标文件未 ready → 不能保证数据完整，回落兜底
+                return None
+            bidder = bid.get("bidder_name") or bid["bid_id"]
+            parts.append(f"=== 投标文件（{bidder}）底稿 ===\n{bid['ocr_text']}")
+        return "\n\n".join(parts)
+    except Exception:
+        logger.warning("_load_doc_layer_context failed, falling back", exc_info=True)
+        return None
+
+
 async def _run_evaluation(
     *,
     request_id: str,
@@ -84,11 +123,21 @@ async def _run_evaluation(
     project_id: str | None = None,
     on_progress: Callable[[str], None] | None = None,
 ):
-    # P4：先确定性 OCR 预处理（pymupdf 直读 / 云 OCR），把底稿注入命令上下文 → 模型不再自己 Read
-    # PDF（绕开模型 Read 脆弱点 + poppler 依赖）。经 to_thread 不阻塞事件循环；失败/关闭 → None 回落。
-    ocr_block = await asyncio.to_thread(
-        ocr_preprocess_block, directory_path, purpose=TENDER_OCR_PURPOSE
-    )
+    # P2 评标读层：优先取 tender_doc_store 已 ready 的 OCR 底稿（上传时预热，秒过）。
+    # 未 ready/缺失/异常 → 回落原串行 ocr_preprocess_block（兜底，不破现有路径）。
+    # 无 project_id（legacy 散单）或开关关闭 → 直接回落。
+    doc_layer_text: str | None = None
+    if _tender_read_doc_layer_enabled() and project_id:
+        doc_layer_text = await asyncio.to_thread(_load_doc_layer_context, project_id, tenant)
+
+    if doc_layer_text is not None:
+        ocr_block: str | None = doc_layer_text
+    else:
+        # P4 原串行 OCR 回落（pymupdf 直读 / 云 OCR）。
+        ocr_block = await asyncio.to_thread(
+            ocr_preprocess_block, directory_path, purpose=TENDER_OCR_PURPOSE
+        )
+
     context = (
         f"=== OCR/直读底稿（确定性预处理，优先用此文本，无需再 Read 文件）===\n{ocr_block}"
         if ocr_block

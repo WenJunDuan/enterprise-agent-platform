@@ -251,6 +251,26 @@ def build_extraction_block(results: list[dict]) -> str:
     return "\n\n".join(parts) or "（无识别内容）"
 
 
+def prewarm_and_text(case_dir: str, *, purpose: str | None = None) -> str:
+    """预热 content-sha256 缓存并返回目录 OCR 底稿文本（P2 上传即 OCR 解耦）。
+
+    复用 ``extract_dir``（已有 content-sha256 缓存），对目录下每个文件跑确定性 OCR，
+    把结果组装成内联底稿（``build_extraction_block``）并返回字符串。
+
+    用于上传端点触发的后台 OCR 预热：评标时读层直接取 ocr_text，跳过串行 OCR。
+    **同步函数**，async 调用方须经 ``asyncio.to_thread``（含云 OCR 会阻塞事件循环）。
+
+    Args:
+        case_dir: 文件目录路径（招标或投标文件落盘目录）。
+        purpose: 透传给 OCR 引擎的场景提示（如评标目的字符串）。
+
+    Returns:
+        内联底稿文本字符串（``build_extraction_block`` 产物，至少 "（无识别内容）"）。
+    """
+    results = extract_dir(case_dir, purpose=purpose)
+    return build_extraction_block(results)
+
+
 def ocr_preprocess_block(
     case_dir: str, *, skip: set[str] | None = None, purpose: str | None = None
 ) -> str | None:
