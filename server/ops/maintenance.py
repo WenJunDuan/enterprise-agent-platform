@@ -10,14 +10,13 @@ from typing import Any
 
 from server.platform.config import get_app_settings
 from server.platform.paths import (
-    APP_SERVER_STDERR_LOG,
-    APP_SERVER_STDOUT_LOG,
     DATA_ROOT,
     LOGS_ROOT,
     PLATFORM_DB_FILE,
     PROJECT_ROOT,
     SESSION_EVENT_DIR,
     SUBMISSION_ROOT_DIR,
+    latest_app_server_log_path,
 )
 from server.platform.storage import describe_storage_target
 from server.stores.audit_task_store import list_audit_tasks_admin
@@ -105,8 +104,8 @@ def storage_report() -> dict[str, Any]:
         "platform_db": describe_storage_target(PLATFORM_DB_FILE),
         "session_events": describe_storage_target(SESSION_EVENT_DIR),
         "submissions": describe_storage_target(SUBMISSION_ROOT_DIR),
-        "runtime_stdout": describe_storage_target(APP_SERVER_STDOUT_LOG),
-        "runtime_stderr": describe_storage_target(APP_SERVER_STDERR_LOG),
+        "runtime_stdout": describe_storage_target(latest_app_server_log_path(False)),
+        "runtime_stderr": describe_storage_target(latest_app_server_log_path(True)),
     }
 
 
@@ -188,14 +187,18 @@ def cleanup_orphan_submission_directories(days: int, now: str | None = None) -> 
 def run_maintenance() -> dict[str, Any]:
     """Run lightweight local maintenance tasks for long-running single-node usage."""
     settings = get_app_settings()
+    # 日志按日期目录分区后，app-server stdout/stderr 落在 <date>/ 子目录，子进程无午夜滚动 → 仍按
+    # 大小滚动「最新日期目录」的那份（防单日无界增长）；旧日期目录由按日删除清理。
+    stdout_log = latest_app_server_log_path(False)
+    stderr_log = latest_app_server_log_path(True)
     rotated = {
-        str(APP_SERVER_STDOUT_LOG): rotate_log_file(
-            APP_SERVER_STDOUT_LOG,
+        str(stdout_log): rotate_log_file(
+            stdout_log,
             max_bytes=settings.runtime_log_max_bytes,
             backups=settings.runtime_log_backups,
         ),
-        str(APP_SERVER_STDERR_LOG): rotate_log_file(
-            APP_SERVER_STDERR_LOG,
+        str(stderr_log): rotate_log_file(
+            stderr_log,
             max_bytes=settings.runtime_log_max_bytes,
             backups=settings.runtime_log_backups,
         ),

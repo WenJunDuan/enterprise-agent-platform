@@ -11,7 +11,9 @@ import shutil
 import sys
 from contextlib import contextmanager
 from contextvars import ContextVar
-from datetime import datetime, timezone
+from datetime import datetime
+from pathlib import Path as _Path
+from datetime import timezone
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any, Iterator, Literal
@@ -172,16 +174,59 @@ def _gzip_namer(name: str) -> str:
     return name + ".gz"
 
 
+class _DateDirRotatingFileHandler(RotatingFileHandler):
+    """按日期目录分区 + 日内按大小滚动 gzip 的文件 appender。
+
+    写 ``<base_dir>/<YYYYMMDD>/<filename>``（如 logs/app/20260622/app.log）；跨天 emit 时自动切到新
+    日期目录（便于按日滚动删除/归档整目录）。日内仍按 maxBytes 滚动并 gzip 旧段（app.log.1.gz 等留在
+    当天目录内），避免单日文件无界增长。线程安全沿用父类 emit 的锁。
+    """
+
+    def __init__(
+        self, base_dir: _Path, filename: str, *, maxBytes: int, backupCount: int
+    ) -> None:
+        self._base_dir = _Path(base_dir)
+        self._log_name = filename
+        self._current_date = self._today()
+        dated = self._dated_path()
+        dated.parent.mkdir(parents=True, exist_ok=True)
+        super().__init__(str(dated), maxBytes=maxBytes, backupCount=backupCount, encoding="utf-8")
+
+    @staticmethod
+    def _today() -> str:
+        return datetime.now().strftime("%Y%m%d")
+
+    def _dated_path(self) -> _Path:
+        return self._base_dir / self._current_date / self._log_name
+
+    def emit(self, record: logging.LogRecord) -> None:
+        # 跨天 → 切到新日期目录（重开 stream 指向 <新日期>/<name>）。
+        today = self._today()
+        if today != self._current_date:
+            self._current_date = today
+            new_path = self._dated_path()
+            new_path.parent.mkdir(parents=True, exist_ok=True)
+            self.baseFilename = str(new_path.resolve())
+            if self.stream:
+                self.stream.close()
+            self.stream = self._open()
+        super().emit(record)
+
+
 def _build_rotating_file_handler(
-    path: Path,
+    base_dir: Path,
+    filename: str,
     *,
     max_bytes: int,
     backup_count: int,
     context_filter: logging.Filter,
 ) -> RotatingFileHandler:
-    """Size-rolling file appender with gzip-compressed backups (log4j2 RollingFile)."""
-    handler = RotatingFileHandler(
-        path, maxBytes=max_bytes, backupCount=backup_count, encoding="utf-8"
+    """日期目录分区 + 日内 size-rolling + gzip 备份的文件 appender。
+
+    写 ``<base_dir>/<YYYYMMDD>/<filename>``（按日滚动删除友好），日内 size 滚动 gzip（log4j2 RollingFile）。
+    """
+    handler = _DateDirRotatingFileHandler(
+        base_dir, filename, maxBytes=max_bytes, backupCount=backup_count
     )
     handler.addFilter(context_filter)
     handler.setFormatter(_JSONFormatter())  # 文件始终 JSON：机器可解析
@@ -241,7 +286,8 @@ def configure_logging(
     )
 
     app_handler = _build_rotating_file_handler(
-        resolved_dir / "app.log",
+        resolved_dir,
+        "app.log",
         max_bytes=resolved_max,
         backup_count=resolved_backups,
         context_filter=context_filter,
@@ -249,7 +295,8 @@ def configure_logging(
     root.addHandler(app_handler)
 
     error_handler = _build_rotating_file_handler(
-        resolved_dir / "error.log",
+        resolved_dir,
+        "error.log",
         max_bytes=resolved_max,
         backup_count=resolved_backups,
         context_filter=context_filter,
