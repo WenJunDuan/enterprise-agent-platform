@@ -46,7 +46,9 @@
   完成态/空态 bids → inProgress=0 → 误落分析中心。**修：fetchQuery 加 `staleTime:0` 强制新取**
   最新投标状态（后端已确认在途投标 status='running'，见 `_project_bid_roster` tender.py:220-231）。
   前端 lint/build 绿。⚠ 用户需重新 build/刷新 dev 才会生效。
-- **openrouter 兼容（用户要求查链接）**：✅ 查实——openrouter 有原生 Anthropic skin，
-  base 应为 `https://openrouter.ai/api`（非 `/api/v1/chat/completions` 的 OpenAI 路径）。
-  已修 .env openrouter 块 base URL。正用 R1 抽取测试 openrouter+SDK 是否跑通（z-ai/glm-5.2）。
-- 遗留① qwen 思考流式实时：_pending（openrouter 验证后）_。
+- **openrouter 兼容（用户要求查链接）**：✅ **查实并跑通**——openrouter 有原生 Anthropic skin，
+  base 应为 `https://openrouter.ai/api`（非用户原填的 `/api/v1/chat/completions` OpenAI 路径）。
+  已修 .env openrouter 块 base URL。**R1 抽取实测 openrouter(z-ai/glm-5.2) 跑通：criteria ready 81s
+  （三模型最快！qwen163/deepseek142/openrouter81）、14项 Σ=100、20废标**。tender_info 被 glm 漏/校验
+  丢弃（best-effort，criteria 仍 ready）。openrouter 正式纳入轮换（替 anyrouter）。
+- 遗留① qwen 思考流式实时：_pending（下一步）_。
