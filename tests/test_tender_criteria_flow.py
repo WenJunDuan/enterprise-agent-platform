@@ -151,6 +151,69 @@ def test_criteria_rejects_item_missing_source_ref():
         jsonschema.validate(bad, load_output_schema(CRITERIA_SCHEMA))
 
 
+def test_criteria_with_score_modes_validates():
+    # v2 多评分模式：deduction/banded/additive/formula/pass_fail 各容器 + 废标规则通过形校验。
+    crit = _scored_criteria()
+    crit["items"] = [
+        {
+            "item": "商务偏差", "max": 10, "scoring_rule": "每处负偏差扣2分,最多扣8分",
+            "source_ref": "评标办法 p.18", "tag": "scored", "score_mode": "deduction",
+            "evaluator_type": "objective",
+            "deductions": [
+                {"id": "d1", "condition": "商务条款负偏差", "points": 2,
+                 "unit": "per_occurrence", "max_times": None, "max_deduct": 8,
+                 "source_quote": "每处负偏差扣2分,最多扣8分", "source_ref": "评标办法 p.18"}
+            ],
+        },
+        {
+            "item": "技术方案", "max": 10, "scoring_rule": "优10良7中4",
+            "source_ref": "评标办法 p.19", "tag": "scored", "score_mode": "banded",
+            "evaluator_type": "subjective",
+            "bands": [
+                {"level": "优", "points": 10, "criteria": "完全满足且有亮点", "source_quote": "优秀10分"},
+                {"level": "良", "points": 7, "criteria": "满足", "source_quote": "良好7分"},
+                {"level": "中", "points": 4, "criteria": "基本满足", "source_quote": "一般4分"},
+            ],
+        },
+        {
+            "item": "业绩加分", "max": 5, "scoring_rule": "每个类似业绩加1分,最多5分",
+            "source_ref": "评标办法 p.20", "tag": "scored", "score_mode": "additive",
+            "base": 0,
+            "awards": [
+                {"id": "a1", "condition": "类似业绩", "points": 1, "cap": 5,
+                 "source_quote": "每个类似业绩加1分最多5分", "source_ref": "评标办法 p.20"}
+            ],
+        },
+        {
+            "item": "价格分", "max": 40, "scoring_rule": "最低价/本价×40",
+            "source_ref": "评标办法 p.21", "tag": "requires_cross_bid_comparison",
+            "score_mode": "formula", "formula": "最低有效报价/本投标报价×40",
+        },
+        {
+            "item": "资质门槛", "max": 5, "scoring_rule": "具备一级资质得5分否则0分",
+            "source_ref": "评标办法 p.22", "tag": "scored", "score_mode": "pass_fail",
+        },
+    ]
+    crit["rejection_rules"] = [
+        {"id": "r1", "condition": "投标文件未实质性响应招标项目",
+         "source_quote": "未响应本项目的投标作废标处理", "source_ref": "投标须知 p.5"}
+    ]
+    jsonschema.validate(crit, load_output_schema(CRITERIA_SCHEMA))
+
+
+def test_criteria_rejects_unknown_score_mode():
+    # score_mode 是枚举：乱造 "magic_mode" → 拒。
+    bad = _scored_criteria()
+    bad["items"][0]["score_mode"] = "magic_mode"
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate(bad, load_output_schema(CRITERIA_SCHEMA))
+
+
+def test_criteria_backward_compatible_without_new_fields():
+    # 旧 criteria（无 score_mode/deductions/rejection_rules）仍通过形校验（向后兼容）。
+    jsonschema.validate(_scored_criteria(), load_output_schema(CRITERIA_SCHEMA))
+
+
 # ── criteria 随结论进出口闸 + 真伪闸对齐（design §4 方案 A）────────────────
 
 
@@ -203,3 +266,208 @@ def test_unjudgeable_item_null_score_passes(monkeypatch):
         ),
     )
     assert out["verdict"] == "manual_review"
+
+
+# ── 反馈子系统：按 score_mode 软校验（design 第1轮 §5，不一致记 warning 不阻断）──
+
+
+def _scored_with(extracted: dict, **overrides) -> dict:
+    base = _audit_approved(policy_refs=["tender_evalmethod_001"], extracted_data=extracted)
+    base.update(overrides)
+    return base
+
+
+def _mismatch_warns(out: dict) -> list:
+    """只取算术不一致（score_mode_*_mismatch）告警，剔除 criteria 完整性等其它告警。"""
+    warns = out["extracted_data"].get("validation_warnings") or []
+    return [w for w in warns if str(w.get("code", "")).endswith("_mismatch")]
+
+
+def test_score_mode_deduction_inconsistent_records_warning(monkeypatch):
+    # deduction 项 score≠max−Σ扣 → validation_warnings 记一条，不抛错。
+    monkeypatch.setenv("RULE_REF_CHECK", "1")
+    monkeypatch.setattr(oc, "_load_known_rule_ids", lambda: _TENDER_KNOWN)
+    crit = _scored_criteria()
+    crit["items"][0]["score_mode"] = "deduction"
+    out = apply_schema_semantics(
+        DEFAULT_OUTPUT_SCHEMA_NAME,
+        _scored_with(
+            {
+                "criteria": crit,
+                "scoring": [
+                    {
+                        "item": "技术方案", "max": 60, "score": 55, "status": "scored",
+                        "score_mode": "deduction", "basis": "扣10但写成55",
+                        "deduction_hits": [
+                            {"deduction_id": "d1", "condition": "x", "points_each": 5,
+                             "times": 2, "deducted": 10,
+                             "evidence": {"source": "投标p1", "quote": "q"}}
+                        ],
+                    },  # 60−10=50 ≠ 55 → 不一致
+                    {"item": "商务响应", "max": 40, "score": 36, "status": "scored", "basis": "ok"},
+                ],
+            }
+        ),
+    )
+    warns = out["extracted_data"].get("validation_warnings", [])
+    assert any(w["item"] == "技术方案" for w in warns), warns
+
+
+def test_score_mode_deduction_consistent_no_warning(monkeypatch):
+    monkeypatch.setenv("RULE_REF_CHECK", "1")
+    monkeypatch.setattr(oc, "_load_known_rule_ids", lambda: _TENDER_KNOWN)
+    crit = _scored_criteria()
+    crit["items"][0]["score_mode"] = "deduction"
+    out = apply_schema_semantics(
+        DEFAULT_OUTPUT_SCHEMA_NAME,
+        _scored_with(
+            {
+                "criteria": crit,
+                "scoring": [
+                    {
+                        "item": "技术方案", "max": 60, "score": 50, "status": "scored",
+                        "score_mode": "deduction",
+                        "deduction_hits": [
+                            {"deduction_id": "d1", "condition": "x", "points_each": 5,
+                             "times": 2, "deducted": 10,
+                             "evidence": {"source": "投标p1", "quote": "q"}}
+                        ],
+                    },  # 60−10=50 ✓
+                    {"item": "商务响应", "max": 40, "score": 36, "status": "scored"},
+                ],
+            }
+        ),
+    )
+    assert not _mismatch_warns(out)
+
+
+def test_score_mode_banded_not_treated_as_deduction(monkeypatch):
+    # banded 项 score==选档分 → 无 warning；档次分不被当"扣分"误伤（critic F1/F5）。
+    monkeypatch.setenv("RULE_REF_CHECK", "1")
+    monkeypatch.setattr(oc, "_load_known_rule_ids", lambda: _TENDER_KNOWN)
+    crit = _scored_criteria()
+    crit["items"][0]["score_mode"] = "banded"
+    out = apply_schema_semantics(
+        DEFAULT_OUTPUT_SCHEMA_NAME,
+        _scored_with(
+            {
+                "criteria": crit,
+                "scoring": [
+                    {
+                        "item": "技术方案", "max": 60, "score": 42, "status": "scored",
+                        "score_mode": "banded",
+                        "selected_band": {"level": "良", "points": 42},
+                    },
+                    {"item": "商务响应", "max": 40, "score": 36, "status": "scored"},
+                ],
+            }
+        ),
+    )
+    assert not _mismatch_warns(out)
+
+
+def test_score_mode_skips_null_and_manual(monkeypatch):
+    # null/manual_review 项不触发一致性校验（critic F5 skip 路径）。
+    monkeypatch.setenv("RULE_REF_CHECK", "1")
+    monkeypatch.setattr(oc, "_load_known_rule_ids", lambda: _TENDER_KNOWN)
+    out = apply_schema_semantics(
+        DEFAULT_OUTPUT_SCHEMA_NAME,
+        _scored_with(
+            {
+                "criteria": _mixed_criteria(),
+                "scoring": [
+                    {"item": "技术方案", "max": 50, "score": 44, "status": "scored", "basis": "无明细不校验"},
+                    {"item": "项目负责人答辩", "max": 10, "score": None,
+                     "status": "manual_review", "basis": "现场"},
+                ],
+            },
+            verdict="manual_review",
+            manual_review_reason="rule_gap",
+        ),
+    )
+    assert not _mismatch_warns(out)
+
+
+# ── criteria 横比指纹兼容（codex P1.6：v2 加可选字段不得引发 hash 漂移）──────
+
+
+def test_criteria_hash_ignores_empty_optional_fields():
+    # 同标多家：一家输出空容器(deductions:[]/bands:[]/rejection_rules:[])一家省略 → 同 hash。
+    from server.stores.tender_compare_store import compute_criteria_hash
+
+    a = _scored_criteria()
+    a["items"][0]["score_mode"] = "deduction"
+    b = _scored_criteria()
+    b["items"][0]["score_mode"] = "deduction"
+    b["items"][0]["deductions"] = []
+    b["items"][0]["bands"] = []
+    b["rejection_rules"] = []
+    assert compute_criteria_hash(a) == compute_criteria_hash(b)
+
+
+def test_criteria_hash_differs_on_core_change():
+    # 核心评分标准变了（满分）→ 指纹必须不同（防误判一致）。
+    from server.stores.tender_compare_store import compute_criteria_hash
+
+    a = _scored_criteria()
+    b = _scored_criteria()
+    b["items"][0]["max"] = 999
+    assert compute_criteria_hash(a) != compute_criteria_hash(b)
+
+
+def test_criteria_hash_ignores_default_field_values():
+    # codex P2-6：显式默认值（evaluator_type:objective / score_mode:deduction）与省略 → 同 hash。
+    from server.stores.tender_compare_store import compute_criteria_hash
+
+    a = _scored_criteria()
+    b = _scored_criteria()
+    b["items"][0]["evaluator_type"] = "objective"
+    b["items"][1]["score_mode"] = "deduction"
+    assert compute_criteria_hash(a) == compute_criteria_hash(b)
+
+
+# ── 反馈：criteria 完整性 + score_mode 缺失兜底告警（codex P1-4/P1-5）──────────
+
+
+def test_criteria_missing_score_mode_warns(monkeypatch):
+    # criteria 项未声明 score_mode → validation_warnings 提示按 deduction 兜底。
+    monkeypatch.setenv("RULE_REF_CHECK", "1")
+    monkeypatch.setattr(oc, "_load_known_rule_ids", lambda: _TENDER_KNOWN)
+    out = apply_schema_semantics(
+        DEFAULT_OUTPUT_SCHEMA_NAME,
+        _scored_with(
+            {
+                "criteria": _scored_criteria(),  # 无 score_mode
+                "scoring": [
+                    {"item": "技术方案", "max": 60, "score": 52, "status": "scored", "basis": "x"},
+                    {"item": "商务响应", "max": 40, "score": 36, "status": "scored", "basis": "y"},
+                ],
+            }
+        ),
+    )
+    warns = out["extracted_data"].get("validation_warnings", [])
+    assert any(w["code"] == "criteria_missing_score_mode" for w in warns), warns
+
+
+def test_criteria_mode_container_mismatch_warns(monkeypatch):
+    # score_mode=deduction 缺 deductions、banded 缺 bands → 各记一条 warning。
+    monkeypatch.setenv("RULE_REF_CHECK", "1")
+    monkeypatch.setattr(oc, "_load_known_rule_ids", lambda: _TENDER_KNOWN)
+    crit = _scored_criteria()
+    crit["items"][0]["score_mode"] = "deduction"  # 但不给 deductions
+    crit["items"][1]["score_mode"] = "banded"  # 但不给 bands
+    out = apply_schema_semantics(
+        DEFAULT_OUTPUT_SCHEMA_NAME,
+        _scored_with(
+            {
+                "criteria": crit,
+                "scoring": [
+                    {"item": "技术方案", "max": 60, "score": 52, "status": "scored", "basis": "x"},
+                    {"item": "商务响应", "max": 40, "score": 36, "status": "scored", "basis": "y"},
+                ],
+            }
+        ),
+    )
+    codes = [w["code"] for w in out["extracted_data"].get("validation_warnings", [])]
+    assert "criteria_deduction_missing_deductions" in codes
+    assert "criteria_banded_missing_bands" in codes

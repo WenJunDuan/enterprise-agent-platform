@@ -117,6 +117,49 @@ def test_manual_kind_item_conforms_to_extract_result_schema(tmp_path):
     jsonschema.validate(item, _EXTRACT_RESULT_SCHEMA)
 
 
+# ── OCR 目的性（block3）：评标场景注入 purpose，audit 通用路径不受污染 ─────────
+
+
+def test_ocr_purpose_injected_into_openai_prompt(monkeypatch, tmp_path):
+    """评标 OCR 目的注入：purpose 追加进 OpenAI-compatible 识别 prompt（治"OCR 无目的性"）。"""
+    import server.ocr.engine as eng
+
+    monkeypatch.setattr(eng, "OCR_VL_SERVER_URL", "http://ocr.local")
+    monkeypatch.setattr(eng, "OCR_VL_MODEL_NAME", "paddle-vl")
+    captured: dict = {}
+
+    def fake_call(*, data_url, prompt):
+        captured["prompt"] = prompt
+        return "识别markdown"
+
+    monkeypatch.setattr(eng, "_call_openai_compatible_vlm", fake_call)
+    img = tmp_path / "scan.png"
+    img.write_bytes(b"\x89PNG\r\n\x1a\n")
+    eng._recognize_via_openai_compatible(img, purpose="完整还原扣分细则表格")
+    assert "完整还原扣分细则表格" in captured["prompt"]
+    assert "Extract all visible document text" in captured["prompt"]  # 通用指令保留
+
+
+def test_audit_ocr_path_has_no_tender_purpose(monkeypatch, tmp_path):
+    """无 purpose（audit/通用路径）→ prompt 不含评标文案，防域污染（critic F2）。"""
+    import server.ocr.engine as eng
+
+    monkeypatch.setattr(eng, "OCR_VL_SERVER_URL", "http://ocr.local")
+    monkeypatch.setattr(eng, "OCR_VL_MODEL_NAME", "paddle-vl")
+    captured: dict = {}
+
+    def fake_call(*, data_url, prompt):
+        captured["prompt"] = prompt
+        return "识别markdown"
+
+    monkeypatch.setattr(eng, "_call_openai_compatible_vlm", fake_call)
+    img = tmp_path / "invoice.png"
+    img.write_bytes(b"\x89PNG\r\n\x1a\n")
+    eng._recognize_via_openai_compatible(img)  # 无 purpose（audit/通用路径）
+    assert captured["prompt"] == "Extract all visible document text. Return concise markdown only."
+    assert "评标" not in captured["prompt"] and "招投标" not in captured["prompt"]
+
+
 def test_build_block_marks_truncation(monkeypatch):
     # 超长 body 截断时必须显式标记（不静默丢尾部，防砸合同付款节点硬指标）。
     import server.ocr.pipeline as pipeline_mod
@@ -153,7 +196,7 @@ def test_extract_one_font_only_pdf_falls_back_to_ocr(tmp_path, monkeypatch):
     monkeypatch.setattr(pipeline_mod, "native_read", lambda p: {"kind": "pdf_text", "blocks": ["", "   "]})
     state = {"recognize_called": False}
 
-    def fake_recognize(p):
+    def fake_recognize(p, *, purpose=None):
         state["recognize_called"] = True
         raise OcrError("no engine")
 
@@ -325,7 +368,7 @@ def test_recognize_routes_to_cloud_when_ocr_cloud(monkeypatch):
     monkeypatch.setattr(
         engine_mod,
         "_recognize_via_paddle_cloud",
-        lambda p: calls.setdefault("cloud", True) or {"kind": "ocr", "pages": []},
+        lambda p, *, purpose=None: calls.setdefault("cloud", True) or {"kind": "ocr", "pages": []},
     )
     engine_mod.recognize(_Path("x.pdf"))
     assert calls.get("cloud")

@@ -51,9 +51,11 @@ def _iter_files(case_dir: str) -> list[Path]:
     return files
 
 
-def _recognize_with_seal(path: Path, route: dict, *, run_seal: bool) -> dict:
-    """走 OCR 引擎识别（可选印章），合并分诊信息。"""
-    result = {**route, **recognize(path)}
+def _recognize_with_seal(
+    path: Path, route: dict, *, run_seal: bool, purpose: str | None = None
+) -> dict:
+    """走 OCR 引擎识别（可选印章），合并分诊信息。purpose 透传给 OCR 引擎做场景化识别。"""
+    result = {**route, **recognize(path, purpose=purpose)}
     if run_seal:
         result["seals"] = recognize_seal(path).get("seals", [])
     return result
@@ -70,7 +72,7 @@ def _has_extractable_text(native: dict) -> bool:
     )
 
 
-def extract_one(path: Path, *, run_seal: bool = False) -> dict:
+def extract_one(path: Path, *, run_seal: bool = False, purpose: str | None = None) -> dict:
     """对单个文件分类并按路由直读 / OCR；任何失败归一为 error（per-file 隔离）。
 
     - font-only 扫描 PDF（有字体但 native 抽不到文本）回退 OCR，避免返回空结果。
@@ -87,19 +89,21 @@ def extract_one(path: Path, *, run_seal: bool = False) -> dict:
                     "handler": "pdf_scan",
                     "note": "PDF 有字体但无可抽文本，回退 OCR",
                 }
-                return _recognize_with_seal(path, fallback, run_seal=run_seal)
+                return _recognize_with_seal(path, fallback, run_seal=run_seal, purpose=purpose)
             return {**route, **native}
         if route["route"] == "ocr":
-            return _recognize_with_seal(path, route, run_seal=run_seal)
+            return _recognize_with_seal(path, route, run_seal=run_seal, purpose=purpose)
         return {**route, "kind": "manual"}
     except Exception as exc:  # per-file 隔离：损坏 / 缺引擎 / 解析错误都归一为 error
         logger.warning("extract failed for %s: %s", path, exc)
         return {"path": str(path), "kind": "error", "route": "manual", "error": str(exc)}
 
 
-def extract_dir(case_dir: str, *, run_seal: bool = False) -> list[dict]:
+def extract_dir(case_dir: str, *, run_seal: bool = False, purpose: str | None = None) -> list[dict]:
     """对目录下每个文件跑确定性识别，返回结构化产物列表（不调模型）。"""
-    return [extract_one(path, run_seal=run_seal) for path in _iter_files(case_dir)]
+    return [
+        extract_one(path, run_seal=run_seal, purpose=purpose) for path in _iter_files(case_dir)
+    ]
 
 
 def _render_tables(tables: list[dict]) -> str:
@@ -204,7 +208,9 @@ def build_extraction_block(results: list[dict]) -> str:
     return "\n\n".join(parts) or "（无识别内容）"
 
 
-def ocr_preprocess_block(case_dir: str, *, skip: set[str] | None = None) -> str | None:
+def ocr_preprocess_block(
+    case_dir: str, *, skip: set[str] | None = None, purpose: str | None = None
+) -> str | None:
     """P4：对 case 目录做确定性 OCR 预处理，返回内联底稿供注入模型上下文（不调判断模型）。
 
     OCR_PREPROCESS=0 关闭（回落模型自己 Read）。任何失败 → None（降级，**绝不拖垮**审核/评标）。
@@ -214,7 +220,7 @@ def ocr_preprocess_block(case_dir: str, *, skip: set[str] | None = None) -> str 
     if not OCR_PREPROCESS:
         return None
     try:
-        results = extract_dir(case_dir)
+        results = extract_dir(case_dir, purpose=purpose)
         if skip:
             results = [r for r in results if Path(r.get("path", "")).name not in skip]
         if not results:

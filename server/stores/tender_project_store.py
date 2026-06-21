@@ -198,12 +198,16 @@ def update_project_status(project_id: str, tenant: str, status: str) -> bool:
         return cursor.rowcount > 0
 
 
-def count_running_bids(project_id: str, tenant: str) -> int:
-    """统计该招标项目下仍在 running 的投标评标任务数（删项目前的安全守卫用）。"""
+def count_active_bids(project_id: str, tenant: str) -> int:
+    """统计该招标项目下在途（非终态 completed/failed）的投标评标任务数（删项目安全守卫用）。
+
+    含 ``accepted``（已受理未排程）——codex P1-1：只 guard ``running`` 会漏 accepted 窗口，
+    worker 拿到信号量后会把已删项目的任务 upsert 成 running 形成孤儿。非终态一律视为在途。
+    """
     with connect_sqlite(PLATFORM_DB_FILE) as connection:
         row = connection.execute(
             "SELECT COUNT(*) AS n FROM tender_tasks "
-            "WHERE tenant = ? AND group_id = ? AND status = 'running'",
+            "WHERE tenant = ? AND group_id = ? AND status NOT IN ('completed', 'failed')",
             (tenant, project_id),
         ).fetchone()
         return int(row["n"]) if row else 0

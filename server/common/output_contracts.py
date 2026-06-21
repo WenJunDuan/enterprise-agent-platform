@@ -219,6 +219,7 @@ def _validate_audit_result(structured_output: StructuredJSON) -> None:
                     )
 
     _verify_scoring_consistency(structured_output)
+    _verify_score_mode_consistency(structured_output)
     _verify_plan_shape(structured_output)
     _cleanse_risk_dimensions(structured_output)
 
@@ -266,6 +267,118 @@ def _verify_scoring_consistency(structured_output: dict[str, Any]) -> None:
             raise JSONContractError(
                 f"评分项 score={score} 超出 [0, max={max_score}] 范围（item={item.get('item')!r}）"
             )
+
+
+_SCORE_MODE_TOLERANCE = 0.01
+
+
+def _sum_hit_field(hits: Any, field: str) -> float | None:
+    """累加 hits 列表里每条的数值字段；列表空或任一非数 → None（放弃校验，绝不误报）。"""
+    if not isinstance(hits, list) or not hits:
+        return None
+    total = 0.0
+    for hit in hits:
+        if not isinstance(hit, dict):
+            return None
+        value = hit.get(field)
+        if not _is_real_number(value):
+            return None
+        total += value
+    return total
+
+
+def _verify_score_mode_consistency(structured_output: dict[str, Any]) -> None:
+    """按 criteria 各项 score_mode 校验 scoring 算术自洽，不一致记 warning（不阻断）。
+
+    反馈子系统（tender-harness 第1轮）：deduction 项 score=max−Σ扣、banded 项 score=选档分、
+    additive 项 score=base+Σ加。**仅**校验 status=scored 且有对应明细的项；
+    null/manual_review/无明细/formula/pass_fail 一律跳过（防档次分等被当扣分误报）。
+    不一致 → append ``extracted_data.validation_warnings``（{code,item,detail}）交人工复核，
+    绝不打回重评（尊重"靠大模型判断"与区间打分制）。
+    """
+    extracted = structured_output.get("extracted_data")
+    if not isinstance(extracted, dict):
+        return
+    scoring = extracted.get("scoring")
+    if not isinstance(scoring, list):
+        return
+    # criteria 各项按 item 名索引（取 score_mode / base）。
+    criteria_items: dict[str, dict[str, Any]] = {}
+    criteria = extracted.get("criteria")
+    if isinstance(criteria, dict):
+        for citem in criteria.get("items") or []:
+            if isinstance(citem, dict) and isinstance(citem.get("item"), str):
+                criteria_items[citem["item"]] = citem
+    warnings: list[dict[str, Any]] = []
+    # criteria 完整性（codex P1-5）+ score_mode 缺失兜底告警（codex P1-4）：遍历 criteria 各项，
+    # 缺 score_mode → 告警(校验按 deduction 兜底)；score_mode 与容器不匹配(deduction 无 deductions
+    # 等) → 告警。均软提示不阻断。
+    _CONTAINER_BY_MODE = {"deduction": "deductions", "banded": "bands", "additive": "awards"}
+    for citem in criteria_items.values():
+        name = citem.get("item")
+        mode = citem.get("score_mode")
+        if mode is None:
+            warnings.append(
+                {
+                    "code": "criteria_missing_score_mode",
+                    "item": name,
+                    "detail": "评分项未声明 score_mode，校验按 deduction 兜底，请人工确认评分方式",
+                }
+            )
+            continue
+        required = _CONTAINER_BY_MODE.get(mode)
+        # 容器键完全缺失才告警（可能漏提取）；空 [] 合法（招标文件无明列细则，靠 scoring_rule 整体判断）。
+        if required and required not in citem:
+            warnings.append(
+                {
+                    "code": f"criteria_{mode}_missing_{required}",
+                    "item": name,
+                    "detail": f"score_mode={mode} 但缺 {required}，请人工确认评分细则是否漏提取",
+                }
+            )
+    for item in scoring:
+        if not isinstance(item, dict) or item.get("status") != "scored":
+            continue
+        score = item.get("score")
+        max_score = item.get("max")
+        if not _is_real_number(score) or not _is_real_number(max_score):
+            continue
+        citem = criteria_items.get(item.get("item")) or {}
+        # mode 缺失默认 deduction 兜底（codex P1-4）；下面仅在有对应明细时才实际校验，无明细不误报。
+        mode = citem.get("score_mode") or item.get("score_mode") or "deduction"
+        expected: float | None = None
+        detail = ""
+        if mode == "deduction":
+            total = _sum_hit_field(item.get("deduction_hits"), "deducted")
+            if total is not None:
+                expected = max_score - total
+                detail = f"满分{max_score}−扣{total}"
+        elif mode == "banded":
+            band = item.get("selected_band")
+            if isinstance(band, dict) and _is_real_number(band.get("points")):
+                expected = band["points"]
+                detail = f"选档「{band.get('level')}」得{expected}"
+        elif mode == "additive":
+            total = _sum_hit_field(item.get("award_hits"), "awarded")
+            base = citem.get("base", 0)
+            if total is not None and _is_real_number(base):
+                expected = base + total
+                detail = f"基础{base}+加{total}"
+        # formula / pass_fail / manual / 无明细 → expected 仍为 None，跳过。
+        if expected is not None and abs(score - expected) > _SCORE_MODE_TOLERANCE:
+            warnings.append(
+                {
+                    "code": f"score_mode_{mode}_mismatch",
+                    "item": item.get("item"),
+                    "detail": f"score={score} 与「{detail}={expected}」不一致，请人工复核",
+                }
+            )
+    if warnings:
+        existing = extracted.get("validation_warnings")
+        if isinstance(existing, list):
+            existing.extend(warnings)
+        else:
+            extracted["validation_warnings"] = warnings
 
 
 def _is_real_number(value: Any) -> bool:

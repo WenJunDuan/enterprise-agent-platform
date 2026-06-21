@@ -38,6 +38,15 @@ MAX_PENDING_TENDERS = int(os.getenv("MAX_PENDING_TENDERS", "50"))
 # 默认 2（共 3 次尝试，比 audit 的 1 更宽，因 tender 输出更易 flaky）；OCR 预处理只做一次不重跑。
 TENDER_CONTRACT_MAX_RETRY = int(os.getenv("TENDER_CONTRACT_MAX_RETRY", "2"))
 
+# 评标场景 OCR 目的（治"OCR 无目的性"）：让 OCR 引擎在通用文本提取之外，重点完整、结构化地
+# 还原评分标准/评标办法/扣分细则/废标条款等【表格】——评分表是评标命脉，通用提取易丢表格行列
+# 致扣分项缺失。仅 OpenAI-compatible OCR 路径注入生效（云/本地 pipeline 为固定 OCR，见 engine）。
+TENDER_OCR_PURPOSE = (
+    "本批为招投标评标材料。请在完整提取文本之外，特别完整、结构化地还原"
+    "【评分标准/评标办法/评分细则/扣分细则/加分项/废标与资格条款】等表格："
+    "保留表格的行列结构与每一行的分值数字，不要合并或省略任何评分/扣分行。"
+)
+
 # round4 F5：裸 asyncio.create_task 不留引用 → 待定任务可被 GC 静默回收。留强引用集，完成即
 # 自清；集合大小兼作"在途任务数"供准入闸用。
 _BACKGROUND_TASKS: set[asyncio.Task[None]] = set()
@@ -59,7 +68,9 @@ async def _run_evaluation(
 ):
     # P4：先确定性 OCR 预处理（pymupdf 直读 / 云 OCR），把底稿注入命令上下文 → 模型不再自己 Read
     # PDF（绕开模型 Read 脆弱点 + poppler 依赖）。经 to_thread 不阻塞事件循环；失败/关闭 → None 回落。
-    ocr_block = await asyncio.to_thread(ocr_preprocess_block, directory_path)
+    ocr_block = await asyncio.to_thread(
+        ocr_preprocess_block, directory_path, purpose=TENDER_OCR_PURPOSE
+    )
     context = (
         f"=== OCR/直读底稿（确定性预处理，优先用此文本，无需再 Read 文件）===\n{ocr_block}"
         if ocr_block
