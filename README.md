@@ -56,7 +56,7 @@ TENANT_KEYS={"default":"sk-your-token"}        # HTTP API Bearer token 映射
 | --- | --- | --- |
 | `APP_SERVER_HOST` / `APP_SERVER_PORT` | 监听地址/端口；对外服务设 `0.0.0.0` | `127.0.0.1` / `8000` |
 | `CORS_ALLOWED_ORIGINS` | 跨域白名单（逗号分隔，支持 `re:` 正则） | `localhost:5173` 等 |
-| `MAX_BUDGET_USD` | 单次审核成本上限 | `1.0` |
+| `CLAUDE_MAX_BUFFER_BYTES` | SDK 单条 JSON 消息缓冲上限（字节）；评标注入大 OCR 底稿/大 PDF 时调高，避免撞 SDK 原生 1MiB 上限 | `20971520`（20MiB） |
 | `ALLOW_INSECURE_DEFAULT_TENANT_KEY` | 允许默认示例 token；生产必须 `false` | `false` |
 | `AUDIT_TIMEOUT_SEC` | 单次审核硬超时（秒）；现场内网模型/网络慢时调大 | `180` |
 | `AUDIT_TASK_RUNNING_TIMEOUT_SECONDS` | 重启时回收残留 `running` 任务的阈值（秒） | `600` |

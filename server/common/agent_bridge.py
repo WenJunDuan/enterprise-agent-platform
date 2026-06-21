@@ -82,12 +82,11 @@ def build_options(**overrides: Any) -> ClaudeAgentOptions:
         "allowed_tools": ["Read", "Glob", "Grep", "Write", "Skill", "Task"],
         "permission_mode": "bypassPermissions",
         "max_turns": int(os.getenv("AUDIT_MAX_TURNS", "30")),
-        "max_budget_usd": float(os.getenv("MAX_BUDGET_USD", "1.0")),
         "model": runtime["anthropic_model"],
         # SDK 默认单条 stdout JSON 消息上限 1MiB；评标注入 OCR 底稿(数十 KB)或 agent
         # 直读大 PDF 的 tool_result 会超限，SDK 抛 "JSON message exceeded maximum buffer size"
-        # 致整单失败。放到 10MiB(env 可调)，覆盖大底稿/大附件场景；成本仍受 max_budget_usd 兜底。
-        "max_buffer_size": int(os.getenv("CLAUDE_MAX_BUFFER_BYTES", str(10 * 1024 * 1024))),
+        # 致整单失败。默认放到 20MiB(env CLAUDE_MAX_BUFFER_BYTES 可调)，覆盖大底稿/大附件场景。
+        "max_buffer_size": int(os.getenv("CLAUDE_MAX_BUFFER_BYTES", str(20 * 1024 * 1024))),
         # 捕获 bundled CLI 的 stderr，崩溃时把真因落日志（见 _log_cli_stderr）。
         "stderr": _log_cli_stderr,
     }
