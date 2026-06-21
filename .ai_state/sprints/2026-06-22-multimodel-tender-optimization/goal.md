@@ -15,7 +15,8 @@
 - **多模型轮换测试**（.env 切 MODEL_NAME + MODEL_BASE_URL + MODEL_AUTH_TOKEN）：
   - **DeepSeek**：`deepseek-v4-pro` @ api.deepseek.com/anthropic
   - **qwen3.7-max**：`qwen3.7-max` @ dashscope.aliyuncs.com/apps/anthropic
-  - **claude-opus-4-8**：@ anyrouter.top（注意 anyrouter 强制 [1M] 变体 + 偶发 429/Service Unavailable）
+  - ~~claude-opus-4-8 @ anyrouter.top~~ **（2026-06-22 用户：去掉 anyrouter，偶发 429）**
+  - **openrouter**：`z-ai/glm-5.2` @ openrouter.ai/api/v1/chat/completions（替代 anyrouter；注意 base 是 OpenAI-compat `/chat/completions`，与本项目 Anthropic-protocol SDK 是否兼容**待 R3 轮换实测**）
 - **每改完一版自测**：起后端(`uv run python -m server.cli serve`) → 调 API(上传/评标) → 看 serve.log + 评标结果(verdict/scoring/claim_id/耗时) → 自己定下一步调优方向。
 - **范围**：`.claude/`(prompt/契约) + Python `server/`(OCR/评标/store) + `agent-front/`(前端对接)。
 - **每轮 codex 配合** review（codex exec --sandbox read-only）。每轮可 generator subagent(worktree) 实施大块。
