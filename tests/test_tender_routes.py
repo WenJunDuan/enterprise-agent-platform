@@ -678,6 +678,49 @@ def test_evaluate_and_retry_pass_project_id_to_schedule(client, monkeypatch):
         shutil.rmtree(case, ignore_errors=True)
 
 
+def test_evaluate_upload_passes_prewarm_bid_id_to_schedule(client, monkeypatch):
+    """R6-R2 回归：evaluate(mode=upload) 解析 form_json.bid_id → 透传 schedule(bid_id=...)，
+    供 worker 复用预热 OCR、免重 OCR。"""
+    import json as _json
+
+    calls: list = []
+    monkeypatch.setattr(
+        "server.routes.tender.schedule_tender_evaluation_task",
+        lambda **kw: calls.append(kw),
+    )
+    pid = _create_project(client, tender_no=f"R-{uuid.uuid4().hex[:8]}")["project_id"]
+    resp = client.post(
+        f"/tender/projects/{pid}/evaluate",
+        data={
+            "mode": "upload",
+            "form_json": _json.dumps({"bidder_name": "X", "bid_id": "bd-prewarm123"}),
+        },
+        files=[("files", ("招标.pdf", b"%PDF-fake", "application/pdf"))],
+        headers=_AUTH,
+    )
+    assert resp.status_code == 200, resp.text
+    assert calls[-1]["bid_id"] == "bd-prewarm123"  # 预热 bid_id 透传 worker
+
+
+def test_evaluate_upload_without_bid_id_passes_none(client, monkeypatch):
+    """无 bid_id → schedule 收 None（向后兼容，走原 inline OCR 路径）。"""
+    import json as _json
+
+    calls: list = []
+    monkeypatch.setattr(
+        "server.routes.tender.schedule_tender_evaluation_task",
+        lambda **kw: calls.append(kw),
+    )
+    pid = _create_project(client, tender_no=f"R-{uuid.uuid4().hex[:8]}")["project_id"]
+    client.post(
+        f"/tender/projects/{pid}/evaluate",
+        data={"mode": "upload", "form_json": _json.dumps({"bidder_name": "X"})},
+        files=[("files", ("招标.pdf", b"%PDF", "application/pdf"))],
+        headers=_AUTH,
+    )
+    assert calls[-1]["bid_id"] is None
+
+
 def test_create_project_blank_tender_no_anonymous(client):
     """codex P1.2 回归：空 / 空白 tender_no 当匿名处理，重复提交不 500（各自新建）。"""
     p1 = client.post("/tender/projects", json={"tender_no": "", "title": "匿名1"}, headers=_AUTH)
