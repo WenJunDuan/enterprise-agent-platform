@@ -166,8 +166,9 @@ async def run_agent_json(
                         if isinstance(block, TextBlock):
                             text_accum.append(block.text)
                             if on_progress is not None:
-                                # 思考流式：assistant 文本片段（含 deepseek 思考/分析过程）实时回调给
-                                # worker → 喂前端 analyzing + 落思考日志。回调失败不中断评标主流程。
+                                # 进度流式：assistant 文本片段实时回调给 worker → 喂前端 analyzing +
+                                # 落分析日志。deepseek 文本模式下思考过程(<think>)也在 TextBlock 内，
+                                # 故此处即覆盖思考流；回调失败不中断评标主流程（codex r4 P2）。
                                 try:
                                     on_progress(block.text)
                                 except Exception:  # noqa: BLE001

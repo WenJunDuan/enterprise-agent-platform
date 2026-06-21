@@ -44,6 +44,9 @@ configure_claude_runtime_env()
 
 logger = logging.getLogger(__name__)
 
+# 合法推理强度档位（extended thinking effort）。env/per-call 传非法值一律剔除，不传给 CLI。
+_VALID_EFFORTS = frozenset({"low", "medium", "high", "xhigh", "max"})
+
 
 class ClaudeRuntimeError(RuntimeError):
     """Raised when a Claude request never produces a terminal result."""
@@ -90,13 +93,20 @@ def build_options(**overrides: Any) -> ClaudeAgentOptions:
         # 捕获 bundled CLI 的 stderr，崩溃时把真因落日志（见 _log_cli_stderr）。
         "stderr": _log_cli_stderr,
     }
-    # 推理强度（extended thinking）：评标/审核是高难合规判断，此前从未开扩展思考 → deepseek 判断
-    # 随机性大（同案例两次跑结果差异大）。默认 xhigh；env CLAUDE_REASONING_EFFORT 可调
-    # （low/medium/high/xhigh/max）或设 off/none 走端点默认。仅接受合法档位，非法值忽略不致 CLI 报错。
-    effort = os.getenv("CLAUDE_REASONING_EFFORT", "xhigh").strip().lower()
-    if effort in ("low", "medium", "high", "xhigh", "max"):
-        defaults["effort"] = effort
+    # 推理强度（extended thinking）：评标是高难合规判断，不开扩展思考时 deepseek 判断随机性大。
+    # 但**不全局默认 xhigh**——audit 有 180s 超时，全局 xhigh 会拖慢/超时（codex r4 P1）。故：
+    # 全局只认 env CLAUDE_REASONING_EFFORT（默认不设 → 走端点默认）；评标由 tender_worker per-call
+    # 传 effort=xhigh（TENDER_REASONING_EFFORT），audit 不受影响。
+    env_effort = os.getenv("CLAUDE_REASONING_EFFORT", "").strip().lower()
+    if env_effort:
+        defaults["effort"] = env_effort
     defaults.update(overrides)
+    # env 或 per-call override 的 effort 统一校验：仅合法档位保留，非法/空一律剔除不致 CLI 报错。
+    effort = str(defaults.get("effort") or "").strip().lower()
+    if effort in _VALID_EFFORTS:
+        defaults["effort"] = effort
+    else:
+        defaults.pop("effort", None)
     return ClaudeAgentOptions(**defaults)
 
 

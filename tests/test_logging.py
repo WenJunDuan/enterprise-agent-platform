@@ -84,12 +84,18 @@ def _access_record(line: str) -> logging.LogRecord:
     return logging.LogRecord("uvicorn.access", logging.INFO, "", 0, line, None, None)
 
 
-def test_access_noise_filter_drops_health_keeps_business():
+def test_access_noise_filter_exact_path_and_status():
     from server.platform.logging_setup import _AccessNoiseFilter
 
     f = _AccessNoiseFilter(("/health",))
+    # /health 成功响应 → 过滤（噪音）
     assert f.filter(_access_record('127.0.0.1 - "GET /health HTTP/1.1" 200')) is False
+    # 业务请求 → 保留
     assert f.filter(_access_record('127.0.0.1 - "POST /tender/projects HTTP/1.1" 200')) is True
+    # /health 的 5xx → 保留（健康检查失败要能看到，codex r4 P1）
+    assert f.filter(_access_record('127.0.0.1 - "GET /health HTTP/1.1" 503')) is True
+    # query 串里含 /health 但 exact path 不是 → 不误伤
+    assert f.filter(_access_record('1.1.1.1 - "GET /x?to=/health HTTP/1.1" 200')) is True
 
 
 def test_install_access_log_filter_reads_env(monkeypatch):

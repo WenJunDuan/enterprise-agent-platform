@@ -35,9 +35,10 @@ def test_no_budget_cap_set():
 # ── 推理强度（extended thinking）：评标/审核默认 xhigh，治 deepseek 判断随机性 ──
 
 
-def test_effort_default_is_xhigh(monkeypatch):
+def test_effort_default_unset(monkeypatch):
+    # 全局不默认 xhigh（codex r4 P1：避免全局 xhigh 拖慢 audit）；env 未设 → effort None 走端点默认。
     monkeypatch.delenv("CLAUDE_REASONING_EFFORT", raising=False)
-    assert build_options().effort == "xhigh"
+    assert build_options().effort is None
 
 
 def test_effort_env_override(monkeypatch):
@@ -45,13 +46,19 @@ def test_effort_env_override(monkeypatch):
     assert build_options().effort == "high"
 
 
-def test_effort_off_disables(monkeypatch):
-    # 设 off → 不设 effort（None），走端点默认（保留可关闭逃生口）。
-    monkeypatch.setenv("CLAUDE_REASONING_EFFORT", "off")
-    assert build_options().effort is None
-
-
-def test_effort_invalid_value_ignored(monkeypatch):
-    # 非法档位 → 忽略不设，不致 ClaudeAgentOptions/CLI 报错。
+def test_effort_invalid_env_dropped(monkeypatch):
+    # 非法档位（含 off/none）→ 剔除不设，不致 ClaudeAgentOptions/CLI 报错。
     monkeypatch.setenv("CLAUDE_REASONING_EFFORT", "ultra")
     assert build_options().effort is None
+
+
+def test_effort_per_call_override(monkeypatch):
+    # 评标 per-call 传 effort=xhigh（tender_worker 用），即使全局 env 未设也生效。
+    monkeypatch.delenv("CLAUDE_REASONING_EFFORT", raising=False)
+    assert build_options(effort="xhigh").effort == "xhigh"
+
+
+def test_effort_per_call_invalid_dropped(monkeypatch):
+    # per-call 传非法档位也被统一校验剔除（不致 CLI 报错）。
+    monkeypatch.delenv("CLAUDE_REASONING_EFFORT", raising=False)
+    assert build_options(effort="bogus").effort is None

@@ -83,7 +83,8 @@ export function useTenderReviewPage(
   const [query, setQuery] = useState('')
   const [timeRange, setTimeRange] = useState<HistoryTimeRange>('all')
   const [progress, setProgress] = useState(0)
-  const [progressText, setProgressText] = useState('') // 思考流式：后端实时分析进度
+  // 思考流式：按 request_id 存各投标人评标进度，避免多 bidder 并发覆盖（codex r4 P1）。
+  const [progressByRid, setProgressByRid] = useState<Record<string, string>>({})
   const [uploadError, setUploadError] = useState(false)
   const [submitError, setSubmitError] = useState('')
   const [tenderFiles, setTenderFiles] = useState<TenderFile[]>([])
@@ -358,6 +359,7 @@ export function useTenderReviewPage(
     setUploadError(false)
     setSubmitError('')
     setProgress(0)
+    setProgressByRid({}) // 清上次评标的实时进度
     setScreen('analyzing') // 乐观跳第三步"开始分析"界面；提交在后台跑，失败由 onError 回 create
     startReviewMutation.mutate()
   }
@@ -400,7 +402,11 @@ export function useTenderReviewPage(
           onUpdate: (status) => {
             if (status.progress_message) {
               setSubmitError('')
-              setProgressText(status.progress_message) // 推到 analyzing「实时分析输出」区
+              // 按 request_id 存，避免多 bidder 并发互相覆盖（codex r4 P1）
+              setProgressByRid((prev) => ({
+                ...prev,
+                [task.request_id]: status.progress_message ?? '',
+              }))
             }
           },
         }).then((status) => {
@@ -483,6 +489,13 @@ export function useTenderReviewPage(
     await queryClient.invalidateQueries({ queryKey: TENDER_PROJECTS_QUERY_KEY })
     await queryClient.invalidateQueries({ queryKey: ['tender-project', projectId] })
   }
+
+  // 思考流式：多投标人并行时按序号分段拼接各家进度，单家直接显示（codex r4 P1：防并发覆盖）。
+  const progressEntries = Object.values(progressByRid).filter(Boolean)
+  const progressText =
+    progressEntries.length <= 1
+      ? progressEntries[0] ?? ''
+      : progressEntries.map((text, i) => `── 投标 ${i + 1} ──\n${text}`).join('\n\n')
 
   return {
     screen,
