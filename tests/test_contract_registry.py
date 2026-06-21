@@ -122,6 +122,37 @@ def test_no_disqualification_leaves_verdict_untouched():
     assert out["verdict"] == "approved"
 
 
+@pytest.mark.parametrize(
+    "disq",
+    ["无", "", {"count": 0}, [], [{}], [None], "none", 0],
+)
+def test_falsy_disqualification_does_not_coerce(disq):
+    """codex R2 P1 回归：disqualification_hits 为假值（"无"/[]/[{}]/{} 等）绝不误判 rejected。
+
+    extracted_data 无内部 schema：模型可能写中文"无"(truthy 字符串)、空 list、空 dict 列表等——
+    朴素 bool() 会把"无"当命中→误判废标。必须是"非空 list + 含有内容的 dict"才算硬废标。
+    """
+    out = apply_schema_semantics(
+        DEFAULT_OUTPUT_SCHEMA_NAME,
+        _valid_audit_result(verdict="approved", extracted_data={"disqualification_hits": disq}),
+    )
+    assert out["verdict"] == "approved"
+
+
+@pytest.mark.parametrize("status", ["FAIL", "fail ", " Fail"])
+def test_eligibility_fail_case_insensitive_coerces(status):
+    """codex R2 P2：eligibility status 大小写/空白容错（FAIL/fail /Fail 均算 fail→rejected）。"""
+    out = apply_schema_semantics(
+        DEFAULT_OUTPUT_SCHEMA_NAME,
+        _valid_audit_result(
+            verdict="approved",
+            policy_refs=["tender_evalmethod_006"],
+            extracted_data={"eligibility_checks": [{"check": "资质", "status": status}]},
+        ),
+    )
+    assert out["verdict"] == "rejected"
+
+
 # ── G1 验证闸（round4 F1）：schema 形校验先于一切语义处理 ──────────────────────
 
 
