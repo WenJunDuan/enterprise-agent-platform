@@ -391,6 +391,15 @@ export function useTenderReviewPage(
   }, [activeEvalQuery.data])
   /* eslint-enable react-hooks/set-state-in-effect */
 
+  // 假死/卡住也能离开（用户诉求）：清进行中态 + 解除 analyzing 锁定 + 回列表。评标后台不管，
+  // 用户到列表可手动停止删除（deleteTenderProject 级联清任务）。
+  function exitAnalyzing() {
+    setActiveEval(null) // 清 localStorage → 解除 screen lazy init 对 analyzing 的锁定
+    setProgressByRid({})
+    setProgress(0)
+    setScreen('dashboard')
+  }
+
   function openAnalysis(
     mode: TenderReviewMode = 'detail',
     projectId = selectedProjectIdForQuery
@@ -715,6 +724,7 @@ export function useTenderReviewPage(
     progress,
     progressText,
     isAnalyzing: startReviewMutation.isPending,
+    exitAnalyzing,
     // P3 上传阶段
     isUploading: uploadFilesMutation.isPending || isUploading,
     uploadProjectId,
