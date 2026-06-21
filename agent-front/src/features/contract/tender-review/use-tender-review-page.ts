@@ -143,6 +143,8 @@ export function useTenderReviewPage(
   const [uploadedBidderIds, setUploadedBidderIds] = useState<Set<number>>(new Set())
   const [uploadingTender, setUploadingTender] = useState(false)
   const [uploadingBidderIds, setUploadingBidderIds] = useState<Set<number>>(new Set())
+  // R6-R2：记各家预热 bid_id（uploadBid 返回）→ 提交评标时透传，worker 复用预热 OCR 免重 OCR。
+  const [prewarmBidIds, setPrewarmBidIds] = useState<Record<number, string>>({})
   // 防招标文件多选时并发重复建项目（createTenderProject 异步，第二次 add 在 resolve 前会重复建）。
   const creatingProjectRef = useRef(false)
 
@@ -494,6 +496,7 @@ export function useTenderReviewPage(
     setUploadedBidderIds(new Set())
     setUploadingTender(false)
     setUploadingBidderIds(new Set())
+    setPrewarmBidIds({})
     creatingProjectRef.current = false
   }
 
@@ -585,7 +588,8 @@ export function useTenderReviewPage(
     setSubmitError('')
     setUploadingBidderIds((prev) => new Set(prev).add(id))
     try {
-      await uploadBid(uploadProjectId, bidderName, natives) // 触发后台 OCR
+      const res = await uploadBid(uploadProjectId, bidderName, natives) // 触发后台 OCR
+      setPrewarmBidIds((prev) => ({ ...prev, [id]: res.bid_id })) // R6-R2：记预热 bid_id 供评标复用
       setUploadedBidderIds((prev) => new Set(prev).add(id))
       void queryClient.invalidateQueries({ queryKey: ['tender-docs-status', uploadProjectId] })
     } catch (error) {
@@ -669,6 +673,7 @@ export function useTenderReviewPage(
           bidderName: bidder.name,
           tenderFiles: nativeTenderFiles,
           bidderFiles: bidder.nativeFiles,
+          bidId: prewarmBidIds[bidder.id], // R6-R2：透传预热 bid_id → worker 复用 OCR 免重跑
         })
         acceptedTasks.push(accepted)
       } catch {

@@ -254,6 +254,10 @@ async def _submit_bid_evaluation(
     if not admission_available():
         raise HTTPException(status_code=503, detail="评标队列已满，请稍后重试")
     request_id = new_request_id()
+    # R6-R2：前端传 prewarm bid_id（上传即 OCR 时 uploadBid 返回的）→ 评标据此复用已预热的 OCR 底稿
+    # （worker _load_doc_layer_context 按 bid_id 读 doc 层），免重 OCR（实测省一遍 ~5min）。缺省 None
+    # → 走原 inline OCR 路径（向后兼容 directory/legacy）。
+    prewarm_bid_id: str | None = None
 
     content_type = request.headers.get("content-type", "")
     if content_type.startswith("application/json"):
@@ -276,6 +280,12 @@ async def _submit_bid_evaluation(
         mode = str(form_data.get("mode") or "").strip()
         if mode != "upload":
             raise HTTPException(status_code=400, detail="multipart requests must use mode=upload")
+        raw_form = form_data.get("form_json")
+        if raw_form:
+            try:
+                prewarm_bid_id = (json.loads(raw_form) or {}).get("bid_id") or None
+            except (ValueError, TypeError):
+                prewarm_bid_id = None
         case_path = await materialize_upload_submission(
             request_id=request_id,
             tenant=tenant,
@@ -316,6 +326,7 @@ async def _submit_bid_evaluation(
         directory_path=case_path,
         source_mode=mode,
         project_id=project_id,
+        bid_id=prewarm_bid_id,  # R6-R2：透传 → worker 复用预热 OCR，免重 OCR
     )
     return TenderSubmitAcceptedResponse(
         request_id=request_id,

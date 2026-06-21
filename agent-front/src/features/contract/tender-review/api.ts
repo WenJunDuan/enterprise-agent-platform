@@ -109,6 +109,8 @@ export type EvaluateTenderUploadRequest = {
   tenderFiles: File[]
   bidderFiles: File[]
   form?: Record<string, unknown>
+  /** R6-R2：预热 bid_id（上传即 OCR 时 uploadBid 返回）→ 评标复用预热 OCR，免重 OCR。 */
+  bidId?: string
 }
 
 export type WaitOptions<T> = {
@@ -192,6 +194,7 @@ export async function evaluateTenderProjectUpload(
       bidder_name: request.bidderName?.trim() || undefined,
       tender_files: tenderFileNames,
       bidder_files: bidderFileNames,
+      bid_id: request.bidId || undefined, // R6-R2：评标复用预热 OCR
     })
   )
   for (const file of [...request.tenderFiles, ...request.bidderFiles]) {

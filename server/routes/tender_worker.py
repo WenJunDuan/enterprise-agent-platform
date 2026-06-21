@@ -136,6 +136,34 @@ def _load_doc_layer_context(project_id: str, bid_id: str | None, tenant: str) ->
         return None
 
 
+# R6-R2 复用预热 OCR：等招标层+当前家投标层 OCR 就绪的上限/间隔。标书大(百页)OCR 可达数分钟，
+# 给足窗口；env 可调。用迭代次数计时（不依赖 wall-clock 时间函数）。
+_DOC_LAYER_WAIT_SEC = float(os.getenv("TENDER_DOC_LAYER_WAIT_SEC", "360"))
+_DOC_LAYER_POLL_SEC = 3.0
+
+
+async def _wait_doc_layer_ready(project_id: str, bid_id: str, tenant: str) -> None:
+    """短轮询等招标层 + 当前家投标层 OCR 都到终态（ready/failed），供评标复用预热 OCR、免重 OCR。
+
+    用户「上传即 OCR」后可能在 OCR 未完就点开始分析（R1 解阻塞）→ 评标提交时预热 OCR 还在跑。本函数
+    等它跑完（ready→复用 / failed→由 _load_doc_layer_context 回落 inline）。缺记录/超时/异常 → 直接返回
+    （绝不死等、绝不拖垮评标）。
+    """
+    max_polls = max(1, int(_DOC_LAYER_WAIT_SEC / _DOC_LAYER_POLL_SEC))
+    terminal = {"ready", "failed"}
+    for _ in range(max_polls):
+        try:
+            proj = await asyncio.to_thread(get_project_doc, project_id, tenant)
+            bid = await asyncio.to_thread(get_bid_doc, project_id, bid_id, tenant)
+        except Exception:
+            return  # 读失败 → 不等，交后续逻辑回落
+        if proj is None or bid is None:
+            return  # 无预热记录（散单/旧路径）→ 不等
+        if proj.get("ocr_status") in terminal and bid.get("ocr_status") in terminal:
+            return  # 都终态 → 可判复用/回落
+        await asyncio.sleep(_DOC_LAYER_POLL_SEC)
+
+
 async def _run_evaluation(
     *,
     request_id: str,
@@ -151,6 +179,11 @@ async def _run_evaluation(
     # 无 project_id（legacy 散单）或开关关闭 → 直接回落。
     doc_layer_text: str | None = None
     if _tender_read_doc_layer_enabled() and project_id:
+        # R6-R2：复用预热 OCR——用户「上传即 OCR」后可能在 OCR 未完就点开始分析(R1 解阻塞)。此时给了
+        # prewarm bid_id 但 doc 层尚 running → 先短轮询等其 ready(预热在跑)，再复用，避免重 OCR 跑两遍
+        # ~5min。兜底超时/失败 → 回落 inline(不死等)。
+        if bid_id:
+            await _wait_doc_layer_ready(project_id, bid_id, tenant)
         doc_layer_text = await asyncio.to_thread(
             _load_doc_layer_context, project_id, bid_id, tenant
         )
