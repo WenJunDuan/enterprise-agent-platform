@@ -30,6 +30,7 @@ _BASELINE_ROUTES: list[tuple[str, tuple[str, ...]]] = [
     ("/tender/evaluate", ("POST",)),
     ("/tender/projects", ("GET",)),
     ("/tender/projects", ("POST",)),
+    ("/tender/projects/{project_id}", ("DELETE",)),
     ("/tender/projects/{project_id}", ("GET",)),
     ("/tender/projects/{project_id}/compare", ("GET",)),
     ("/tender/projects/{project_id}/compare", ("POST",)),

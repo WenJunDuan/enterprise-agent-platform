@@ -36,7 +36,7 @@ from server.stores.tender_compare_store import (
     is_stale,
 )
 from server.stores.tender_project_store import (
-    count_running_bids,
+    count_active_bids,
     delete_project_cascade,
     get_or_create_project,
     get_project,
@@ -468,10 +468,17 @@ async def delete_tender_project_endpoint(
     tenant = verify_tenant(authorization)
     if get_project(project_id, tenant) is None:
         raise HTTPException(status_code=404, detail="Tender project not found")
-    if await asyncio.to_thread(count_running_bids, project_id, tenant) > 0:
+    # 守卫：项目下有在途(accepted/running)投标任务 → 拒删（防 worker 把已删项目任务 upsert
+    # 成 running 的孤儿竞态，codex P1-1）；有在途价格横比同理（codex P1-2，复用 has_active_compare）。
+    if await asyncio.to_thread(count_active_bids, project_id, tenant) > 0:
         raise HTTPException(
             status_code=409,
-            detail="项目下仍有运行中的评标任务，请等其结束后再删除",
+            detail="项目下仍有在途（已受理/运行中）的评标任务，请等其结束后再删除",
+        )
+    if await asyncio.to_thread(has_active_compare, tenant, project_id):
+        raise HTTPException(
+            status_code=409,
+            detail="项目下有在途的价格横比任务，请等其结束后再删除",
         )
     outcome = await asyncio.to_thread(delete_project_cascade, project_id, tenant)
     if outcome is None:

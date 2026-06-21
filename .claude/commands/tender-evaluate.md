@@ -3,7 +3,7 @@ description: 评标：按招标文件评分标准对一袋投标文件评分与�
 allowed-tools: Read, Glob, Skill, Task
 ---
 
-读取指定投标目录（含招标文件 + 投标文件各章节），**在当前会话内一次性完成评标并直接输出最终结论**。你直接 `Read` 文件（PDF/图片/文本均可），不依赖 OCR 预处理。
+读取指定投标目录（含招标文件 + 投标文件各章节），**在当前会话内一次性完成评标并直接输出最终结论**。**若服务端已注入「OCR/直读底稿」**（确定性预处理文本，带 `【第N页】` 页锚点，并已按评标目的重点还原评分标准/扣分细则表格）**则优先使用它**；必要时再 `Read` 原文件（PDF/图片/文本均可）核验定位。
 
 ## 执行方式（单 agent 内联五步，少往返）
 
@@ -16,8 +16,15 @@ allowed-tools: Read, Glob, Skill, Task
 ### S1 取本项目评分标准（定位招标文件里的评标办法 → criteria）
 - 本项目的评分标准**就在它自己的招标文件里**（价格 X 分 / 技术 Y 分 / 信用 Z 分…全是项目专属）。`Read` 招标文件，**定位其中规定评分标准的部分**——它常以《评标办法》《评标标准》《评分办法》《评分细则》《评标方法》《评分标准》等为标题，**所在位置因标书而异**（可能在正文某章、评标须知、或附录；招标编号、章节号、标题写法各家不同），**以本招标文件实际结构为准，不要预设固定在"第三章"或某个固定标题**。必要时先读目录 / 浏览章节标题来定位。把定位到的评标办法**直读解析**为本项目评分标准，结构化写入 `extracted_data.criteria`，对齐 `.claude/contracts/tender/criteria.schema.json`：
   - `source_ref`（评标办法在本招标文件的**实际出处**：文件 + 章节/标题 + 页）、`method`（综合评估法 / 经评审的最低投标价法 / 其他）、`total_max`（满分合计）
-  - `items[]`：每项 `{item 评分项名, max 满分, scoring_rule 评分规则原文/转述, source_ref 出处页, tag}`
-  - `tag` 标"可判定性"：可依投标文件判定 → `scored`；命中 `requires_live_event`（现场答辩）/ `requires_external_data`（外部信用）/ `requires_cross_bid_comparison`（价格横比）→ 留待 S3 走 `manual_review`。
+  - `items[]`：每项除 `{item, max, scoring_rule 原文, source_ref, tag}` 外，**必须判定该项评分方式 `score_mode` 并按方式提取结构化细则**（对齐 criteria.schema v2）：
+    - `deduction` 满分扣减 → `deductions[]`：逐条 `{condition 何情况扣, points 扣几分, unit(per_item/per_occurrence/per_percent), max_times 最多扣几次, max_deduct 封顶, source_quote 原文, source_ref}`。**这是"第一次读标书就把扣分项全摘出来"的落点**——招标文件列了几条扣分、每条扣几分/最多几次，逐条钉死，不留到 S3 临场猜。
+    - `banded` 档次给分（如优10良7中4 等离散档，**不是从满分扣减**）→ `bands[]`：`{level, points, criteria 评定标准, source_quote}`。
+    - `additive` 基础分+加分累计 → `base` + `awards[]`：`{condition, points, cap 封顶, source_quote}`（`max` 须为含加分封顶的最高分）。
+    - `formula` 公式分（价格分等）→ `formula` 公式原文（通常 `tag:requires_cross_bid_comparison`）。
+    - `pass_fail` 客观通过得满分否则 0 / `manual` 主观/现场/外部不可判定。
+    - `evaluator_type`：`objective`/`subjective`/`mixed`——主观档次项标 `subjective`（S3 给建议分+依据，留低置信人工复核，不冒充客观分）。
+  - **废标/资格条款 → 顶层 `rejection_rules[]`**（不是评分项！）：逐条提取 `{id, condition 何情况废标/资格不符, source_quote 招标文件原文, source_ref}`，供 S3 走**独立 gate** 判定，与逐项评分解耦。
+  - `tag` 标"可判定性"（与 `score_mode` 正交）：可依投标文件判定 → `scored`；命中 `requires_live_event`（现场答辩）/ `requires_external_data`（外部信用）/ `requires_cross_bid_comparison`（价格横比）→ 留待 S3 走 `manual_review`。
 - 这份 `criteria` 就是本次评标的**会话项目规则**，随结论持久化（落 data/）；S3 据它逐项评分。criteria 须**逐字依招标文件评标办法原文**（评分项 / 满分 / 规则不增删改），确保同一招标在不同投标人评标时得到**一致的 criteria**——这是后续多家公平横向比较的前提。
 - 同时 `Read` 通则层国家法规作**法律底座**（注意：**不是**项目评分标准，而是废标 / 资格 / 一致性 / 程序的法定依据，跨项目稳定）：
   - `knowledge/tender/evalmethod.rules.json`（《评标委员会和评标方法暂行规定》，发改委12号令）
@@ -36,22 +43,22 @@ allowed-tools: Read, Glob, Skill, Task
 - 只抽事实，不在本步给分。
 
 ### S3 逐项评判
-- 对照 S1 得到的 `extracted_data.criteria` 每一项（`item` / `max` / `scoring_rule` / `tag`），结合事实底稿（必要时按底稿页锚点 `【第N页】` 回读该章节原文）判定，写入 `extracted_data.scoring`，每项 `{item, max, score, status, basis}`（`item` / `max` 须与 criteria 对应项一致）：
-  - 规则可依文档判定 → `status:"scored"`：**满分扣减制——从该项满分 `max` 起算，逐条列出不符合点并各扣相应分，`score = max − Σ扣分`（不小于 0，不超过 max）**；完全满足 → `score = max`。`basis` 必须写清「满分 X；因①… 扣 a 分、②… 扣 b 分；实得 Z」，把**已识别出的每个问题点都落成具体扣分**。**单项瑕疵/部分不符只扣分，绝不把该项判 0、绝不升级成 `rejected`**（`rejected` 仅留给整单真废标/资格一票否决，见下）。禁止笼统只写"不通过/不满足"而不给扣分明细。
-  - 命中"不可判定"标签 → `status:"manual_review"`、`score:null`，**绝不判 0**：
-    - `requires_live_event`（项目负责人答辩等现场环节）
-    - `requires_external_data`（企业信用等外部公示数据，不在投标文件内）
-    - `requires_cross_bid_comparison`（价格分、有效投标数等需横向比较所有投标）
-  - `status:"rejected"`（该项判 0）**仅当该评分项自身的必交材料缺失或硬性不符**（如该项要求的★承诺函未提供、该项资质完全没有）。**不要因为整单存在废标条件就把本项判 0**——见下条解耦原则。
-- **逐项打分与整单废标解耦（关键，治"全是不通过、没扣分"）**：即便整单可能废标（如投标响应的项目名/项目号与本招标不符），**各评分项仍要按提交材料逐项满分扣减给分**（投标人确实提交了业绩 / 技术方案 / 团队 / 商务等内容，就照 criteria 逐项评、`status:"scored"`、给出有扣有得的 `score`）。**整单废标只体现在最终 `verdict`，不得把 `scoring[]` 各项一律归 0/rejected**。把"项目不符"作为**一条重大风险/扣分点**记入相关项 `basis` 与 `evidence_chain` + `verdict`，而不是抹掉全部逐项评分。
+- 对照 S1 的 `criteria` 每一项，结合事实底稿（必要时按页锚点 `【第N页】` 回读原文）判定，写入 `extracted_data.scoring`，每项 `{item, max, score, status, score_mode, basis, …按 mode 的明细}`（`item`/`max`/`score_mode` 与 criteria 对应项一致）。**按该项 `score_mode` 判分**：
+  - `deduction`（满分扣减）→ **逐条核对该项 `deductions`**：命中写一条 `deduction_hits`：`{deduction_id 回链, condition, points_each, times 命中次数, deducted 本条共扣, evidence:{source 文件+第N页+章节, quote 触发扣分的投标原文片段}}`，未命中不写。`score = max − Σdeducted`（≥0，完全满足=max）。**已识别的每个问题点都要落成一条 `deduction_hits` 并摘上下文 quote**，禁止笼统"扣X分"或只写"不通过"。
+  - `banded`（档次给分，优10良7中4 等离散档）→ 依 `bands` 选档写 `selected_band:{level, points, reason}`，`score = 该档 points`。**档次分是离散给分，不要伪造扣分明细**（那个 7 分不是"扣 3 分"）。
+  - `additive`（基础分+加分）→ 逐条核对 `awards` 命中写 `award_hits:{award_id, condition, points_each, times, awarded, evidence:{source, quote}}`，`score = base + Σawarded`（≤max）。
+  - `formula` / `tag:requires_cross_bid_comparison`（价格等需横比）→ `status:"manual_review"`、`score:null`，把本家 `bid_price={amount,currency}` 钉入 `extracted_data`，`basis` 写"横比数据已备，待全部投标汇总后统一算"。
+  - `pass_fail` → 满足得 `max` 否则 0；命中不可判定标签（`requires_live_event`/`requires_external_data`）或 `manual` → `score:null`+`manual_review`，**绝不判 0**。
+  - `status:"rejected"`（该项判 0）**仅当该评分项自身必交材料缺失/硬性不符**；**不要因整单废标就把本项判 0**（见下解耦）。
+- **废标/资格独立 gate（与逐项评分解耦，关键，治"全是不通过没扣分"）**：对照 S1 的 `rejection_rules` 逐条核查投标文件，命中写 `extracted_data.disqualification_hits:[{rule_id 回链, finding, evidence:{source, quote}}]`；资格审查写 `extracted_data.eligibility_checks:[{check, status:pass/fail/manual, basis, evidence}]`。**废标/资格不符只决定最终 `verdict`，绝不把各评分项 `scoring[]` 一律归 0/rejected**——投标人确实交了业绩/方案/团队/商务，就照各项 `score_mode` 逐项给分；把"项目名不符"等记入 `disqualification_hits` + 相关项 `basis`，而非抹掉逐项评分。
 - 一致性核验：若业绩的项目经理与拟派项目负责人不一致，该业绩项 `manual_review`/不得分，`manual_review_reason:"data_conflict"`，证据链**同时引用业绩页与拟派负责人页**两处出处（依据：实施条例第40/42条、业绩与拟派负责人应一致）。
 - **证据定位准确性（硬要求，定位项必须 = 实际找到的）**：每条 `basis` / `evidence_chain` 的出处**只能引底稿里真实存在的页锚点 `【第N页】`**，且所引页**确实包含**你描述的内容——**严禁凭印象/猜测写页码**。写每条证据前自检一遍：「该原文/字段是否就在我所引的 `【第N页】`？」对不上就改到正确页或降为"未在底稿定位到"。出处尽量写成**「文件 + 第N页 + 所在章节/标题」**（如「投标文件第6页《应答函》」「招标文件第79页 报价表」），`finding` 摘所引页的**原文片段**，使定位可核验、带上下文。
 
 ### S4 汇总结论
 - 合成最终 `verdict`：
-  - 命中任一废标/资格否决 → `rejected`
+  - `extracted_data.disqualification_hits` 非空，或任一 `eligibility_checks` status=fail → `rejected`（废标/资格否决由**独立 gate** 决定，不依赖某个评分项判 0）
   - 存在任一 `manual_review` 评分项，或关键证据缺失/规则缺口/证据冲突 → `manual_review`（填 `manual_review_reason`）
-  - 全部评分项 `scored` 且无否决项 → `approved`
+  - 全部评分项已按 `score_mode` 给分（`scored`/档次/加分/通过）且无否决项 → `approved`
 - **`verdict` 与 `scoring[]` 解耦**：`verdict` 是整单结论，`scoring[]` 是逐项满分扣减的明细。**即使 `verdict=rejected`（废标），`scoring[]` 仍应保留各项有扣有得的逐项打分**（让评审看到每项扣在哪、扣多少），并在 `explanation` 说明废标主因。不要因 `verdict=rejected` 就把逐项分清零。（满分/实得合计由前端从 `scoring[]` 汇总，无需本步另出汇总字段。）
 - **承重结论（`approved` / `rejected`）的 `policy_refs` 只引通则层真实 `rule_id`**（如 `tender_evalmethod_001` 评标依招标文件、`tender_evalmethod_003` / `tender_evalmethod_004` 综合评估法量化加权、`tender_evalmethod_005` / `tender_evalmethod_006` / `tender_evalmethod_008` 废标 / 资格否决）——这些才是平台真伪闸认可的法定依据。
 - **`criteria` 各评分项的具体标准与命中**（来自招标文件评标办法、无 knowledge `rule_id`）**写进 `evidence_chain`**（同时引招标文件评标办法出处页 + 投标文件页），**不要塞进 `policy_refs`**（会被真伪闸当编造 `rule_id` 拒掉）。
@@ -63,7 +70,7 @@ allowed-tools: Read, Glob, Skill, Task
 2. `claim_id` 为**投标人稳定标识**（优先统一社会信用代码，次投标人名称），便于 server 按投标人追加 / 去重；并把**招标项目标识**写入 `extracted_data.tender_project_id`（优先招标编号，次项目名），供 server 按招标分组、横向比较。
 3. `explanation` / `reasons` / `evidence_chain` 用中文，措辞平实、专业、克制（像评标/审计意见）：禁用夸张或口语词（硬伤、铁证、实锤等），定性留有余地（用"疑似/需人工核实"，证据不确凿不下终局结论）。
 4. `manual_review` 时，`explanation` 必须写明哪些评分项不能自动判定、缺什么材料、哪条规则无法闭合，并填 `manual_review_reason`（只能取 `missing_approval` / `rule_gap` / `data_conflict` / `insufficient_evidence` / `budget_exceeded` / `invoice_invalid` / `pre_approval_mismatch` 之一最贴切者）。
-5. `extracted_data.scoring` 为逐项 `{item, max, score, status, basis}`；未判定项 `score:null` 不计入合计，并在文字中说明需要什么外部输入（现场记录/外部评价表/全部投标报价）。
+5. `extracted_data.scoring` 为逐项 `{item, max, score, status, score_mode, basis, …按 mode 的 deduction_hits/selected_band/award_hits}`；未判定项 `score:null` 不计入合计。废标/资格走 `extracted_data.disqualification_hits` / `eligibility_checks`（独立 gate，**不混入 scoring**）。并在文字中说明需要什么外部输入（现场记录/外部评价表/全部投标报价）。
 6. 只返回一个 JSON 对象，直接符合 `audit-result` 契约；不要输出 Markdown、表格、前言或任何 JSON 之外的文字。
    - **整个回复必须是单个 JSON 对象**：**首字符是 `{`、末字符是 `}`**；分析/思考只能写在 `<think></think>` 内，`</think>` 之后只准有这一个 JSON 对象；**禁止任何英文散文、要点列表或 JSON 之外的解释性文字**（违反会致服务端解析失败、整单评标失败）。
    - **JSON 合法性（极重要，违反会致解析失败）**：字符串值内引用项目名 / 项目号 / 投标人 / 评分项时，**一律用中文引号「」或『』**，**严禁在字符串值里用半角双引号 `"`**（会提前闭合字符串、破坏 JSON）；确需则转义为 `\"`。例：写 `"未响应「华为南通」项目"`，不要写 `"未响应"华为南通"项目"`。

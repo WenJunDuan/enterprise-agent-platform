@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "tender_criteria",
-  "description": "会话项目评分标准：从该项目招标文件载明的评标办法（评分标准）直读解析得到，作为本次评标的项目规则，随结论写入 extracted_data.criteria 持久化。评标办法的章节位置与标题因标书而异（不预设固定在第三章），以实际招标文件为准。区别于通则层 knowledge/tender/{evalmethod,regulation}.rules.json（国家法规，跨项目稳定）。",
+  "description": "会话项目评分标准：从该项目招标文件载明的评标办法（评分标准）直读解析得到，作为本次评标的项目规则，随结论写入 extracted_data.criteria 持久化。评标办法的章节位置与标题因标书而异（不预设固定在第三章），以实际招标文件为准。区别于通则层 knowledge/tender/{evalmethod,regulation}.rules.json（国家法规，跨项目稳定）。v2：每个评分项显式声明 score_mode（评分方式：扣减/档次/加分/公式/通过否/主观），各模式带对应规则容器；废标/否决条款进顶层 rejection_rules，与逐项评分解耦。",
   "type": "object",
   "additionalProperties": false,
   "properties": {
@@ -37,12 +37,12 @@
           "max": {
             "type": "number",
             "minimum": 0,
-            "description": "该项满分。"
+            "description": "该项最高分。对 score_mode=additive（加分项），max 必须是【含加分封顶】的该项最高分，确保实得 score≤max 恒成立、不撞 0≤score≤max 硬闸。"
           },
           "scoring_rule": {
             "type": "string",
             "minLength": 1,
-            "description": "该项评分规则原文/转述（直引招标文件，不得臆造）。如 '价格分=最低有效报价/本报价×40'。"
+            "description": "该项评分规则原文/转述（直引招标文件，不得臆造）。如 '价格分=最低有效报价/本报价×40'。结构化细则进下面的 deductions/bands/awards/formula。"
           },
           "source_ref": {
             "type": "string",
@@ -57,8 +57,93 @@
               "requires_external_data",
               "requires_cross_bid_comparison"
             ],
-            "description": "可判定性标签。scored=可依投标文件判定；其余三类不可依单份投标文件判定，S3 须 score:null + manual_review，绝不判 0：requires_live_event(现场答辩/演示)、requires_external_data(企业信用等外部公示数据)、requires_cross_bid_comparison(价格分等需横向比较所有投标)。"
+            "description": "可判定性标签（与 score_mode 正交：tag 管能否依单份投标文件判定，score_mode 管怎么判分）。scored=可依投标文件判定；其余三类不可依单份投标文件判定，S3 须 score:null + manual_review，绝不判 0：requires_live_event(现场答辩/演示)、requires_external_data(企业信用等外部公示数据)、requires_cross_bid_comparison(价格分等需横向比较所有投标)。"
+          },
+          "score_mode": {
+            "type": "string",
+            "enum": ["deduction", "banded", "additive", "formula", "pass_fail", "manual"],
+            "description": "评分方式。deduction=满分扣减(配 deductions[])；banded=档次给分如优10良7中4(配 bands[]，那个7分不是扣3分)；additive=基础分base+加分累计(配 awards[])；formula=公式分如价格分(配 formula，常 tag=requires_cross_bid_comparison)；pass_fail=客观通过得满分否则0分；manual=主观/现场/外部不可判定(score:null)。缺省时校验层按 deduction 兜底并记 warning。"
+          },
+          "evaluator_type": {
+            "type": "string",
+            "enum": ["objective", "subjective", "mixed"],
+            "description": "客观/主观/混合。subjective(主观档次项,如技术方案优良中)默认需人工复核：S3 给建议分+依据，但带低置信 warning，不冒充客观分。"
+          },
+          "deductions": {
+            "type": "array",
+            "description": "score_mode=deduction 的扣分细则（第一次读招标文件就把每条扣分情形逐条结构化提取；无明列扣分细则的项为 []）。S3 据此逐条核查投标文件、命中即扣。",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["condition", "points"],
+              "properties": {
+                "id": { "type": "string", "description": "稳定扣分条 id，供 scoring.deduction_hits[].deduction_id 回链。" },
+                "condition": { "type": "string", "minLength": 1, "description": "扣分情形（什么情况扣分）。" },
+                "source_quote": { "type": "string", "description": "招标文件该扣分条原文片段。" },
+                "points": { "type": "number", "minimum": 0, "description": "单次扣分值（正数）。" },
+                "unit": { "type": "string", "enum": ["per_item", "per_occurrence", "per_percent"], "description": "扣分单位：按项/按次/按比例。" },
+                "max_times": { "type": ["number", "null"], "description": "最多扣几次（null=不设次数上限，按命中次数）。" },
+                "max_deduct": { "type": ["number", "null"], "description": "该条扣分封顶（null=无单独上限）。" },
+                "source_ref": { "type": "string", "description": "该扣分条出处（文件+章节+页）。" }
+              }
+            }
+          },
+          "bands": {
+            "type": "array",
+            "description": "score_mode=banded 的档次映射（如 优10/良7/中4），离散给分，非扣减。",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["level", "points"],
+              "properties": {
+                "level": { "type": "string", "minLength": 1, "description": "档次名（优/良/中/差/合格 等）。" },
+                "points": { "type": "number", "minimum": 0, "description": "该档得分。" },
+                "criteria": { "type": "string", "description": "该档评定标准（何种表现归此档）。" },
+                "source_quote": { "type": "string", "description": "招标文件该档原文片段。" }
+              }
+            }
+          },
+          "base": {
+            "type": "number",
+            "minimum": 0,
+            "description": "score_mode=additive 的基础分（从此分起按 awards 累加）。"
+          },
+          "awards": {
+            "type": "array",
+            "description": "score_mode=additive 的加分项（每项带 cap 封顶，保证 base+Σaward≤max）。",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["condition", "points"],
+              "properties": {
+                "id": { "type": "string", "description": "稳定加分条 id，供 scoring.award_hits[].award_id 回链。" },
+                "condition": { "type": "string", "minLength": 1, "description": "加分情形。" },
+                "source_quote": { "type": "string", "description": "招标文件该加分条原文。" },
+                "points": { "type": "number", "minimum": 0, "description": "单次加分值。" },
+                "cap": { "type": ["number", "null"], "description": "该加分项封顶（null=无单独上限，仍受 max 约束）。" },
+                "source_ref": { "type": "string", "description": "该加分条出处。" }
+              }
+            }
+          },
+          "formula": {
+            "type": "string",
+            "description": "score_mode=formula 的评分公式原文（如 '最低有效报价/本投标报价×40'）。多为价格分，单份投标不可算，tag 通常 requires_cross_bid_comparison。"
           }
+        }
+      }
+    },
+    "rejection_rules": {
+      "type": "array",
+      "description": "招标文件载明的废标/资格否决条款（从招标文件提取，供 S3 走【独立 gate】判定 disqualification_hits，与逐项评分解耦——废标只进 verdict，不把各评分项归 0）。",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["condition"],
+        "properties": {
+          "id": { "type": "string", "description": "稳定 id，供 extracted_data.disqualification_hits[].rule_id 回链。" },
+          "condition": { "type": "string", "minLength": 1, "description": "废标/否决情形（什么情况废标/资格不符）。" },
+          "source_quote": { "type": "string", "description": "招标文件该废标条原文片段。" },
+          "source_ref": { "type": "string", "description": "出处（文件+章节+页）。" }
         }
       }
     }

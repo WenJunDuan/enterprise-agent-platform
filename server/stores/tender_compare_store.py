@@ -33,9 +33,36 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+# criteria 字段的已知默认值：显式写默认值与省略应得同一指纹（codex P2-6）。
+_HASH_DEFAULT_FIELDS: dict[str, Any] = {"evaluator_type": "objective", "score_mode": "deduction"}
+
+
+def _normalize_for_hash(value: Any) -> Any:
+    """递归剔空值键 + 归一已知默认值，使"可选字段有无/空容器/显式默认值"不影响 criteria 指纹。
+
+    多家投标人评同一招标应得一致 criteria（tender-evaluate S1 要求）；但模型可能一家输出
+    ``deductions:[]`` / ``evaluator_type:"objective"`` 一家省略，语义相同却 JSON 不同 → 横比误判
+    stale。v2 加 score_mode/deductions/bands/awards 等可选字段后漂移风险放大，故 hash 前规范化：
+    剔空值键，并把等于已知默认值的字段（evaluator_type=objective / score_mode=deduction）视同未声明。
+    """
+    if isinstance(value, dict):
+        cleaned: dict[str, Any] = {}
+        for key, val in value.items():
+            normalized_val = _normalize_for_hash(val)
+            if normalized_val in (None, [], {}, ""):
+                continue
+            if _HASH_DEFAULT_FIELDS.get(key) == normalized_val:  # 显式默认值 == 未声明
+                continue
+            cleaned[key] = normalized_val
+        return cleaned
+    if isinstance(value, list):
+        return [_normalize_for_hash(item) for item in value]
+    return value
+
+
 def compute_criteria_hash(criteria: Any) -> str:
-    """规范化 JSON 后 hash，作 criteria 一致性指纹（顺序无关）。"""
-    normalized = json.dumps(criteria, ensure_ascii=False, sort_keys=True)
+    """规范化 JSON 后 hash，作 criteria 一致性指纹（顺序无关、空可选字段无关）。"""
+    normalized = json.dumps(_normalize_for_hash(criteria), ensure_ascii=False, sort_keys=True)
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
 
 

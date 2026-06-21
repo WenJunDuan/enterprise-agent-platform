@@ -544,6 +544,33 @@ def test_delete_project_with_running_bid_returns_409(client):
         shutil.rmtree(case, ignore_errors=True)
 
 
+def test_delete_project_with_accepted_bid_returns_409(client):
+    """codex P1-1：项目下有 accepted（已受理未排程）投标任务 → 删项目回 409（防孤儿竞态）。"""
+    pid = _create_project(client, tender_no=f"R-{uuid.uuid4().hex[:8]}")["project_id"]
+    case = _make_dir_case("test-proj-del-accepted", pid)
+    try:
+        # /evaluate 提交后任务即 accepted（schedule 被 mock no-op，不进 running/completed）。
+        client.post(
+            f"/tender/projects/{pid}/evaluate",
+            json={"mode": "directory", "directory_path": str(case)},
+            headers=_AUTH,
+        )
+        resp = client.delete(f"/tender/projects/{pid}", headers=_AUTH)
+        assert resp.status_code == 409  # accepted 也算在途（非终态）
+        assert client.get(f"/tender/projects/{pid}", headers=_AUTH).status_code == 200
+    finally:
+        shutil.rmtree(case, ignore_errors=True)
+
+
+def test_delete_project_with_active_compare_returns_409(client, monkeypatch):
+    """codex P1-2：项目下有在途价格横比 → 删项目回 409（复用 has_active_compare 守卫）。"""
+    pid = _create_project(client, tender_no=f"R-{uuid.uuid4().hex[:8]}")["project_id"]
+    monkeypatch.setattr("server.routes.tender.has_active_compare", lambda tenant, project_id: True)
+    resp = client.delete(f"/tender/projects/{pid}", headers=_AUTH)
+    assert resp.status_code == 409
+    assert client.get(f"/tender/projects/{pid}", headers=_AUTH).status_code == 200
+
+
 def test_delete_project_unknown_and_cross_tenant_404(client):
     """删未知项目 404；跨租户项目对 acme 不可见亦不可删（404）。"""
     from server.stores.tender_project_store import get_or_create_project

@@ -204,12 +204,15 @@ def _call_openai_compatible_vlm(*, data_url: str, prompt: str) -> str:
         raise OcrDependencyError(f"OCR VLM 返回结构异常：{payload!r}") from exc
 
 
-def _recognize_via_openai_compatible(path: Path) -> dict:
+def _recognize_via_openai_compatible(path: Path, *, purpose: str | None = None) -> dict:
     """LiteLLM/OpenAI-compatible fallback：让已部署 PaddleOCR-VL 读取图片页面。"""
     if not OCR_VL_SERVER_URL or not OCR_VL_MODEL_NAME:
         raise OcrDependencyError("OCR_VL_SERVER_URL / OCR_VL_MODEL_NAME 未配置，无法调用远端 OCR VLM")
 
     prompt = "Extract all visible document text. Return concise markdown only."
+    if purpose:
+        # 场景化识别目的（如评标：完整还原评分标准/扣分细则/废标条款表格）——追加在通用提取指令后。
+        prompt = f"{prompt}\n{purpose}"
     if path.suffix.lower() == ".pdf":
         pages = [
             {
@@ -254,8 +257,12 @@ def _page_confidence(layout: list) -> float | None:
     return min(scores) if scores else None
 
 
-def _recognize_via_paddle_pipeline(path: Path) -> dict:
-    """扫描件 → 每页 markdown + 版面 + 置信度（PaddleOCR-VL 完整 pipeline）。"""
+def _recognize_via_paddle_pipeline(path: Path, *, purpose: str | None = None) -> dict:
+    """扫描件 → 每页 markdown + 版面 + 置信度（PaddleOCR-VL 完整 pipeline）。
+
+    注：purpose 对本地 paddle pipeline 暂不生效（固定版面 OCR，无自定义 prompt 注入点）。
+    """
+    _ = purpose  # 本地 pipeline 暂无 prompt 注入点，显式忽略避免误导。
     results = _build_vl_pipeline().predict(str(path))
     pages = []
     for res in results:
@@ -356,12 +363,16 @@ def _parse_cloud_jsonl(jsonl_text: str) -> list[dict]:
     return pages
 
 
-def _recognize_via_paddle_cloud(path: Path) -> dict:
+def _recognize_via_paddle_cloud(path: Path, *, purpose: str | None = None) -> dict:
     """线上 PaddleOCR-VL 云服务（aistudio job API）：建 job → 轮询 → 取 jsonl。
 
     协议与 OpenAI 兼容路径完全不同（异步 job-poll）。服务端切页+版面，**无需本地渲染/本地 paddleocr**。
     失败/超时抛异常由 pipeline per-file 隔离（→ kind=error / file_clarity=failed），绝不静默。
+
+    注：purpose 对云 job API 暂不生效——服务端固定版面+OCR，不接受自定义 prompt；
+    保留参数统一调用链，待云服务支持识别提示再启用。
     """
+    _ = purpose  # 云路径暂无 prompt 注入点（见 docstring），显式忽略避免误导。
     if not OCR_VL_SERVER_URL or not OCR_VL_API_KEY:
         raise OcrDependencyError("OCR_CLOUD=1 但 OCR_VL_SERVER_URL / OCR_VL_API_KEY 未配置")
     try:
@@ -380,18 +391,21 @@ def _recognize_via_paddle_cloud(path: Path) -> dict:
     }
 
 
-def recognize(path: Path) -> dict:
+def recognize(path: Path, *, purpose: str | None = None) -> dict:
     """扫描件识别。
 
     OCR_CLOUD=1 走线上 PaddleOCR-VL 云服务（job-poll）；否则默认走 LiteLLM/OpenAI-compatible
     远端 VLM，避开本地 layout predictor 在部分 arm64 容器运行时的 native 崩溃；需要完整
     PaddleOCRVL pipeline 时显式设 OCR_VL_USE_PADDLE_PIPELINE=1。
+
+    purpose：场景化识别目的（如评标），仅 OpenAI-compatible 路径注入进 prompt 生效；
+    云 job API / 本地 paddle pipeline 为固定版面 OCR，接受参数但暂不注入（见各自 docstring）。
     """
     if OCR_CLOUD:  # 显式开关优先：=1 走线上云服务（job-poll），与 litellm/本地解耦
-        return _recognize_via_paddle_cloud(path)
+        return _recognize_via_paddle_cloud(path, purpose=purpose)
     if OCR_VL_SERVER_URL and not OCR_VL_USE_PADDLE_PIPELINE:
-        return _recognize_via_openai_compatible(path)
-    return _recognize_via_paddle_pipeline(path)
+        return _recognize_via_openai_compatible(path, purpose=purpose)
+    return _recognize_via_paddle_pipeline(path, purpose=purpose)
 
 
 def recognize_seal(path: Path) -> dict:
