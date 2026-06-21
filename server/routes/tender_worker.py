@@ -36,6 +36,12 @@ def _tender_read_doc_layer_enabled() -> bool:
     """Return True when the P2 doc layer is active (reads TENDER_READ_DOC_LAYER env live)."""
     return os.getenv("TENDER_READ_DOC_LAYER", "1").lower() in {"1", "true", "yes"}
 
+
+def _stream_partial_enabled() -> bool:
+    """遗留①：是否开 include_partial_messages 让端点逐字吐 partial（真·思考流式）。默认开；
+    端点不支持流式则无害（无 partial 退回完整消息 + 兜底 final-flush）。TENDER_STREAM_PARTIAL=0 关。"""
+    return os.getenv("TENDER_STREAM_PARTIAL", "1").lower() in {"1", "true", "yes"}
+
 # 评标硬超时（秒）。标书大（40MB+/百页）+ 模型 extended thinking，单次评标实测可达 ~9min(537s)。
 # 前端已解耦【不阻塞等待】（提交即返回、analyzing 独立轮询、可离开回来恢复），故后端超时仅作
 # "防无限挂"兜底，默认大幅放宽到 3600s（env TENDER_TIMEOUT_SEC 可调）。
@@ -198,6 +204,10 @@ async def _run_evaluation(
                 context=context,
                 on_progress=on_progress,  # 思考流式：agent 文本片段实时回调给 worker
                 effort=_TENDER_EFFORT,  # 评标 per-call 扩展思考（不全局默认，避免拖慢 audit）
+                # 遗留①：开 include_partial_messages → 端点逐字吐 StreamEvent partial，on_progress
+                # 实时收增量(真·流式)。端点不支持流式则无 partial、退回完整 AssistantMessage + 兜底
+                # final-flush，行为不退化。env TENDER_STREAM_PARTIAL=0 可关。
+                include_partial_messages=_stream_partial_enabled(),
                 # 文本模式（与 audit 对齐）：大底稿(百页标书)下 SDK 结构化输出会 error_max_structured_
                 # output_retries；文本模式由服务端抽 JSON，对大输入更稳。配合命令里的 JSON 输出硬化。
                 structured=False,
@@ -398,6 +408,15 @@ async def _execute_inner(
             flusher.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await flusher  # 等 cancel 真正落地（cancel 仅在下个 loop cycle 注入 CancelledError）
+            # 遗留① 兜底 final-flush：qwen 等一次性返回端点 on_progress 仅在末尾触发一次，flusher 常在
+            # 下个 _PROGRESS_FLUSH_SEC(1.5s) 周期前已被 cancel → 末次累积的思考/分析文本永不落库，前端
+            # 区3 停在"运行中"。退出前补写一次，确保末态分析文本至少可见（逐字实时需端点流式 partial，
+            # 见 _STREAM_PARTIAL 开关）。在 cancel 之后做，无与 flusher 并发写竞争。
+            if progress_state["text"]:
+                with contextlib.suppress(Exception):
+                    await asyncio.to_thread(
+                        update_tender_progress, request_id, progress_state["text"]
+                    )
 
 
 def _backfill_criteria(
