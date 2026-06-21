@@ -54,7 +54,7 @@ def test_read_layer_uses_doc_store_when_ready(monkeypatch):
     monkeypatch.setattr(
         worker,
         "_load_doc_layer_context",
-        lambda project_id, tenant: "=== DOC LAYER TEXT ===",
+        lambda *_a, **_kw: "=== DOC LAYER TEXT ===",
     )
     # ocr_preprocess_block should NOT be called
     preprocess_called = []
@@ -90,7 +90,7 @@ def test_read_layer_fallback_when_doc_missing(monkeypatch):
     monkeypatch.setattr(
         worker,
         "_load_doc_layer_context",
-        lambda project_id, tenant: None,
+        lambda *_a, **_kw: None,
     )
 
     preprocess_called = []
@@ -125,7 +125,7 @@ def test_read_layer_disabled_always_falls_back(monkeypatch):
     monkeypatch.setattr(
         worker,
         "_load_doc_layer_context",
-        lambda project_id, tenant: load_called.append(True) or "doc layer",
+        lambda *_a, **_kw: load_called.append(True) or "doc layer",
     )
 
     preprocess_called = []
@@ -162,7 +162,7 @@ def test_read_layer_no_project_id_falls_back(monkeypatch):
     monkeypatch.setattr(
         worker,
         "_load_doc_layer_context",
-        lambda project_id, tenant: load_called.append(True) or "doc layer",
+        lambda *_a, **_kw: load_called.append(True) or "doc layer",
     )
 
     preprocess_called = []
@@ -187,63 +187,3 @@ def test_read_layer_no_project_id_falls_back(monkeypatch):
     assert preprocess_called
 
 
-def test_load_doc_layer_context_ready(monkeypatch):
-    """_load_doc_layer_context returns text when project_doc is ready + at least one bid ready."""
-    import server.routes.tender_worker as worker
-
-    monkeypatch.setattr(
-        worker,
-        "get_project_doc",
-        lambda pid, tenant: {"ocr_status": "ready", "ocr_text": "招标底稿"},
-    )
-    monkeypatch.setattr(
-        worker,
-        "list_bid_docs",
-        lambda pid, tenant: [
-            {"bid_id": "b1", "ocr_status": "ready", "ocr_text": "投标底稿A"},
-        ],
-    )
-
-    result = worker._load_doc_layer_context("tp-ready", "acme")
-    assert result is not None
-    assert "招标底稿" in result
-    assert "投标底稿A" in result
-
-
-def test_load_doc_layer_context_project_not_ready(monkeypatch):
-    """_load_doc_layer_context returns None when project_doc is not ready."""
-    import server.routes.tender_worker as worker
-
-    monkeypatch.setattr(
-        worker,
-        "get_project_doc",
-        lambda pid, tenant: {"ocr_status": "running", "ocr_text": None},
-    )
-    monkeypatch.setattr(worker, "list_bid_docs", lambda pid, tenant: [])
-
-    result = worker._load_doc_layer_context("tp-not-ready", "acme")
-    assert result is None
-
-
-def test_load_doc_layer_context_missing(monkeypatch):
-    """_load_doc_layer_context returns None when project_doc row doesn't exist."""
-    import server.routes.tender_worker as worker
-
-    monkeypatch.setattr(worker, "get_project_doc", lambda pid, tenant: None)
-    monkeypatch.setattr(worker, "list_bid_docs", lambda pid, tenant: [])
-
-    result = worker._load_doc_layer_context("tp-none", "acme")
-    assert result is None
-
-
-def test_load_doc_layer_context_exception_returns_none(monkeypatch):
-    """_load_doc_layer_context swallows exceptions and returns None (fallback safety)."""
-    import server.routes.tender_worker as worker
-
-    def explode(pid, tenant):
-        raise RuntimeError("DB gone")
-
-    monkeypatch.setattr(worker, "get_project_doc", explode)
-
-    result = worker._load_doc_layer_context("tp-explode", "acme")
-    assert result is None

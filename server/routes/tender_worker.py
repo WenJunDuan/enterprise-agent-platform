@@ -23,7 +23,6 @@ from server.stores.session_store import new_conversation_id
 from server.stores.tender_doc_store import (
     get_bid_doc,
     get_project_doc,
-    list_bid_docs,
     update_project_doc_criteria,
 )
 from server.stores.tender_task_store import update_tender_progress, upsert_tender_task

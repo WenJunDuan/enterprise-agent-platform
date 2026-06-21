@@ -99,19 +99,13 @@ def test_p11_load_doc_layer_with_bid_id_loads_only_that_bid(monkeypatch):
             "bidder_name": "当前投标人",
         },
     )
-    called_list = []
-    monkeypatch.setattr(
-        worker,
-        "list_bid_docs",
-        lambda pid, tenant: called_list.append(True) or [],
-    )
-
     result = worker._load_doc_layer_context("tp-1", "bid-current", "acme")
 
     assert result is not None, "should return text when bid and project are ready"
     assert "当前家投标底稿" in result
     assert "招标底稿内容" in result
-    assert not called_list, "list_bid_docs must NOT be called when bid_id is given"
+    # 读层用 get_bid_doc(单家)而非 list_bid_docs(全部)——worker 已不 import list_bid_docs，
+    # 单家定位本身保证不混其他家材料。
 
 
 def test_p11_load_doc_layer_without_bid_id_returns_none(monkeypatch):
@@ -123,15 +117,6 @@ def test_p11_load_doc_layer_without_bid_id_returns_none(monkeypatch):
         "get_project_doc",
         lambda pid, tenant: {"ocr_status": "ready", "ocr_text": "招标底稿"},
     )
-    called_list = []
-    monkeypatch.setattr(
-        worker,
-        "list_bid_docs",
-        lambda pid, tenant: called_list.append(True) or [
-            {"bid_id": "b1", "ocr_status": "ready", "ocr_text": "投标A", "bidder_name": "A"},
-        ],
-    )
-
     result = worker._load_doc_layer_context("tp-1", None, "acme")
     assert result is None, "without bid_id, must return None to avoid mixing all bids"
 
@@ -370,6 +355,10 @@ def test_p13_project_doc_ocr_writes_failed_on_exception(monkeypatch):
 
     client = TestClient(api_module.app)
     pid = _make_project(client)
+    # 模拟上传端点：先建 project_doc row(running)，后台 OCR 失败应改 failed（UPDATE 需 row 已存在）
+    from server.stores.tender_doc_store import upsert_project_doc
+
+    upsert_project_doc(project_id=pid, tenant="default", tender_files="[]", ocr_status="running")
 
     async def _run():
         await tender_module._run_project_doc_ocr(pid, "/fake/case", tenant="default", purpose=None)
@@ -516,7 +505,6 @@ def test_p14_upload_bid_no_file_returns_400(monkeypatch):
 def test_p14_sidecar_audit_request_json_excluded_from_iter_files():
     """_iter_files excludes audit-request.json sidecar written by materialize_upload_submission."""
     from server.ocr.pipeline import _iter_files
-    from pathlib import Path
 
     with tempfile.TemporaryDirectory() as tmpdir:
         # Real file
@@ -587,7 +575,6 @@ def test_p15_delete_project_clears_project_doc_dir(monkeypatch):
         monkeypatch.setattr(tender_module, "delete_project_cascade", patched_cascade)
 
         removed_paths = []
-        orig_remove = tender_module.remove_submission_dir
         monkeypatch.setattr(
             tender_module,
             "remove_submission_dir",
@@ -866,8 +853,6 @@ def test_client_disconnect_returns_400_in_tender_doc(monkeypatch):
 
     # Patch request.form to raise ClientDisconnect
     from fastapi import Request
-
-    original_form = Request.form
 
     async def disconnecting_form(self, **kwargs):
         raise ClientDisconnect()
