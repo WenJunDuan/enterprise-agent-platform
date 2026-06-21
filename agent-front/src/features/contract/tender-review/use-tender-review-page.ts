@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   useMutation,
   useQueries,
@@ -138,7 +138,13 @@ export function useTenderReviewPage(
   // P3 两步拆分：uploadProjectId 是"上传即 OCR"后建好的项目 ID（用于 docs-status 轮询）。
   // 置 null 表示尚未上传（初始/取消/新建后）。
   const [uploadProjectId, setUploadProjectId] = useState<string | null>(null)
-  const [isUploading, setIsUploading] = useState(false)
+  // A（上传即 OCR，每区一次多选→自动传→锁定）：招标层一份/每投标一个 bid，故各区上传一次。
+  // uploadedBidderIds：已自动上传的投标单位 id（锁定其文件区，防重复 bid）。
+  const [uploadedBidderIds, setUploadedBidderIds] = useState<Set<number>>(new Set())
+  const [uploadingTender, setUploadingTender] = useState(false)
+  const [uploadingBidderIds, setUploadingBidderIds] = useState<Set<number>>(new Set())
+  // 防招标文件多选时并发重复建项目（createTenderProject 异步，第二次 add 在 resolve 前会重复建）。
+  const creatingProjectRef = useRef(false)
 
   // A①: editable project form state
   const [projectForm, setProjectForm] = useState<ProjectFormData>(
@@ -353,19 +359,8 @@ export function useTenderReviewPage(
     },
   })
 
-  // P3 上传阶段 mutation：建项目 + uploadTenderDoc + uploadBid → 触发后台 OCR。
-  const uploadFilesMutation = useMutation({
-    mutationFn: uploadFilesForOcr,
-    onSuccess: (projectId) => {
-      setUploadProjectId(projectId)
-      setIsUploading(false)
-      setSubmitError('')
-    },
-    onError: (error) => {
-      setIsUploading(false)
-      setSubmitError(error instanceof Error ? error.message : '文件上传失败，请稍后重试。')
-    },
-  })
+  // A（上传即 OCR）：上传不再走批量按钮 mutation，改由 addTenderFile/addBidderFile 选文件即触发
+  // （建项目 + uploadTenderDoc/uploadBid → 后台 OCR）。批量 startUpload/uploadFilesForOcr 已移除。
 
   // 长任务独立轮询（第5轮）：analyzing 不阻塞在 mutation，由此轮询进行中评标的 task 状态。
   // activeEval 从 localStorage 初始化 → 可离开/回来恢复；不超时掉回。
@@ -490,19 +485,43 @@ export function useTenderReviewPage(
     setProjectForm(createDefaultProjectForm())
     // P3: 重置时清掉 upload 状态，下次新建重头开始
     setUploadProjectId(null)
-    setIsUploading(false)
+    // A：清增量上传态（各区解锁，重头来）
+    setTenderFiles([])
+    setUploadBidders([DEFAULT_UPLOAD_BIDDER])
+    setUploadedBidderIds(new Set())
+    setUploadingTender(false)
+    setUploadingBidderIds(new Set())
+    creatingProjectRef.current = false
   }
 
-  function addTenderFile(files: FileList | null) {
+  /**
+   * A（上传即 OCR）：选招标文件（一次多选）→ 立即建项目 + 上传 tender-doc + 触发后台 OCR。
+   * 招标层一份：已上传(uploadProjectId 非空)或上传中则忽略后续添加（该区锁定，要改→取消重来）。
+   */
+  async function addTenderFile(files: FileList | null) {
     const nextFiles = toTenderFiles(files)
     if (nextFiles.length === 0) return
+    if (uploadProjectId || uploadingTender || creatingProjectRef.current) return
+    const natives = nextFiles.filter(hasNativeFile).map((item) => item.file)
+    if (natives.length === 0) return
 
-    setTenderFiles((current) => [
-      ...current,
-      ...nextFiles,
-    ])
+    setTenderFiles((current) => [...current, ...nextFiles])
     setUploadError(false)
     setSubmitError('')
+    creatingProjectRef.current = true
+    setUploadingTender(true)
+    try {
+      const project = await createTenderProject(buildCreateProjectBody(projectForm, natives[0]))
+      await uploadTenderDoc(project.project_id, natives) // 触发后台 OCR
+      setUploadProjectId(project.project_id)
+    } catch (error) {
+      // 失败回退：清掉刚 staged 的招标文件，让用户重选
+      setTenderFiles([])
+      setSubmitError(error instanceof Error ? error.message : '招标文件上传失败，请重试')
+    } finally {
+      setUploadingTender(false)
+      creatingProjectRef.current = false
+    }
   }
 
   function removeTenderFile(index: number) {
@@ -524,6 +543,12 @@ export function useTenderReviewPage(
 
   function removeBidder(id: number) {
     setUploadBidders((current) => current.filter((bidder) => bidder.id !== id))
+    // A：删除投标单位时解锁（从已上传集移除；其 bid 在后端由删项目级联清，新建流程不影响）
+    setUploadedBidderIds((prev) => {
+      const next = new Set(prev)
+      next.delete(id)
+      return next
+    })
   }
 
   function updateBidderName(id: number, name: string) {
@@ -532,22 +557,48 @@ export function useTenderReviewPage(
     )
   }
 
-  function addBidderFile(id: number, files: FileList | null) {
+  /**
+   * A（上传即 OCR）：选某投标单位的文件（一次多选）→ 立即上传该家 bid + 触发后台 OCR。
+   * 招标先传约束：无 uploadProjectId（招标未传）则拒并提示。每家一个 bid：已上传则锁定（要改→删该家重加）。
+   */
+  async function addBidderFile(id: number, files: FileList | null) {
     const nextFiles = toTenderFiles(files)
     if (nextFiles.length === 0) return
+    if (!uploadProjectId) {
+      setSubmitError('请先上传招标文件')
+      return
+    }
+    if (uploadedBidderIds.has(id) || uploadingBidderIds.has(id)) return
+    const natives = nextFiles.filter(hasNativeFile).map((item) => item.file)
+    if (natives.length === 0) return
+    const bidderName = uploadBidders.find((bidder) => bidder.id === id)?.name
 
     setUploadBidders((current) =>
       current.map((bidder) =>
-        bidder.id === id
-          ? {
-              ...bidder,
-              files: [...bidder.files, ...nextFiles],
-            }
-          : bidder
+        bidder.id === id ? { ...bidder, files: [...bidder.files, ...nextFiles] } : bidder
       )
     )
     setUploadError(false)
     setSubmitError('')
+    setUploadingBidderIds((prev) => new Set(prev).add(id))
+    try {
+      await uploadBid(uploadProjectId, bidderName, natives) // 触发后台 OCR
+      setUploadedBidderIds((prev) => new Set(prev).add(id))
+    } catch (error) {
+      // 失败回退：清掉该家刚 staged 的文件，让用户重选
+      setUploadBidders((current) =>
+        current.map((bidder) => (bidder.id === id ? { ...bidder, files: [] } : bidder))
+      )
+      setSubmitError(
+        error instanceof Error ? error.message : `投标文件上传失败（${bidderName ?? id}），请重试`
+      )
+    } finally {
+      setUploadingBidderIds((prev) => {
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
+    }
   }
 
   function removeBidderFile(id: number, fileIndex: number) {
@@ -564,26 +615,7 @@ export function useTenderReviewPage(
   }
 
   /**
-   * P3 两步拆分 — 第一步：选完文件后上传并触发后台 OCR。
-   *
-   * 上传成功后 uploadProjectId 置位，前端开始轮询 docs-status；
-   * "开始分析"按钮在 isOcrReady 前一直禁用。
-   */
-  function startUpload() {
-    if (uploadFilesMutation.isPending || isUploading) return
-    if (!hasFilesSelected) {
-      setUploadError(true)
-      setSubmitError('')
-      return
-    }
-    setUploadError(false)
-    setSubmitError('')
-    setIsUploading(true)
-    uploadFilesMutation.mutate()
-  }
-
-  /**
-   * P3 两步拆分 — 第二步：OCR 就绪后用户点击"开始分析"提交评标任务。
+   * 第二步：OCR 就绪后用户点击"开始分析"提交评标任务（上传已在选文件时自动完成，A）。
    *
    * 保留 A+B 解耦：submitReview 只做提交（不 await 评标），由 analyzing 独立轮询恢复。
    */
@@ -601,54 +633,6 @@ export function useTenderReviewPage(
     setProgressByRid({}) // 清上次评标的实时进度
     setScreen('analyzing') // 乐观跳第三步"开始分析"界面；提交在后台跑，失败由 onError 回 create
     startReviewMutation.mutate()
-  }
-
-  /**
-   * P3 第一步：建项目 + uploadTenderDoc + uploadBid per bidder（上传即 OCR）。
-   *
-   * 返回 projectId，供 docsStatusQuery 轮询 OCR 进度。
-   */
-  async function uploadFilesForOcr(): Promise<string> {
-    const nativeTenderFiles = tenderFiles.filter(hasNativeFile).map((item) => item.file)
-    const bidders = uploadBidders
-      .map((bidder) => ({
-        ...bidder,
-        nativeFiles: bidder.files.filter(hasNativeFile).map((item) => item.file),
-      }))
-      .filter((bidder) => bidder.nativeFiles.length > 0)
-
-    if (!nativeTenderFiles.length || !bidders.length) {
-      throw new Error('请至少上传 1 个招标文件，并为至少一家投标单位上传文件。')
-    }
-
-    // 建项目（幂等 get-or-create）
-    const project = await createTenderProject(
-      buildCreateProjectBody(projectForm, nativeTenderFiles[0])
-    )
-    const projectId = project.project_id
-
-    // 上传招标文件 → 后台 OCR
-    await uploadTenderDoc(projectId, nativeTenderFiles)
-
-    // 逐家上传投标文件 → 后台 OCR（部分失败不整体中断）
-    const uploadFailures: string[] = []
-    for (const bidder of bidders) {
-      try {
-        await uploadBid(projectId, bidder.name, bidder.nativeFiles)
-      } catch {
-        uploadFailures.push(bidder.name)
-      }
-    }
-    if (uploadFailures.length === bidders.length) {
-      throw new Error(`全部投标文件上传失败：${uploadFailures.join('、')}`)
-    }
-    if (uploadFailures.length > 0) {
-      setSubmitError(
-        `部分投标文件上传失败：${uploadFailures.join('、')}（其余正在 OCR 识别中）。`
-      )
-    }
-
-    return projectId
   }
 
   async function submitReview() {
@@ -791,14 +775,16 @@ export function useTenderReviewPage(
     progressText,
     isAnalyzing: startReviewMutation.isPending,
     exitAnalyzing,
-    // P3 上传阶段
-    isUploading: uploadFilesMutation.isPending || isUploading,
+    // A 上传即 OCR：增量上传态（招标/各投标各上传一次后锁定）
+    isUploading: uploadingTender || uploadingBidderIds.size > 0,
+    uploadingTender,
+    uploadedBidderIds,
+    uploadingBidderIds,
     uploadProjectId,
     docsStatus: docsStatusQuery.data ?? null,
     tenderDocInfo: tenderDocInfoQuery.data ?? null,
     isOcrReady,
     hasFilesSelected,
-    startUpload,
     uploadError,
     submitError,
     projectForm,

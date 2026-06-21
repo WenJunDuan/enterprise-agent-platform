@@ -70,11 +70,17 @@ type CreateReviewViewProps = {
   uploadBidders: UploadBidder[]
   progress: number
   isAnalyzing: boolean
-  /** P3: 文件上传中（触发后台 OCR）。 */
+  /** A: 任一区上传中（触发后台 OCR）。 */
   isUploading: boolean
+  /** A: 招标文件上传中。 */
+  uploadingTender: boolean
+  /** A: 已自动上传的投标单位 id（锁定其文件区）。 */
+  uploadedBidderIds: Set<number>
+  /** A: 上传中的投标单位 id。 */
+  uploadingBidderIds: Set<number>
   /** P3: 文件已上传并 OCR 就绪，可点"开始分析"。 */
   isOcrReady: boolean
-  /** P3: 已触发上传（uploadProjectId 非 null）。 */
+  /** A: 招标已上传（uploadProjectId 非 null）→ 投标区解锁。 */
   hasUploaded: boolean
   /** P3: docs-status 轮询结果（显示各文件 OCR 状态）。 */
   docsStatus: DocsStatusResponse | null
@@ -82,7 +88,6 @@ type CreateReviewViewProps = {
   submitError: string
   canStart: boolean
   onStart: () => void
-  onUpload: () => void
   onCancel: () => void
   onUpdateProjectForm: (field: keyof ProjectFormData, value: string) => void
   onAddTenderFile: (files: FileList | null) => void
@@ -125,40 +130,36 @@ export function CreateReviewView(props: CreateReviewViewProps) {
         <Button type='button' variant='outline' onClick={props.onCancel}>
           取消
         </Button>
-        {/* P3 两步拆分：未上传显示"上传文件"，上传后显示"开始分析" */}
-        {!props.hasUploaded ? (
-          <Button
-            type='button'
-            onClick={props.onUpload}
-            disabled={props.isUploading}
-          >
-            {props.isUploading ? (
-              <>
-                <Loader2 className='size-4 animate-spin' />
-                上传中...
-              </>
-            ) : (
-              <>
-                <UploadCloud className='size-4' />
-                上传文件
-              </>
-            )}
-          </Button>
-        ) : (
-          <Button
-            type='button'
-            onClick={props.onStart}
-            disabled={props.isAnalyzing || !props.isOcrReady}
-            aria-label={props.isOcrReady ? '开始分析' : 'OCR 识别中，请稍候'}
-          >
-            <Play className='size-4' />
-            {props.isAnalyzing
-              ? '分析中...'
-              : props.isOcrReady
-                ? '开始分析'
-                : 'OCR 识别中...'}
-          </Button>
-        )}
+        {/* A 上传即 OCR：去掉手动"上传文件"按钮——选文件即自动建项目+上传+OCR。仅留"开始分析"，
+            OCR 全就绪前禁用并显状态。 */}
+        <Button
+          type='button'
+          onClick={props.onStart}
+          disabled={props.isAnalyzing || props.isUploading || !props.isOcrReady}
+          aria-label={props.isOcrReady ? '开始分析' : 'OCR 识别中，请稍候'}
+        >
+          {props.isUploading ? (
+            <>
+              <Loader2 className='size-4 animate-spin' />
+              上传识别中...
+            </>
+          ) : props.isAnalyzing ? (
+            <>
+              <Play className='size-4' />
+              分析中...
+            </>
+          ) : props.isOcrReady ? (
+            <>
+              <Play className='size-4' />
+              开始分析
+            </>
+          ) : (
+            <>
+              <Loader2 className='size-4 animate-spin' />
+              OCR 识别中...
+            </>
+          )}
+        </Button>
       </div>
     </div>
   )
@@ -343,26 +344,28 @@ function ProjectInfoFormCard({
 }
 
 function UploadFilesCard(props: CreateReviewViewProps) {
-  // P3: 上传中/已上传后禁止修改文件
-  const locked = props.isUploading || props.hasUploaded || props.isAnalyzing
+  // A 上传即 OCR：招标区选文件即自动上传，传后锁定（要改→取消重来）。投标区在招标上传前禁用
+  // （强制招标先传），招标上传后解锁，每家传后单独锁定。
+  const tenderLocked = props.uploadingTender || props.hasUploaded || props.isAnalyzing
   return (
     <Card>
       <CardHeader className='gap-2 md:flex-row md:items-center md:justify-between'>
         <div>
           <CardTitle>文件上传</CardTitle>
           <CardDescription>
-            支持 PDF、图片、Word、Excel、PPT 等文档，单文件不超过 200MB。
+            选择文件即自动上传并识别（OCR），无需手动操作。请先上传招标文件，再上传各投标单位文件。
           </CardDescription>
         </div>
       </CardHeader>
       <CardContent className='space-y-6'>
         <TenderFilesSection
           files={props.tenderFiles}
-          locked={locked}
+          locked={tenderLocked}
+          uploading={props.uploadingTender}
           onAdd={props.onAddTenderFile}
           onRemove={props.onRemoveTenderFile}
         />
-        <BidderFilesSection {...props} locked={locked} />
+        <BidderFilesSection {...props} />
       </CardContent>
     </Card>
   )
@@ -371,11 +374,13 @@ function UploadFilesCard(props: CreateReviewViewProps) {
 function TenderFilesSection({
   files,
   locked,
+  uploading,
   onAdd,
   onRemove,
 }: {
   files: TenderFile[]
   locked?: boolean
+  uploading?: boolean
   onAdd: (files: FileList | null) => void
   onRemove: (index: number) => void
 }) {
@@ -384,7 +389,7 @@ function TenderFilesSection({
       <SectionTitle
         color='bg-primary'
         title='招标文件'
-        desc='招标公告 · 资格预审 · 评分办法等，支持多个文件'
+        desc='招标公告 · 资格预审 · 评分办法等，选择后自动上传识别'
       />
       {files.map((file, index) => (
         <FileRow
@@ -395,7 +400,12 @@ function TenderFilesSection({
           onRemove={() => onRemove(index)}
         />
       ))}
-      {!locked ? (
+      {uploading ? (
+        <div className='flex items-center gap-2 rounded-lg border border-dashed bg-muted/20 p-3 text-sm text-muted-foreground'>
+          <Loader2 className='size-4 animate-spin' />
+          招标文件上传识别中…
+        </div>
+      ) : !locked ? (
         <label
           className='flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed bg-muted/20 p-3 text-sm font-medium text-primary transition-colors hover:bg-primary/5'
           onDragOver={(event) => event.preventDefault()}
@@ -422,25 +432,37 @@ function TenderFilesSection({
   )
 }
 
-function BidderFilesSection(props: CreateReviewViewProps & { locked?: boolean }) {
+function BidderFilesSection(props: CreateReviewViewProps) {
+  // A 招标先传约束：招标未上传(hasUploaded=false)→整个投标区禁用 + 提示。
+  const tenderReady = props.hasUploaded
+  const sectionLocked = props.isAnalyzing
   return (
     <section className='space-y-3'>
       <div className='flex flex-wrap items-center gap-3'>
         <SectionTitle
           color='bg-violet-500'
           title='投标文件'
-          desc='每家投标单位单独管理，每家可上传多个文件'
+          desc='每家投标单位单独管理，选择后自动上传识别'
         />
         <div className='flex-1' />
-        {!props.locked ? (
-          <Button type='button' size='sm' onClick={props.onAddBidder}>
+        {!sectionLocked ? (
+          <Button
+            type='button'
+            size='sm'
+            onClick={props.onAddBidder}
+            disabled={!tenderReady}
+          >
             <Plus className='size-4' />
             添加投标单位
           </Button>
         ) : null}
       </div>
 
-      {props.uploadBidders.length === 0 ? (
+      {!tenderReady ? (
+        <div className='rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground'>
+          请先上传招标文件，上传完成后即可添加投标单位。
+        </div>
+      ) : props.uploadBidders.length === 0 ? (
         <div className='rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground'>
           还没有投标单位，点击「添加投标单位」开始添加。
         </div>
@@ -451,7 +473,14 @@ function BidderFilesSection(props: CreateReviewViewProps & { locked?: boolean })
               key={bidder.id}
               bidder={bidder}
               index={index}
-              locked={props.locked}
+              // 每家：上传中/已上传/分析中 → 锁定该家文件区
+              locked={
+                sectionLocked ||
+                props.uploadedBidderIds.has(bidder.id) ||
+                props.uploadingBidderIds.has(bidder.id)
+              }
+              uploading={props.uploadingBidderIds.has(bidder.id)}
+              uploaded={props.uploadedBidderIds.has(bidder.id)}
               onUpdateName={(name) => props.onUpdateBidderName(bidder.id, name)}
               onAddFile={(files) => props.onAddBidderFile(bidder.id, files)}
               onRemove={() => props.onRemoveBidder(bidder.id)}
@@ -470,6 +499,8 @@ function BidderCard({
   bidder,
   index,
   locked,
+  uploading,
+  uploaded,
   onUpdateName,
   onAddFile,
   onRemove,
@@ -478,6 +509,8 @@ function BidderCard({
   bidder: UploadBidder
   index: number
   locked?: boolean
+  uploading?: boolean
+  uploaded?: boolean
   onUpdateName: (name: string) => void
   onAddFile: (files: FileList | null) => void
   onRemove: () => void
@@ -499,9 +532,10 @@ function BidderCard({
           className='border-0 bg-transparent px-1 font-medium shadow-none focus-visible:ring-0'
         />
         <span className='shrink-0 text-xs font-medium text-muted-foreground'>
-          {bidder.files.length} 个文件
+          {uploaded ? '已上传 · 识别中' : `${bidder.files.length} 个文件`}
         </span>
-        {!locked ? (
+        {/* 允许删除（含已上传）→ 删该家重选即可改文件（uploading 中不删，防竞态） */}
+        {!uploading ? (
           <Button
             type='button'
             variant='ghost'
@@ -524,7 +558,12 @@ function BidderCard({
             onRemove={() => onRemoveFile(fileIndex)}
           />
         ))}
-        {!locked ? (
+        {uploading ? (
+          <div className='flex items-center gap-2 rounded-lg border border-dashed bg-background p-2.5 text-sm text-muted-foreground'>
+            <Loader2 className='size-4 animate-spin' />
+            上传识别中…
+          </div>
+        ) : !locked ? (
           <label
             className='flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed bg-background p-2.5 text-sm font-medium text-violet-600 transition-colors hover:bg-violet-50'
             onDragOver={(event) => event.preventDefault()}

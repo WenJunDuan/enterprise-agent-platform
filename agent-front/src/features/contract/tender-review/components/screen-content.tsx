@@ -31,6 +31,9 @@ export function ScreenContent({ page }: { page: TenderReviewPageState }) {
           progress={page.progress}
           isAnalyzing={page.isAnalyzing}
           isUploading={page.isUploading}
+          uploadingTender={page.uploadingTender}
+          uploadedBidderIds={page.uploadedBidderIds}
+          uploadingBidderIds={page.uploadingBidderIds}
           isOcrReady={page.isOcrReady}
           hasUploaded={page.uploadProjectId !== null}
           docsStatus={page.docsStatus}
@@ -38,7 +41,6 @@ export function ScreenContent({ page }: { page: TenderReviewPageState }) {
           submitError={page.submitError}
           canStart={page.canStartReview}
           onStart={page.startReview}
-          onUpload={page.startUpload}
           onCancel={() => {
             page.resetProjectForm()
             page.setScreen('dashboard')
