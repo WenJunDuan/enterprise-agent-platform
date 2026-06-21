@@ -49,6 +49,36 @@ def test_build_block_renders_ocr_pages_list():
     assert "第一页内容" in block
 
 
+def test_render_body_adds_page_anchors_ocr():
+    """G2：OCR 页底稿带页锚点【第N页】，模型可据此精确引页。"""
+    from server.ocr.pipeline import _render_body
+
+    body = _render_body(
+        {"kind": "ocr", "pages": [{"markdown": "甲页"}, {"markdown": "乙页", "page_number": 2}]}
+    )
+    assert "【第 1 页】" in body and "甲页" in body
+    assert "【第 2 页】" in body and "乙页" in body
+
+
+def test_render_body_adds_page_anchors_pdf_text():
+    """G2：native pdf_text blocks 一页一项 → 按页打锚点，跳空页保留页号。"""
+    from server.ocr.pipeline import _render_body
+
+    body = _render_body({"kind": "pdf_text", "blocks": ["首页正文", "   ", "第三页正文"]})
+    assert "【第 1 页】\n首页正文" in body
+    assert "【第 2 页】" not in body  # 空白页跳过
+    assert "【第 3 页】\n第三页正文" in body  # 页号仍对应真实页
+
+
+def test_render_body_no_anchors_for_word_blocks():
+    """word/text 的 blocks 非页结构 → 不打页锚点（避免误导页号）。"""
+    from server.ocr.pipeline import _render_body
+
+    body = _render_body({"kind": "word", "blocks": ["段落一", "段落二"]})
+    assert "【第" not in body
+    assert "段落一" in body and "段落二" in body
+
+
 def test_build_block_renders_excel_tables():
     results = [
         {

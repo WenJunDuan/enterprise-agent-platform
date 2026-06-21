@@ -36,14 +36,15 @@ allowed-tools: Read, Glob, Skill, Task
 - 只抽事实，不在本步给分。
 
 ### S3 逐项评判
-- 对照 S1 得到的 `extracted_data.criteria` 每一项（`item` / `max` / `scoring_rule` / `tag`），结合事实底稿（必要时按页码回读该章节原文）判定，写入 `extracted_data.scoring`，每项 `{item, max, score, status, basis}`（`item` / `max` 须与 criteria 对应项一致）：
-  - 规则可依文档判定 → `status:"scored"`，给 `score` 与 `basis`
+- 对照 S1 得到的 `extracted_data.criteria` 每一项（`item` / `max` / `scoring_rule` / `tag`），结合事实底稿（必要时按底稿页锚点 `【第N页】` 回读该章节原文）判定，写入 `extracted_data.scoring`，每项 `{item, max, score, status, basis}`（`item` / `max` 须与 criteria 对应项一致）：
+  - 规则可依文档判定 → `status:"scored"`：**满分扣减制——从该项满分 `max` 起算，逐条列出不符合点并各扣相应分，`score = max − Σ扣分`（不小于 0，不超过 max）**；完全满足 → `score = max`。`basis` 必须写清「满分 X；因①… 扣 a 分、②… 扣 b 分；实得 Z」，把**已识别出的每个问题点都落成具体扣分**。**单项瑕疵/部分不符只扣分，绝不把该项判 0、绝不升级成 `rejected`**（`rejected` 仅留给整单真废标/资格一票否决，见下）。禁止笼统只写"不通过/不满足"而不给扣分明细。
   - 命中"不可判定"标签 → `status:"manual_review"`、`score:null`，**绝不判 0**：
     - `requires_live_event`（项目负责人答辩等现场环节）
     - `requires_external_data`（企业信用等外部公示数据，不在投标文件内）
     - `requires_cross_bid_comparison`（价格分、有效投标数等需横向比较所有投标）
   - 命中废标 / 资格一票否决（未实质性响应、重大偏差、资格不符等）→ `status:"rejected"`
 - 一致性核验：若业绩的项目经理与拟派项目负责人不一致，该业绩项 `manual_review`/不得分，`manual_review_reason:"data_conflict"`，证据链**同时引用业绩页与拟派负责人页**两处出处（依据：实施条例第40/42条、业绩与拟派负责人应一致）。
+- **证据定位准确性（硬要求，定位项必须 = 实际找到的）**：每条 `basis` / `evidence_chain` 的出处**只能引底稿里真实存在的页锚点 `【第N页】`**，且所引页**确实包含**你描述的内容——**严禁凭印象/猜测写页码**。写每条证据前自检一遍：「该原文/字段是否就在我所引的 `【第N页】`？」对不上就改到正确页或降为"未在底稿定位到"。`finding` 尽量摘所引页的**原文片段**，使定位可核验。
 
 ### S4 汇总结论
 - 合成最终 `verdict`：

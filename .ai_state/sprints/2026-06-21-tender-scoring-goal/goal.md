@@ -45,4 +45,13 @@
 ## 进度日志（每轮回写）
 
 - 2026-06-21 立项：用户实测设为 goal。已停所有在途任务、代码同步 origin/main。
-  下一步候选 = ① 等用户提供匹配华为南通的标 → ② 改 tender-evaluate.md G1/G2 指令 → ③ 真标实测验收。
+- 2026-06-21 **迭代 1**（用户"开始啊一直优化"）：
+  - **G2 后端页锚点**（`server/ocr/pipeline.py _render_body`）：OCR 页 + native pdf_text blocks(一页一项)
+    都打 `【第N页】` 锚点（跳空页保留页号），模型 evidence/basis 可引真实页。实测烛照标书 158 页全锚定、
+    页号单调对应封面。+3 单测。**根因**：旧底稿各页直接拼接无页码 → 模型瞎猜页 = "定位项和实际找到的不一样"。
+  - **G1 prompt**（`tender-evaluate.md` S3）：scored 项改**满分扣减制**（max 起算逐条扣分、score=max−Σ扣分、
+    basis 写「满分X 扣a 扣b 实得Z」、已识别问题必须落成扣分、单项瑕疵不判 0 不升级 rejected）。
+  - **G2 prompt**：basis/evidence 只能引底稿真实 `【第N页】`、写前自检、finding 摘原文片段。
+  - 152 ocr/tender 测试过/ruff。
+  - **仍待**：① 用真投华为南通的标实测 G1 扣分路径（当前标是中国移动废标，验不到）；② 抽查 evidence 页定位是否真准。
+  下一步 = 等匹配标实测；或继续迭代（native 表格的页归属、底稿章节锚点等）。

@@ -112,6 +112,11 @@ def _render_tables(tables: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def _page_anchor(page_no: int) -> str:
+    """页锚点：让模型 evidence/basis 能引到底稿真实页（G2 证据定位准确性）。"""
+    return f"【第 {page_no} 页】\n"
+
+
 def _render_body(result: dict) -> str:
     if result.get("error"):
         return f"[识别失败] {result['error']}"
@@ -119,12 +124,28 @@ def _render_body(result: dict) -> str:
     # 不在此。isinstance 守卫防止把页数整数误当列表迭代。
     pages = result.get("pages")
     if isinstance(pages, list) and pages:
-        return "\n".join(page.get("markdown", "") for page in pages)
+        # 每页加页锚点（page_number 缺则用序号），评标/回填可据此精确引页。
+        return "\n\n".join(
+            _page_anchor(page.get("page_number") or idx) + (page.get("markdown") or "")
+            for idx, page in enumerate(pages, start=1)
+        )
     # native：blocks(正文) 与 tables(表) 可并存（pdf_text/word 两者都有）→ **都渲染**。
     # 旧逻辑 tables 分支吃掉 blocks 会丢正文；P1 给 pdf_text 加了 find_tables 后更明显，故合并。
     segments: list[str] = []
-    if result.get("blocks"):
-        segments.append("\n".join(result["blocks"]))
+    blocks = result.get("blocks")
+    if blocks:
+        # pdf_text 的 blocks 一页一项（read_pdf_text 逐页 append）→ 按页打锚点，跳空页但保留页号，
+        # 让模型能引真实页（G2）；其余 kind（word/text）blocks 非页结构，原样拼。
+        if result.get("kind") == "pdf_text":
+            segments.append(
+                "\n\n".join(
+                    _page_anchor(i) + b
+                    for i, b in enumerate(blocks, start=1)
+                    if isinstance(b, str) and b.strip()
+                )
+            )
+        else:
+            segments.append("\n".join(blocks))
     if result.get("tables"):
         segments.append(_render_tables(result["tables"]))
     return "\n\n".join(seg for seg in segments if seg.strip())
