@@ -127,20 +127,36 @@ def _coerce_risk_dimensions(value: Any) -> list[dict[str, Any]] | None:
     return normalized or None
 
 
-def _has_hard_disqualification(extracted: Any) -> bool:
-    """True when extracted_data carries a hard 废标/资格否决 (disqualification gate trigger).
+def _meaningful_disqualification_hits(extracted: Any) -> bool:
+    """``disqualification_hits`` 是否为【非空 list 且含至少一个有内容的 dict】。
 
-    命令 S4：``disqualification_hits`` 非空，或任一 ``eligibility_checks.status == 'fail'`` →
+    extracted_data 内部无 schema 形校验（codex R2 P1）：模型可能写 ``"无"``（中文"没有"，truthy
+    字符串！）/ ``{}`` / ``[{}]`` / ``[]`` 等假值——朴素 ``bool(...)`` 会把 ``"无"`` 当命中→误判
+    rejected。故收窄为"非空 list + 至少一项是有内容的 dict"，把这些假值挡在外面。
+    """
+    hits = extracted.get("disqualification_hits") if isinstance(extracted, dict) else None
+    return isinstance(hits, list) and any(
+        isinstance(hit, dict) and any(value for value in hit.values()) for hit in hits
+    )
+
+
+def _has_hard_disqualification(extracted: Any) -> bool:
+    """True when extracted_data carries a hard 废标/资格否决 (verdict→rejected gate trigger).
+
+    命令 S4：有意义的 ``disqualification_hits``，或任一 ``eligibility_checks.status == 'fail'`` →
     整单废标/资格否决（独立 gate）。仅 tender 评标会带这些字段；expense 审核 extracted_data 无此
-    结构，恒 False，故对 expense 无影响。
+    结构，恒 False，故对 expense 无影响。status 比较做大小写/空白容错（codex R2 P2）。
     """
     if not isinstance(extracted, dict):
         return False
-    if extracted.get("disqualification_hits"):
+    if _meaningful_disqualification_hits(extracted):
         return True
     checks = extracted.get("eligibility_checks")
     if isinstance(checks, list):
-        return any(isinstance(ch, dict) and ch.get("status") == "fail" for ch in checks)
+        return any(
+            isinstance(ch, dict) and str(ch.get("status") or "").strip().lower() == "fail"
+            for ch in checks
+        )
     return False
 
 
@@ -321,7 +337,11 @@ def _verify_score_mode_consistency(structured_output: dict[str, Any]) -> None:
         return
     # 整单是否实质性不响应/投错标（codex P1-1：只在此情形对"无依据 0"硬降级，避免误伤正常客观 0
     # ——如 additive「提供才加分」确认没加分内容、规则「未提供不得分」确认缺失，这些 0 是合理的）。
-    has_disqualification = bool(extracted.get("disqualification_hits"))
+    # 用 _meaningful_disqualification_hits 防 "无"/[{}] 假值误触（codex R2 P1）。**故意只看
+    # disqualification_hits、不含 eligibility_checks**（与 verdict 纠偏的更宽口径不同，codex R2 P2）：
+    # 本降级针对"投错标/无可评事实"，而资格不符(eligibility fail)的投标往往仍有可评的业绩/方案，
+    # 不应把其逐项分降级 manual_review。
+    has_disqualification = _meaningful_disqualification_hits(extracted)
     # criteria 各项按 item 名索引（取 score_mode / base）。
     criteria_items: dict[str, dict[str, Any]] = {}
     criteria = extracted.get("criteria")
