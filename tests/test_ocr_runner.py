@@ -172,3 +172,62 @@ async def test_map_extraction_recovers_malformed_output(monkeypatch):
     result = await map_extraction_to_form("底稿", _FORM_SCHEMA, request_id="t1")
     jsonschema.validate(result, _SCHEMA)  # 合约
     assert len(result["fields"]) == 3
+
+
+# ── 自适应抽取模式（form_schema 为空 → 字段集由文档决定）──────────────────────
+
+
+def test_is_adaptive_schema():
+    from server.ocr.runner import _is_adaptive_schema
+
+    assert _is_adaptive_schema({}) is True
+    assert _is_adaptive_schema(None) is True
+    assert _is_adaptive_schema({"fields": []}) is True  # 空字段集 = 自适应
+    assert _is_adaptive_schema({"sub_tables": []}) is True
+    assert _is_adaptive_schema(_FORM_SCHEMA) is False
+
+
+def test_adaptive_keeps_model_fields_and_conforms():
+    """自适应模式保留模型从文档抽出的任意字段集，且合 form-fill 契约。"""
+    raw = {
+        "fields": [
+            {"key": "合同名称", "component": "single_line", "value": "运维服务合同", "confidence": 0.9},
+            {"key": "合同金额", "component": "number", "value": 125.5},  # 缺 confidence → 默认
+            {"key": "乙方", "value": None},  # 缺值 → low_confidence
+        ],
+        "sub_tables": [
+            {"key": "付款节点", "columns": ["节点", "比例"], "rows": [{"节点": "首付", "比例": "30%"}]}
+        ],
+        "needs_review": False,
+    }
+    result = normalize_to_form_schema(raw, {})  # 空 schema = 自适应
+    _validate(result)
+    keys = [f["key"] for f in result["fields"]]
+    assert keys == ["合同名称", "合同金额", "乙方"]  # 文档自有字段，未被预设 schema 覆盖
+    assert result["sub_tables"][0]["key"] == "付款节点"
+    assert "乙方" in result["low_confidence"]  # 缺值项标低置信
+    assert result["needs_review"] is True  # 有 low_confidence → 强制复核
+
+
+def test_adaptive_dict_fields_form():
+    """模型用 dict{key:值} 形态返回，自适应也能吃。"""
+    raw = {"fields": {"项目名称": "算力中心", "投资": {"value": 7500, "confidence": 0.8}}}
+    result = normalize_to_form_schema(raw, {})
+    _validate(result)
+    assert {f["key"] for f in result["fields"]} == {"项目名称", "投资"}
+
+
+def test_adaptive_empty_model_output_still_conforms():
+    result = normalize_to_form_schema(None, {})
+    _validate(result)
+    assert result["fields"] == []
+    assert result["needs_review"] is True
+
+
+def test_build_mapping_prompt_adaptive_has_no_schema_section():
+    from server.ocr.runner import build_mapping_prompt
+
+    p = build_mapping_prompt("识别底稿XYZ", {})
+    assert "目标表单 schema" not in p  # 自适应无 schema 段
+    assert "文档结构化抽取器" in p  # 用自适应指令
+    assert "识别底稿XYZ" in p

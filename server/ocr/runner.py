@@ -30,15 +30,8 @@ logger = logging.getLogger(__name__)
 OCR_CONTRACTS_DIR = PROJECT_ROOT / ".claude" / "contracts" / "ocr"
 FORM_FILL_SCHEMA_PATH = OCR_CONTRACTS_DIR / "form-fill.schema.json"
 
-MAPPING_INSTRUCTIONS = """你是表单回填映射器。下方提供"识别底稿"（确定性识别产物）与目标表单 schema。
-**仅基于识别底稿**完成字段映射，无需调用任何工具；**输出形态由目标表单 schema 决定**。
-
-映射规则：
-- 对 schema.fields 的每个字段输出一项；底稿无对应内容 → value 置 null、加入 low_confidence，不脑补。
-- 值规整：数字去千分位保留精度；日期归一 ISO `YYYY-MM-DD`；下拉必须命中 options。
-- 合同付款节点逐条进对应子表（节点名/触发条件/比例/金额/计划日期/币种）；Σ比例≈100%、Σ金额≈合同总额，不自洽标 low_confidence。
-- 任一关键字段低置信/冲突/缺失 → 加入 low_confidence 且 needs_review=true。
-
+# 输出格式 + 硬性约束：映射模式与自适应模式共用（DRY），仅前半段规则不同。
+_MAPPING_OUTPUT_SPEC = """
 **输出格式（严格遵守，只输出这一个 JSON 对象，分析写在 <think></think> 内，前后无其它文本）**：
 {
   "fields": [
@@ -54,11 +47,47 @@ MAPPING_INSTRUCTIONS = """你是表单回填映射器。下方提供"识别底�
 
 **硬性约束**：
 - `fields` 与 `sub_tables` 必须是**数组**，不是对象 / 字典。
+- `component` 只能取：single_line / multi_line / select / number / date / sub_table。
 - `confidence` 必须是 **0~1 的数字**（如 0.3 / 0.6 / 0.9），不是 "low" / "high" 文字。
 - 字段级原因写进 `evidence`，**不要**放进 fields 项里（不要 reason 键）。
 - **禁止**额外顶层键：不要 values / review_notes / low_confidence_fields / analysis_summary / summary。
 - 所有文本字段一律用中文。
 """
+
+MAPPING_INSTRUCTIONS = (
+    """你是表单回填映射器。下方提供"识别底稿"（确定性识别产物）与目标表单 schema。
+**仅基于识别底稿**完成字段映射，无需调用任何工具；**输出形态由目标表单 schema 决定**。
+
+映射规则：
+- 对 schema.fields 的每个字段输出一项；底稿无对应内容 → value 置 null、加入 low_confidence，不脑补。
+- 值规整：数字去千分位保留精度；日期归一 ISO `YYYY-MM-DD`；下拉必须命中 options。
+- 合同付款节点逐条进对应子表（节点名/触发条件/比例/金额/计划日期/币种）；Σ比例≈100%、Σ金额≈合同总额，不自洽标 low_confidence。
+- 任一关键字段低置信/冲突/缺失 → 加入 low_confidence 且 needs_review=true。
+"""
+    + _MAPPING_OUTPUT_SPEC
+)
+
+# 自适应模式：不给目标表单，由文档内容自身决定字段集（用户「根据内容适应显示」诉求）。
+ADAPTIVE_MAPPING_INSTRUCTIONS = (
+    """你是文档结构化抽取器。下方提供"识别底稿"（确定性识别产物），**没有固定目标表单**。
+**仅基于识别底稿**把文档自身承载的结构化信息抽成字段，无需调用任何工具；**字段集由文档内容决定**，不要套用任何预设表单。
+
+抽取规则：
+- 通读底稿，识别文档实际包含的关键信息项，每项输出为一个字段；`key` 用文档里的中文字段名/标签（如"项目名称"/"合同金额"/"乙方"）。
+- `component` 按值形态选：纯数字→number；日期→date；多行/段落→multi_line；其余→single_line（拿不准用 single_line）。
+- 表格类信息（付款节点、明细清单等）放进 `sub_tables`，每个表 `{key 表名, columns 列名数组, rows 行对象数组}`。
+- `value` 取底稿原值并轻度规整（数字去千分位、日期归一 `YYYY-MM-DD`）；不脑补、不杜撰底稿没有的内容。
+- 低置信/模糊/冲突字段加入 low_confidence 且 needs_review=true。
+"""
+    + _MAPPING_OUTPUT_SPEC
+)
+
+
+def _is_adaptive_schema(form_schema: Any) -> bool:
+    """自适应模式判定：form_schema 缺失/空、或既无 fields 也无 sub_tables。"""
+    if not isinstance(form_schema, dict):
+        return True
+    return not (form_schema.get("fields") or form_schema.get("sub_tables"))
 
 
 def _load_form_fill_schema() -> dict[str, Any]:
@@ -73,7 +102,15 @@ def _resolve_case_dir(case_dir: str) -> str:
 
 
 def build_mapping_prompt(extraction_block: str, form_schema: dict[str, Any]) -> str:
-    """自包含 prompt：映射指令 + 目标表单 schema + 识别底稿。"""
+    """自包含 prompt：映射指令(+目标表单 schema) + 识别底稿。
+
+    form_schema 为空/无字段 → 自适应模式（无 schema 段，字段集由文档决定）。
+    """
+    if _is_adaptive_schema(form_schema):
+        return (
+            f"{ADAPTIVE_MAPPING_INSTRUCTIONS}\n"
+            f"=== 识别底稿（唯一依据）===\n{extraction_block}\n"
+        )
     schema_text = json.dumps(form_schema, ensure_ascii=False, indent=2)
     return (
         f"{MAPPING_INSTRUCTIONS}\n"
@@ -181,6 +218,93 @@ def _normalize_sub_tables(raw_sub_tables: Any, form_schema: dict[str, Any]) -> l
     return list(collected.values())
 
 
+def _normalize_adaptive(raw: Any) -> dict[str, Any]:
+    """自适应模式归一：无目标 schema，**保留模型从文档抽出的字段集**，整成 form-fill 契约。
+
+    与 ``normalize_to_form_schema`` 的区别：不遍历预设 schema.fields，而是接受模型返回的
+    fields（list[{key,...}] 或 dict{key:值/对象}）与 sub_tables，按契约规整 component/confidence。
+    """
+    obj = raw if isinstance(raw, dict) else {}
+    model_fields = obj.get("fields")
+    if model_fields is None:
+        model_fields = obj.get("values")
+
+    # 统一成 (key, entry) 列表：list[{key,...}] 与 dict{key:...} 两种形态都吃。
+    items: list[tuple[str, Any]] = []
+    if isinstance(model_fields, list):
+        for f in model_fields:
+            if isinstance(f, dict) and f.get("key"):
+                items.append((str(f["key"]), f))
+    elif isinstance(model_fields, dict):
+        items = [(str(k), v) for k, v in model_fields.items()]
+
+    fields: list[dict[str, Any]] = []
+    low_confidence: list[str] = []
+    evidence: list[dict[str, str]] = []
+    for key, entry in items:
+        if isinstance(entry, dict):
+            value = entry.get("value")
+            raw_conf = entry.get("confidence")
+            component = entry.get("component")
+            note = entry.get("reason") or entry.get("note") or entry.get("source")
+        else:  # {key: 值} 直给标量
+            value, raw_conf, component, note = entry, None, None, None
+        component = component if component in _COMPONENTS else "single_line"
+        has_value = value not in (None, "", [], {})
+        confidence = _coerce_confidence(raw_conf, default=0.8 if has_value else 0.3)
+        fields.append({"key": key, "component": component, "value": value, "confidence": confidence})
+        if not has_value or confidence < 0.6:
+            low_confidence.append(key)
+        if note:
+            evidence.append({"source": key, "finding": str(note)[:500]})
+
+    for alias in ("low_confidence", "low_confidence_fields"):
+        for lc in obj.get(alias) or []:
+            if isinstance(lc, str) and lc not in low_confidence:
+                low_confidence.append(lc)
+    for alias in ("analysis_summary", "review_notes", "summary"):
+        text = obj.get(alias)
+        if isinstance(text, str) and text.strip():
+            evidence.append({"source": "summary", "finding": text.strip()[:1000]})
+
+    needs_review = obj.get("needs_review")
+    if not isinstance(needs_review, bool):
+        needs_review = True
+    needs_review = needs_review or bool(low_confidence) or not fields
+
+    result: dict[str, Any] = {
+        "fields": fields,
+        "sub_tables": _normalize_adaptive_sub_tables(obj.get("sub_tables") or obj.get("tables")),
+        "needs_review": needs_review,
+    }
+    if low_confidence:
+        result["low_confidence"] = low_confidence
+    if evidence:
+        result["evidence"] = evidence
+    form_id = obj.get("form_id")
+    if isinstance(form_id, str):
+        result["form_id"] = form_id
+    return result
+
+
+def _normalize_adaptive_sub_tables(raw_sub_tables: Any) -> list[dict[str, Any]]:
+    """自适应子表：保留模型给的表（key/columns/rows），不按预设 schema 过滤。"""
+    out: list[dict[str, Any]] = []
+    if not isinstance(raw_sub_tables, list):
+        return out
+    for st in raw_sub_tables:
+        if not isinstance(st, dict) or not st.get("key"):
+            continue
+        rows = st.get("rows")
+        rows = [r for r in rows if isinstance(r, dict)] if isinstance(rows, list) else []
+        table: dict[str, Any] = {"key": str(st["key"]), "rows": rows}
+        cols = st.get("columns")
+        if isinstance(cols, list):
+            table["columns"] = [str(c) for c in cols]
+        out.append(table)
+    return out
+
+
 def normalize_to_form_schema(raw: Any, form_schema: dict[str, Any]) -> dict[str, Any]:
     """围绕 form_schema 把模型自由输出归一为 form-fill 契约结构。
 
@@ -198,6 +322,8 @@ def normalize_to_form_schema(raw: Any, form_schema: dict[str, Any]) -> dict[str,
     Returns:
         符合 form-fill.schema.json 的 dict。
     """
+    if _is_adaptive_schema(form_schema):
+        return _normalize_adaptive(raw)
     obj = raw if isinstance(raw, dict) else {}
     schema_fields = form_schema.get("fields", []) if isinstance(form_schema, dict) else []
     model_fields = obj.get("fields")
