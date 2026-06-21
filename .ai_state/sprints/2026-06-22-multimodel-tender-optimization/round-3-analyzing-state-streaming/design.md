@@ -51,4 +51,16 @@
   已修 .env openrouter 块 base URL。**R1 抽取实测 openrouter(z-ai/glm-5.2) 跑通：criteria ready 81s
   （三模型最快！qwen163/deepseek142/openrouter81）、14项 Σ=100、20废标**。tender_info 被 glm 漏/校验
   丢弃（best-effort，criteria 仍 ready）。openrouter 正式纳入轮换（替 anyrouter）。
-- 遗留① qwen 思考流式实时：_pending（下一步）_。
+- 遗留① qwen 思考流式实时：✅ **修复并实测跑通**。
+  - 根因：SDK 默认只吐完整 AssistantMessage（qwen 一次性返回→on_progress 仅末尾一次）。
+  - 修：①`include_partial_messages=True`（tender per-call，env `TENDER_STREAM_PARTIAL`）+ json_bridge
+    处理 `StreamEvent`（content_block_delta 的 text/thinking 增量）→on_progress 实时；`saw_partial`
+    防与完整消息双喂；partial 不进 text_accum（权威全文由完整消息给，JSON 抽取不受影响）。
+    ②flusher 退出兜底 final-flush（防末次文本丢失）。③on_progress 不再 strip（保 delta 词间空格,
+    治粘连）+ 日志按 `_PROGRESS_LOG_EVERY`(800字符) 节流（partial 1253 次回调→4 条 INFO）。
+  - **实测 qwen 全量评标**：`tender_progress` 1253 次回调（vs 旧 1-3）= 真·逐字实时；progress_message
+    逐字更新、空格正确、日志 4 条。→ **dashscope/qwen 确支持 SSE partial**，开关即实时。
+  - deepseek/openrouter 流式实时性：待 3 模型轮换补测（机制端点无关，支持 SSE 即生效）。
+
+## R3 端到端确认（2026-06-22）
+qwen 全量评标：completed / verdict=rejected(投错标,纠偏生效) / 20项 scoring / 300s / **retries=0**(evidence_chain 修复消除契约重试) / 流式实时(progress逐字). 流式不破抽取(20项结论完整). 605 passed.

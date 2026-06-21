@@ -100,7 +100,13 @@ OCR 上传（`tender.py:741` POST .../tender-doc）只产 `ocr_text` 原文 blob
 
 - R1：✅ **招标信息抽取前移 + 区1/区2 显示**（治 B-A/B-B + 遗留②⑤部分）。后端：tender-doc OCR ready 后台抽 criteria+tender_info（信号量外，不阻塞开始分析）→ 存 project-doc（新 criteria_status/tender_info 列）+ 回填项目空字段；新 `GET .../tender-doc`；docs-status 加 criteria_status；评标 worker 注入已存 criteria 跳 S1。前端：区1 fallback(extracted→form)、区2 渲染评分项/扣分点/废标/score_mode。契约：新 tender-info.schema。**3 模型自测**：qwen✅163s/deepseek✅142s(覆盖最佳) 各 14 项 Σmax=100；opus❌ anyrouter429(基建,优雅降级)。590 passed+ruff+前端 lint/build。codex(P1/P2)+reviewer(F1-6)+spec-compliance(PASS) 全处置。详见 round-1-tender-info-extraction/design.md。**遗留**：opus 重试验证；criteria 复用读路径端到端验证留 R5。
 - R2：🟡 **扣分项展示 + verdict 一致性**（核心的"显示"半 + verdict 修复已做；"扣分项准确度调优"按用户决策待匹配投标）。①前端：model.ts 透传 scoring[].deduction_hits/award_hits/manual_review_reason/score_mode → 分析中心区3 展开显逐条扣分(扣分值+命中条件+投标原文quote+出处页) + manual 原因徽章（治"上下文定位与显示"）。②后端 verdict 纠偏：normalize_audit_result 对 disqualification_hits 非空/eligibility fail → 强制 rejected（治"投错标判成 manual_review"，实测真实结论 manual_review→rejected✓）。**基线发现**：dogfood 烛照=投错标→20项全 manual_review（absence-not-zero 正确，无扣分可评）；deepseek 全量评标不可靠（漏 reasons 3次重试），qwen 可靠(335s)。593 passed+ruff+前端 lint/build+17前端tests。**待用户**：提供一份对应「华为南通」项目的投标文件，才能实测+调优扣分项命中/明细/出处页准确度。
-- R3：🟡 **analyzing 状态机 + 流式**。①**B-C bug ✅**（用户原话"返回列表回不到分析中界面"）：新 `resumeOrOpenProject`——进行中项目从列表/历史点开→重建 activeEval + 'analyzing' 屏 re-attach 实时轮询，非落空分析中心；全完成→分析中心；失败回退。前端 lint/build/17tests 绿（待用户 dev 眼验）。②**遗留①流式 + openrouter 兼容实测 待做**：flusher 退出兜底 flush + include_partial_messages；openrouter(OpenAI-compat) 与 Anthropic-SDK 兼容性 R3 三模型轮换实测。
+- R3：✅ **analyzing 状态机 + 流式 + openrouter（全部修复并实测）**。
+  ①**B-C bug**（"返回列表回不到分析中界面"）：`resumeOrOpenProject` 按投标状态路由回 'analyzing' re-attach 轮询；用户实测仍坏→根因 react-query 5s 缓存→加 `staleTime:0` 强制新取（待用户 rebuild 重测）。
+  ②**遗留① 思考流式实时**：`include_partial_messages` + json_bridge 处理 StreamEvent 增量→实时（实测 qwen 1253 次回调，旧 1-3）；flusher 退出兜底 flush；on_progress 不 strip（治粘连）+ 日志节流（1253→4）。**dashscope/qwen 确支持 SSE partial**。
+  ③**openrouter**（用户指定替 anyrouter）：base 修为 Anthropic skin `https://openrouter.ai/api`（非 OpenAI 路径），实测 R1 抽取 **81s 三模型最快**。
+  ④**evidence_chain 归一**（实测根因）：模型给 evidence_chain 项加 rule_ref/relevance/漏 conclusion→additionalProperties 整单契约失败重试（伤审核速度）→normalize 剥到 {source,finding,conclusion}+补缺省。
+  **端到端实测（qwen 全量评标）**：completed / **verdict=rejected（投错标，verdict 纠偏生效）** / 20项 scoring / 300s / **retries=0**（evidence_chain 修复消除重试）/ 流式实时。605 passed+ruff+前端 lint/build。
+  **遗留**：deepseek/openrouter 流式实时性 + 全量评标稳定性补测（deepseek 漏 reasons、qwen 偶发 enum 漂移仍靠重试）。
 - R4：_pending_
 - R5：_pending_
 - R6：_pending_
