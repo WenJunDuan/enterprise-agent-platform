@@ -286,6 +286,38 @@ def test_rule_ref_check_on_allows_real_ref(monkeypatch):
     assert out["result"] is True
 
 
+def test_mixed_policy_refs_strips_fabricated_keeps_real(monkeypatch):
+    """R4-D 降重试：真+假混合的 policy_refs → 剥假留真直接过，而非整单拒重跑 290s（实测 deepseek
+    把废标描述当 ref）。承重 rejected 有真实依据(留下)即合法。"""
+    import server.common.output_contracts as oc
+
+    monkeypatch.setenv("RULE_REF_CHECK", "1")
+    monkeypatch.setattr(oc, "_load_known_rule_ids", lambda: {"tender_evalmethod_005"})
+    out = apply_schema_semantics(
+        DEFAULT_OUTPUT_SCHEMA_NAME,
+        _valid_audit_result(
+            verdict="rejected",
+            policy_refs=["tender_evalmethod_005", "未实质响应招标文件作废标"],
+        ),
+    )
+    assert out["verdict"] == "rejected"
+    assert out["policy_refs"] == ["tender_evalmethod_005"]  # 编造描述被剥
+
+
+def test_malformed_optional_plan_dropped_not_rejected():
+    """R4-D 降重试：可选 extracted_data.plan 形不符 plan 契约 → 丢弃而非整单拒（实测 glm）。"""
+    out = apply_schema_semantics(
+        DEFAULT_OUTPUT_SCHEMA_NAME,
+        _valid_audit_result(
+            verdict="manual_review",
+            manual_review_reason="insufficient_evidence",
+            extracted_data={"plan": [{"bogus": "shape", "no": "step/intent"}]},
+        ),
+    )
+    assert out["verdict"] == "manual_review"
+    assert "plan" not in out["extracted_data"]  # 形不对的 plan 已丢
+
+
 def test_rule_ref_check_on_but_no_rules_loaded_skips(monkeypatch):
     import server.common.output_contracts as oc
 
@@ -333,11 +365,11 @@ def test_plan_present_valid_passes():
     assert out["result"] is True
 
 
-def test_plan_present_malformed_rejected():
-    # 节点缺 required intent → plan 契约校验拒。
+def test_plan_present_malformed_dropped_not_rejected():
+    # R4-D 行为变更：plan 是【可选】非承重字段，形不对 → 丢弃而非整单拒（旧行为整单拒会重跑 290s）。
     bad = _valid_audit_result(extracted_data={"plan": {"nodes": [{"step": 0}]}})
-    with pytest.raises(JSONContractError):
-        apply_schema_semantics(DEFAULT_OUTPUT_SCHEMA_NAME, bad)
+    out = apply_schema_semantics(DEFAULT_OUTPUT_SCHEMA_NAME, bad)
+    assert "plan" not in out["extracted_data"]
 
 
 def test_no_plan_skips_plan_check():

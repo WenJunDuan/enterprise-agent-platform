@@ -205,6 +205,42 @@ def _cleanse_risk_dimensions(output: dict[str, Any]) -> None:
         output.pop("risk_dimensions", None)
 
 
+def _strip_unknown_policy_refs(output: dict[str, Any]) -> None:
+    """剥 policy_refs 里非真实 rule_id 的项（模型偶把废标原因句子/描述当 rule_id 塞进来）。
+
+    防幻觉初衷不变（编造引用不入库），但改「剥」而非「任一未知即整单拒」：保留真实 rule_id；若剥后
+    承重结论(approved/rejected) 无任何真实依据 → 由 _validate_audit_result 的 G1b 闸照常拒（触发重试，
+    正确）。比整单拒省重试——混了真+假引用的结论保住真引用直接过（实测 deepseek 把废标描述当 ref）。
+    仅 rule-ref check 开 + 加载到规则时生效（与校验闸同门，向后兼容）。
+    """
+    if not _rule_ref_check_enabled():
+        return
+    refs = output.get("policy_refs")
+    if not isinstance(refs, list):
+        return
+    known = _load_known_rule_ids()
+    if not known:
+        return
+    output["policy_refs"] = [ref for ref in refs if ref in known]
+
+
+def _normalize_optional_plan(output: dict[str, Any]) -> None:
+    """extracted_data.plan 是【可选】结构化计划（G2，非承重）：形不对就丢，而非整单评标契约失败重试。
+
+    实测 glm 全量评标因 plan 节点不符 plan 契约 → 整单拒重跑 ~290s。plan 仅审计/未来并行用，丢之
+    无损结论（散文计划/内联流本就不产 plan）。
+    """
+    extracted = output.get("extracted_data")
+    if not isinstance(extracted, dict):
+        return
+    if extracted.get("plan") is None:
+        return
+    try:
+        jsonschema.validate(extracted["plan"], load_output_schema(PLAN_SCHEMA_NAME))
+    except (jsonschema.ValidationError, jsonschema.SchemaError):
+        extracted.pop("plan", None)  # 形不对的可选 plan → 丢弃，不拖垮整单评标
+
+
 def _normalize_evidence_chain(output: dict[str, Any]) -> None:
     """Coerce each evidence_chain item to the schema shape {source, finding, conclusion}.
 
@@ -634,6 +670,10 @@ def normalize_audit_result(
     # qwen/deepseek 评标 `evidence_chain/N` 反复挂 rule_ref/relevance）。剥到契约允许的
     # {source,finding,conclusion} + 补缺省，使其稳过校验，不因展示字段拖垮整单评标。
     _normalize_evidence_chain(structured_output)
+    # 降评标重试（D，零成本提速）：可选 plan 形不对 → 丢（非承重）；policy_refs 里编造的 rule_id → 剥
+    # （留真实引用，承重无依据仍由 G1b 拒）。两者原本任一不合即整单契约失败、重跑整个 ~290s 评标。
+    _normalize_optional_plan(structured_output)
+    _strip_unknown_policy_refs(structured_output)
     # result/conclusion 是服务端从 verdict 派生的【决策】字段（enrich 后才有）；模型【自报】它们＝
     # 篡改决策（H1 反幻觉），必须拒、绝不静默剥离。
     for forbidden in ("result", "conclusion"):
