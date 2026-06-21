@@ -205,6 +205,27 @@ def _cleanse_risk_dimensions(output: dict[str, Any]) -> None:
         output.pop("risk_dimensions", None)
 
 
+def _normalize_evidence_chain(output: dict[str, Any]) -> None:
+    """Coerce each evidence_chain item to the schema shape {source, finding, conclusion}.
+
+    剥模型自行追加的未知字段（rule_ref/relevance…）+ 补缺失必填（conclusion 等默认空串），防
+    evidence_chain（展示元数据，**非承重**）的 additionalProperties:false / required 让整单评标契约
+    失败、反复重试至失败或拖慢。非 list / 非 dict 项安全丢弃。Side-effect: 原地改写 *output*。
+    """
+    chain = output.get("evidence_chain")
+    if not isinstance(chain, list):
+        return
+    output["evidence_chain"] = [
+        {
+            "source": str(item.get("source") or ""),
+            "finding": str(item.get("finding") or ""),
+            "conclusion": str(item.get("conclusion") or ""),
+        }
+        for item in chain
+        if isinstance(item, dict)
+    ]
+
+
 def _validate_audit_result(structured_output: StructuredJSON) -> None:
     if not isinstance(structured_output, dict):
         raise JSONContractError("audit result structured output must be a JSON object.")
@@ -600,6 +621,11 @@ def normalize_audit_result(
             _cleanse_risk_dimensions(structured_output)  # 丢非枚举/越界项
             if not structured_output.get("risk_dimensions"):
                 structured_output.pop("risk_dimensions", None)
+    # evidence_chain 是展示元数据(非承重)：模型常给每项追加 rule_ref/relevance 等未知字段、或漏
+    # conclusion → items 的 additionalProperties:false + required 整单拒→反复重试至失败/慢（实测
+    # qwen/deepseek 评标 `evidence_chain/N` 反复挂 rule_ref/relevance）。剥到契约允许的
+    # {source,finding,conclusion} + 补缺省，使其稳过校验，不因展示字段拖垮整单评标。
+    _normalize_evidence_chain(structured_output)
     # result/conclusion 是服务端从 verdict 派生的【决策】字段（enrich 后才有）；模型【自报】它们＝
     # 篡改决策（H1 反幻觉），必须拒、绝不静默剥离。
     for forbidden in ("result", "conclusion"):
