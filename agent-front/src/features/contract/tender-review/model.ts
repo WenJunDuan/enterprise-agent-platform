@@ -15,6 +15,9 @@ import type {
   ReviewCategory,
   ReviewCategoryData,
   ReviewItem,
+  TenderScoreIssue,
+  TenderScoreSummary,
+  TenderScoringItem,
   TenderProject,
   TenderProjectStatus,
   TenderReviewMockData,
@@ -115,10 +118,13 @@ export function mapTenderProject(
   resultSummaries: TenderProjectResultSummary[] = []
 ): TenderProject {
   const detail = isTenderProjectDetail(project) ? project : null
-  const status = normalizeProjectStatus(project.status)
-  const bidderCount = detail?.bidder_count ?? 0
-  const completedCount =
-    detail?.bids.filter((bid) => bid.status === 'completed').length ?? 0
+  const baseStatus = normalizeProjectStatus(project.status)
+  const bidderCount = Math.max(detail?.bidder_count ?? 0, resultSummaries.length)
+  const completedCount = Math.max(
+    detail?.bids.filter((bid) => bid.status === 'completed').length ?? 0,
+    resultSummaries.length
+  )
+  const status = deriveProjectStatus(baseStatus, completedCount, bidderCount)
   const progress = getProjectProgress(status, completedCount, bidderCount)
   const topScore = getTopCompareScore(compare)
   const compareStale = Boolean(detail?.compare_stale || compare?.stale)
@@ -172,6 +178,7 @@ export function buildTenderReviewData({
     selectedResult,
     compare
   )
+  const scoringItems = buildScoringItems(selectedResult)
 
   return {
     projects: projectData
@@ -184,6 +191,12 @@ export function buildTenderReviewData({
     categories: buildCategories(selectedResult),
     paragraphs: buildParagraphs(selectedResult),
     compareGroups: buildCompareGroups(compare),
+    resultVerdict: selectedResult?.verdict,
+    resultExplanation: selectedResult?.explanation || selectedResult?.summary || '',
+    resultReasons: normalizeDisplayList(selectedResult?.reasons),
+    resultPolicyRefs: normalizeDisplayList(selectedResult?.policy_refs),
+    scoringItems,
+    scoreSummary: buildScoreSummary(scoringItems),
     compareNotice: buildCompareNotice(activeProject, compare),
   }
 }
@@ -206,6 +219,16 @@ function normalizeProjectStatus(status: string): TenderProjectStatus {
   if (status === 'completed') return 'done'
   if (status === 'failed') return 'review'
   return 'doing'
+}
+
+function deriveProjectStatus(
+  status: TenderProjectStatus,
+  completedCount: number,
+  bidderCount: number
+): TenderProjectStatus {
+  if (status === 'archived') return status
+  if (bidderCount > 0 && completedCount >= bidderCount) return 'done'
+  return status
 }
 
 function getProjectProgress(
@@ -356,7 +379,7 @@ function isTenderProjectDetailOrNull(
 }
 
 function buildCategories(result?: AuditResult | null): ReviewCategoryData[] {
-  const scoring = getScoringItems(result)
+  const scoring = buildScoringItems(result)
   if (!scoring.length) {
     return [
       {
@@ -378,25 +401,22 @@ function buildCategories(result?: AuditResult | null): ReviewCategoryData[] {
 
   const groups = new Map<ReviewCategory, ReviewItem[]>()
   scoring.forEach((item, index) => {
-    const title = toText(item.item) || `评分项 ${index + 1}`
-    const max = toNumber(item.max)
-    const score = toNumber(item.score)
-    const status = toText(item.status)
+    const title = item.item || `评分项 ${index + 1}`
     const criteria = findCriteriaItem(result, title)
-    const category = inferCategory(title)
+    const category = item.category
     const groupItems = groups.get(category) ?? []
     groupItems.push({
-      id: `score-${index}`,
+      id: item.id || `score-${index}`,
       title,
       desc:
         toText(criteria?.scoring_rule) ||
         toText(criteria?.source_ref) ||
         '按招标文件评分标准判定。',
       loc: index,
-      aiNote: toText(item.basis) || result?.explanation || '该评分项已完成判定。',
-      status: getScoringStatus(status, score),
-      got: score ?? undefined,
-      max: max ?? undefined,
+      aiNote: item.basis || result?.explanation || '该评分项已完成判定。',
+      status: getScoringStatus(item.status, item.score),
+      got: item.score ?? undefined,
+      max: item.max,
     })
     groups.set(category, groupItems)
   })
@@ -484,10 +504,78 @@ function getScoringItems(result?: AuditResult | null): UnknownRecord[] {
   return Array.isArray(scoring) ? scoring.filter(isRecord) : []
 }
 
+function buildScoringItems(result?: AuditResult | null): TenderScoringItem[] {
+  return getScoringItems(result).map((item, index) => {
+    const title = toText(item.item) || `评分项 ${index + 1}`
+    const max = toNumber(item.max) ?? 0
+    const score = toNumber(item.score)
+    const status = toText(item.status) || (score == null ? 'manual_review' : 'scored')
+    return {
+      id: `score-${index}`,
+      item: title,
+      max,
+      score,
+      status,
+      basis: toText(item.basis) || result?.explanation || '暂无判定依据。',
+      category: inferCategory(title),
+    }
+  })
+}
+
+function buildScoreSummary(items: TenderScoringItem[]): TenderScoreSummary {
+  const maxTotal = roundScore(items.reduce((sum, item) => sum + item.max, 0))
+  const earnedTotal = roundScore(
+    items.reduce(
+      (sum, item) =>
+        item.status === 'scored' && item.score != null ? sum + item.score : sum,
+      0
+    )
+  )
+  const deductedItems: TenderScoreIssue[] = []
+  const rejectedItems: TenderScoreIssue[] = []
+  const pendingItems: TenderScoreIssue[] = []
+
+  items.forEach((item) => {
+    const issue = toScoreIssue(item)
+    if (item.status === 'manual_review' || item.score == null) {
+      pendingItems.push({ ...issue, deduction: null })
+    } else if (item.status === 'rejected') {
+      rejectedItems.push(issue)
+    } else if (item.status === 'scored' && item.score < item.max) {
+      deductedItems.push(issue)
+    }
+  })
+
+  return {
+    maxTotal,
+    earnedTotal,
+    deductedItems,
+    rejectedItems,
+    pendingItems,
+  }
+}
+
+function toScoreIssue(item: TenderScoringItem): TenderScoreIssue {
+  const deduction =
+    item.score == null ? null : roundScore(Math.max(0, item.max - item.score))
+  return {
+    item: item.item,
+    max: item.max,
+    score: item.score,
+    status: item.status,
+    deduction,
+    basis: item.basis,
+  }
+}
+
 function findCriteriaItem(result: AuditResult | null | undefined, title: string) {
   const criteria = result?.extracted_data?.criteria
-  if (!isRecord(criteria) || !Array.isArray(criteria.items)) return null
-  return criteria.items.filter(isRecord).find((item) => toText(item.item) === title)
+  const items = Array.isArray(criteria)
+    ? criteria
+    : isRecord(criteria) && Array.isArray(criteria.items)
+      ? criteria.items
+      : []
+  return items.filter(isRecord).find((item) => toText(item.item) === title)
 }
 
 function getResultTotalScore(result?: AuditResult | null) {
@@ -580,6 +668,25 @@ function toNumber(value: unknown): number | null {
 
 function toText(value: unknown) {
   return typeof value === 'string' ? value.trim() : ''
+}
+
+function normalizeDisplayList(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value.map(toDisplayText).filter(Boolean)
+}
+
+function toDisplayText(value: unknown): string {
+  if (typeof value === 'string') return value.trim()
+  if (isRecord(value)) {
+    const desc = String(
+      value.description ?? value.message ?? value.reason ?? value.code ?? ''
+    ).trim()
+    const severity = String(value.severity ?? '').trim()
+    if (severity && desc) return `[${severity}] ${desc}`
+    if (desc) return desc
+    return JSON.stringify(value)
+  }
+  return value == null ? '' : String(value)
 }
 
 function isRecord(value: unknown): value is UnknownRecord {

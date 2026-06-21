@@ -15,11 +15,26 @@ import {
   useReactTable,
   type VisibilityState,
 } from '@tanstack/react-table'
-import { CircleAlert, Clock3, FileSearch, Plus, RotateCcw, Trash2, UploadCloud } from 'lucide-react'
+import {
+  CircleAlert,
+  Clock3,
+  FileSearch,
+  Plus,
+  RotateCcw,
+  Trash2,
+  UploadCloud,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
@@ -32,14 +47,6 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { DataTablePagination, DataTableToolbar } from '@/components/data-table'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
 import {
   Table,
   TableBody,
@@ -48,6 +55,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { DataTablePagination, DataTableToolbar } from '@/components/data-table'
 import type { DashboardSummary, TenderProject } from '../types'
 import { StatusBadge } from './status-badge'
 
@@ -185,7 +193,9 @@ function ProjectTable({
               table.getIsAllPageRowsSelected() ||
               (table.getIsSomePageRowsSelected() && 'indeterminate')
             }
-            onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
+            onCheckedChange={(value) =>
+              table.toggleAllPageRowsSelected(!!value)
+            }
             aria-label='全选'
           />
         ),
@@ -359,7 +369,9 @@ function ProjectTable({
       await onBatchDelete(selectedProjects.map((project) => project.id))
       setRowSelection({})
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : '批量删除失败，请重试。')
+      toast.error(
+        error instanceof Error ? error.message : '批量删除失败，请重试。'
+      )
     } finally {
       setIsBatchAction(false)
     }
@@ -373,7 +385,9 @@ function ProjectTable({
       await onBatchRetry(selectedProjects.map((project) => project.id))
       setRowSelection({})
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : '批量重新审核失败，请重试。')
+      toast.error(
+        error instanceof Error ? error.message : '批量重新审核失败，请重试。'
+      )
     } finally {
       setIsBatchAction(false)
     }
@@ -381,13 +395,61 @@ function ProjectTable({
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className='flex items-center gap-2'>
-          <FileSearch className='size-5 text-primary' />
-          项目列表
-          <Badge variant='secondary'>{projects.length}</Badge>
-        </CardTitle>
-        <CardDescription>查询招投标项目并跟踪审核状态。</CardDescription>
+      <CardHeader className='flex flex-row flex-wrap items-start justify-between gap-3'>
+        <div>
+          <CardTitle className='flex items-center gap-2'>
+            <FileSearch className='size-5 text-primary' />
+            项目列表
+            <Badge variant='secondary'>{projects.length}</Badge>
+          </CardTitle>
+          <CardDescription>查询招投标项目并跟踪审核状态。</CardDescription>
+        </div>
+
+        {/* B③/B④/B⑤/B⑥: 操作区上移到标题右侧 */}
+        <div className='flex flex-wrap items-center justify-end gap-2'>
+          {selectedProjects.length > 0 ? (
+            <span className='text-sm text-muted-foreground'>
+              已选 {selectedProjects.length} 个项目
+            </span>
+          ) : null}
+
+          {/* B⑤: 批量删除 */}
+          <Button
+            variant='outline'
+            size='sm'
+            disabled={selectedProjects.length === 0 || isBatchAction}
+            onClick={handleBatchDelete}
+          >
+            <Trash2 className='size-4' />
+            删除
+          </Button>
+
+          {/* B④: 重新审核 */}
+          <Button
+            variant='outline'
+            size='sm'
+            disabled={selectedProjects.length === 0 || isBatchAction}
+            onClick={handleBatchRetry}
+          >
+            <RotateCcw className='size-4' />
+            重新审核
+          </Button>
+
+          {/* B⑥: 追加公司审核（仅单选时出现） */}
+          {selectedProjects.length === 1 ? (
+            <AppendBidderDialog
+              projectId={selectedProjects[0]!.id}
+              onAppend={onAppendBidder}
+              onSuccess={() => setRowSelection({})}
+            />
+          ) : null}
+
+          {/* B③: 创建评审 */}
+          <Button size='sm' onClick={onCreateReview}>
+            <Plus className='size-4' />
+            创建评审
+          </Button>
+        </div>
       </CardHeader>
       <CardContent className='space-y-4'>
         <DataTableToolbar
@@ -472,52 +534,6 @@ function ProjectTable({
           </Table>
         </div>
         <DataTablePagination table={table} />
-
-        {/* B③/B④/B⑤/B⑥: 底部操作区（居右） */}
-        <div className='flex flex-wrap items-center justify-end gap-2 pt-1'>
-          {selectedProjects.length > 0 ? (
-            <span className='mr-auto text-sm text-muted-foreground'>
-              已选 {selectedProjects.length} 个项目
-            </span>
-          ) : null}
-
-          {/* B⑤: 批量删除 */}
-          <Button
-            variant='outline'
-            size='sm'
-            disabled={selectedProjects.length === 0 || isBatchAction}
-            onClick={handleBatchDelete}
-          >
-            <Trash2 className='size-4' />
-            删除
-          </Button>
-
-          {/* B④: 重新审核 */}
-          <Button
-            variant='outline'
-            size='sm'
-            disabled={selectedProjects.length === 0 || isBatchAction}
-            onClick={handleBatchRetry}
-          >
-            <RotateCcw className='size-4' />
-            重新审核
-          </Button>
-
-          {/* B⑥: 追加公司审核（仅单选时出现） */}
-          {selectedProjects.length === 1 ? (
-            <AppendBidderDialog
-              projectId={selectedProjects[0]!.id}
-              onAppend={onAppendBidder}
-              onSuccess={() => setRowSelection({})}
-            />
-          ) : null}
-
-          {/* B③: 创建评审（居右，列表下方） */}
-          <Button size='sm' onClick={onCreateReview}>
-            <Plus className='size-4' />
-            创建评审
-          </Button>
-        </div>
       </CardContent>
     </Card>
   )
@@ -596,7 +612,10 @@ function AppendBidderDialog({
         </DialogHeader>
         <div className='space-y-4'>
           <div>
-            <Label htmlFor='append-bidder-name' className='mb-2 block text-sm font-medium'>
+            <Label
+              htmlFor='append-bidder-name'
+              className='mb-2 block text-sm font-medium'
+            >
               投标单位名称（选填）
             </Label>
             <Input
@@ -715,4 +734,3 @@ function getProjectActionLabel(status: TenderProject['status']) {
   if (status === 'doing') return '查看进度'
   return '查看详情'
 }
-

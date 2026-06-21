@@ -7,6 +7,14 @@ export const taskStatusLabels: Record<TaskStatus, string> = {
   failed: '失败',
 }
 
+export const riskDimensionLabels: Record<string, string> = {
+  invoice: '发票',
+  amount: '金额',
+  approval: '审批',
+  budget: '预算',
+  anomaly: '异常',
+}
+
 export function formatDate(iso: string | null | undefined): string {
   if (!iso) return '-'
   return new Date(iso).toLocaleString('zh-CN')
@@ -20,7 +28,9 @@ export function toDisplayText(item: unknown): string {
   if (typeof item === 'string') return item
   if (item && typeof item === 'object') {
     const data = item as Record<string, unknown>
-    const desc = String(data.description ?? data.message ?? data.reason ?? '').trim()
+    const desc = String(
+      data.description ?? data.message ?? data.reason ?? ''
+    ).trim()
     const severity = String(data.severity ?? '').trim()
     if (severity && desc) return `[${severity}] ${desc}`
     if (desc) return desc

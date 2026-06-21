@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react'
-import { Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
 import {
   type ColumnDef,
   type ColumnFiltersState,
@@ -18,11 +18,8 @@ import {
 import { FileText, Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
-import { Header } from '@/components/layout/header'
-import { Main } from '@/components/layout/main'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { DataTablePagination, DataTableToolbar } from '@/components/data-table'
 import {
   Card,
   CardContent,
@@ -38,6 +35,9 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { DataTablePagination, DataTableToolbar } from '@/components/data-table'
+import { Header } from '@/components/layout/header'
+import { Main } from '@/components/layout/main'
 import { deleteTask, listTasks, retryTask } from './api'
 import { formatDate, taskStatusLabels, truncateId } from './format'
 import { formatAmount } from './lib/reimbursement-labels'
@@ -72,8 +72,7 @@ function TaskStats({ tasks }: { tasks: AuditTask[] }) {
     ).length
     const completed = tasks.filter((task) => task.status === 'completed').length
     const failed = tasks.filter((task) => task.status === 'failed').length
-    const completionRate =
-      total > 0 ? Math.round((completed / total) * 100) : 0
+    const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0
     return { total, active, completed, failed, completionRate }
   }, [tasks])
 
@@ -194,7 +193,9 @@ export function AuditTasksPage() {
         }
         await refetchTasks()
       } catch (error) {
-        toast.error(error instanceof Error ? error.message : '操作失败，请重试。')
+        toast.error(
+          error instanceof Error ? error.message : '操作失败，请重试。'
+        )
       } finally {
         setActionId(null)
       }
@@ -265,6 +266,8 @@ export function AuditTasksPage() {
         header: () => <div className='text-right'>操作</div>,
         cell: ({ row }) => {
           const task = row.original.task
+          const canRetry =
+            task.status === 'failed' || task.status === 'completed'
           return (
             <div className='flex justify-end gap-2'>
               <Button variant='ghost' size='sm' asChild>
@@ -275,7 +278,7 @@ export function AuditTasksPage() {
                   详情
                 </Link>
               </Button>
-              {task.status === 'failed' ? (
+              {canRetry ? (
                 <Button
                   variant='outline'
                   size='sm'
@@ -344,27 +347,27 @@ export function AuditTasksPage() {
     <>
       <Header fixed />
       <Main constrained className='space-y-5'>
-        <div className='flex flex-col gap-3 md:flex-row md:items-end md:justify-between'>
-          <div>
-            <h1 className='text-2xl font-semibold tracking-tight'>报销审核</h1>
-            <p className='text-sm text-muted-foreground'>
-              管理报销审核任务、跟踪状态，并查看审核结论。
-            </p>
-          </div>
-          <Button asChild>
-            <Link to='/audit/submit'>
-              <Plus className='size-4' />
-              新建报销审核
-            </Link>
-          </Button>
+        <div>
+          <h1 className='text-2xl font-semibold tracking-tight'>报销审核</h1>
+          <p className='text-sm text-muted-foreground'>
+            管理报销审核任务、跟踪状态，并查看审核结论。
+          </p>
         </div>
 
         <TaskStats tasks={pageTasks} />
 
         <Card>
-          <CardHeader>
-            <CardTitle>报销审核记录</CardTitle>
-            <CardDescription>查看已提交的审核记录。</CardDescription>
+          <CardHeader className='flex flex-row items-center justify-between gap-3'>
+            <div>
+              <CardTitle>报销审核记录</CardTitle>
+              <CardDescription>查看已提交的审核记录。</CardDescription>
+            </div>
+            <Button asChild>
+              <Link to='/audit/submit'>
+                <Plus className='size-4' />
+                新建报销审核
+              </Link>
+            </Button>
           </CardHeader>
           <CardContent className='space-y-4'>
             <DataTableToolbar

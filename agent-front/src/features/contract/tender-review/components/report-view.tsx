@@ -40,8 +40,14 @@ export function ReportView({ data, onBack }: ReportViewProps) {
 
         <ReportMeta data={data} />
         <CompareNotice data={data} />
-        <RankingSection data={data} />
-        <DetailSection data={data} />
+        <ResultSection data={data} />
+        <ScoringDetailSection data={data} />
+        {data.resultVerdict !== 'rejected' && data.reviewBidders.length > 1 ? (
+          <RankingSection data={data} />
+        ) : null}
+        {data.resultVerdict !== 'rejected' && data.compareGroups.length > 0 ? (
+          <DetailSection data={data} />
+        ) : null}
         <Conclusion data={data} />
 
         <footer className='mt-10 flex items-end justify-between border-t pt-6'>
@@ -60,6 +66,165 @@ export function ReportView({ data, onBack }: ReportViewProps) {
         </footer>
       </article>
     </div>
+  )
+}
+
+function ResultSection({ data }: { data: TenderReviewMockData }) {
+  const reasons = data.resultReasons ?? []
+  const policyRefs = data.resultPolicyRefs ?? []
+  const explanation =
+    data.resultExplanation ||
+    data.compareNotice?.explanation ||
+    '评标结论生成后将在此展示。'
+  const rejected = data.resultVerdict === 'rejected'
+
+  return (
+    <section className='mt-8'>
+      <div className='flex flex-col gap-4 md:flex-row md:items-start md:justify-between'>
+        <div className='min-w-0 flex-1'>
+          <ReportTitle>评标结论</ReportTitle>
+          <div className='mt-4 rounded-lg border p-4'>
+            <div className='flex flex-wrap items-center gap-2'>
+              <span
+                className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                  rejected
+                    ? 'bg-red-100 text-red-700'
+                    : data.resultVerdict === 'manual_review'
+                      ? 'bg-amber-100 text-amber-700'
+                      : 'bg-emerald-100 text-emerald-700'
+                }`}
+              >
+                {getVerdictLabel(data.resultVerdict)}
+              </span>
+              {rejected ? (
+                <span className='text-xs font-medium text-red-700'>
+                  整标废标，不进入有效投标评分排序
+                </span>
+              ) : null}
+            </div>
+            <p className='mt-3 text-sm leading-7 text-muted-foreground'>
+              {explanation}
+            </p>
+
+            {reasons.length > 0 ? (
+              <div className='mt-4'>
+                <div className='text-sm font-semibold'>审核理由</div>
+                <ul className='mt-2 space-y-1 text-sm leading-6 text-muted-foreground'>
+                  {reasons.map((reason, index) => (
+                    <li key={`${index}-${reason}`}>· {reason}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+
+            {policyRefs.length > 0 ? (
+              <div className='mt-4'>
+                <div className='text-sm font-semibold'>法定依据</div>
+                <div className='mt-2 flex flex-wrap gap-2'>
+                  {policyRefs.map((ref, index) => (
+                    <span
+                      key={`${index}-${ref}`}
+                      className='rounded-md bg-muted px-2 py-1 font-mono text-xs text-muted-foreground'
+                    >
+                      {ref}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </div>
+        <ScoreSummaryCard data={data} />
+      </div>
+    </section>
+  )
+}
+
+function ScoreSummaryCard({ data }: { data: TenderReviewMockData }) {
+  const summary = data.scoreSummary ?? emptyScoreSummary
+  const deductedCount = summary.deductedItems.length + summary.rejectedItems.length
+  const hasScoring = (data.scoringItems?.length ?? 0) > 0
+
+  return (
+    <aside className='w-full rounded-lg border bg-muted/30 p-4 md:w-64 md:shrink-0'>
+      <div className='text-sm font-semibold'>评分汇总</div>
+      <div className='mt-3 grid grid-cols-2 gap-3'>
+        <ScoreMetric label='满分合计' value={formatScore(summary.maxTotal)} />
+        <ScoreMetric label='实得合计' value={formatScore(summary.earnedTotal)} />
+        <ScoreMetric label='扣分/未得分' value={`${deductedCount} 项`} />
+        <ScoreMetric label='待人工输入' value={`${summary.pendingItems.length} 项`} />
+      </div>
+      {!hasScoring ? (
+        <div className='mt-3 rounded-md border border-dashed p-2 text-xs text-muted-foreground'>
+          暂无逐项评分数据。
+        </div>
+      ) : data.resultVerdict === 'rejected' ? (
+        <div className='mt-3 rounded-md bg-red-50 p-2 text-xs leading-5 text-red-700'>
+          废标时实得分为 0；下方展示废标项及判定依据。
+        </div>
+      ) : null}
+    </aside>
+  )
+}
+
+function ScoreMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className='text-xs text-muted-foreground'>{label}</div>
+      <div className='mt-1 text-lg font-semibold'>{value}</div>
+    </div>
+  )
+}
+
+function ScoringDetailSection({ data }: { data: TenderReviewMockData }) {
+  const items = data.scoringItems ?? []
+  if (items.length === 0) return null
+  const rejected = data.resultVerdict === 'rejected'
+
+  return (
+    <section className='mt-8'>
+      <ReportTitle>{rejected ? '废标项明细' : '逐项评分明细'}</ReportTitle>
+      <div className='mt-4 overflow-x-auto rounded-lg border'>
+        <div className='min-w-[720px]'>
+          <div className='grid grid-cols-[1.2fr_72px_72px_96px_1.4fr] border-b bg-muted/40 text-xs font-semibold text-muted-foreground'>
+            <div className='p-3'>评分项</div>
+            <div className='p-3 text-center'>满分</div>
+            <div className='p-3 text-center'>实得</div>
+            <div className='p-3 text-center'>扣分</div>
+            <div className='p-3'>判定依据</div>
+          </div>
+          {items.map((item, index) => {
+            const deduction =
+              item.score == null ? null : Math.max(0, item.max - item.score)
+            return (
+              <div
+                key={item.id}
+                className={`grid grid-cols-[1.2fr_72px_72px_96px_1.4fr] border-b last:border-b-0 ${
+                  index % 2 ? 'bg-muted/20' : ''
+                }`}
+              >
+                <div className='p-3 text-sm font-medium'>{item.item}</div>
+                <div className='p-3 text-center text-sm text-muted-foreground'>
+                  {formatScore(item.max)}
+                </div>
+                <div className='p-3 text-center text-sm font-semibold'>
+                  {item.score == null ? '待判定' : formatScore(item.score)}
+                </div>
+                <div className='p-3 text-center text-sm text-muted-foreground'>
+                  {deduction == null ? '待人工' : formatScore(deduction)}
+                </div>
+                <div className='p-3 text-sm leading-6 text-muted-foreground'>
+                  <span className='font-medium text-foreground'>
+                    {getScoringStatusLabel(item.status)}
+                  </span>
+                  {item.basis ? ` · ${item.basis}` : ''}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </section>
   )
 }
 
@@ -120,7 +285,7 @@ function RankingSection({ data }: { data: TenderReviewMockData }) {
   const provisional = Boolean(data.compareNotice?.provisional)
   return (
     <section className='mt-8'>
-      <ReportTitle>一、评标结论与排名</ReportTitle>
+      <ReportTitle>评标结论与排名</ReportTitle>
       <div className='mt-4 overflow-hidden rounded-lg border'>
         <div className='grid grid-cols-[48px_1fr_90px_1fr] border-b bg-muted/40 text-xs font-semibold text-muted-foreground'>
           <div className='p-3'>排名</div>
@@ -162,7 +327,7 @@ function DetailSection({ data }: { data: TenderReviewMockData }) {
 
   return (
     <section className='mt-8'>
-      <ReportTitle>二、第一中标候选人评分明细</ReportTitle>
+      <ReportTitle>第一中标候选人横比明细</ReportTitle>
       <div className='mt-2 text-sm text-muted-foreground'>
         {data.reviewBidders[0]?.name} · 综合得分 {data.reviewBidders[0]?.total} 分
       </div>
@@ -201,9 +366,27 @@ function Conclusion({ data }: { data: TenderReviewMockData }) {
   const notice = data.compareNotice
   const second = data.reviewBidders[1]
   const third = data.reviewBidders[2]
+  if (data.resultVerdict === 'rejected') {
+    return (
+      <section className='mt-8'>
+        <ReportTitle>评标委员会意见</ReportTitle>
+        <p className='mt-4 text-sm leading-8 text-muted-foreground'>
+          经评审，本投标文件不满足本项目实质性响应要求，按废标处理。
+          {data.resultExplanation ? (
+            <>
+              <br />
+              <br />
+              {data.resultExplanation}
+            </>
+          ) : null}
+        </p>
+      </section>
+    )
+  }
+
   return (
     <section className='mt-8'>
-      <ReportTitle>三、评标委员会意见</ReportTitle>
+      <ReportTitle>评标委员会意见</ReportTitle>
       <p className='mt-4 text-sm leading-8 text-muted-foreground'>
         经评标委员会对 {data.reviewBidders.length}{' '}
         家投标人进行资格审查、技术评审与商务评审，
@@ -264,4 +447,30 @@ function getCandidateLabel(rank: number, provisional: boolean) {
   if (rank === 2) return '第二中标候选人'
   if (rank === 3) return '第三中标候选人'
   return '—'
+}
+
+const emptyScoreSummary = {
+  maxTotal: 0,
+  earnedTotal: 0,
+  deductedItems: [],
+  rejectedItems: [],
+  pendingItems: [],
+}
+
+function getVerdictLabel(verdict: TenderReviewMockData['resultVerdict']) {
+  if (verdict === 'approved') return '通过'
+  if (verdict === 'rejected') return '废标'
+  if (verdict === 'manual_review') return '待人工复核'
+  return '未出结论'
+}
+
+function getScoringStatusLabel(status: string) {
+  if (status === 'scored') return '已评分'
+  if (status === 'manual_review') return '待人工/外部输入'
+  if (status === 'rejected') return '未得分'
+  return status || '未标注'
+}
+
+function formatScore(score: number) {
+  return Number.isInteger(score) ? String(score) : score.toFixed(1)
 }
