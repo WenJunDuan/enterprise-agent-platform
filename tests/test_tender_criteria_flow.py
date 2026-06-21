@@ -492,8 +492,59 @@ def test_unknown_top_field_stripped_not_rejected(monkeypatch):
     assert "technical_subtotal" not in out
 
 
-def test_scored_zero_suspect_warns(monkeypatch):
-    """A: 实得0分却标scored但无扣减明细 → warning(疑似没识别到证据却判0通过,absence-is-not-zero)。"""
+def test_scored_zero_demoted_when_disqualified(monkeypatch):
+    """A 兜底:整单实质性不响应(disqualification)时,additive 实得0无依据 → 降级 manual_review。"""
+    monkeypatch.setenv("RULE_REF_CHECK", "1")
+    monkeypatch.setattr(oc, "_load_known_rule_ids", lambda: _TENDER_KNOWN)
+    crit = _scored_criteria()
+    crit["items"][0]["score_mode"] = "additive"
+    out = apply_schema_semantics(
+        DEFAULT_OUTPUT_SCHEMA_NAME,
+        _scored_with(
+            {
+                "criteria": crit,
+                "disqualification_hits": [{"rule_id": "x", "finding": "投标未响应本招标"}],
+                "scoring": [
+                    {"item": "技术方案", "max": 60, "score": 0, "status": "scored",
+                     "score_mode": "additive", "basis": "无对应内容"},
+                    {"item": "商务响应", "max": 40, "score": 36, "status": "scored"},
+                ],
+            }
+        ),
+    )
+    tech = next(s for s in out["extracted_data"]["scoring"] if s["item"] == "技术方案")
+    assert tech["status"] == "manual_review" and tech["score"] is None  # 投错标→降级
+    codes = [w["code"] for w in out["extracted_data"].get("validation_warnings", [])]
+    assert "scored_zero_demoted" in codes
+
+
+def test_scored_zero_no_disq_only_warns(monkeypatch):
+    """正常案例(无 disqualification):additive 实得0(可能规则性确认缺失) → 仅 warning 不降级(codex P1-1 防误伤)。"""
+    monkeypatch.setenv("RULE_REF_CHECK", "1")
+    monkeypatch.setattr(oc, "_load_known_rule_ids", lambda: _TENDER_KNOWN)
+    crit = _scored_criteria()
+    crit["items"][0]["score_mode"] = "additive"
+    out = apply_schema_semantics(
+        DEFAULT_OUTPUT_SCHEMA_NAME,
+        _scored_with(
+            {
+                "criteria": crit,
+                "scoring": [
+                    {"item": "技术方案", "max": 60, "score": 0, "status": "scored",
+                     "score_mode": "additive", "basis": "已核投标无加分材料"},
+                    {"item": "商务响应", "max": 40, "score": 36, "status": "scored"},
+                ],
+            }
+        ),
+    )
+    tech = next(s for s in out["extracted_data"]["scoring"] if s["item"] == "技术方案")
+    assert tech["status"] == "scored" and tech["score"] == 0  # 正常案例不降级
+    codes = [w["code"] for w in out["extracted_data"].get("validation_warnings", [])]
+    assert "scored_zero_suspect" in codes and "scored_zero_demoted" not in codes
+
+
+def test_passfail_zero_not_demoted(monkeypatch):
+    """pass_fail 实得0(客观未满足,有依据) → 不降级,保留 scored。"""
     monkeypatch.setenv("RULE_REF_CHECK", "1")
     monkeypatch.setattr(oc, "_load_known_rule_ids", lambda: _TENDER_KNOWN)
     crit = _scored_criteria()
@@ -504,14 +555,15 @@ def test_scored_zero_suspect_warns(monkeypatch):
             {
                 "criteria": crit,
                 "scoring": [
-                    {"item": "技术方案", "max": 60, "score": 0, "status": "scored", "basis": "无"},
+                    {"item": "技术方案", "max": 60, "score": 0, "status": "scored",
+                     "score_mode": "pass_fail", "basis": "未满足一级资质硬性条件"},
                     {"item": "商务响应", "max": 40, "score": 36, "status": "scored"},
                 ],
             }
         ),
     )
-    codes = [w["code"] for w in out["extracted_data"].get("validation_warnings", [])]
-    assert "scored_zero_suspect" in codes
+    tech = next(s for s in out["extracted_data"]["scoring"] if s["item"] == "技术方案")
+    assert tech["status"] == "scored" and tech["score"] == 0  # pass_fail 0 是有依据的,不降级
 
 
 def test_deduction_zero_with_hits_no_suspect(monkeypatch):
@@ -540,8 +592,10 @@ def test_deduction_zero_with_hits_no_suspect(monkeypatch):
             }
         ),
     )
+    tech = next(s for s in out["extracted_data"]["scoring"] if s["item"] == "技术方案")
+    assert tech["status"] == "scored" and tech["score"] == 0  # 扣满到0是合理的,不降级
     codes = [w["code"] for w in out["extracted_data"].get("validation_warnings", [])]
-    assert "scored_zero_suspect" not in codes  # 扣满到0是合理的
+    assert "scored_zero_demoted" not in codes
 
 
 def test_audit_schema_whitelist_no_drift():
