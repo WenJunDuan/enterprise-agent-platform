@@ -471,3 +471,88 @@ def test_criteria_mode_container_mismatch_warns(monkeypatch):
     codes = [w["code"] for w in out["extracted_data"].get("validation_warnings", [])]
     assert "criteria_deduction_missing_deductions" in codes
     assert "criteria_banded_missing_bands" in codes
+
+
+# ── C 根因:模型多输出未知顶层字段不再整单被拒(normalize 剥离)──────────────
+
+
+def test_unknown_top_field_stripped_not_rejected(monkeypatch):
+    """模型多带 missing_fields/technical_subtotal → normalize 剥离 → 不被 additionalProperties:false 拒。"""
+    monkeypatch.setenv("RULE_REF_CHECK", "1")
+    monkeypatch.setattr(oc, "_load_known_rule_ids", lambda: _TENDER_KNOWN)
+    out = apply_schema_semantics(
+        DEFAULT_OUTPUT_SCHEMA_NAME,
+        _audit_approved(
+            missing_fields=["entertainment_target"],
+            technical_subtotal=50,
+        ),
+    )
+    assert out["verdict"] == "approved"  # 多字段不再让整单结论被拒
+    assert "missing_fields" not in out  # 未知顶层字段已剥离
+    assert "technical_subtotal" not in out
+
+
+def test_scored_zero_suspect_warns(monkeypatch):
+    """A: 实得0分却标scored但无扣减明细 → warning(疑似没识别到证据却判0通过,absence-is-not-zero)。"""
+    monkeypatch.setenv("RULE_REF_CHECK", "1")
+    monkeypatch.setattr(oc, "_load_known_rule_ids", lambda: _TENDER_KNOWN)
+    crit = _scored_criteria()
+    crit["items"][0]["score_mode"] = "pass_fail"
+    out = apply_schema_semantics(
+        DEFAULT_OUTPUT_SCHEMA_NAME,
+        _scored_with(
+            {
+                "criteria": crit,
+                "scoring": [
+                    {"item": "技术方案", "max": 60, "score": 0, "status": "scored", "basis": "无"},
+                    {"item": "商务响应", "max": 40, "score": 36, "status": "scored"},
+                ],
+            }
+        ),
+    )
+    codes = [w["code"] for w in out["extracted_data"].get("validation_warnings", [])]
+    assert "scored_zero_suspect" in codes
+
+
+def test_deduction_zero_with_hits_no_suspect(monkeypatch):
+    """deduction 真扣减到 0(有明细) → 不报 scored_zero_suspect(合理的扣满)。"""
+    monkeypatch.setenv("RULE_REF_CHECK", "1")
+    monkeypatch.setattr(oc, "_load_known_rule_ids", lambda: _TENDER_KNOWN)
+    crit = _scored_criteria()
+    crit["items"][0]["score_mode"] = "deduction"
+    out = apply_schema_semantics(
+        DEFAULT_OUTPUT_SCHEMA_NAME,
+        _scored_with(
+            {
+                "criteria": crit,
+                "scoring": [
+                    {
+                        "item": "技术方案", "max": 60, "score": 0, "status": "scored",
+                        "score_mode": "deduction",
+                        "deduction_hits": [
+                            {"deduction_id": "d1", "condition": "全不符", "points_each": 60,
+                             "times": 1, "deducted": 60,
+                             "evidence": {"source": "投标p1", "quote": "q"}}
+                        ],
+                    },
+                    {"item": "商务响应", "max": 40, "score": 36, "status": "scored"},
+                ],
+            }
+        ),
+    )
+    codes = [w["code"] for w in out["extracted_data"].get("validation_warnings", [])]
+    assert "scored_zero_suspect" not in codes  # 扣满到0是合理的
+
+
+def test_audit_schema_whitelist_no_drift():
+    """漂移守卫:_AUDIT_SCHEMA_TOP_FIELDS 必须 == schema 顶层 properties(改 schema 要同步白名单)。"""
+    import json as _json
+
+    from server.platform.paths import PROJECT_ROOT
+
+    schema = _json.loads(
+        (PROJECT_ROOT / ".claude" / "contracts" / "common" / "audit-result.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert oc._AUDIT_SCHEMA_TOP_FIELDS == set(schema["properties"].keys())
