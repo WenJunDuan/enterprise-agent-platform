@@ -216,6 +216,7 @@ dependencies = [
 
 [package.optional-dependencies]
 ocr = [
+    { name = "certifi" },
     { name = "openpyxl" },
     { name = "pymupdf" },
     { name = "pypdf" },
@@ -231,6 +232,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "certifi", marker = "extra == 'ocr'", specifier = ">=2024.0" },
     { name = "claude-agent-sdk", specifier = ">=0.2.88" },
     { name = "fastapi", specifier = ">=0.115.0" },
     { name = "jsonschema", specifier = ">=4.23.0" },

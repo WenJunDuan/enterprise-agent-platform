@@ -44,7 +44,7 @@ def test_openai_compatible_pdf_renders_pages_as_images(tmp_path, monkeypatch):
 
     calls: list[dict] = []
 
-    def fake_urlopen(request, timeout):
+    def fake_urlopen(request, timeout, context=None):
         calls.append(json.loads(request.data.decode("utf-8")))
         return _FakeResponse(f"第 {len(calls)} 页")
 
@@ -68,7 +68,7 @@ def test_openai_compatible_image_keeps_image_mime_type(tmp_path, monkeypatch):
     image.write_bytes(b"jpg-bytes")
     calls: list[dict] = []
 
-    def fake_urlopen(request, timeout):
+    def fake_urlopen(request, timeout, context=None):
         calls.append(json.loads(request.data.decode("utf-8")))
         return _FakeResponse()
 
@@ -86,7 +86,7 @@ def test_openai_compatible_http_error_includes_response_body(tmp_path, monkeypat
     image = tmp_path / "photo.png"
     image.write_bytes(b"png-bytes")
 
-    def fake_urlopen(request, timeout):
+    def fake_urlopen(request, timeout, context=None):
         raise urllib.error.HTTPError(
             request.full_url,
             400,

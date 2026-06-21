@@ -243,3 +243,59 @@ def test_page_confidence_none_without_scores():
 
     assert _page_confidence([]) is None
     assert _page_confidence([{"text": "x"}]) is None
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 线上 PaddleOCR-VL 云路径（OCR_CLOUD=1）：jsonl 解析 + 协议路由
+# ═════════════════════════════════════════════════════════════════════════════
+
+
+def test_parse_cloud_jsonl_extracts_text_and_min_confidence():
+    from server.ocr.engine import _parse_cloud_jsonl
+
+    jsonl = json.dumps(
+        {
+            "result": {
+                "layoutParsingResults": [
+                    {
+                        "markdown": {"text": "发票抬头 XX公司"},
+                        "prunedResult": [{"score": 0.97}, {"score": 0.55}],
+                    }
+                ]
+            }
+        }
+    )
+    pages = _parse_cloud_jsonl(jsonl)
+    assert len(pages) == 1
+    assert "XX公司" in pages[0]["markdown"]
+    assert pages[0]["confidence"] == 0.55  # 取最低块 → 喂 file_clarity
+
+
+def test_parse_cloud_jsonl_skips_blank_and_handles_no_score():
+    from server.ocr.engine import _parse_cloud_jsonl
+
+    jsonl = "\n".join(
+        [
+            "",
+            json.dumps({"result": {"layoutParsingResults": [{"markdown": {"text": "无版面"}}]}}),
+        ]
+    )
+    pages = _parse_cloud_jsonl(jsonl)
+    assert len(pages) == 1
+    assert pages[0]["confidence"] is None  # 无 score → None → file_clarity=unknown
+
+
+def test_recognize_routes_to_cloud_when_ocr_cloud(monkeypatch):
+    from pathlib import Path as _Path
+
+    import server.ocr.engine as engine_mod
+
+    calls = {}
+    monkeypatch.setattr(engine_mod, "OCR_CLOUD", True)
+    monkeypatch.setattr(
+        engine_mod,
+        "_recognize_via_paddle_cloud",
+        lambda p: calls.setdefault("cloud", True) or {"kind": "ocr", "pages": []},
+    )
+    engine_mod.recognize(_Path("x.pdf"))
+    assert calls.get("cloud")
