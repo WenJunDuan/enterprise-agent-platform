@@ -49,7 +49,7 @@ counts:
   issues_count: 0
   refactors_count: 0
   systems_count: 6
-  reviews_count: 51
+  reviews_count: 52
   cleanup_count: 1
   compound:
     learning: 4
@@ -78,7 +78,7 @@ pointers:
   latest_architecture_update: "2026-06-20T10:04:38.538Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "本会话(2026-06-21):tender Harness 重构 goal,第1轮 ship + 第2轮 design 就绪。完成:即时修复(首页跳转误回报销/删项目级联端点+清库,455e7a7)+第1轮Harness(评分多模式score_mode[扣减/档次/加分/公式/通过/主观]+结构化deductions[第一次读标书摘全扣分项]+扣分摘上下文quote+页锚点+废标独立gate+OCR评标目的+按mode软校验,codex+CCcritic双评审REWORK→全修,06bad53,440passed/ruff)+第2轮design-r2(招标人侧合规审查MVP:排他条款/评分量化/废标清单/时限,f262618)。3 commits 未 push。**新会话起点**:①用户先实测第1轮投标人侧扣分(传真实招标+投标文件跑/tender-evaluate,看扣分项结构化deductions/档次分不被伪扣分/证据带quote+【第N页】;实测前置检查.env MODEL_BASE_URL,后端 uv run python -m server.cli serve + 前端 agent-front bun run dev,proxy已配/tender)②实测OK→启动第2轮impl(招标人侧doc-review,需先/init-rules补tender_regulation_032排他条款+时限规则到本地knowledge/tender)③实测有问题→修第1轮。每轮codex配合。遗留:第3轮(角色分离+反馈深化+回归测试集);前端deploy/.snapshots未跟踪。"
+next_action: "本会话(2026-06-21):tender Harness goal 第1轮ship+第2轮design就绪+性能轮ship+前端补丁。**7 commits未push**(用户自部署 ./deploy/deploy.sh dev <新tag>:rsync server/+.claude/ build,不走git,记得bump tag;前端需另build agent-front/deploy/容器)。完成:即时修复(455e7a7)+第1轮Harness(评分多模式score_mode+结构化deductions[第一次读标书摘全扣分项]+扣分摘quote+页锚点+废标独立gate+OCR评标目的+按mode软校验,codex+CCcritic双REWORK→全修,06bad53,440passed)+第2轮design-r2(招标人侧合规MVP:排他/量化/废标清单/时限,f262618,**未impl**)+性能轮(OCR extract_dir线程池并行+sha256缓存[格式无关+引擎指纹]+线程安全locks.FITZ_LOCK[native直读&engine渲染]/PADDLE_LOCK[本地paddle/印章],云OCR不锁仍并行,codex REWORK→全修[fitz锁覆盖engine渲染/缓存指纹/put_cached写失败不abort整批/本地paddle锁/workers校验],32a2c5a,445passed)+前端补丁(audit重新审核按钮移标题区并排;tender开始分析乐观跳第三步analyzing界面+SSE预留位,12d13a7)。**新会话起点/待用户决定**:①用户实测(传真实招标+投标文件跑/tender-evaluate,看扣分结构化deductions/档次分不伪扣分/证据quote+【第N页】;十几个文件已并行不超时;前置查.env MODEL_BASE_URL,后端serve+前端bun run dev)②**待决**:'上传即OCR解耦'(上传即后台OCR+缓存,首次评标也快,需改任务流)做不做③实测OK→第2轮impl(招标人侧doc-review,先/init-rules补tender_regulation_032+时限规则到knowledge/tender)④实测有问题→修。每轮codex配合。backlog:全局OCR信号量+云429重试/流式hash/缓存TTL(codex perf P2);第3轮(角色分离+反馈深化+回归集);SSE后端实时输出(analyzing界面现占位);前端deploy/.snapshots未跟踪。"
 last_subagent: "generator"
 last_subagent_at: "2026-06-02T09:25:27.661Z"
 active_worktrees: [] # 2026-06-21 核实无活动 worktree(git worktree list 仅 main),清陈旧字段
@@ -386,6 +386,7 @@ slug 拆分为独立 sprint 目录；`lessons.md` 整体保留为
 - `docs/` — 项目参考文档 (开发指南 / 前端对接 / audit-skills)，非状态机文件
 
 ## 历史 (由 pace-continuator hook 自动追加, 最多保留近 10 条)
+- `2026-06-21 08:11:37`: stage=ship sprint=2026-06-21-tender-harness-redesign turn-end
 - `2026-06-20 13:56:20`: stage=ship sprint=2026-06-20-external-source-mode turn-end
 - `2026-06-20 10:49:49`: stage=ship sprint=2026-06-20-tender-data-model turn-end
 - `2026-06-20 08:32:52`: stage=impl sprint=2026-06-20-tender-data-model turn-end
@@ -396,6 +397,5 @@ slug 拆分为独立 sprint 目录；`lessons.md` 整体保留为
 - `2026-06-20 01:47:27`: stage=impl sprint=2026-06-20-agent-capability-redesign turn-end
 - `2026-06-19 12:07:21`: stage=ship sprint=2026-06-19-contract-audit-api turn-end
 - `2026-06-19 10:20:54`: stage=impl sprint=2026-06-19-contract-audit-feature turn-end
-- `2026-06-19 08:33:33`: stage=impl sprint=2026-06-19-tender-ingestion-workflow turn-end
 
 - 2026-06-02 [migrate] v9.6.2(legacy flat) → v9.6.4. 备份见 `.ai_state.backup-*`。
