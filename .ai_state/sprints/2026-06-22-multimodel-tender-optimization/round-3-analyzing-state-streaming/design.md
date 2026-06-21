@@ -41,5 +41,12 @@
 4. tests + 前端 lint/build 绿。
 
 ## 进度
-- B-C：✅ 已实现 + 前端 lint/build/17 tests 绿（待用户 dev 眼验"返回再进"恢复实时）。
-- 遗留① 流式 + openrouter 兼容实测：_pending（下一步）_。
+- B-C：用户实测仍落分析中心 → **复发根因 = react-query 缓存**：`resumeOrOpenProject` 的
+  `fetchQuery(['tender-project',id])` 吃 dashboard `useQueries` 的 5s staleTime 缓存，返回旧的
+  完成态/空态 bids → inProgress=0 → 误落分析中心。**修：fetchQuery 加 `staleTime:0` 强制新取**
+  最新投标状态（后端已确认在途投标 status='running'，见 `_project_bid_roster` tender.py:220-231）。
+  前端 lint/build 绿。⚠ 用户需重新 build/刷新 dev 才会生效。
+- **openrouter 兼容（用户要求查链接）**：✅ 查实——openrouter 有原生 Anthropic skin，
+  base 应为 `https://openrouter.ai/api`（非 `/api/v1/chat/completions` 的 OpenAI 路径）。
+  已修 .env openrouter 块 base URL。正用 R1 抽取测试 openrouter+SDK 是否跑通（z-ai/glm-5.2）。
+- 遗留① qwen 思考流式实时：_pending（openrouter 验证后）_。
