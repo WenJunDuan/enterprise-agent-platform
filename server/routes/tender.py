@@ -19,6 +19,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, Header, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, ValidationError
+from starlette.requests import ClientDisconnect
 
 from server.core import enrich_audit_decision
 from server.ocr.pipeline import prewarm_and_text
@@ -70,6 +71,19 @@ from server.stores.tender_task_store import (
 )
 
 logger = logging.getLogger(__name__)
+
+# P1-2: 强引用集防 fire-and-forget OCR 任务被 GC 回收；done 后自清（镜像 tender_worker._BACKGROUND_TASKS）。
+_UPLOAD_OCR_TASKS: set[asyncio.Task[None]] = set()
+
+# P1-2: 上传即 OCR 并发上限（云 OCR 有限流；本地并行也消耗内存）；OCR_PREWARM_MAX env 可调，默认 2。
+_UPLOAD_OCR_SEMAPHORE = asyncio.Semaphore(int(__import__("os").getenv("OCR_PREWARM_MAX", "2")))
+
+
+def _track_upload_ocr_task(task: asyncio.Task[None]) -> None:
+    """留强引用防 fire-and-forget OCR 任务被 GC 回收；done 时自清（P1-2）。"""
+    _UPLOAD_OCR_TASKS.add(task)
+    task.add_done_callback(_UPLOAD_OCR_TASKS.discard)
+
 
 # OCR purpose for background prewarm tasks (mirrors tender_worker.TENDER_OCR_PURPOSE).
 _TENDER_OCR_PURPOSE = (
@@ -242,7 +256,10 @@ async def _submit_bid_evaluation(
             expected_project_id=project_id or UNBOUND_PROJECT,
         )
     elif content_type.startswith("multipart/form-data"):
-        form_data = await request.form()
+        try:
+            form_data = await request.form()
+        except ClientDisconnect:
+            raise HTTPException(status_code=400, detail="上传连接中断，请重新提交")
         mode = str(form_data.get("mode") or "").strip()
         if mode != "upload":
             raise HTTPException(status_code=400, detail="multipart requests must use mode=upload")
@@ -579,25 +596,49 @@ async def get_tender_project_result_detail(
     return response if isinstance(response, dict) else payload["response"]
 
 
-# ── P2 OCR 预热辅助（供测试 monkeypatch）──────────────────────────────────────
+# ── P2 OCR 预热辅助（P1-2/P1-3 修复：强引用 + 信号量 + 失败写 failed）──────────────
 
 
-def _start_project_doc_ocr_task(
-    project_id: str, case_path: str, *, purpose: str | None = None
+# 错误文本前缀：extract_one/prewarm_and_text 失败时 _render_body 返回 "[识别失败] ..."。
+_OCR_ERROR_PREFIX = "[识别失败]"
+
+
+def _is_ocr_text_valid(text: str) -> bool:
+    """Return False if text is empty or is an error marker from the OCR pipeline."""
+    stripped = text.strip()
+    return bool(stripped) and not stripped.startswith(_OCR_ERROR_PREFIX)
+
+
+async def _run_project_doc_ocr(
+    project_id: str,
+    case_path: str,
+    *,
+    tenant: str,
+    purpose: str | None = None,
 ) -> None:
-    """Fire-and-forget background OCR for a tender project doc upload.
+    """Background OCR coroutine for a tender project doc upload (P1-2/P1-3).
 
-    Runs prewarm_and_text in a thread (OCR is blocking), then writes the result
-    to tender_project_docs via update_project_doc_ocr. OCR failure sets
-    ocr_status=failed and never crashes the main event loop.
+    Runs prewarm_and_text under the upload-OCR semaphore (P1-2 concurrency cap).
+    On success AND valid text writes ocr_status=ready; on any exception or error
+    text writes ocr_status=failed (P1-3 — ensures read layer never sees stale ready).
+    Always writes tenant-scoped (P2).
+
+    Args:
+        project_id: Tender project identifier.
+        case_path: Directory containing uploaded tender files.
+        tenant: Tenant scope forwarded to update_project_doc_ocr.
+        purpose: OCR engine purpose hint.
     """
-
-    async def _run() -> None:
+    async with _UPLOAD_OCR_SEMAPHORE:
         try:
             text = await asyncio.to_thread(prewarm_and_text, case_path, purpose=purpose)
+            # P1-3: detect error-marker text returned by pipeline on extraction failure
+            if not _is_ocr_text_valid(text):
+                raise ValueError(f"OCR returned error/empty text: {text[:100]!r}")
             await asyncio.to_thread(
                 update_project_doc_ocr,
                 project_id,
+                tenant=tenant,
                 ocr_text=text,
                 ocr_clarity=None,
                 status="ready",
@@ -612,32 +653,46 @@ def _start_project_doc_ocr_task(
                 await asyncio.to_thread(
                     update_project_doc_ocr,
                     project_id,
+                    tenant=tenant,
                     ocr_text=None,
                     ocr_clarity=None,
                     status="failed",
                 )
             except Exception:
-                logger.debug("failed to write ocr failed status", exc_info=True)
-
-    asyncio.create_task(_run())
+                logger.debug("failed to write project_doc ocr failed status", exc_info=True)
 
 
-def _start_bid_doc_ocr_task(
-    project_id: str, bid_id: str, case_path: str, *, purpose: str | None = None
+async def _run_bid_doc_ocr(
+    project_id: str,
+    bid_id: str,
+    case_path: str,
+    *,
+    tenant: str,
+    purpose: str | None = None,
 ) -> None:
-    """Fire-and-forget background OCR for a bid doc upload.
+    """Background OCR coroutine for a bid doc upload (P1-2/P1-3).
 
-    Runs prewarm_and_text in a thread, then updates tender_bid_docs.
-    OCR failure sets ocr_status=failed and never crashes the main event loop.
+    Mirrors _run_project_doc_ocr for tender_bid_docs. Runs under semaphore (P1-2).
+    Error text or exception → writes ocr_status=failed (P1-3).
+    All writes are tenant-scoped (P2).
+
+    Args:
+        project_id: Parent tender project identifier.
+        bid_id: Bid document identifier.
+        case_path: Directory containing uploaded bid files.
+        tenant: Tenant scope forwarded to update_bid_doc_ocr.
+        purpose: OCR engine purpose hint.
     """
-
-    async def _run() -> None:
+    async with _UPLOAD_OCR_SEMAPHORE:
         try:
             text = await asyncio.to_thread(prewarm_and_text, case_path, purpose=purpose)
+            if not _is_ocr_text_valid(text):
+                raise ValueError(f"OCR returned error/empty text: {text[:100]!r}")
             await asyncio.to_thread(
                 update_bid_doc_ocr,
                 project_id,
                 bid_id,
+                tenant=tenant,
                 ocr_text=text,
                 status="ready",
             )
@@ -652,13 +707,32 @@ def _start_bid_doc_ocr_task(
                     update_bid_doc_ocr,
                     project_id,
                     bid_id,
+                    tenant=tenant,
                     ocr_text=None,
                     status="failed",
                 )
             except Exception:
-                logger.debug("failed to write bid ocr failed status", exc_info=True)
+                logger.debug("failed to write bid_doc ocr failed status", exc_info=True)
 
-    asyncio.create_task(_run())
+
+def _start_project_doc_ocr_task(
+    project_id: str, case_path: str, *, tenant: str = "", purpose: str | None = None
+) -> None:
+    """Fire-and-forget: schedule background OCR for a project doc and track the task (P1-2)."""
+    task = asyncio.create_task(
+        _run_project_doc_ocr(project_id, case_path, tenant=tenant, purpose=purpose)
+    )
+    _track_upload_ocr_task(task)
+
+
+def _start_bid_doc_ocr_task(
+    project_id: str, bid_id: str, case_path: str, *, tenant: str = "", purpose: str | None = None
+) -> None:
+    """Fire-and-forget: schedule background OCR for a bid doc and track the task (P1-2)."""
+    task = asyncio.create_task(
+        _run_bid_doc_ocr(project_id, bid_id, case_path, tenant=tenant, purpose=purpose)
+    )
+    _track_upload_ocr_task(task)
 
 
 # ── P2 上传端点（招标文件 / 投标文件 / 轮询状态）────────────────────────────────
@@ -675,6 +749,9 @@ async def upload_tender_doc(
     落盘到 tender/<project_id>/<request_id>/ 目录；写招标层 ocr_status=running；
     后台 asyncio task 跑 prewarm_and_text → update_project_doc_ocr(ready|failed)。
     不阻塞响应：立即返回 {project_id, ocr_status}。
+
+    ClientDisconnect during multipart parsing → 400（P1 fix）。
+    至少 1 个真实文件，否则 400（P1-4 fix）。
     """
     tenant = verify_tenant(authorization)
     project = get_project(project_id, tenant)
@@ -682,7 +759,16 @@ async def upload_tender_doc(
         raise HTTPException(status_code=404, detail="Tender project not found")
 
     doc_request_id = new_request_id()
-    form_data = await request.form()
+    try:
+        form_data = await request.form()
+    except ClientDisconnect:
+        raise HTTPException(status_code=400, detail="上传连接中断，请重新提交")
+
+    # P1-4: at least one real file must be present
+    files = collect_uploaded_files(form_data)
+    if not files:
+        raise HTTPException(status_code=400, detail="必须至少上传 1 个文件")
+
     case_path = await materialize_upload_submission(
         request_id=doc_request_id,
         tenant=tenant,
@@ -693,7 +779,6 @@ async def upload_tender_doc(
     )
 
     # Collect uploaded filenames for the files JSON list
-    files = collect_uploaded_files(form_data)
     file_names = [
         sanitize_upload_name(getattr(f, "filename", "") or "", i)
         for i, f in enumerate(files, start=1)
@@ -708,7 +793,7 @@ async def upload_tender_doc(
         ocr_status="running",
     )
 
-    _start_project_doc_ocr_task(project_id, case_path, purpose=_TENDER_OCR_PURPOSE)
+    _start_project_doc_ocr_task(project_id, case_path, tenant=tenant, purpose=_TENDER_OCR_PURPOSE)
 
     return {"project_id": project_id, "ocr_status": "running"}
 
@@ -724,6 +809,9 @@ async def upload_bid_doc(
     bidder_name 从 multipart form data 字段读取；落盘写投标层 ocr_status=running；
     后台 asyncio task 跑 prewarm_and_text → update_bid_doc_ocr(ready|failed)。
     不阻塞响应：立即返回 {bid_id, ocr_status}。
+
+    ClientDisconnect during multipart parsing → 400（P1 fix）。
+    至少 1 个真实文件，否则 400（P1-4 fix）。
     """
     tenant = verify_tenant(authorization)
     project = get_project(project_id, tenant)
@@ -731,8 +819,17 @@ async def upload_bid_doc(
         raise HTTPException(status_code=404, detail="Tender project not found")
 
     bid_id = new_bid_id()
-    form_data = await request.form()
+    try:
+        form_data = await request.form()
+    except ClientDisconnect:
+        raise HTTPException(status_code=400, detail="上传连接中断，请重新提交")
+
     bidder_name = str(form_data.get("bidder_name") or "").strip() or None
+
+    # P1-4: at least one real file must be present
+    files = collect_uploaded_files(form_data)
+    if not files:
+        raise HTTPException(status_code=400, detail="必须至少上传 1 个文件")
 
     case_path = await materialize_upload_submission(
         request_id=bid_id,
@@ -743,7 +840,6 @@ async def upload_bid_doc(
         project_id=project_id,
     )
 
-    files = collect_uploaded_files(form_data)
     file_names = [
         sanitize_upload_name(getattr(f, "filename", "") or "", i)
         for i, f in enumerate(files, start=1)
@@ -760,7 +856,7 @@ async def upload_bid_doc(
         ocr_status="running",
     )
 
-    _start_bid_doc_ocr_task(project_id, bid_id, case_path, purpose=_TENDER_OCR_PURPOSE)
+    _start_bid_doc_ocr_task(project_id, bid_id, case_path, tenant=tenant, purpose=_TENDER_OCR_PURPOSE)
 
     return {"bid_id": bid_id, "ocr_status": "running"}
 
