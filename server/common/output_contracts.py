@@ -329,6 +329,10 @@ def normalize_audit_result(
     if not isinstance(structured_output, dict):
         return structured_output
     _stamp_server_metadata(structured_output, request_id)
+    # manual_review_reason 仅对 verdict=manual_review 有意义；approved/rejected 时模型偶尔仍带出
+    # 旧枚举（如 data_conflict），会残留进结论误导前端/消费者 → 非 manual_review 一律剥离。
+    if structured_output.get("verdict") != "manual_review":
+        structured_output.pop("manual_review_reason", None)
     for field in ("reasons", "policy_refs"):
         value = structured_output.get(field)
         if isinstance(value, list):
