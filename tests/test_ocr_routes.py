@@ -171,9 +171,29 @@ def test_fill_returns_recognized_and_filled(client, monkeypatch):
     assert body["fill"]["fields"][0]["key"] == "项目名称"  # 右栏回填来自映射
 
 
-def test_fill_requires_form_schema(client):
+def test_fill_without_schema_uses_adaptive_mode(client, monkeypatch):
+    """缺 form_schema → 自适应抽取（不再 400）：以空 schema 调映射，字段集由文档决定。"""
+    seen: dict[str, object] = {}
+
+    async def fake_map(block, form_schema, *, request_id, tenant=None, **opts):
+        seen["schema"] = form_schema
+        return {
+            "fields": [{"key": "合同金额", "component": "number", "value": 880, "confidence": 0.9}],
+            "sub_tables": [],
+            "needs_review": False,
+        }
+
+    monkeypatch.setattr("server.routes.ocr.map_extraction_to_form", fake_map)
+    files = [("files", ("note.txt", "差旅费 880 元".encode(), "text/plain"))]
+    resp = client.post("/ocr/fill", files=files, headers=_AUTH)  # 缺 form_schema → 自适应
+    assert resp.status_code == 200
+    assert seen["schema"] == {}  # 空 schema 透传 → 触发自适应分支
+    assert resp.json()["fill"]["fields"][0]["key"] == "合同金额"
+
+
+def test_fill_rejects_invalid_form_schema(client):
     files = [("files", ("a.txt", b"x", "text/plain"))]
-    resp = client.post("/ocr/fill", files=files, headers=_AUTH)  # 缺 form_schema
+    resp = client.post("/ocr/fill", files=files, data={"form_schema": "not-json"}, headers=_AUTH)
     assert resp.status_code == 400
 
 

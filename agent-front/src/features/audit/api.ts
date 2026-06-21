@@ -239,11 +239,15 @@ export async function extractOcr(
 /** 同步识别 + 表单回填：上传文档 + 目标表单 schema → 底稿 + 回填结果（POST /ocr/fill）。 */
 export async function fillOcr(
   files: File[],
-  formSchema: unknown,
+  formSchema?: unknown,
   runSeal = false
 ): Promise<OcrFillResponse> {
   const body = new FormData()
-  body.append('form_schema', JSON.stringify(formSchema))
+  // 不传 / 空 schema → 后端走自适应抽取（字段集由文档内容决定），不强塞固定表单。
+  const hasSchema =
+    formSchema != null &&
+    !(typeof formSchema === 'object' && Object.keys(formSchema as object).length === 0)
+  if (hasSchema) body.append('form_schema', JSON.stringify(formSchema))
   for (const file of files) body.append('files', file)
   const res = await fetch(url(`/ocr/fill${runSeal ? '?run_seal=true' : ''}`), {
     method: 'POST',

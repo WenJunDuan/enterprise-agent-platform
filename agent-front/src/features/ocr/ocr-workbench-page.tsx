@@ -22,7 +22,7 @@ import {
 } from '@/components/ui/table'
 import { fillOcr } from '@/features/audit/api'
 import type { FormFillResult, OcrExtractItem } from '@/features/audit/types'
-import { FORM_SCHEMA, MOCK_EXTRACT_ITEMS, MOCK_FORM_FILL } from './workbench/mock-data'
+import { MOCK_EXTRACT_ITEMS, MOCK_FORM_FILL } from './workbench/mock-data'
 import {
   CONFIDENCE_STYLE,
   ROUTE_STYLE,
@@ -161,7 +161,9 @@ function FillPanel({ fill }: { fill: FormFillResult | null }) {
       <CardHeader className='gap-3 md:flex-row md:items-start md:justify-between'>
         <div>
           <CardTitle>回填结果</CardTitle>
-          <CardDescription>表单 ID：{fill.form_id || '-'}</CardDescription>
+          <CardDescription>
+            {fill.form_id ? `表单 ID：${fill.form_id}` : '根据文档内容自适应抽取'}
+          </CardDescription>
         </div>
         {fill.needs_review ? <Badge variant='secondary'>需复核</Badge> : <Badge variant='outline'>可用</Badge>}
       </CardHeader>
@@ -281,7 +283,8 @@ export function OcrWorkbenchPage() {
     setFiles((current) => current.map((file) => ({ ...file, status: 'recognizing' })))
 
     try {
-      const response = await fillOcr(realFiles, FORM_SCHEMA)
+      // 自适应抽取：不传固定 form_schema，由后端按文档内容抽出字段集回填。
+      const response = await fillOcr(realFiles)
       setItems(response.results)
       setFill(response.fill)
       setFiles((current) => current.map((file) => ({ ...file, status: 'done' })))

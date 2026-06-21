@@ -125,10 +125,13 @@ async def ocr_extract(
 
 
 def _parse_form_schema(raw: Any) -> dict[str, Any]:
-    """解析 multipart 里的 form_schema 字段为 JSON 对象；缺失 / 非法抛 400。"""
+    """解析 multipart 里的 form_schema 字段为 JSON 对象。
+
+    缺失 / 空 → 返回 ``{}`` 走**自适应抽取**模式（字段集由文档内容决定）；非法 JSON / 非对象抛 400。
+    """
     text = str(raw or "").strip()
     if not text:
-        raise HTTPException(status_code=400, detail="ocr fill requires form_schema (JSON object)")
+        return {}
     try:
         parsed = json.loads(text)
     except json.JSONDecodeError as exc:
