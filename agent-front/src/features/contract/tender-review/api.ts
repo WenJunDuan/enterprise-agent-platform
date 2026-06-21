@@ -335,6 +335,97 @@ export async function deleteTenderProject(projectId: string): Promise<void> {
   if (!res.ok) await handleResponse(res)
 }
 
+// ── P3 OCR 预热 API ────────────────────────────────────────────────────────────
+
+/** OCR status values from the backend. */
+export type OcrStatus = 'pending' | 'running' | 'ready' | 'failed'
+
+export type DocsStatusTenderDoc = {
+  ocr_status: OcrStatus
+}
+
+export type DocsStatusBid = {
+  bid_id: string
+  bidder_name: string | null
+  ocr_status: OcrStatus
+}
+
+export type DocsStatusResponse = {
+  tender_doc: DocsStatusTenderDoc | null
+  bids: DocsStatusBid[]
+}
+
+/**
+ * Upload tender (招标) document files and trigger background OCR.
+ *
+ * @param projectId - Tender project identifier.
+ * @param files - Tender document files to upload.
+ * @returns Immediate response with ocr_status=running.
+ */
+export async function uploadTenderDoc(
+  projectId: string,
+  files: File[]
+): Promise<{ project_id: string; ocr_status: OcrStatus }> {
+  const body = new FormData()
+  for (const file of files) {
+    body.append('files', file)
+  }
+  const res = await fetch(
+    url(`/tender/projects/${encodeURIComponent(projectId)}/tender-doc`),
+    {
+      method: 'POST',
+      headers: authHeaders(),
+      body,
+    }
+  )
+  return handleResponse<{ project_id: string; ocr_status: OcrStatus }>(res)
+}
+
+/**
+ * Upload a single bidder's (投标) document files and trigger background OCR.
+ *
+ * @param projectId - Tender project identifier.
+ * @param bidderName - Display name of the bidder.
+ * @param files - Bid document files to upload.
+ * @returns Immediate response with bid_id and ocr_status=running.
+ */
+export async function uploadBid(
+  projectId: string,
+  bidderName: string | undefined,
+  files: File[]
+): Promise<{ bid_id: string; ocr_status: OcrStatus }> {
+  const body = new FormData()
+  if (bidderName?.trim()) body.append('bidder_name', bidderName.trim())
+  for (const file of files) {
+    body.append('files', file)
+  }
+  const res = await fetch(
+    url(`/tender/projects/${encodeURIComponent(projectId)}/bids`),
+    {
+      method: 'POST',
+      headers: authHeaders(),
+      body,
+    }
+  )
+  return handleResponse<{ bid_id: string; ocr_status: OcrStatus }>(res)
+}
+
+/**
+ * Poll OCR readiness for all docs under a tender project (P3 two-step upload).
+ *
+ * @param projectId - Tender project identifier.
+ * @returns Current OCR status for tender doc and each bid doc.
+ */
+export async function getDocsStatus(projectId: string): Promise<DocsStatusResponse> {
+  const res = await fetch(
+    url(`/tender/projects/${encodeURIComponent(projectId)}/docs-status`),
+    {
+      headers: authHeaders(),
+    }
+  )
+  return handleResponse<DocsStatusResponse>(res)
+}
+
 export async function waitForTenderTask(
   requestId: string,
   options: WaitOptions<TenderTaskStatusResponse> = {}

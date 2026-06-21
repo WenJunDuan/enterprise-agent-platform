@@ -265,6 +265,15 @@ def delete_project_cascade(project_id: str, tenant: str) -> dict[str, Any] | Non
                 "DELETE FROM tender_compare_tasks WHERE tenant = ? AND group_id = ?",
                 (tenant, project_id),
             ).rowcount,
+            # P3 B: 清 tender_project_docs + tender_bid_docs，防孤儿数据。
+            "tender_project_docs": connection.execute(
+                "DELETE FROM tender_project_docs WHERE project_id = ? AND tenant = ?",
+                (project_id, tenant),
+            ).rowcount,
+            "tender_bid_docs": connection.execute(
+                "DELETE FROM tender_bid_docs WHERE project_id = ? AND tenant = ?",
+                (project_id, tenant),
+            ).rowcount,
             "tender_projects": connection.execute(
                 "DELETE FROM tender_projects WHERE project_id = ? AND tenant = ?",
                 (project_id, tenant),

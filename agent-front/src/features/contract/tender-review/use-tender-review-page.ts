@@ -9,6 +9,7 @@ import {
   createTenderProject,
   deleteTenderProject,
   evaluateTenderProjectUpload,
+  getDocsStatus,
   getTenderCompareOrNull,
   getTenderProject,
   getTenderProjectResult,
@@ -17,6 +18,8 @@ import {
   listTenderProjects,
   retryTenderTask,
   triggerTenderCompare,
+  uploadBid,
+  uploadTenderDoc,
   type TenderProjectCreateRequest,
   type TenderProjectDetailResponse,
 } from './api'
@@ -131,6 +134,10 @@ export function useTenderReviewPage(
     DEFAULT_UPLOAD_BIDDER,
   ])
   const [nextBidderId, setNextBidderId] = useState(2)
+  // P3 两步拆分：uploadProjectId 是"上传即 OCR"后建好的项目 ID（用于 docs-status 轮询）。
+  // 置 null 表示尚未上传（初始/取消/新建后）。
+  const [uploadProjectId, setUploadProjectId] = useState<string | null>(null)
+  const [isUploading, setIsUploading] = useState(false)
 
   // A①: editable project form state
   const [projectForm, setProjectForm] = useState<ProjectFormData>(
@@ -188,6 +195,34 @@ export function useTenderReviewPage(
       return compare.stale ? 3000 : false
     },
   })
+
+  // P3 OCR 就绪轮询：上传后 docs-status 每 2.5s 轮询一次，直到招标+所有投标均 ready/failed。
+  const docsStatusQuery = useQuery({
+    queryKey: ['tender-docs-status', uploadProjectId],
+    queryFn: () => getDocsStatus(uploadProjectId!),
+    enabled: Boolean(uploadProjectId),
+    refetchInterval: (query) => {
+      const data = query.state.data
+      if (!data) return 2500
+      const allDone =
+        data.tender_doc?.ocr_status === 'ready' ||
+        data.tender_doc?.ocr_status === 'failed'
+          ? data.bids.every(
+              (bid) => bid.ocr_status === 'ready' || bid.ocr_status === 'failed'
+            )
+          : false
+      return allDone ? false : 2500
+    },
+  })
+
+  // OCR 就绪判定：招标层 + 全部投标层均为 ready（failed 不算 ready）。
+  const isOcrReady = useMemo(() => {
+    if (!uploadProjectId || !docsStatusQuery.data) return false
+    const { tender_doc, bids } = docsStatusQuery.data
+    if (!tender_doc || tender_doc.ocr_status !== 'ready') return false
+    if (bids.length === 0) return false
+    return bids.every((bid) => bid.ocr_status === 'ready')
+  }, [uploadProjectId, docsStatusQuery.data])
 
   const selectedResultRequestId = useMemo(() => {
     const results = resultsQuery.data ?? []
@@ -266,9 +301,12 @@ export function useTenderReviewPage(
     ]
   )
 
-  const canStartReview =
+  // P3 两步拆分：文件已上传且 OCR 就绪时才允许"开始分析"（上传阶段仅判断文件存在）。
+  const hasFilesSelected =
     tenderFiles.some(hasNativeFile) &&
     uploadBidders.some((bidder) => bidder.files.some(hasNativeFile))
+  // 已完成上传且 OCR ready → 允许提交评标；尚未上传 → 用文件选取判断（显示上传按钮语义）。
+  const canStartReview = uploadProjectId ? isOcrReady : hasFilesSelected
 
   const startReviewMutation = useMutation({
     mutationFn: submitReview,
@@ -286,6 +324,20 @@ export function useTenderReviewPage(
       setSubmitError(error instanceof Error ? error.message : '分析失败，请稍后重试。')
       setProgress(0)
       setScreen('create') // submitReview 只做提交（建项目/上传），失败才回 create 让用户重试
+    },
+  })
+
+  // P3 上传阶段 mutation：建项目 + uploadTenderDoc + uploadBid → 触发后台 OCR。
+  const uploadFilesMutation = useMutation({
+    mutationFn: uploadFilesForOcr,
+    onSuccess: (projectId) => {
+      setUploadProjectId(projectId)
+      setIsUploading(false)
+      setSubmitError('')
+    },
+    onError: (error) => {
+      setIsUploading(false)
+      setSubmitError(error instanceof Error ? error.message : '文件上传失败，请稍后重试。')
     },
   })
 
@@ -361,6 +413,9 @@ export function useTenderReviewPage(
   /** A①/F5: reset the create form to blank (e.g. after the user cancels). */
   function resetProjectForm() {
     setProjectForm(createDefaultProjectForm())
+    // P3: 重置时清掉 upload 状态，下次新建重头开始
+    setUploadProjectId(null)
+    setIsUploading(false)
   }
 
   function addTenderFile(files: FileList | null) {
@@ -433,6 +488,30 @@ export function useTenderReviewPage(
     )
   }
 
+  /**
+   * P3 两步拆分 — 第一步：选完文件后上传并触发后台 OCR。
+   *
+   * 上传成功后 uploadProjectId 置位，前端开始轮询 docs-status；
+   * "开始分析"按钮在 isOcrReady 前一直禁用。
+   */
+  function startUpload() {
+    if (uploadFilesMutation.isPending || isUploading) return
+    if (!hasFilesSelected) {
+      setUploadError(true)
+      setSubmitError('')
+      return
+    }
+    setUploadError(false)
+    setSubmitError('')
+    setIsUploading(true)
+    uploadFilesMutation.mutate()
+  }
+
+  /**
+   * P3 两步拆分 — 第二步：OCR 就绪后用户点击"开始分析"提交评标任务。
+   *
+   * 保留 A+B 解耦：submitReview 只做提交（不 await 评标），由 analyzing 独立轮询恢复。
+   */
   function startReview() {
     if (startReviewMutation.isPending) return
     if (!canStartReview) {
@@ -449,6 +528,54 @@ export function useTenderReviewPage(
     startReviewMutation.mutate()
   }
 
+  /**
+   * P3 第一步：建项目 + uploadTenderDoc + uploadBid per bidder（上传即 OCR）。
+   *
+   * 返回 projectId，供 docsStatusQuery 轮询 OCR 进度。
+   */
+  async function uploadFilesForOcr(): Promise<string> {
+    const nativeTenderFiles = tenderFiles.filter(hasNativeFile).map((item) => item.file)
+    const bidders = uploadBidders
+      .map((bidder) => ({
+        ...bidder,
+        nativeFiles: bidder.files.filter(hasNativeFile).map((item) => item.file),
+      }))
+      .filter((bidder) => bidder.nativeFiles.length > 0)
+
+    if (!nativeTenderFiles.length || !bidders.length) {
+      throw new Error('请至少上传 1 个招标文件，并为至少一家投标单位上传文件。')
+    }
+
+    // 建项目（幂等 get-or-create）
+    const project = await createTenderProject(
+      buildCreateProjectBody(projectForm, nativeTenderFiles[0])
+    )
+    const projectId = project.project_id
+
+    // 上传招标文件 → 后台 OCR
+    await uploadTenderDoc(projectId, nativeTenderFiles)
+
+    // 逐家上传投标文件 → 后台 OCR（部分失败不整体中断）
+    const uploadFailures: string[] = []
+    for (const bidder of bidders) {
+      try {
+        await uploadBid(projectId, bidder.name, bidder.nativeFiles)
+      } catch {
+        uploadFailures.push(bidder.name)
+      }
+    }
+    if (uploadFailures.length === bidders.length) {
+      throw new Error(`全部投标文件上传失败：${uploadFailures.join('、')}`)
+    }
+    if (uploadFailures.length > 0) {
+      setSubmitError(
+        `部分投标文件上传失败：${uploadFailures.join('、')}（其余正在 OCR 识别中）。`
+      )
+    }
+
+    return projectId
+  }
+
   async function submitReview() {
     const nativeTenderFiles = tenderFiles.filter(hasNativeFile).map((item) => item.file)
     const bidders = uploadBidders
@@ -462,11 +589,12 @@ export function useTenderReviewPage(
       throw new Error('请至少上传 1 个招标文件，并为至少一家投标单位上传文件。')
     }
 
-    setProgress(4)
-    // A①: pass all 6 user-supplied project fields into createTenderProject body
-    const project = await createTenderProject(
-      buildCreateProjectBody(projectForm, nativeTenderFiles[0])
-    )
+    // P3 两步拆分：若已有 uploadProjectId（上传阶段完成，OCR ready），复用它；
+    // 否则（直接点"开始分析"旧路径/legacy）继续建项目。
+    const projectId =
+      uploadProjectId ??
+      (await createTenderProject(buildCreateProjectBody(projectForm, nativeTenderFiles[0]))).project_id
+
     setProgress(10)
 
     // partial 容错（codex r5 P1）：逐家提交，单家受理失败不丢已受理的其余家；全失败才 throw 回 create。
@@ -474,7 +602,7 @@ export function useTenderReviewPage(
     const submitFailures: string[] = []
     for (const [index, bidder] of bidders.entries()) {
       try {
-        const accepted = await evaluateTenderProjectUpload(project.project_id, {
+        const accepted = await evaluateTenderProjectUpload(projectId, {
           bidderName: bidder.name,
           tenderFiles: nativeTenderFiles,
           bidderFiles: bidder.nativeFiles,
@@ -495,7 +623,7 @@ export function useTenderReviewPage(
     // 解耦（第5轮）：提交即返回，**不再 await 评标完成**——评标交 analyzing 独立轮询，
     // 用户可离开/回来恢复、不超时掉回。compare 在全部评标终态后由轮询 effect 触发。
     return {
-      projectId: project.project_id,
+      projectId,
       requestIds: acceptedTasks.map((task) => task.request_id),
       hasCompare: acceptedTasks.length >= 2,
     }
@@ -587,6 +715,13 @@ export function useTenderReviewPage(
     progress,
     progressText,
     isAnalyzing: startReviewMutation.isPending,
+    // P3 上传阶段
+    isUploading: uploadFilesMutation.isPending || isUploading,
+    uploadProjectId,
+    docsStatus: docsStatusQuery.data ?? null,
+    isOcrReady,
+    hasFilesSelected,
+    startUpload,
     uploadError,
     submitError,
     projectForm,
