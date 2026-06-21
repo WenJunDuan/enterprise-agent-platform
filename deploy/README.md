@@ -12,7 +12,7 @@
 |---|---|---|---|---|
 | **dev 测试** | `100.107.62.19` | admin | `ssh -i ~/.ssh/spark-3d55 admin@100.107.62.19`（tailscale 直连；config 别名 `spark`）| NVIDIA aarch64 |
 | **demo 演示** | `10.200.52.4`（njsr-app01）| root | `ssh -J macmini -i ~/.ssh/njsr-app01_ed25519 root@10.200.52.4`（经 mac mini 跳板）| compose **v2.27.1** |
-| **跳板 mac mini** | `macs-mac-mini.tailbf6a2a.ts.net` | mac | config 别名 `macmini`（key `macs_mac_mini_ed25519`）| demo 的唯一入口 |
+| **mac mini 容器演示** | `macs-mac-mini.tailbf6a2a.ts.net` | mac | config 别名 `macmini`（key `macs_mac_mini_ed25519`）| Apple `container`；同时是 demo 跳板 |
 | **prod 内网** | `192.168.1.24`(构建) + 隔离目标机 | — | 物理隔离，离线 tar 搬运 | 内网 qwen3.6 vLLM @ `:8100`（Ascend NPU, 256K ctx, `enable_thinking=false`）|
 
 - **litellm 网关**（dev）：容器 `ea-litellm`，配置 `/opt/application/litellm/litellm_config.yaml`，改后 `docker restart ea-litellm`。
@@ -22,6 +22,8 @@
 
 - **部署根**：各机 `/opt/application/audit-agent/`
 - **镜像标签**：`audit-agent:{月日}{版本}`，如 `0611b1` = 6/11 第 1 版。**更新代码必须 bump 版本号，禁止复用旧标签**（否则版本分不清）。
+- **mac mini Apple container 标签**：`agent-backend:{月日}{版本}` / `agent-front:{月日}{版本}`，如 `0621b3`；容器名固定
+  `agent-backend` / `agent-front` / `cloudflared-mesh`，不要把长时间戳写进容器名。
 - **离线包**：`docker save` → `audit-agent-{tag}.tar` + `audit-agent-{tag}.tar.sha256`
 
 ## 三、什么烤进镜像 vs 挂载（决定改完要不要重建）
@@ -33,6 +35,8 @@
 | `audit-agent.env`（env_file）| 挂载 | 改后 `docker compose up -d --force-recreate` |
 
 > `knowledge/` 与 `data/` 被 `.gitignore` 忽略（制度源不入库）→ 部署时**单独同步规则文件**，不在镜像/git 里。
+> mac mini Apple container 路线使用 `/Users/mac/workspace/enterprise-agent-platform/{knowledge,data,logs}`
+> 作为宿主机持久化目录，分别挂到后端容器 `/app/knowledge`、`/app/data`、`/app/logs`。
 
 ## 四、部署流程
 
@@ -80,6 +84,81 @@ ssh $J -i $KEY $H "cd $D \
 > ⚠️ demo 的 compose 是 **v2.27.1**，不支持 `env_file` 的 `format: raw`（v2.30+ 才有）。
 > 仓库 compose 带 `format: raw` → 在 demo 上 **删掉那一行**（保留 `path:` / `required:` 即可）。
 > 详见 `TROUBLESHOOTING.md`。
+
+### C) mac mini（Apple `container`，前后端分容器）
+
+当前 mac mini 演示使用 Apple `container`，不是 Docker daemon。固定路径与容器名：
+
+- 代码与持久化根：`/Users/mac/workspace/enterprise-agent-platform`
+- env：`/Users/mac/workspace/enterprise-agent-platform/.env`
+- 后端容器：`agent-backend`，端口 `9999`
+- 前端容器：`agent-front`，端口 `5173`
+- tunnel 容器：`cloudflared-mesh`
+- 持久化挂载：`knowledge/`、`data/`、`logs/` 对应 `/app/knowledge`、`/app/data`、`/app/logs`
+
+```bash
+# 在本机同步到 mac mini（按需加 --delete；knowledge/data/logs 不走 git，确认后单独同步）
+R=macmini
+D=/Users/mac/workspace/enterprise-agent-platform
+rsync -az --exclude .git --exclude .venv --exclude node_modules ./ "$R:$D/"
+
+# 在 mac mini 构建，tag 用月日版本号，如 0621b3
+TAG=0621b3
+ssh "$R" "cd $D \
+  && npm --prefix agent-front install \
+  && npm --prefix agent-front run build \
+  && /usr/local/bin/container build -f agent-front/deploy/Containerfile.agent-backend -t agent-backend:$TAG . \
+  && /usr/local/bin/container build -f agent-front/deploy/Containerfile.agent-front -t agent-front:$TAG ."
+
+# 后端：env_file 读 .env；大文件上传上限当前与 nginx 对齐为 512MiB
+ssh "$R" "cd $D \
+  && /usr/local/bin/container stop agent-backend 2>/dev/null || true \
+  && /usr/local/bin/container rm agent-backend 2>/dev/null || true \
+  && /usr/local/bin/container run --detach \
+    --name agent-backend \
+    --cpus 4 \
+    --memory 2048M \
+    --network default,mtu=1280 \
+    --publish 0.0.0.0:9999:9999 \
+    --env-file $D/.env \
+    --env MAX_UPLOAD_FILE_BYTES=536870912 \
+    --mount type=bind,source=$D/knowledge,target=/app/knowledge \
+    --mount type=bind,source=$D/data,target=/app/data \
+    --mount type=bind,source=$D/logs,target=/app/logs \
+    agent-backend:$TAG"
+
+# 前端 nginx：代理到 Apple container 宿主网关 192.168.64.1:9999
+ssh "$R" "cd $D \
+  && /usr/local/bin/container stop agent-front 2>/dev/null || true \
+  && /usr/local/bin/container rm agent-front 2>/dev/null || true \
+  && /usr/local/bin/container run --detach \
+    --name agent-front \
+    --cpus 2 \
+    --memory 512M \
+    --network default,mtu=1280 \
+    --publish 0.0.0.0:5173:80 \
+    --env API_PROXY_TARGET=http://192.168.64.1:9999 \
+    agent-front:$TAG"
+
+# 验证
+ssh "$R" "/usr/local/bin/container ls --all"
+curl -sS http://127.0.0.1:15173/health  # 如本机开了 15173 SSH tunnel，见下方
+ssh "$R" "curl -sS http://127.0.0.1:5173/health"
+```
+
+Apple `container run --network` 目前只接受 `mac`、`mtu` 等属性；不要写
+`--network default,hostname=agent-backend,mtu=1280`，会报 `unknown network property 'hostname'`。
+
+公网 `https://agent.guoker.org` 经 `cloudflared-mesh`，适合普通页面和小请求；大文件评标上传建议开本地 SSH 隧道绕过
+Cloudflare request body / 连接中断风险：
+
+```bash
+ssh -fN -o ExitOnForwardFailure=yes \
+  -o ServerAliveInterval=30 -o ServerAliveCountMax=3 \
+  -L 15173:127.0.0.1:5173 macmini
+
+open http://127.0.0.1:15173/contracts/tender-review
+```
 
 ## 五、审核能力开关（写在各机 `audit-agent.env`，默认全关/安全值）
 

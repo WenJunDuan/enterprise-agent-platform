@@ -1,0 +1,64 @@
+# Enterprise Agent Platform backend image for Mac mini Apple container.
+#
+# Build from the repository root:
+#   container build -f agent-front/deploy/Containerfile.agent-backend -t agent-backend:<tag> .
+#
+# Runtime state is mounted from the host:
+#   /app/knowledge, /app/data, /app/logs
+ARG BASE_IMAGE=python:3.12-slim-bookworm
+FROM ${BASE_IMAGE}
+
+ARG APP_UID=1000
+ARG APP_GID=1000
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    HOME=/home/app
+
+WORKDIR /app
+
+RUN pip install \
+      "claude-agent-sdk>=0.2.88" \
+      "fastapi>=0.115.0" \
+      "jsonschema>=4.23.0" \
+      "python-dotenv>=1.0.1" \
+      "python-multipart>=0.0.30" \
+      "typer>=0.12.0" \
+      "uvicorn>=0.30.0" \
+      "openpyxl>=3.1" \
+      "python-docx>=1.1" \
+      "pymupdf>=1.26" \
+      "pypdf>=5.0" \
+      "certifi>=2024.0"
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+      gosu \
+      libgl1 \
+      libglib2.0-0 \
+      libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN groupadd --gid "${APP_GID}" app \
+    && useradd --uid "${APP_UID}" --gid app --create-home --home-dir /home/app app
+
+COPY --chown=app:app server ./server
+COPY --chown=app:app .claude ./.claude
+COPY --chown=app:app agent-front/dist ./agent-front/dist
+COPY --chown=app:app knowledge ./knowledge
+COPY --chown=app:app pyproject.toml README.md ./
+COPY agent-front/deploy/docker-entrypoint-agent-backend.sh ./docker-entrypoint.sh
+
+RUN mkdir -p /app/data /app/logs \
+    && chown -R app:app /app /home/app \
+    && chmod +x /app/docker-entrypoint.sh
+
+USER root
+
+EXPOSE 9999
+
+ENTRYPOINT ["./docker-entrypoint.sh"]
+CMD ["python", "-m", "uvicorn", "server.api:app", \
+     "--host", "0.0.0.0", "--port", "9999", "--no-server-header"]

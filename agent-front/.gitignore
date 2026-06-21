@@ -32,3 +32,4 @@ dist-ssr
 # Test artifacts
 **/__screenshots__/
 .vitest-attachments/
+.ace-tool/
