@@ -48,7 +48,9 @@ def _stream_partial_enabled() -> bool:
 TENDER_TIMEOUT_SEC = float(os.getenv("TENDER_TIMEOUT_SEC", "3600"))
 
 # 同时进行的评标上限。单标已重（多章节多跳），默认 1，超额提交在信号量处排队。
-MAX_CONCURRENT_TENDER = int(os.getenv("MAX_CONCURRENT_TENDER", "1"))
+# R4-C 提速：默认 1→2（多投标并行评标，N 家从 N×~290s 压到 ~并行）。每并发 = 一路独立模型调用，
+# 成本/限流随之×N；模型网关并发限制时经 .env MAX_CONCURRENT_TENDER 调回 1 或按额度调高。
+MAX_CONCURRENT_TENDER = int(os.getenv("MAX_CONCURRENT_TENDER", "2"))
 _TENDER_SEMAPHORE = asyncio.Semaphore(MAX_CONCURRENT_TENDER)
 
 # 准入上限（round4 F5，对齐 audit_worker）：信号量只限执行，accepted 任务会在信号量处无界

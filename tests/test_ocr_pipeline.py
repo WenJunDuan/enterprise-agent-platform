@@ -254,7 +254,7 @@ def test_ocr_max_workers_clamps_invalid(monkeypatch):
     monkeypatch.setenv("OCR_MAX_WORKERS", "-3")
     assert pipeline_mod._ocr_max_workers() == 1
     monkeypatch.setenv("OCR_MAX_WORKERS", "abc")
-    assert pipeline_mod._ocr_max_workers() == 4
+    assert pipeline_mod._ocr_max_workers() == 6  # R4-B：默认 4→6
     monkeypatch.setenv("OCR_MAX_WORKERS", "8")
     assert pipeline_mod._ocr_max_workers() == 8
 
