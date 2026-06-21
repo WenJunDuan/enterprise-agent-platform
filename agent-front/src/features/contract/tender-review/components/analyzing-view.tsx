@@ -1,5 +1,6 @@
 import { Brain, FileText, Info, Loader2 } from 'lucide-react'
 import { useEffect, useRef } from 'react'
+import { Button } from '@/components/ui/button'
 import {
   Card,
   CardContent,
@@ -24,12 +25,14 @@ export function AnalyzingView({
   title,
   projectForm,
   docsStatus,
+  onExit,
 }: {
   progress: number
   progressText?: string
   title?: string
   projectForm?: ProjectFormData | null
   docsStatus?: DocsStatusResponse | null
+  onExit?: () => void
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
   // 思考流式：新进度到达时自动滚到底，始终展示最新分析片段。
@@ -44,10 +47,20 @@ export function AnalyzingView({
       {/* 进度条（全宽） */}
       <Card>
         <CardHeader>
-          <CardTitle className='flex items-center gap-2'>
-            <Loader2 className='size-5 animate-spin text-primary' />
-            正在分析{title ? `：${title}` : ''}
-          </CardTitle>
+          <div className='flex items-center justify-between gap-2'>
+            <CardTitle className='flex items-center gap-2'>
+              <Loader2 className='size-5 animate-spin text-primary' />
+              正在分析{title ? `：${title}` : ''}
+            </CardTitle>
+            {onExit ? (
+              <Button variant='outline' size='sm' onClick={onExit}>
+                返回列表
+              </Button>
+            ) : null}
+          </div>
+          <p className='mt-2 text-xs text-muted-foreground'>
+            评标在后台继续，可随时返回列表查看或停止删除；本页不会因超时退出。
+          </p>
         </CardHeader>
         <CardContent>
           <div className='space-y-2'>
