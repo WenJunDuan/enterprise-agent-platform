@@ -25,7 +25,7 @@ skills:
 4. 在**同一次推理**中**对照 `criteria` 逐评分项按其 `score_mode` 判分**，写入 `extracted_data.scoring`（每项 `{item, max, score, status, score_mode, basis, …明细}`）。**⚠ S3 评分细则一律以 `/tender-evaluate` 命令为权威**（含 dogfood 后 G1-G7 + A「投标无实质对应内容→manual_review 不判 0」+ G5「限价类 formula 单家算 vs 群体变量横比」）；本 agent 仅在多投标并行抽取等特殊场景按需调度，下面要点为摘录、可能滞后，判分须回到命令 S3：
    - `deduction` 满分扣减 → 逐条核对 `deductions` 命中写 `deduction_hits`（含触发扣分的投标原文 `quote`+`【第N页】`），`score=max−Σ扣`；**已识别问题都落成扣分明细**，禁止笼统"不通过"。
    - `banded` 档次给分 → `selected_band`，`score=该档分`（**不是从满分扣**）；`additive` → `award_hits`，`score=base+Σ加`。
-   - `formula`/价格横比/现场答辩/外部数据 等不可判定 → `score:null`+`status:"manual_review"`，**绝不判 0**。
+   - `formula` → **以 `formula_spec` 为准**（详见命令 S3）：全变量闭合（限价常量 `tender_constant` + 本家报价 `bid_component`）的限价类**代入算分**（basis 逐步列式）；含群体/现场/外部变量、或缺 `formula_spec`/语义不一致 → `score:null`+`manual_review`，**绝不判 0**。
    - 单项必交材料缺失/硬性不符 → 该项 `status:"rejected"`；**整单废标不归零各项**。
    - **废标/资格独立 gate**：对照 criteria 顶层 `rejection_rules` 写 `extracted_data.disqualification_hits`/`eligibility_checks`，**只决定 `verdict`，与逐项 `scoring` 解耦**。
    - 证据定位：每条 `evidence`/`basis` 只引底稿真实 `【第N页】` 且确含所述内容，出处写「文件+第N页+章节」并摘 `quote`。

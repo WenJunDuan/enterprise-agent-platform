@@ -610,3 +610,176 @@ def test_audit_schema_whitelist_no_drift():
         )
     )
     assert oc._AUDIT_SCHEMA_TOP_FIELDS == set(schema["properties"].keys())
+
+
+# ── G5 第3轮:formula 公式变量结构化(formula_spec,限价类单家可算)──────────────
+
+# 限价类:变量全 tender_constant + bid_component → 可单家闭合代入算分。
+_CLOSED_FORMULA_SPEC = {
+    "expression": "score = min(cap, floor((limit - bid) / limit * 100))",
+    "variables": [
+        {"name": "limit", "source": "tender_constant", "value": 300,
+         "unit": "元/用户·月", "ref": "招标文件第21页限价表"},
+        {"name": "bid", "source": "bid_component", "value": 270,
+         "unit": "元/用户·月", "ref": "投标文件第6页报价表"},
+    ],
+    "rounding": "floor",
+    "cap": 10,
+}
+# 横比类:含 cross_bid 群体变量 → 单家算不了,应 manual_review。
+_CROSS_FORMULA_SPEC = {
+    "expression": "score = lowest / bid * 40",
+    "variables": [
+        {"name": "lowest", "source": "cross_bid", "value": None, "ref": None},
+        {"name": "bid", "source": "bid_component", "value": 270, "ref": "投标文件第6页"},
+    ],
+}
+
+
+def _formula_criteria(formula_spec) -> dict:
+    """单 formula 价格项(可选 formula_spec) + 一个普通 scored 项的会话评分标准。"""
+    item = {
+        "item": "价格分", "max": 10,
+        "scoring_rule": "每低于最高限价1%得1分，最多10分",
+        "source_ref": "评标办法 p.21", "tag": "scored", "score_mode": "formula",
+        "formula": "每低于最高限价1%得1分，最多10分",
+    }
+    if formula_spec is not None:
+        item["formula_spec"] = formula_spec
+    return {
+        "source_ref": "招标文件 评标办法 p.18", "method": "综合评估法", "total_max": 50,
+        "items": [
+            item,
+            {"item": "商务响应", "max": 40, "scoring_rule": "按商务条款响应评分",
+             "source_ref": "p.20", "tag": "scored", "score_mode": "deduction", "deductions": []},
+        ],
+    }
+
+
+def _formula_scoring(status: str = "scored", score=10) -> list:
+    return [
+        {"item": "价格分", "max": 10, "score": score, "status": status,
+         "score_mode": "formula", "basis": "限价300、本家270、(300−270)/300=10%、floor得10分"},
+        {"item": "商务响应", "max": 40, "score": 36, "status": "scored",
+         "score_mode": "deduction", "basis": "全响应"},
+    ]
+
+
+def _formula_warns(out: dict) -> list:
+    warns = out["extracted_data"].get("validation_warnings") or []
+    return [w["code"] for w in warns if str(w.get("code", "")).startswith("formula_")]
+
+
+def test_criteria_formula_spec_validates():
+    # formula_spec(expression+variables[source/value/unit/ref]+rounding+cap)通过 criteria 形校验。
+    jsonschema.validate(_formula_criteria(_CLOSED_FORMULA_SPEC), load_output_schema(CRITERIA_SCHEMA))
+
+
+def test_criteria_formula_spec_rejects_bad_source():
+    # variables[].source 是枚举:乱造 → 拒(让验证闸能拦 tag 派生漂移,codex F4)。
+    crit = _formula_criteria(_CLOSED_FORMULA_SPEC)
+    crit["items"][0]["formula_spec"] = {
+        "expression": "x", "variables": [{"name": "v", "source": "magic_source"}],
+    }
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate(crit, load_output_schema(CRITERIA_SCHEMA))
+
+
+def test_criteria_formula_spec_rejects_missing_required():
+    # formula_spec 缺 required(variables) → 拒。
+    crit = _formula_criteria(_CLOSED_FORMULA_SPEC)
+    crit["items"][0]["formula_spec"] = {"expression": "x"}
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate(crit, load_output_schema(CRITERIA_SCHEMA))
+
+
+def test_formula_scored_closed_spec_no_warning(monkeypatch):
+    # 限价类 formula 全变量闭合(tender_constant+bid_component)判 scored → 无 formula warning(正确单家算分)。
+    monkeypatch.setenv("RULE_REF_CHECK", "1")
+    monkeypatch.setattr(oc, "_load_known_rule_ids", lambda: _TENDER_KNOWN)
+    out = apply_schema_semantics(
+        DEFAULT_OUTPUT_SCHEMA_NAME,
+        _scored_with({"criteria": _formula_criteria(_CLOSED_FORMULA_SPEC),
+                      "scoring": _formula_scoring()}),
+    )
+    assert not _formula_warns(out)
+
+
+def test_formula_scored_no_spec_warns(monkeypatch):
+    # formula 判 scored 但缺 formula_spec → formula_scored_no_spec(治"回退临场心算",codex P1-3)。
+    monkeypatch.setenv("RULE_REF_CHECK", "1")
+    monkeypatch.setattr(oc, "_load_known_rule_ids", lambda: _TENDER_KNOWN)
+    out = apply_schema_semantics(
+        DEFAULT_OUTPUT_SCHEMA_NAME,
+        _scored_with({"criteria": _formula_criteria(None),
+                      "scoring": _formula_scoring()}),
+    )
+    assert "formula_scored_no_spec" in _formula_warns(out)
+
+
+def test_formula_scored_not_closeable_warns(monkeypatch):
+    # formula 判 scored 但 spec 含 cross_bid 群体变量 → formula_scored_not_closeable(本应 manual_review)。
+    monkeypatch.setenv("RULE_REF_CHECK", "1")
+    monkeypatch.setattr(oc, "_load_known_rule_ids", lambda: _TENDER_KNOWN)
+    out = apply_schema_semantics(
+        DEFAULT_OUTPUT_SCHEMA_NAME,
+        _scored_with({"criteria": _formula_criteria(_CROSS_FORMULA_SPEC),
+                      "scoring": _formula_scoring()}),
+    )
+    assert "formula_scored_not_closeable" in _formula_warns(out)
+
+
+def test_formula_manual_review_no_warning(monkeypatch):
+    # formula 正确判 manual_review(横比降级,不判 scored)→ 不进 scored 校验,无 formula warning。
+    monkeypatch.setenv("RULE_REF_CHECK", "1")
+    monkeypatch.setattr(oc, "_load_known_rule_ids", lambda: _TENDER_KNOWN)
+    out = apply_schema_semantics(
+        DEFAULT_OUTPUT_SCHEMA_NAME,
+        _scored_with(
+            {"criteria": _formula_criteria(_CROSS_FORMULA_SPEC),
+             "scoring": _formula_scoring(status="manual_review", score=None)},
+            verdict="manual_review", manual_review_reason="insufficient_evidence",
+        ),
+    )
+    assert not _formula_warns(out)
+
+
+def test_formula_scored_missing_value_warns(monkeypatch):
+    # codex P1-1:formula scored,变量 source 全可闭合但有 value 未填(缺限价/本家报价)→ missing_value warning。
+    monkeypatch.setenv("RULE_REF_CHECK", "1")
+    monkeypatch.setattr(oc, "_load_known_rule_ids", lambda: _TENDER_KNOWN)
+    import copy
+
+    spec = copy.deepcopy(_CLOSED_FORMULA_SPEC)
+    spec["variables"][1]["value"] = None  # 本家报价没抽到
+    out = apply_schema_semantics(
+        DEFAULT_OUTPUT_SCHEMA_NAME,
+        _scored_with({"criteria": _formula_criteria(spec), "scoring": _formula_scoring()}),
+    )
+    assert "formula_scored_missing_value" in _formula_warns(out)
+
+
+def test_criteria_hash_ignores_bid_value_in_formula_spec():
+    # codex P1-2:同招标两家,formula_spec 标准(expression/变量结构)相同,只 S2 回填的本家报价 value/ref
+    # 不同 → 必须同 hash(本家数据不属核心标准,不能让报价差异引发横比 stale 误判)。
+    import copy
+
+    from server.stores.tender_compare_store import compute_criteria_hash
+
+    a = _formula_criteria(copy.deepcopy(_CLOSED_FORMULA_SPEC))
+    b = _formula_criteria(copy.deepcopy(_CLOSED_FORMULA_SPEC))
+    b["items"][0]["formula_spec"]["variables"][1]["value"] = 250  # 本家报价不同
+    b["items"][0]["formula_spec"]["variables"][1]["ref"] = "投标文件第8页"
+    assert compute_criteria_hash(a) == compute_criteria_hash(b)
+
+
+def test_criteria_hash_differs_on_formula_standard():
+    # codex P1-2:但 formula 标准本身变(cap/expression)→ hash 必须不同(标准侧保留,不能排整个 spec 漏判 stale)。
+    import copy
+
+    from server.stores.tender_compare_store import compute_criteria_hash
+
+    a = _formula_criteria(copy.deepcopy(_CLOSED_FORMULA_SPEC))
+    b = _formula_criteria(copy.deepcopy(_CLOSED_FORMULA_SPEC))
+    b["items"][0]["formula_spec"]["cap"] = 20  # 评分标准变了
+    assert compute_criteria_hash(a) != compute_criteria_hash(b)

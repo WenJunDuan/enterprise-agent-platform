@@ -127,7 +127,48 @@
           },
           "formula": {
             "type": "string",
-            "description": "score_mode=formula 的评分公式原文（如 '最低有效报价/本投标报价×40'）。多为价格分，单份投标不可算，tag 通常 requires_cross_bid_comparison。"
+            "description": "score_mode=formula 的评分公式原文（直引招标文件，**唯一权威**）。如 '最低有效报价/本投标报价×40'。formula_spec 是从本字段归一化出的机读结构，二者语义须一致；不一致或缺 formula_spec 时 S3 不得自动算、降 manual_review。"
+          },
+          "formula_spec": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "score_mode=formula 的机读结构化公式（G5：让限价类价格分能单家确定性代入算，不再靠模型临场翻底稿心算）。**tag 由 variables[].source 白名单派生**：仅当全部变量可由 S1/S2 证据闭合（tender_constant 当场有值 + bid_component 可回填）才 tag:scored 自动算；任一变量 source ∈ {cross_bid, external_data, live_event, derived(依赖不可闭合量)} → 该项降级对应 manual tag、S3 不自动算。MVP 仅自动算固定限价类（限价比例差 / 多限价分项求和）；阶梯分段离散 → 改走 score_mode:banded，不塞进本 expression。",
+            "required": ["expression", "variables"],
+            "properties": {
+              "expression": {
+                "type": "string",
+                "minLength": 1,
+                "description": "归一化可读公式（从 formula 原文整理），变量名与 variables[].name 对应。如 'score = min(cap, floor((limit - bid) / limit * 100 / step))'。仅作 S3 代入参照，Python 不执行。"
+              },
+              "variables": {
+                "type": "array",
+                "minItems": 1,
+                "description": "公式变量清单，每个变量标 source（决定能否单家闭合）。",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["name", "source"],
+                  "properties": {
+                    "name": { "type": "string", "minLength": 1, "description": "变量名，与 expression 中一致。" },
+                    "source": {
+                      "type": "string",
+                      "enum": ["tender_constant", "bid_component", "cross_bid", "external_data", "live_event", "derived"],
+                      "description": "变量来源/可闭合性。tender_constant=招标文件常量(限价/预算/系数,S1 当场填 value)；bid_component=本家报价分项(S2 回填 value)；cross_bid=需横比群体量(最低价/均价/投标人数,单家算不了)；external_data=外部数据(信用等)；live_event=现场量(答辩/演示系数)；derived=依赖以上不可闭合量的派生量。仅当变量全为 tender_constant+bid_component 时该项才可 tag:scored 自动算。"
+                    },
+                    "value": { "type": ["number", "string", "null"], "description": "变量取值。tender_constant 在 S1 填、bid_component 在 S2 回填；不可闭合来源(cross_bid/external_data/live_event)保持 null。" },
+                    "unit": { "type": "string", "description": "量纲（如 '元/用户·月'、'%'），防取整/口径错配。" },
+                    "ref": { "type": ["string", "null"], "description": "该变量取值出处（文件+第N页+所在表/行），供人工核验。自动算项的每个有值变量必须带 ref。" }
+                  }
+                }
+              },
+              "rounding": {
+                "type": "string",
+                "enum": ["floor", "round", "ceil", "none"],
+                "description": "取整规则（把取整/步长边界写死，减少模型代入漂移）。招标明示'每满X%得Y分'多为 floor。"
+              },
+              "min_score": { "type": ["number", "null"], "description": "得分下限（如不低于 0；招标设保底分则填）。" },
+              "cap": { "type": ["number", "null"], "description": "该项得分封顶（通常 = max；招标对价格分单设上限则填）。" }
+            }
           }
         }
       }

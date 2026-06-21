@@ -367,6 +367,42 @@ def _verify_score_mode_consistency(structured_output: dict[str, Any]) -> None:
             if total is not None and _is_real_number(base):
                 expected = base + total
                 detail = f"基础{base}+加{total}"
+        elif mode == "formula":
+            # G5 兜底（codex P1-3）：formula 判了 scored，但 criteria 项缺结构化 formula_spec 或含
+            # 不可闭合变量（cross_bid/external_data/live_event/derived）→ 本不该单家自动算，warning
+            # 提示人工（防 prompt 不可靠时模型 fallback 临场心算）。不硬降级（限价类可能确实算对了）。
+            spec = citem.get("formula_spec")
+            spec_vars = spec.get("variables") if isinstance(spec, dict) else None
+            if not isinstance(spec_vars, list) or not spec_vars:
+                warnings.append(
+                    {
+                        "code": "formula_scored_no_spec",
+                        "item": item.get("item"),
+                        "detail": "formula 项判了 scored 但缺结构化 formula_spec，疑似临场心算，请人工核验算分依据",
+                    }
+                )
+            elif any(
+                isinstance(v, dict)
+                and v.get("source") in {"cross_bid", "external_data", "live_event", "derived"}
+                for v in spec_vars
+            ):
+                warnings.append(
+                    {
+                        "code": "formula_scored_not_closeable",
+                        "item": item.get("item"),
+                        "detail": "formula 项判了 scored 但公式含横比/外部/现场变量，单家本算不了，请人工确认是否应 manual_review",
+                    }
+                )
+            elif any(isinstance(v, dict) and v.get("value") is None for v in spec_vars):
+                # codex P1-1：source 全可闭合，但有变量未填 value（限价/本家报价没抽到）→ 无法确定性
+                # 代入，判了 scored 必是临场心算。warning 提示人工（不硬降级，prompt 已要求此情形 manual）。
+                warnings.append(
+                    {
+                        "code": "formula_scored_missing_value",
+                        "item": item.get("item"),
+                        "detail": "formula 项判了 scored 但 formula_spec 有变量未填 value（缺限价或本家报价），无法确定性代入，请人工核验算分",
+                    }
+                )
         # formula / pass_fail / manual / 无明细 → expected 仍为 None，跳过。
         if expected is not None and abs(score - expected) > _SCORE_MODE_TOLERANCE:
             warnings.append(
