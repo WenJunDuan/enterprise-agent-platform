@@ -42,6 +42,7 @@ from server.routes.upload_helpers import (
     UNBOUND_PROJECT,
     collect_uploaded_files,
     materialize_upload_submission,
+    remove_project_submission_dir,
     remove_submission_dir,
     sanitize_upload_name,
     validate_directory_case_path,
@@ -537,6 +538,9 @@ async def delete_tender_project_endpoint(
         raise HTTPException(status_code=404, detail="Tender project not found")
     for case_path in outcome["case_paths"]:
         remove_submission_dir(case_path)
+    # 遗留④：再清整个项目 submission 目录树——P3「上传即 OCR」的 tender-doc/bids 预热目录无对应
+    # 评标 task、不在 case_paths 里，仅靠上面逐 case 清会残留磁盘。整目录兜底清干净。
+    await asyncio.to_thread(remove_project_submission_dir, tenant, project_id)
     return {"project_id": project_id, "status": "deleted", "deleted": outcome["deleted"]}
 
 

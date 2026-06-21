@@ -247,3 +247,32 @@ def test_delete_project_cascade_returns_none_for_nonexistent():
 
     result = delete_project_cascade("nonexistent-pid", "any-tenant")
     assert result is None
+
+
+def test_remove_project_submission_dir_clears_orphan_upload_dirs():
+    """遗留④：删整个项目目录树，清掉 P3 上传即 OCR 残留的 tender-doc/bids 预热目录（无对应评标 task）。"""
+    from server.routes.upload_helpers import (
+        remove_project_submission_dir,
+        tenant_submission_root,
+    )
+
+    pid = "tp-orphan-del-test"
+    pdir = tenant_submission_root("default") / "tender" / pid
+    (pdir / "req-tenderdoc").mkdir(parents=True, exist_ok=True)
+    (pdir / "bd-bid1").mkdir(parents=True, exist_ok=True)
+    (pdir / "req-tenderdoc" / "招标文件.pdf").write_text("x")
+    assert pdir.exists()
+
+    remove_project_submission_dir("default", pid)
+    assert not pdir.exists()  # 整个项目目录树(含孤儿上传目录)已清
+
+
+def test_remove_project_submission_dir_rejects_traversal():
+    """安全：非法/穿越 project_id 不删任何东西，submissions root 完好。"""
+    from server.platform.paths import SUBMISSION_ROOT_DIR
+    from server.routes.upload_helpers import remove_project_submission_dir
+
+    remove_project_submission_dir("default", "../../etc")  # 不得抛、不得删 root
+    assert SUBMISSION_ROOT_DIR.exists()
+    remove_project_submission_dir("default", "")  # 空 → no-op
+    assert SUBMISSION_ROOT_DIR.exists()

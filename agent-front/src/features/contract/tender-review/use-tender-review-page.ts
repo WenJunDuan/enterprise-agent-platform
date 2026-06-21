@@ -192,7 +192,10 @@ export function useTenderReviewPage(
       shouldLoadSelectedProject && (projectDetailQuery.data?.bidder_count ?? 0) >= 2,
     refetchInterval: (query) => {
       const compare = query.state.data
-      if (compare == null) return false
+      // 遗留③：首次横比由 triggerTenderCompare 异步生成，期间查询返回 null(404)。旧逻辑 null→停轮询
+      // → 首次横比永不出现停在空。query 仅在 ≥2 投标且在分析/报告屏时 enabled，故 null 时继续轮询
+      // （3s）直到横比生成；已生成且非 stale 才停（离屏由 react-query 自动停，无无界轮询风险）。
+      if (compare == null) return 3000
       return compare.stale ? 3000 : false
     },
   })

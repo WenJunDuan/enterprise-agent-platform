@@ -7,6 +7,7 @@ No route handlers, no FastAPI app references.
 
 from __future__ import annotations
 
+import logging
 import json
 import re
 import shutil
@@ -18,6 +19,8 @@ from fastapi import HTTPException
 from server.platform.config import get_app_settings
 from server.platform.paths import PROJECT_ROOT, SUBMISSION_ROOT_DIR
 from server.platform.storage import append_json_file
+
+logger = logging.getLogger(__name__)
 
 # tenant / 路径段白名单：阻止含 / 或 .. 的名字让 resolve 逃出 submissions 根（round4 F2 / review F1）。
 _SAFE_TENANT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
@@ -133,6 +136,31 @@ def remove_submission_dir(case_path: str | None) -> None:
     if submissions_root not in resolved.parents:
         return
     shutil.rmtree(resolved, ignore_errors=True)
+
+
+def remove_project_submission_dir(tenant: str, project_id: str) -> None:
+    """删除整个招标项目的 submission 目录树 ``<tenant>/tender/<project_id>/``（含全部上传/OCR 产物）。
+
+    遗留④：delete 级联只清各评标 task 的 case_path，但 P3「上传即 OCR」的 tender-doc/bids 预热目录
+    无对应 task → 残留。删项目时清整个 project 目录兜底所有子目录（request/bid/case）。tenant/
+    project_id 逐段安全校验 + confine 到 submissions root 防穿越；任何异常静默吞（清理不该让删失败）。
+    """
+    if not project_id:
+        return
+    try:
+        project_dir = (
+            tenant_submission_root(tenant) / "tender" / _safe_segment(project_id, label="project_id")
+        ).resolve()
+        submissions_root = SUBMISSION_ROOT_DIR.resolve()
+        # 必须严格在 submissions root 之下且更深（不是 root 本身），防误删整个 submissions。
+        if submissions_root in project_dir.parents and project_dir != submissions_root:
+            shutil.rmtree(project_dir, ignore_errors=True)
+    except Exception:  # noqa: BLE001 - 目录清理失败不该让项目删除失败
+        logger.warning(
+            "remove_project_submission_dir failed",
+            extra={"tenant": tenant or "default", "project_id": project_id},
+            exc_info=True,
+        )
 
 
 def collect_uploaded_files(form_data: Any) -> list[Any]:
