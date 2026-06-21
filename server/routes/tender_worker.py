@@ -190,8 +190,17 @@ async def _run_evaluation(
 
     if doc_layer_text is not None:
         ocr_block: str | None = doc_layer_text
+        # R6-R2 可观测：评标复用了预热 OCR（未重 OCR）。
+        logger.info(
+            "tender_ocr_source",
+            extra={"request_id": request_id, "source": "doc_layer_reuse", "bid_id": bid_id},
+        )
     else:
         # P4 原串行 OCR 回落（pymupdf 直读 / 云 OCR）。
+        logger.info(
+            "tender_ocr_source",
+            extra={"request_id": request_id, "source": "inline_ocr", "bid_id": bid_id},
+        )
         ocr_block = await asyncio.to_thread(
             ocr_preprocess_block, directory_path, purpose=TENDER_OCR_PURPOSE
         )
