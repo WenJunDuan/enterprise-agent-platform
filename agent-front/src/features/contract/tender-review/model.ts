@@ -15,6 +15,7 @@ import type {
   ReviewCategory,
   ReviewCategoryData,
   ReviewItem,
+  ScoreHit,
   TenderScoreIssue,
   TenderScoreSummary,
   TenderScoringItem,
@@ -399,11 +400,14 @@ function buildCategories(result?: AuditResult | null): ReviewCategoryData[] {
     ]
   }
 
+  // R2：原始 scoring 项（与 buildScoringItems 1:1 同序）→ 取逐条扣分/加分明细 + score_mode + 原因。
+  const rawScoring = getScoringItems(result)
   const groups = new Map<ReviewCategory, ReviewItem[]>()
   scoring.forEach((item, index) => {
     const title = item.item || `评分项 ${index + 1}`
     const criteria = findCriteriaItem(result, title)
     const category = item.category
+    const raw = rawScoring[index]
     const groupItems = groups.get(category) ?? []
     groupItems.push({
       id: item.id || `score-${index}`,
@@ -417,6 +421,11 @@ function buildCategories(result?: AuditResult | null): ReviewCategoryData[] {
       status: getScoringStatus(item.status, item.score),
       got: item.score ?? undefined,
       max: item.max,
+      // R2 上下文定位与显示：逐条扣分/加分命中带原文 quote + 出处页。
+      deductionHits: parseScoreHits(raw?.deduction_hits),
+      awardHits: parseScoreHits(raw?.award_hits),
+      scoreMode: toText(raw?.score_mode) || undefined,
+      manualReviewReason: toText(raw?.manual_review_reason) || undefined,
     })
     groups.set(category, groupItems)
   })
@@ -502,6 +511,26 @@ function buildCompareNotice(
 function getScoringItems(result?: AuditResult | null): UnknownRecord[] {
   const scoring = result?.extracted_data?.scoring
   return Array.isArray(scoring) ? scoring.filter(isRecord) : []
+}
+
+/**
+ * R2: parse scoring[].deduction_hits / award_hits into displayable ScoreHit[].
+ *
+ * Raw hit shape (tender-evaluate command): {condition, points_each, deducted|awarded,
+ * evidence:{source, quote}}. Tolerant of missing/odd fields (best-effort display).
+ */
+function parseScoreHits(raw: unknown): ScoreHit[] | undefined {
+  if (!Array.isArray(raw)) return undefined
+  const hits = raw.filter(isRecord).map((hit) => {
+    const evidence = isRecord(hit.evidence) ? hit.evidence : undefined
+    return {
+      condition: toText(hit.condition) || '—',
+      points: toNumber(hit.deducted) ?? toNumber(hit.awarded) ?? toNumber(hit.points_each),
+      quote: toText(evidence?.quote) || toText(hit.quote) || undefined,
+      source: toText(evidence?.source) || toText(hit.source) || undefined,
+    }
+  })
+  return hits.length > 0 ? hits : undefined
 }
 
 function buildScoringItems(result?: AuditResult | null): TenderScoringItem[] {

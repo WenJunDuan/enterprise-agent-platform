@@ -6,6 +6,7 @@ import type {
   ReviewCategory,
   ReviewItem,
   ReviewBidder,
+  ScoreHit,
   TenderReviewMockData,
   TenderReviewMode,
 } from '../types'
@@ -377,6 +378,32 @@ function ReviewItemCard({
             </span>
           </span>
         ) : null}
+        {item.manualReviewReason ? (
+          <span className='mt-2 inline-flex w-fit items-center gap-1 rounded bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700'>
+            待人工 · {manualReviewReasonLabel(item.manualReviewReason)}
+          </span>
+        ) : null}
+        {/* R2 扣分明细：逐条命中（扣分 + 原文 quote + 出处页），治"扣分项准确 + 上下文定位与显示" */}
+        {item.deductionHits?.length ? (
+          <span className='mt-2 block space-y-1.5'>
+            <span className='block text-xs font-semibold text-muted-foreground'>
+              扣分明细（{item.deductionHits.length} 条）
+            </span>
+            {item.deductionHits.map((hit, hitIndex) => (
+              <ScoreHitRow key={hitIndex} hit={hit} sign='deduct' />
+            ))}
+          </span>
+        ) : null}
+        {item.awardHits?.length ? (
+          <span className='mt-2 block space-y-1.5'>
+            <span className='block text-xs font-semibold text-muted-foreground'>
+              加分明细（{item.awardHits.length} 条）
+            </span>
+            {item.awardHits.map((hit, hitIndex) => (
+              <ScoreHitRow key={hitIndex} hit={hit} sign='award' />
+            ))}
+          </span>
+        ) : null}
         <span className='mt-2 flex gap-2 rounded-lg bg-primary/5 p-2 text-xs leading-5 text-primary'>
           <Brain className='mt-0.5 size-3 shrink-0' />
           <span>
@@ -391,6 +418,56 @@ function ReviewItemCard({
       </span>
     </button>
   )
+}
+
+/** R2：单条扣分/加分明细行 — 扣/加分值 + 命中条件 + 投标原文 quote + 出处页（上下文定位）。 */
+function ScoreHitRow({ hit, sign }: { hit: ScoreHit; sign: 'deduct' | 'award' }) {
+  const ptsLabel =
+    hit.points == null
+      ? ''
+      : `${sign === 'deduct' ? '−' : '+'}${formatScoreValue(hit.points)} 分`
+  return (
+    <span className='block rounded-lg bg-muted/40 px-2.5 py-1.5 text-xs'>
+      <span className='flex items-start gap-2'>
+        {ptsLabel ? (
+          <b
+            className={cn(
+              'shrink-0',
+              sign === 'deduct' ? 'text-red-600' : 'text-emerald-600'
+            )}
+          >
+            {ptsLabel}
+          </b>
+        ) : null}
+        <span className='text-foreground'>{hit.condition}</span>
+      </span>
+      {hit.quote ? (
+        <span className='mt-1 block border-l-2 border-l-amber-300 pl-2 leading-5 text-muted-foreground italic'>
+          「{hit.quote}」
+        </span>
+      ) : null}
+      {hit.source ? (
+        <span className='mt-1 flex items-center gap-1 font-medium text-primary'>
+          <MapPin className='size-3 shrink-0' />
+          {hit.source}
+        </span>
+      ) : null}
+    </span>
+  )
+}
+
+const manualReviewReasonLabels: Record<string, string> = {
+  insufficient_evidence: '证据不足',
+  data_conflict: '数据冲突',
+  rule_gap: '规则缺口',
+  missing_approval: '缺审批',
+  budget_exceeded: '超预算',
+  invoice_invalid: '发票无效',
+  pre_approval_mismatch: '预审不符',
+}
+
+function manualReviewReasonLabel(reason: string): string {
+  return manualReviewReasonLabels[reason] ?? reason
 }
 
 function getItemBadge(item: ReviewItem) {

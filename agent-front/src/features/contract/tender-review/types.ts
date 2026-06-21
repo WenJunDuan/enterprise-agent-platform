@@ -55,6 +55,14 @@ export type ReviewBidder = {
   rank: number
 }
 
+/** 单条扣分/加分命中（R2：逐条展示"哪条命中/扣几分/原文/出处页"）。 */
+export type ScoreHit = {
+  condition: string
+  points: number | null
+  quote?: string
+  source?: string
+}
+
 export type ReviewItem = {
   id: string
   title: string
@@ -64,6 +72,14 @@ export type ReviewItem = {
   status?: ReviewItemStatus
   got?: number
   max?: number
+  /** R2 扣分明细：deduction-mode 项逐条扣分命中（含原文 quote + 出处页）。 */
+  deductionHits?: ScoreHit[]
+  /** R2 加分明细：additive-mode 项逐条加分命中。 */
+  awardHits?: ScoreHit[]
+  /** R2：评分方式（deduction/banded/additive/formula/pass_fail/manual）。 */
+  scoreMode?: string
+  /** R2：manual_review 项的原因（insufficient_evidence/data_conflict 等）。 */
+  manualReviewReason?: string
 }
 
 export type ReviewCategoryData = {
