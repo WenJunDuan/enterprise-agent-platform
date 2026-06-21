@@ -106,7 +106,15 @@ OCR 上传（`tender.py:741` POST .../tender-doc）只产 `ocr_text` 原文 blob
   ③**openrouter**（用户指定替 anyrouter）：base 修为 Anthropic skin `https://openrouter.ai/api`（非 OpenAI 路径），实测 R1 抽取 **81s 三模型最快**。
   ④**evidence_chain 归一**（实测根因）：模型给 evidence_chain 项加 rule_ref/relevance/漏 conclusion→additionalProperties 整单契约失败重试（伤审核速度）→normalize 剥到 {source,finding,conclusion}+补缺省。
   **端到端实测（qwen 全量评标）**：completed / **verdict=rejected（投错标，verdict 纠偏生效）** / 20项 scoring / 300s / **retries=0**（evidence_chain 修复消除重试）/ 流式实时。605 passed+ruff+前端 lint/build。
-  **遗留**：deepseek/openrouter 流式实时性 + 全量评标稳定性补测（deepseek 漏 reasons、qwen 偶发 enum 漂移仍靠重试）。
+  **遗留**：deepseek/openrouter 流式实时性补测（机制端点无关）。
+
+- **多模型评标可靠性（贯穿 R1-R3，2026-06-22 实测全绿）**：三模型全量评标稳定性曾是痛点（strict
+  audit-result schema vs 模型输出漂移→契约反复重试至失败/拖慢）。系统性"剥未知字段/补缺省"治理：
+  ①qwen enum 漂移→criteria 归一(R1) ②qwen/deepseek evidence_chain 加 rule_ref/relevance/漏 conclusion
+  →归一(R3) ③deepseek 漏 reasons 等信封必填→兜底默认(R3) ④投错标 verdict 纠偏→rejected(R2)。
+  **端到端实测**：qwen completed/rejected/20项/300s/**retries=0**；deepseek completed/rejected/20项/
+  370s/retries=1（**曾 3 重试失败**→现稳过）；openrouter 抽取 81s 最快。**三模型评标现均可靠跑通。**
+  606 passed+ruff+前端 lint/build。
 - R4：_pending_
 - R5：_pending_
 - R6：_pending_
