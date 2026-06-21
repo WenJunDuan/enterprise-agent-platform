@@ -44,7 +44,15 @@ type ActiveEval = { projectId: string; requestIds: string[]; hasCompare: boolean
 function readActiveEval(): ActiveEval | null {
   try {
     const raw = localStorage.getItem(ACTIVE_EVAL_KEY)
-    return raw ? (JSON.parse(raw) as ActiveEval) : null
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Partial<ActiveEval>
+    // shape 校验：脏数据（{}、缺 requestIds）一律丢弃，防 .length 崩溃（codex r5 A+B P1）。
+    if (!parsed || !Array.isArray(parsed.requestIds) || parsed.requestIds.length === 0) return null
+    return {
+      projectId: String(parsed.projectId ?? ''),
+      requestIds: parsed.requestIds,
+      hasCompare: Boolean(parsed.hasCompare),
+    }
   } catch {
     return null
   }
@@ -99,7 +107,10 @@ export function useTenderReviewPage(
   )
   const [reviewMode, setReviewMode] = useState<TenderReviewMode>('detail')
   const [category, setCategory] = useState<ReviewCategory>('qual')
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
+  // 恢复：若 localStorage 有进行中评标，selectedProjectId 直接指向该项目（不落到列表[0]，codex r5 P1）。
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
+    () => readActiveEval()?.projectId ?? null
+  )
   const [selectedBidderId, setSelectedBidderId] = useState('')
   const [activeItemId, setActiveItemId] = useState('result-summary')
   const [query, setQuery] = useState('')
@@ -304,12 +315,18 @@ export function useTenderReviewPage(
       })
       return next
     })
-    // 全部终态（completed/failed）→ 清进行中态、跳分析中心逐项展示
+    // 终态判定：completed/failed 是终态；null（任务 404/已删/不存在）也当终态，否则脏 rid 会永远
+    // 停 analyzing 卡死、不清 localStorage（codex r5 A+B P1）。
     const allTerminal = statuses.every(
-      (status) => status && (status.status === 'completed' || status.status === 'failed')
+      (status) => status === null || status.status === 'completed' || status.status === 'failed'
     )
     if (allTerminal) {
       const { projectId, hasCompare } = activeEval
+      // 失败可见（P1-4）：有 failed / 任务丢失 → 提示，不被结果列表静默掩盖。
+      const failedCount = statuses.filter((s) => !s || s.status === 'failed').length
+      if (failedCount > 0) {
+        setSubmitError(`${failedCount} 家评标未成功（失败或任务丢失），可在结果页查看或重试。`)
+      }
       setActiveEval(null)
       setProgress(100)
       if (hasCompare) void triggerTenderCompare(projectId).catch(() => {})
@@ -452,15 +469,27 @@ export function useTenderReviewPage(
     )
     setProgress(10)
 
+    // partial 容错（codex r5 P1）：逐家提交，单家受理失败不丢已受理的其余家；全失败才 throw 回 create。
     const acceptedTasks = []
+    const submitFailures: string[] = []
     for (const [index, bidder] of bidders.entries()) {
-      const accepted = await evaluateTenderProjectUpload(project.project_id, {
-        bidderName: bidder.name,
-        tenderFiles: nativeTenderFiles,
-        bidderFiles: bidder.nativeFiles,
-      })
-      acceptedTasks.push(accepted)
+      try {
+        const accepted = await evaluateTenderProjectUpload(project.project_id, {
+          bidderName: bidder.name,
+          tenderFiles: nativeTenderFiles,
+          bidderFiles: bidder.nativeFiles,
+        })
+        acceptedTasks.push(accepted)
+      } catch {
+        submitFailures.push(bidder.name)
+      }
       setProgress(10 + Math.round(((index + 1) / bidders.length) * 20))
+    }
+    if (acceptedTasks.length === 0) {
+      throw new Error(`全部投标提交失败：${submitFailures.join('、')}`)
+    }
+    if (submitFailures.length > 0) {
+      setSubmitError(`部分投标提交失败：${submitFailures.join('、')}（其余已在后台分析）。`)
     }
 
     // 解耦（第5轮）：提交即返回，**不再 await 评标完成**——评标交 analyzing 独立轮询，
@@ -532,7 +561,9 @@ export function useTenderReviewPage(
   }
 
   // 思考流式：多投标人并行时按序号分段拼接各家进度，单家直接显示（codex r4 P1：防并发覆盖）。
-  const progressEntries = Object.values(progressByRid).filter(Boolean)
+  // 按提交顺序（activeEval.requestIds）排列各家进度，标签不错位（codex r5 P2）。
+  const orderedRids = activeEval?.requestIds ?? Object.keys(progressByRid)
+  const progressEntries = orderedRids.map((rid) => progressByRid[rid]).filter(Boolean)
   const progressText =
     progressEntries.length <= 1
       ? progressEntries[0] ?? ''
