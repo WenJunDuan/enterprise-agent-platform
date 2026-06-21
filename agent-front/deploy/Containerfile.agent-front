@@ -1,0 +1,9 @@
+ARG BASE_IMAGE=docker.m.daocloud.io/library/nginx:1.29-alpine
+FROM ${BASE_IMAGE}
+
+COPY agent-front/dist /usr/share/nginx/html
+COPY agent-front/deploy/nginx.conf.template /etc/nginx/templates/default.conf.template
+
+ENV API_PROXY_TARGET=http://192.168.64.1:9999
+
+EXPOSE 80

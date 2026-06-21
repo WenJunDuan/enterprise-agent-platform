@@ -1,0 +1,17 @@
+sprint_slug: 2026-06-21-tender-harness-redesign
+worktrees:
+  - name: "agent-ae25a28b932fc3bf2"
+    path: ""
+    branch: ""
+    created_at: "2026-06-21T13:52:24.341Z"
+    status: active
+  - name: "agent-ac576546b80f08723"
+    path: ""
+    branch: ""
+    created_at: "2026-06-21T14:16:31.545Z"
+    status: active
+  - name: "agent-aeb2d87980d05d458"
+    path: ""
+    branch: ""
+    created_at: "2026-06-21T14:36:30.286Z"
+    status: active

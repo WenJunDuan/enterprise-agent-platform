@@ -41,6 +41,34 @@
 - **真因**：compose **< v2.30** 不认 `env_file` 的 `format: raw`（demo 是 v2.27.1）。`path:`/`required:` 需 v2.24+。
 - **解法**：该机 `docker-compose.yml` 里**删掉 `format: raw` 一行**（保留 `path:`/`required:`，或退回短格式 `- ./audit-agent.env`）。删后跑 `docker exec audit-agent printenv TENANT_KEYS` 确认 JSON 没被弄坏（应是完整 `{"default":"..."}`）。
 
+### B4. mac mini 大文件招投标上传失败，但小文件正常
+- **症状**：前端提示"请求失败，请稍后重试"；nginx/access 看到
+  `POST /tender/projects/<id>/evaluate` 返回 400；后端没有生成 `tender_tasks`，
+  `data/submissions/default/tender/` 也没有落文件。
+- **后端特征**：异常发生在 `request.form()` 解析 multipart 阶段，日志含
+  `starlette.requests.ClientDisconnect`。这表示上传流在识别/评标前断开，不是模型识别逻辑失败。
+- **cloudflared 特征**：同一时间有 `Incoming request ended abruptly: context canceled`，目标为
+  `https://agent.guoker.org/tender/projects/<id>/evaluate`。
+- **真因**：公网 `cloudflared-mesh` 链路对大 body 上传不稳定或触发 Cloudflare 请求体限制。Cloudflare 官方
+  `413 Payload Too Large` 文档列出 Free/Pro 100MB、Business 200MB、Enterprise 500MB+ 的上传上限：
+  https://developers.cloudflare.com/support/troubleshooting/http-status-codes/4xx-client-error/error-413/
+  前端 nginx / 后端路由可用，小文件同路径成功时尤其能确认问题在上传链路。
+- **解法**：
+  1. mac mini 前端 nginx 保持 `client_max_body_size 512m`、`client_body_timeout 600s`、
+     `proxy_send_timeout 600s`、`proxy_read_timeout 1200s`、`proxy_request_buffering off`。
+  2. 后端 env 保持 `MAX_UPLOAD_FILE_BYTES=536870912`（512MiB），与 nginx 对齐；改后重建/重启
+     `agent-backend`。
+  3. 用户无法拆文件时，优先绕过 Cloudflare：本机开
+     `ssh -fN -o ExitOnForwardFailure=yes -L 15173:127.0.0.1:5173 macmini`，然后访问
+     `http://127.0.0.1:15173/contracts/tender-review` 上传。
+  4. 验证是否真正进入评标：`tender_tasks` 应出现 `accepted/running/completed`，上传目录应有 PDF 文件；
+     如果只有 `tender_projects` 没有 task，就是还没进入识别。
+
+### B5. Apple `container run --network ... hostname=...` 报错
+- **症状**：重建 mac mini 容器时报 `unknown network property 'hostname'. Available properties: mac, mtu`。
+- **真因**：Apple `container` 的 `--network` 参数不是 Docker run 语义，目前不接受 `hostname` 属性。
+- **解法**：使用 `--network default,mtu=1280`，容器名用 `--name agent-backend` / `--name agent-front` 固定即可。
+
 ---
 
 ## C. SSH / 跳板
@@ -94,3 +122,39 @@
 ### F1. 详情页白屏 `Minified React error #31 (object with keys {code,description,severity})`
 - **真因**：旧归档结果里 `reasons`/`risk_dimensions` 是对象，前端按字符串/数组渲染对象 → 崩。
 - **解法**：① 后端 `enrich_audit_decision` 写入+读取端都归一化（reasons 拍平字符串、risk_dimensions 对象→数组、0-100→0-10）；② 前端 `TaskDetail` 加 `toText`/`normalizeRiskDimensions` 兜底。旧结果免重跑即可渲染。
+
+---
+
+## G. 日志噪音排除特征
+
+这些可以在日志侧先降噪；排除前保留 ERROR、failed、traceback、`status=failed`、`ClientDisconnect`
+等异常关键词。
+
+### G1. 后端 `agent-backend`
+- 前端轮询任务状态：`INFO: .* "GET /tender/tasks/[0-9a-f-]+ HTTP/1.1" 200 OK`
+- 前端轮询项目/结果列表：`INFO: .* "GET /tender/projects.* HTTP/1.1" 200 OK`
+- 健康检查：`INFO: .* "GET /health HTTP/1.1" 200 OK`
+- 正常启动噪音：`Started server process`、`Waiting for application startup`、
+  `Application startup complete`、`Uvicorn running on`
+- SDK 正常启动：`Using bundled Claude Code CLI:`
+- PyMuPDF 建议提示：`Consider using the pymupdf_layout package`
+
+### G2. 前端 `agent-front` nginx
+- 任务状态轮询：`"GET /tender/tasks/[0-9a-f-]+ HTTP/1.1" 200`
+- 项目/结果轮询：`"GET /tender/projects.* HTTP/1.1" 200`
+- 健康检查：`"GET /health HTTP/1.1" 200`
+- 静态资源加载：`"GET /assets/.* HTTP/1.1" 200`、`"GET /images/.* HTTP/1.1" 200`
+- SPA 页面缓存命中：`"GET /contracts/tender-review HTTP/1.1" 304`
+
+### G3. `cloudflared-mesh`
+- 正常启动/连边缘：`Starting tunnel`、`Registered tunnel connection`、
+  `Tunnel connection curve preferences`
+- ICMP 能力不足但不影响 HTTP tunnel：`ICMP proxy feature is disabled`、
+  `ping_group_range`
+- QUIC 不稳但自动降级 HTTP/2：`QUIC connection failed`、
+  `Allow outbound QUIC traffic on port 7844 or use HTTP2`、
+  `Environment ready with degraded transport`
+- 旧 origin 不通的重复噪音：`Unable to reach the origin service.*dial tcp .*:5173: i/o timeout`
+
+不要排除这类上传失败信号，除非已明确改用本地隧道：`Incoming request ended abruptly: context canceled`
+且 `dest=https://agent.guoker.org/tender/projects/.*/evaluate`。
