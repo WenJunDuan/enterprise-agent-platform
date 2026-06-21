@@ -21,14 +21,12 @@ import json
 import logging
 from typing import Any, Literal
 
-import jsonschema
 from fastapi import APIRouter, Header, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, ValidationError
 from starlette.requests import ClientDisconnect
 
 from server.common.command_adapter import run_command_json
-from server.common.contract import load_output_schema
 from server.core import enrich_audit_decision
 from server.ocr.pipeline import prewarm_and_text
 from server.routes.deps import verify_tenant
@@ -86,16 +84,60 @@ logger = logging.getLogger(__name__)
 # P1-2: 强引用集防 fire-and-forget OCR 任务被 GC 回收；done 后自清（镜像 tender_worker._BACKGROUND_TASKS）。
 _UPLOAD_OCR_TASKS: set[asyncio.Task[None]] = set()
 
+# R7-#1: 按 project_id 分桶在跑的上传 OCR 任务 → 删项目时可 task.cancel() 真正"停止 OCR 服务"
+# （释放信号量名额，停掉无谓计算）。DB-gone 守卫已保证停后写入 no-op，故 cancel 仅作提速、无脏数据。
+_PROJECT_OCR_TASKS: dict[str, set[asyncio.Task[None]]] = {}
+
 # P1-2: 上传即 OCR 并发上限（云 OCR 有限流；本地并行也消耗内存）；OCR_PREWARM_MAX env 可调。
 # R4-B 提速：默认 2→4（招标 + 多投标同时 OCR，多家上传不再串行排队）。云 PaddleOCR(aistudio) 限流时
 # 可经 .env 调回/再调高（实测云端并发上限后定值）。
 _UPLOAD_OCR_SEMAPHORE = asyncio.Semaphore(int(__import__("os").getenv("OCR_PREWARM_MAX", "4")))
 
 
-def _track_upload_ocr_task(task: asyncio.Task[None]) -> None:
-    """留强引用防 fire-and-forget OCR 任务被 GC 回收；done 时自清（P1-2）。"""
+def _track_upload_ocr_task(task: asyncio.Task[None], project_id: str | None = None) -> None:
+    """留强引用防 fire-and-forget OCR 任务被 GC 回收；done 时自清（P1-2）。
+
+    R7-#1：同时按 project_id 分桶，供删项目时定向 cancel（停 OCR）。
+
+    Args:
+        task: 后台 OCR 任务。
+        project_id: 所属招标项目；None 则仅入全局集（不参与 per-project cancel）。
+    """
     _UPLOAD_OCR_TASKS.add(task)
     task.add_done_callback(_UPLOAD_OCR_TASKS.discard)
+    if project_id:
+        bucket = _PROJECT_OCR_TASKS.setdefault(project_id, set())
+        bucket.add(task)
+
+        def _discard_from_project(done: asyncio.Task[None]) -> None:
+            remaining = _PROJECT_OCR_TASKS.get(project_id)
+            if remaining is None:
+                return
+            remaining.discard(done)
+            if not remaining:
+                _PROJECT_OCR_TASKS.pop(project_id, None)
+
+        task.add_done_callback(_discard_from_project)
+
+
+def _cancel_project_ocr_tasks(project_id: str) -> int:
+    """R7-#1：取消某项目所有在跑的上传 OCR 任务（删项目时调用，"停止 OCR 服务"）。
+
+    Args:
+        project_id: 招标项目标识。
+
+    Returns:
+        实际请求取消的任务数（已完成的不计）。
+    """
+    tasks = _PROJECT_OCR_TASKS.get(project_id)
+    if not tasks:
+        return 0
+    cancelled = 0
+    for task in list(tasks):
+        if not task.done():
+            task.cancel()
+            cancelled += 1
+    return cancelled
 
 
 # OCR purpose for background prewarm tasks (mirrors tender_worker.TENDER_OCR_PURPOSE).
@@ -546,6 +588,14 @@ async def delete_tender_project_endpoint(
             status_code=409,
             detail="项目下有在途的价格横比任务，请等其结束后再删除",
         )
+    # R7-#1：删前先停该项目在跑的上传 OCR（"传错招标文件→删除→停 OCR→重传"诉求）。释放信号量名额，
+    # 停掉无谓 OCR 计算；DB 行随级联删除消失，被取消任务的后续写入命中 0 行自然 no-op。
+    cancelled_ocr = _cancel_project_ocr_tasks(project_id)
+    if cancelled_ocr:
+        logger.info(
+            "tender_project_ocr_cancelled_on_delete",
+            extra={"project_id": project_id, "cancelled": cancelled_ocr},
+        )
     outcome = await asyncio.to_thread(delete_project_cascade, project_id, tenant)
     if outcome is None:
         raise HTTPException(status_code=404, detail="Tender project not found")
@@ -729,6 +779,41 @@ def _normalize_criteria_enums(criteria_obj: object) -> None:
             item["score_mode"] = "manual"
 
 
+# R7-#2：tender_info 仅 6 个已知 optional string 字段，作展示/回填用。
+_TENDER_INFO_FIELDS = (
+    "tender_no",
+    "project_name",
+    "tenderee",
+    "control_price",
+    "method",
+    "funding_hint",
+)
+
+
+def _sanitize_tender_info(obj: object) -> dict[str, str] | None:
+    """R7-#2：净化 tender_info——保留 6 已知 string 字段（trim 非空），剥未知字段。
+
+    替代旧的 jsonschema validate-or-drop：tender-info.schema 是 additionalProperties:false，
+    模型只要多抽一个字段（如投标截止时间 / 项目地点）整份校验即抛错 → tender_info 被整体丢弃 →
+    「区1 基本信息」空白（criteria 走独立 sanity 检查故区2 仍显，正是用户实测的不对称现象）。
+    改为结构净化：合法字段照留、未知字段剥掉，杜绝因单个多余字段丢掉全部已抽取的项目元数据。
+
+    Args:
+        obj: tender-extract-info 返回的 tender_info 原始对象。
+
+    Returns:
+        仅含已知非空 string 字段的 dict；无任何可用字段或入参非 dict 时返回 None。
+    """
+    if not isinstance(obj, dict):
+        return None
+    cleaned: dict[str, str] = {}
+    for key in _TENDER_INFO_FIELDS:
+        value = obj.get(key)
+        if isinstance(value, str) and value.strip():
+            cleaned[key] = value.strip()
+    return cleaned or None
+
+
 async def _extract_project_doc_info(
     project_id: str,
     case_path: str,
@@ -780,18 +865,9 @@ async def _extract_project_doc_info(
         _normalize_criteria_enums(criteria_obj)
         if not _criteria_looks_usable(criteria_obj):
             raise ValueError("extracted criteria failed structural sanity check (no usable items)")
-        # tender_info 仅作展示/回填，best-effort：不合格只丢弃该对象，不拖垮整体抽取。
-        if tender_info_obj is not None:
-            try:
-                jsonschema.validate(
-                    tender_info_obj, load_output_schema("tender/tender-info.schema.json")
-                )
-            except jsonschema.ValidationError:
-                logger.warning(
-                    "tender_info_validation_failed_dropping",
-                    extra={"project_id": project_id, "tenant": tenant or "default"},
-                )
-                tender_info_obj = None
+        # tender_info 仅作展示/回填，best-effort：净化保留已知字段（R7-#2），剥未知字段，不再因
+        # additionalProperties:false 整对象丢弃 → 治"区1 基本信息没回传"（用户没手填、直接下一步）。
+        tender_info_obj = _sanitize_tender_info(tender_info_obj)
 
         criteria_json = json.dumps(criteria_obj, ensure_ascii=False) if criteria_obj else None
         tender_info_json = (
@@ -997,7 +1073,7 @@ def _start_project_doc_ocr_task(
     task = asyncio.create_task(
         _run_project_doc_ocr(project_id, case_path, tenant=tenant, purpose=purpose)
     )
-    _track_upload_ocr_task(task)
+    _track_upload_ocr_task(task, project_id)
 
 
 def _start_bid_doc_ocr_task(
@@ -1007,7 +1083,7 @@ def _start_bid_doc_ocr_task(
     task = asyncio.create_task(
         _run_bid_doc_ocr(project_id, bid_id, case_path, tenant=tenant, purpose=purpose)
     )
-    _track_upload_ocr_task(task)
+    _track_upload_ocr_task(task, project_id)
 
 
 # ── P2 上传端点（招标文件 / 投标文件 / 轮询状态）────────────────────────────────

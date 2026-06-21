@@ -14,8 +14,12 @@ B. delete 级联 (tender_project_store.delete_project_cascade):
 
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
+
+import pytest
+
 
 def _pid() -> str:
     return f"tp-{uuid.uuid4().hex[:16]}"
@@ -276,3 +280,81 @@ def test_remove_project_submission_dir_rejects_traversal():
     assert SUBMISSION_ROOT_DIR.exists()
     remove_project_submission_dir("default", "")  # 空 → no-op
     assert SUBMISSION_ROOT_DIR.exists()
+
+
+# ── R7-#2: tender_info 净化（替代 validate-or-drop，治"区1 基本信息没回传"） ──────
+
+
+def test_sanitize_tender_info_strips_unknown_keeps_known():
+    """未知字段（如 bid_deadline）剥掉但不丢整对象——根因：schema additionalProperties:false
+    下旧 validate 遇任一多余字段即抛错丢掉整份 tender_info → 区1 空白。"""
+    from server.routes.tender import _sanitize_tender_info
+
+    out = _sanitize_tender_info(
+        {
+            "project_name": "  某市智慧平台  ",
+            "tenderee": "某局",
+            "bid_deadline": "2026-07-01",  # 未知字段
+            "qualification": {"x": 1},  # 未知 + 非 string
+            "control_price": "1500万元",
+            "method": "综合评估法",
+            "tender_no": "ZB-2026-001",
+            "funding_hint": "财政资金",
+        }
+    )
+    assert out == {
+        "project_name": "某市智慧平台",  # trim
+        "tenderee": "某局",
+        "control_price": "1500万元",
+        "method": "综合评估法",
+        "tender_no": "ZB-2026-001",
+        "funding_hint": "财政资金",
+    }
+
+
+def test_sanitize_tender_info_drops_empty_and_nonstring():
+    """空串/非 string/None 字段跳过；无任何可用字段或非 dict 入参 → None。"""
+    from server.routes.tender import _sanitize_tender_info
+
+    assert _sanitize_tender_info(None) is None
+    assert _sanitize_tender_info("nope") is None
+    assert _sanitize_tender_info({"project_name": "  ", "control_price": 1500}) is None
+    # 部分有效：保留有效 string，跳过非 string / 空
+    assert _sanitize_tender_info({"project_name": "X", "tenderee": "  ", "method": 9}) == {
+        "project_name": "X"
+    }
+
+
+# ── R7-#1: 删项目时取消在跑的上传 OCR（"传错招标文件→删→停 OCR→重传"） ──────────
+
+
+def test_cancel_project_ocr_tasks_cancels_tracked_running_task():
+    import server.routes.tender as tender_mod
+
+    async def _run() -> None:
+        pid = _pid()
+        started = asyncio.Event()
+
+        async def _long() -> None:
+            started.set()
+            await asyncio.sleep(60)
+
+        task = asyncio.create_task(_long())
+        tender_mod._track_upload_ocr_task(task, pid)
+        await started.wait()
+        assert pid in tender_mod._PROJECT_OCR_TASKS
+
+        cancelled = tender_mod._cancel_project_ocr_tasks(pid)
+        assert cancelled == 1
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        await asyncio.sleep(0)  # 让 done 回调跑完（桶自清）
+        assert pid not in tender_mod._PROJECT_OCR_TASKS
+
+    asyncio.run(_run())
+
+
+def test_cancel_project_ocr_tasks_noop_when_no_tasks():
+    import server.routes.tender as tender_mod
+
+    assert tender_mod._cancel_project_ocr_tasks("tp-nonexistent-r7") == 0
