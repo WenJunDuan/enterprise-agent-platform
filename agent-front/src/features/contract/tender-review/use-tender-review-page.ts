@@ -442,9 +442,12 @@ export function useTenderReviewPage(
   async function resumeOrOpenProject(projectId: string) {
     setSelectedProjectId(projectId)
     try {
+      // staleTime:0 强制新取最新投标状态——否则吃 dashboard useQueries 的 5s 缓存，可能拿到旧的
+      // 完成态/空态 bids → inProgress=0 → 误落分析中心（B-C 复发根因）。
       const detail = await queryClient.fetchQuery({
         queryKey: ['tender-project', projectId],
         queryFn: () => getTenderProject(projectId),
+        staleTime: 0,
       })
       const bids = detail.bids ?? []
       const inProgress = bids.filter(
