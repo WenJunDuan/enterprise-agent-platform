@@ -9,6 +9,7 @@ compare 结果**不进 ``results`` 表**（codex P1.1：避免被 ``_project_bid
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 from dataclasses import dataclass
@@ -60,9 +61,28 @@ def _normalize_for_hash(value: Any) -> Any:
     return value
 
 
+def _strip_volatile_formula_data(criteria: Any) -> Any:
+    """深拷贝 criteria 并剥 formula_spec.variables[].value/ref（评标时回填的数据侧，每家不同：本家
+    报价、本家页码），保留 expression/rounding/cap/name/source/unit（招标标准侧，同标应一致）。防本家
+    报价让同一招标各家 criteria 指纹漂移、横比误判 stale（codex P1-2：不能排整个 formula_spec）。"""
+    if not isinstance(criteria, dict):
+        return criteria
+    crit = copy.deepcopy(criteria)
+    for item in crit.get("items") or []:
+        spec = item.get("formula_spec") if isinstance(item, dict) else None
+        if not isinstance(spec, dict):
+            continue
+        for var in spec.get("variables") or []:
+            if isinstance(var, dict):
+                var.pop("value", None)
+                var.pop("ref", None)
+    return crit
+
+
 def compute_criteria_hash(criteria: Any) -> str:
-    """规范化 JSON 后 hash，作 criteria 一致性指纹（顺序无关、空可选字段无关）。"""
-    normalized = json.dumps(_normalize_for_hash(criteria), ensure_ascii=False, sort_keys=True)
+    """规范化 JSON 后 hash，作 criteria 一致性指纹（顺序无关、空可选字段/本家公式数据无关）。"""
+    stripped = _strip_volatile_formula_data(criteria)
+    normalized = json.dumps(_normalize_for_hash(stripped), ensure_ascii=False, sort_keys=True)
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
 
 

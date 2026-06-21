@@ -21,7 +21,10 @@ allowed-tools: Read, Glob, Skill, Task
     - `deduction` 满分扣减 → `deductions[]`：逐条 `{condition 何情况扣, points 扣几分, unit(per_item/per_occurrence/per_percent), max_times 最多扣几次, max_deduct 封顶, source_quote 原文, source_ref}`。**这是"第一次读标书就把扣分项全摘出来"的落点**——招标文件列了几条扣分、每条扣几分/最多几次，逐条钉死，不留到 S3 临场猜。
     - `banded` 档次给分（如优10良7中4 等离散档，**不是从满分扣减**）→ `bands[]`：`{level, points, criteria 评定标准, source_quote}`。
     - `additive` 基础分+加分累计 → `base` + `awards[]`：`{condition, points, cap 封顶, source_quote}`（`max` 须为含加分封顶的最高分）。
-    - `formula` 公式分（价格分等）→ `formula` 公式原文。**价格分须按依据分两类**：① 依「基准价 / 评标平均价 / 与其他投标横比」算 → `tag:requires_cross_bid_comparison`（S3 单家算不了，manual_review + null）；② 依「招标文件已载明的最高限价 / 限价表」算（如「每低于限价 2.5% 得 1 分」「限价 300 元/用户·月每高 10% 得 1 分」）→ `tag:scored`、`score_mode:formula`，**限价是招标文件给的常量、单家即可算分，不要误判为需横比**。混为一谈会把可算的分（本标报价 30 分里的 4+3+3 = 10 分）白丢给人工。
+    - `formula` 公式分（价格分等）→ 抽 `formula`（招标原文，**唯一权威**）**并归一化出机读 `formula_spec`**：`{expression 可读公式, variables[{name, source, value, unit, ref}], rounding(floor/round/ceil/none), cap}`（对齐 criteria.schema）。**每个变量标 `source`**：招标常量(限价/预算/系数)=`tender_constant`（**S1 当场填 value+ref**，限价表就在招标文件里）；本家报价分项=`bid_component`（S2 回填 value）；最低价/均价/投标人数=`cross_bid`；外部信用=`external_data`；现场系数=`live_event`。**tag 按 source 白名单派生（不是黑名单）**：变量**全部** ∈ {tender_constant, bid_component} 才 `tag:scored`、`score_mode:formula`（限价类单家可算）；**只要有一个** cross_bid/external_data/live_event/derived → `tag:requires_cross_bid_comparison`（或对应 manual tag），S3 不自动算。
+      - **拆子项优先**（治"含一个横比子项就把可算分整体丢人工"）：复合价格行（如报价 30 分 = 非驻场 4 + 增量 3 + 营收单价 3 + 横比 20）→ 能拆成独立价格 items 就拆，每个限价子项一套自己的 `formula_spec`+`cap`；只把真正依群体量的子项留 `requires_cross_bid_comparison`。
+      - **阶梯分段走 banded 不走 formula**：「报价≤限价90%得10分、90~95%得7分…」这类**离散档** → `score_mode:banded`+`bands[]`（档以百分比区间描述），不硬塞进 `expression`（单个表达式表达多段 if-else 不稳）。
+      - **MVP 边界**：本轮只对「固定限价比例差 / 多固定限价分项求和」自动算；含群体/现场/外部/复杂政策折扣的，结构化变量后仍 `manual_review`，不假装自动算。
     - `pass_fail` 客观通过得满分否则 0 / `manual` 主观/现场/外部不可判定。
     - `evaluator_type`：`objective`/`subjective`/`mixed`——主观档次项标 `subjective`（S3 给建议分+依据，留低置信人工复核，不冒充客观分）。
     - **复合评分行 → 拆成多条 items**：招标文件一个评分行含多个**独立子规则**（如「基础响应分 + ▲加分」「驻场人员计分 + 资格证书计分」「质量体系 + 服务承诺 + 培训」）时，**拆成多条 criteria items**、各自取最贴切的 `score_mode`，各 item `max` 之和 = 原行满分（契约一项只允许一种 `score_mode`，**不要把扣减与加分混进同一项**）。例：「运营平台 24 分 = 三平台功能响应 18 分（deduction：每缺一功能点扣 0.5、单平台封顶 6）+ ▲检测报告佐证加 6 分（additive：每▲项 +0.5、封顶 6）」→ 拆成两条 items。
@@ -41,6 +44,7 @@ allowed-tools: Read, Glob, Skill, Task
   - 拟派项目负责人：姓名 / 注册证号 / 出处（文件+页）
   - 业绩：每条 `项目名称 / 项目经理 / 出处（文件+页）`
   - 投标报价（**钉入 `extracted_data.bid_price` = `{amount: 数值, currency: "CNY"}`**，供后续多家价格横比统一收集）、章节-页码索引
+  - **限价类 formula 项的本家分项报价回填**（G5）：对 S1 标了 `tag:scored`+`score_mode:formula` 的项，从投标文件抽其 `formula_spec.variables` 里 `source:bid_component` 对应的本家报价（如非驻场运维单价、增量单价），**回填该变量的 `value`+`ref`（投标文件第N页）**，让 S3 代入算分；抽不到则留 `value:null`（S3 据此降 `manual_review`，不臆造）。
 - 一致性线索写进 `ambiguities`，例如"拟派负责人姓名在不同文件写法不一致（牛亚犇/生亚犇）""所报业绩项目经理与拟派负责人疑似不一致"。
 - 只抽事实，不在本步给分。
 
@@ -50,10 +54,11 @@ allowed-tools: Read, Glob, Skill, Task
   - `banded`（档次给分，优10良7中4 等离散档）→ 依 `bands` 选档写 `selected_band:{level, points, reason}`，`score = 该档 points`。**档次分是离散给分，不要伪造扣分明细**（那个 7 分不是"扣 3 分"）。
     - **主观档次项（`evaluator_type=subjective`，如技术方案「完整/较完整/基本」、应急响应「完善/部分」）**：`selected_band` 是**初评建议分**，须带 low_confidence，`reason` 写清归此档的依据，并在 `explanation` 注明「主观项为初评建议，最终以评委会评分为准」——**不冒充客观确定分**。
   - `additive`（基础分+加分）→ 逐条核对 `awards` 命中写 `award_hits:{award_id, condition, points_each, times, awarded, evidence:{source, quote}}`，`score = base + Σawarded`（≤max）。
-  - `formula`（公式分）→ **按 `tag` 分两路（治 G5：限价类本可单家算，别全丢人工）**：
-    - `tag:"requires_cross_bid_comparison"`（依基准价 / 评标均价 / 与其他投标横比，单家算不了）→ `status:"manual_review"`、`score:null`，把本家 `bid_price={amount,currency}` 钉入 `extracted_data`，`basis` 写"横比数据已备，待全部投标汇总后统一算"。
-    - `tag:"scored"`（依招标文件**已载明的限价 / 限价表**，限价是常量、单家即可算，示例「每低于最高限价 1% 得 1 分」「每高于限价 X% 扣 1 分」，**实际公式以招标文件明示为准**）→ **用本家报价 + 招标限价代入 `formula` 公式直接算分**：`status:"scored"`、`score` 写算得分，`basis` 写清「限价 X、本家报价 Y、按公式得 Z 分」+ 出处页。**不要把限价类当横比丢人工**（本标报价 30 分里非驻场/增量/营收单价 4+3+3=10 分本可算）。
-    - **判别（codex）**：公式变量只要含「有效投标报价 / 最低价 / 评标均价 / 投标人数量 / 所有投标」等**群体变量** → 必 `requires_cross_bid_comparison`；只有当变量**全部来自招标常量（限价/预算）+ 本家报价**时才 `tag:scored` 单家算。**最高限价 / 预算控制价本身不是评分公式**——若招标只规定"超限价废标"，那是废标线（走 disqualification gate），不是评分项。
+  - `formula`（公式分）→ **以 `formula_spec` 为准、按变量闭合性判（治 G5：限价类本可单家算，别全丢人工）**：
+    - **有 `formula_spec` 且全变量闭合**（variables 全 ∈ {tender_constant, bid_component}、各 `value` 已由 S1/S2 填齐、各带 `ref`）→ **代入 `expression` 算分**：`status:"scored"`、`score` 写算得分（按 `rounding` 取整、`cap` 封顶、`min_score` 兜底）。**`basis` 必须逐步列出代入过程**让人工验算无需重算，如「限价 limit=300（招标第N页）、本家 bid=270（投标第M页）、(300−270)/300=10%、10%÷1%步长=10、floor 后得 10 分」。
+    - **`tag:"requires_cross_bid_comparison"` 或 formula_spec 含任一不可闭合变量**（cross_bid/external_data/live_event/derived）→ `status:"manual_review"`、`score:null`，把本家 `bid_price={amount,currency}` 钉入 `extracted_data`，`basis` 写「含群体/外部/现场变量 X，单家算不了，已备本家数据待汇总」。
+    - **缺 `formula_spec`、或 `formula` 与 `formula_spec` 语义不一致、或闭合变量缺 value/ref → 不得临场翻底稿心算**，一律 `status:"manual_review"`、`manual_review_reason:"insufficient_evidence"`、`score:null`，`basis` 写明缺什么（治"回退旧路径模型心算漂移"）。
+    - **限价线 ≠ 评分公式**：招标只规定"超最高限价废标"的，那是废标线（走 disqualification gate），不是 formula 评分项。
   - `pass_fail` → 满足得 `max` 否则 0；命中不可判定标签（`requires_live_event`/`requires_external_data`）或 `manual` → `score:null`+`manual_review`，**绝不判 0**。
   - **「否则不得分」客观项 → 判 0 前必须二分（治「附件读不清就误判 0」）**：招标文件大量「提供…扫描件，否则不得分 / 未提供不得分」，而业绩合同 / 软著证书 / 资格证书 / 毕业证书等多为**扫描盖章件**。判 0 前先分清：
     - (a) 底稿完整、**确认投标文件未提供**该材料 → 按规则 `score:0, status:scored`，`basis` 写「已核投标文件无 XX」；

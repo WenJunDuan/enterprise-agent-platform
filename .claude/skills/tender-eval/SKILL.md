@@ -28,7 +28,7 @@ description: Use when 评标、招投标评分、投标文件合规审查，需�
 
 - `requires_live_event`：现场环节，如项目负责人答辩、现场演示——投标文件里没有，不代表得 0。
 - `requires_external_data`：外部数据，如企业信用评价（来自政府 / 行业公示表），不在投标文件内。
-- `requires_cross_bid_comparison`：需横向比较，如价格分（须对所有有效投标报价统一计算）。
+- `requires_cross_bid_comparison`：需横向比较，如**依基准价 / 评标均价 / 最低价的价格分**（须对所有有效投标报价统一计算）。**例外（G5 固定限价类）**：依招标文件**已载明固定限价**算的价格分（公式变量全为招标常量 + 本家报价，如「每低于最高限价 1% 得 1 分」）是可单家算的 `tag:scored` / `score_mode:formula`，**不走本横比 manual**——以 `/tender-evaluate` S3 + `formula_spec` 为准。
 
 > 原则：文档里"找不到证据" ≠ "客观得 0 分"。把不可判定项判 0 是范畴错误，会系统性低估投标人，且对方无从申辩。这类项一律 `manual_review`，并写清需要什么（现场记录 / 外部评价表 / 全部投标报价）。
 
