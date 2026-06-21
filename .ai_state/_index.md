@@ -118,6 +118,28 @@ fingerprint: ""
 
 ## 当前状态
 
+2026-06-21（会话边界 · 重开起点 ⟵ 从这读起）: 上一长会话两件大事到位，状态全 push origin/main。
+
+**① OCR 域强化 sprint —— P1+P2+云+P4 全完成**（`6aa3792`→`63e0bb8`→`a5c4bcd`，385 passed/ruff）：
+- P1 pymupdf 文本层直读(find_tables) / P2 置信度 `file_clarity` / 云 OCR(`OCR_CLOUD` 开关, aistudio PaddleOCR-VL,
+  certifi SSL) / **P4 OCR 预处理注入 audit+tender**(底稿进上下文，模型不再 Read PDF)。实测:烛照标书 10MB pymupdf
+  0.5s/17 表;云 OCR 5.9s。
+- **依赖坑**:OCR 在 `ocr` extra → 装 `uv sync --extra ocr`(纯 uv sync 会卸 pypdf/openpyxl/docx);pymupdf+certifi 已进 extra;机器已装 poppler。
+- **待办(非阻塞)**:① **端到端验证 P4** = retry tender `772aa513`(现有 OCR 底稿+poppler，应真出评分不再降级);
+  ② 云响应置信度接出(现 `clarity=unknown`，照实际 jsonl `layoutParsingResults` 结构再接);③ tender-evaluate 命令提一句"优先用底稿"。
+
+**② 新 sprint：.claude 域驱动上下文装配 —— design 就绪待实现**（`sprints/2026-06-21-claude-domain-context-assembly/design.md`，
+critic R1 **APPROVE-WITH-CHANGES** 已纳入）：诊断 = tender 内联流走 `["project"]` 载全本 CLAUDE.md(背无关 expense/system 细节)=真挤占;
+audit 已 lean(`AUDIT_LEAN_CONTEXT`→`setting_sources=[]`)是模式来源。方案 = `DomainProfile` 注册表 + 通用 `assemble_domain_prompt` 装配器 +
+域指令外移 `.claude/domains/{域}/instructions.md` + tender 对齐 audit(lean) + CLAUDE.md 瘦成路由器。
+- **核心 = P1-P3(tender lean)**;P4 CLAUDE.md 瘦身 = 最低优先级卫生(生产全走 inline worker，CLAUDE.md 只在 CC 对话时生效)。
+- **关键(critic)**:F1 tender 必须 `run_agent_json(…, setting_sources=[])` **放弃 run_command_json**(否则没真 lean);F2 P2 字节级
+  prompt 比对;F5 P3 值级回归(烛照/张三 case 前后 verdict/claim_id/score 一致);F3 tender-evaluate.md 标 deprecated 保留;F4 system 排除本 sprint。
+- **下会话起点 = 用户确认设计 → 跑 P1**(抽装配器，原样包住 audit，零行为 + 字节级单测)。
+
+**老遗留**:tender-criteria codex review 待补(`codex review --base 13d58a7`);dependabot 10 漏洞;前端 agent-front 集成已 commit(待端到端测+push)。
+模型现状:用户切 `deepseek-v4-pro[1M]`(api.deepseek.com/anthropic);OCR 走 `OCR_CLOUD=1` 云服务。
+
 2026-06-21（OCR 域强化 sprint · P1+P2+云路径落地）: 依用户设计 `sprints/2026-06-21-ocr-domain-hardening/
 design.md` 实施。**P1**(`6aa3792`)：native `read_pdf_text` pypdf→**pymupdf**(get_text 阅读顺序 + find_tables
 抽表)；`_render_body` 同渲染 blocks+tables(旧逻辑 tables 分支吃掉 blocks 丢正文)。**P2**：`file_clarity`
