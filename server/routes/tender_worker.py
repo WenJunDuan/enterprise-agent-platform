@@ -24,8 +24,10 @@ from server.stores.tender_task_store import update_tender_progress, upsert_tende
 
 logger = logging.getLogger(__name__)
 
-# 评标硬超时（秒）。标书数据量大（40MB+/~18 章节），S2 事实抽取慢，默认放宽到 600s。
-TENDER_TIMEOUT_SEC = float(os.getenv("TENDER_TIMEOUT_SEC", "600"))
+# 评标硬超时（秒）。标书大（40MB+/百页）+ 模型 extended thinking，单次评标实测可达 ~9min(537s)。
+# 前端已解耦【不阻塞等待】（提交即返回、analyzing 独立轮询、可离开回来恢复），故后端超时仅作
+# "防无限挂"兜底，默认大幅放宽到 3600s（env TENDER_TIMEOUT_SEC 可调）。
+TENDER_TIMEOUT_SEC = float(os.getenv("TENDER_TIMEOUT_SEC", "3600"))
 
 # 同时进行的评标上限。单标已重（多章节多跳），默认 1，超额提交在信号量处排队。
 MAX_CONCURRENT_TENDER = int(os.getenv("MAX_CONCURRENT_TENDER", "1"))
