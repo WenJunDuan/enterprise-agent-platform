@@ -80,6 +80,30 @@ def build_session_event_log_path(
     return event_dir / filename
 
 
+def app_server_log_path(stderr: bool = False) -> Path:
+    """托管 app-server 进程 stdout/stderr 日志（按日期目录分区，便于按日滚动删除）：
+    ``<APP_SERVER_DIR>/<YYYYMMDD>/<stdout|stderr>.log``。写入用：开进程时落到当天目录。"""
+    name = "stderr.log" if stderr else "stdout.log"
+    day = datetime.now(timezone.utc).strftime("%Y%m%d")
+    return APP_SERVER_DIR / day / name
+
+
+def latest_app_server_log_path(stderr: bool = False) -> Path:
+    """读取用：最新日期目录下的 app-server 日志（进程可能跨天写，取最新存在的）。无日期目录则回落
+    legacy 平铺路径（向后兼容旧日志）。"""
+    name = "stderr.log" if stderr else "stdout.log"
+    if APP_SERVER_DIR.exists():
+        day_dirs = sorted(
+            (d for d in APP_SERVER_DIR.iterdir() if d.is_dir() and d.name.isdigit()),
+            reverse=True,
+        )
+        for day_dir in day_dirs:
+            candidate = day_dir / name
+            if candidate.exists():
+                return candidate
+    return APP_SERVER_DIR / name  # legacy 平铺路径回落
+
+
 def _coerce_timestamp(timestamp: str | None) -> datetime:
     if timestamp:
         return datetime.fromisoformat(timestamp)

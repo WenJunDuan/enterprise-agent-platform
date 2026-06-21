@@ -25,6 +25,13 @@ def _flush_root() -> None:
         handler.flush()
 
 
+def _day_dir(base):
+    """日志按日期目录分区：<base>/<YYYYMMDD>/（便于按日滚动删除）。"""
+    from datetime import datetime
+
+    return base / datetime.now().strftime("%Y%m%d")
+
+
 def test_no_files_by_default(tmp_path, monkeypatch):
     monkeypatch.delenv("LOG_TO_FILES", raising=False)
     configure_logging("INFO", "json", log_dir=tmp_path)  # to_files 默认取 env(未设)→ False
@@ -40,8 +47,8 @@ def test_file_appenders_split_by_level(tmp_path):
     log.error("an-error-line")
     _flush_root()
 
-    app_log = (tmp_path / "app.log").read_text(encoding="utf-8")
-    error_log = (tmp_path / "error.log").read_text(encoding="utf-8")
+    app_log = (_day_dir(tmp_path) / "app.log").read_text(encoding="utf-8")
+    error_log = (_day_dir(tmp_path) / "error.log").read_text(encoding="utf-8")
 
     # app.log 收全量
     assert "an-info-line" in app_log
@@ -58,7 +65,7 @@ def test_file_logs_are_json(tmp_path):
     logging.getLogger("test.json").warning("structured-payload")
     _flush_root()
 
-    line = (tmp_path / "app.log").read_text(encoding="utf-8").strip().splitlines()[-1]
+    line = (_day_dir(tmp_path) / "app.log").read_text(encoding="utf-8").strip().splitlines()[-1]
     parsed = json.loads(line)  # 文件始终 JSON，可解析
     assert parsed["level"] == "WARNING"
     assert parsed["message"] == "structured-payload"
@@ -71,7 +78,7 @@ def test_rotation_produces_gzip_backups(tmp_path):
         log.info("padding line %03d to exceed the tiny max_bytes rollover threshold", i)
     _flush_root()
 
-    backups = sorted(tmp_path.glob("app.log.*.gz"))
+    backups = sorted(_day_dir(tmp_path).glob("app.log.*.gz"))
     assert backups, "expected at least one gzipped rotated backup"
     # 备份数受 backup_count 约束
     assert len(backups) <= 3

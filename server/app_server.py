@@ -18,10 +18,10 @@ from server.ops.maintenance import run_maintenance
 from server.platform.config import get_app_settings
 from server.platform.logging_setup import configure_logging
 from server.platform.paths import (
-    APP_SERVER_STDERR_LOG,
-    APP_SERVER_STDOUT_LOG,
     PROJECT_ROOT,
+    app_server_log_path,
     ensure_local_layout,
+    latest_app_server_log_path,
 )
 from server.stores.runtime_store import (
     build_runtime_record,
@@ -185,8 +185,12 @@ def start(
         raise typer.Exit(code=1)
 
     maintenance = run_maintenance()
-    stdout_handle = APP_SERVER_STDOUT_LOG.open("a", encoding="utf-8")
-    stderr_handle = APP_SERVER_STDERR_LOG.open("a", encoding="utf-8")
+    # 日志按日期目录分区（便于按日滚动删除）：开进程时落到当天目录 logs/runtime/app-server/<YYYYMMDD>/。
+    stdout_path = app_server_log_path(stderr=False)
+    stderr_path = app_server_log_path(stderr=True)
+    stdout_path.parent.mkdir(parents=True, exist_ok=True)
+    stdout_handle = stdout_path.open("a", encoding="utf-8")
+    stderr_handle = stderr_path.open("a", encoding="utf-8")
     started_at = utc_now()
     try:
         process = subprocess.Popen(
@@ -277,7 +281,8 @@ def logs(
     follow: bool = typer.Option(False, help="Follow the log until interrupted."),
 ) -> None:
     """Print runtime logs from the managed API process."""
-    path = APP_SERVER_STDERR_LOG if stderr else APP_SERVER_STDOUT_LOG
+    # 读最新日期目录的日志（进程可能跨天写）；无日期目录回落 legacy 平铺路径。
+    path = latest_app_server_log_path(stderr)
     if not path.exists():
         typer.echo(f"No log file yet: {path}")
         raise typer.Exit(code=1)

@@ -12,8 +12,7 @@ from typing import Any
 from server.platform.paths import (
     APP_SERVER_PID_FILE,
     APP_SERVER_STATUS_FILE,
-    APP_SERVER_STDERR_LOG,
-    APP_SERVER_STDOUT_LOG,
+    latest_app_server_log_path,
     ensure_local_layout,
 )
 from server.platform.storage import append_json_file, load_json_file
@@ -103,8 +102,8 @@ def build_runtime_record(
         stopped_at=stopped_at,
         updated_at=utc_now(),
         pid_file=str(APP_SERVER_PID_FILE),
-        stdout_log=str(APP_SERVER_STDOUT_LOG),
-        stderr_log=str(APP_SERVER_STDERR_LOG),
+        stdout_log=str(latest_app_server_log_path(False)),
+        stderr_log=str(latest_app_server_log_path(True)),
         cwd=cwd,
         last_error=last_error,
     )
@@ -139,6 +138,6 @@ def runtime_status_snapshot() -> dict[str, Any]:
         "pid": pid,
         "running": running,
         "status_file": str(APP_SERVER_STATUS_FILE),
-        "stdout_log": str(APP_SERVER_STDOUT_LOG),
-        "stderr_log": str(APP_SERVER_STDERR_LOG),
+        "stdout_log": str(latest_app_server_log_path(False)),
+        "stderr_log": str(latest_app_server_log_path(True)),
     }
