@@ -5,8 +5,8 @@ version: "9.6.4"
 
 # === PACE 路由状态 ===
 path: "System" # storage-restructure 已 ship(357 passed,codex REWORK→fixed symlink逃逸);前端集成已提交待用户测;external 模式设计待实现
-stage: "ship" # 多 sprint 已收口;新会话起点:①实现 external 全地址读取(本地路径+URL,SSRF 防护,设计就绪) ②前端联调
-current_sprint_slug: "2026-06-20-external-source-mode"
+stage: "ship" # tender-harness 第1轮 ship(投标人侧评分多模式+扣分结构化+废标gate+OCR目的);第2轮 design 就绪,待用户实测第1轮后 impl
+current_sprint_slug: "2026-06-21-tender-harness-redesign"
 current_roadmap_slug: "" # 跨切面 goal，非单一 roadmap item
 skip_polish: false
 skip_architecture_check: false
@@ -49,7 +49,7 @@ counts:
   issues_count: 0
   refactors_count: 0
   systems_count: 6
-  reviews_count: 48
+  reviews_count: 51
   cleanup_count: 1
   compound:
     learning: 4
@@ -78,7 +78,7 @@ pointers:
   latest_architecture_update: "2026-06-20T10:04:38.538Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "本会话(2026-06-20 深夜)收尾,358 passed/ruff,已 push origin/main(后端+state);前端集成已 commit 未 push(待用户测)。完成:tender-data-model goal ship + tender-task-api-parity + 第三章硬编码修 + 存储改造(submissions 域命名空间+tender 项目层级,codex REWORK→fixed symlink逃逸)+ 单 file 字段上传(URL 外读废弃-SSRF)+ 前端 tender-review 接真实 API(codex 集成)。**新会话起点**:①用户端到端测前端(需先把 .env 第 11 行 MODEL_BASE_URL=127.0.0.1:4000 删掉,让 line4 anyrouter 生效;后端 serve+前端 dev,proxy 已配 /tender)有问题就修 ②前端联调若 OK 则 push agent-front。遗留:tender-criteria codex review 待补(codex review --base 13d58a7);dependabot 10 漏洞(依赖,另议)"
+next_action: "本会话(2026-06-21):tender Harness 重构 goal,第1轮 ship + 第2轮 design 就绪。完成:即时修复(首页跳转误回报销/删项目级联端点+清库,455e7a7)+第1轮Harness(评分多模式score_mode[扣减/档次/加分/公式/通过/主观]+结构化deductions[第一次读标书摘全扣分项]+扣分摘上下文quote+页锚点+废标独立gate+OCR评标目的+按mode软校验,codex+CCcritic双评审REWORK→全修,06bad53,440passed/ruff)+第2轮design-r2(招标人侧合规审查MVP:排他条款/评分量化/废标清单/时限,f262618)。3 commits 未 push。**新会话起点**:①用户先实测第1轮投标人侧扣分(传真实招标+投标文件跑/tender-evaluate,看扣分项结构化deductions/档次分不被伪扣分/证据带quote+【第N页】;实测前置检查.env MODEL_BASE_URL,后端 uv run python -m server.cli serve + 前端 agent-front bun run dev,proxy已配/tender)②实测OK→启动第2轮impl(招标人侧doc-review,需先/init-rules补tender_regulation_032排他条款+时限规则到本地knowledge/tender)③实测有问题→修第1轮。每轮codex配合。遗留:第3轮(角色分离+反馈深化+回归测试集);前端deploy/.snapshots未跟踪。"
 last_subagent: "generator"
 last_subagent_at: "2026-06-02T09:25:27.661Z"
 active_worktrees: [] # 2026-06-21 核实无活动 worktree(git worktree list 仅 main),清陈旧字段
