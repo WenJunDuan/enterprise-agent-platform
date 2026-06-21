@@ -115,7 +115,11 @@ OCR 上传（`tender.py:741` POST .../tender-doc）只产 `ocr_text` 原文 blob
   **端到端实测**：qwen completed/rejected/20项/300s/**retries=0**；deepseek completed/rejected/20项/
   370s/retries=1（**曾 3 重试失败**→现稳过）；openrouter 抽取 81s 最快。**三模型评标现均可靠跑通。**
   606 passed+ruff+前端 lint/build。
-- R4：_pending_
+- R4：🟡 **性能优化（用户2026-06-22扩定：D降重试+A前端上传即OCR+B/C并发）**。
+  - **D 降评标重试 ✅（最高ROI，实测半倍提速）**：每次 audit-result schema 重试重跑整个 ~290s。剩余两类非承重漂移整单拒：可选 plan 形不符→丢弃；policy_refs 含编造 rule_id→剥未知留真实(承重无依据仍 G1b 拒)。**实测 glm 全量评标 290s→135s（0 重试）**。
+  - **B/C 适度并发 ✅**：OCR_PREWARM_MAX 2→4、OCR_MAX_WORKERS 4→6、MAX_CONCURRENT_TENDER 1→2（均 env 可调；云OCR/模型并发限流时 .env 调整）。
+  - **A 前端上传即OCR ⏳ 待用户确认 UX**：后端约束=招标层一份 tender-doc + 每投标一个 bid（再传会替换/重复）。增量上传需「每区一次多选→自动上传+OCR→锁定该区」模型；待用户确认该交互再实现（不可视验，避免白做）。
+  - 三模型全场景实测：qwen(抽163/评300→D后更快)、deepseek(抽142/评370)、glm(抽81最快/评290→D后135)，均跑通。610 passed+ruff。
 - R5：🟡 **数据存储（compare + delete + criteria 复用）**。①**遗留③ ✅**：compare 首次横比 refetchInterval 在 null 时停轮询→首个横比永不出现，改 null 继续轮询（3s）直到生成。②**遗留④ ✅**：删项目只清各评标 task case_path，P3 上传即 OCR 的 tender-doc/bids 预热目录无 task 残留→新 `remove_project_submission_dir` 删整个 `<tenant>/tender/<project_id>/` 树（安全校验+confine 防穿越）。③遗留② criteria 复用 R1 已落代码，端到端验证待多家同项目实测。608 passed+ruff+前端 build。详见 round-5-data-storage/design.md。
 - R6：_pending_
 </content>
