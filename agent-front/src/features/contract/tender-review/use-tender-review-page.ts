@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   useMutation,
   useQueries,
@@ -12,12 +12,11 @@ import {
   getTenderCompareOrNull,
   getTenderProject,
   getTenderProjectResult,
+  getTenderTask,
   listTenderProjectResults,
   listTenderProjects,
   retryTenderTask,
   triggerTenderCompare,
-  waitForTenderCompare,
-  waitForTenderTask,
   type TenderProjectCreateRequest,
   type TenderProjectDetailResponse,
 } from './api'
@@ -38,6 +37,26 @@ import type {
 import type { ProjectFormData } from './components/create-review-view'
 
 const TENDER_PROJECTS_QUERY_KEY = ['tender-projects'] as const
+
+// 长任务解耦（第5轮）：进行中评标持久化，可离开/回来恢复，不阻塞 mutation、不超时掉回。
+const ACTIVE_EVAL_KEY = 'tender-active-eval'
+type ActiveEval = { projectId: string; requestIds: string[]; hasCompare: boolean }
+function readActiveEval(): ActiveEval | null {
+  try {
+    const raw = localStorage.getItem(ACTIVE_EVAL_KEY)
+    return raw ? (JSON.parse(raw) as ActiveEval) : null
+  } catch {
+    return null
+  }
+}
+function writeActiveEval(value: ActiveEval | null): void {
+  try {
+    if (value) localStorage.setItem(ACTIVE_EVAL_KEY, JSON.stringify(value))
+    else localStorage.removeItem(ACTIVE_EVAL_KEY)
+  } catch {
+    // localStorage 不可用（隐私模式等）→ 退化为纯内存态，不阻断流程
+  }
+}
 
 /** Default project form — all fields blank so user fills in what they need */
 function createDefaultProjectForm(): ProjectFormData {
@@ -74,7 +93,10 @@ export function useTenderReviewPage(
   initialScreen: TenderReviewScreen = 'dashboard'
 ) {
   const queryClient = useQueryClient()
-  const [screen, setScreen] = useState<TenderReviewScreen>(initialScreen)
+  // 恢复：mount 时若 localStorage 有进行中评标 → 直接进 analyzing 继续流式（lazy init 免 effect）。
+  const [screen, setScreen] = useState<TenderReviewScreen>(() =>
+    readActiveEval() ? 'analyzing' : initialScreen
+  )
   const [reviewMode, setReviewMode] = useState<TenderReviewMode>('detail')
   const [category, setCategory] = useState<ReviewCategory>('qual')
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
@@ -85,6 +107,12 @@ export function useTenderReviewPage(
   const [progress, setProgress] = useState(0)
   // 思考流式：按 request_id 存各投标人评标进度，避免多 bidder 并发覆盖（codex r4 P1）。
   const [progressByRid, setProgressByRid] = useState<Record<string, string>>({})
+  // 长任务解耦（第5轮）：进行中评标（持久化），可离开/回来恢复、不阻塞、不超时掉回。
+  const [activeEval, setActiveEvalState] = useState<ActiveEval | null>(readActiveEval)
+  const setActiveEval = (value: ActiveEval | null) => {
+    setActiveEvalState(value)
+    writeActiveEval(value)
+  }
   const [uploadError, setUploadError] = useState(false)
   const [submitError, setSubmitError] = useState('')
   const [tenderFiles, setTenderFiles] = useState<TenderFile[]>([])
@@ -233,26 +261,66 @@ export function useTenderReviewPage(
 
   const startReviewMutation = useMutation({
     mutationFn: submitReview,
-    onSuccess: async ({ projectId, hasCompare }) => {
+    onSuccess: ({ projectId, requestIds, hasCompare }) => {
+      // 解耦：提交成功即把进行中评标交给 analyzing 独立轮询（不阻塞、不超时掉回）。
       setSelectedProjectId(projectId)
       setReviewMode(hasCompare ? 'compare' : 'detail')
-      setScreen('analysis')
-      await queryClient.invalidateQueries({ queryKey: TENDER_PROJECTS_QUERY_KEY })
-      await queryClient.invalidateQueries({ queryKey: ['tender-project', projectId] })
-      await queryClient.invalidateQueries({
-        queryKey: ['tender-project-results', projectId],
-      })
-      await queryClient.invalidateQueries({
-        queryKey: ['tender-project-compare', projectId],
-      })
-      setProgress(0)
+      setProgressByRid({})
+      setProgress(30)
+      setActiveEval({ projectId, requestIds, hasCompare })
+      void queryClient.invalidateQueries({ queryKey: TENDER_PROJECTS_QUERY_KEY })
+      // 保持 analyzing 界面；全部评标终态后由轮询 effect 跳 analysis
     },
     onError: (error) => {
       setSubmitError(error instanceof Error ? error.message : '分析失败，请稍后重试。')
       setProgress(0)
-      setScreen('create') // 乐观跳 analyzing 后提交失败 → 回 create 显示错误，让用户重试
+      setScreen('create') // submitReview 只做提交（建项目/上传），失败才回 create 让用户重试
     },
   })
+
+  // 长任务独立轮询（第5轮）：analyzing 不阻塞在 mutation，由此轮询进行中评标的 task 状态。
+  // activeEval 从 localStorage 初始化 → 可离开/回来恢复；不超时掉回。
+  const activeEvalQuery = useQuery({
+    queryKey: ['tender-active-eval-status', activeEval?.requestIds ?? []],
+    enabled: Boolean(activeEval && activeEval.requestIds.length > 0),
+    refetchInterval: 2500,
+    queryFn: async () =>
+      Promise.all(
+        (activeEval?.requestIds ?? []).map((rid) => getTenderTask(rid).catch(() => null))
+      ),
+  })
+
+  // 轮询响应（第5轮）：react-query v5 无 onSuccess，须用 effect 响应 query data；这是合理的
+  // "外部数据 → UI 状态"同步，故对本 effect disable set-state-in-effect。
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    const statuses = activeEvalQuery.data
+    if (!statuses || !activeEval) return
+    // 流式：把各家最新 progress 喂展示区
+    setProgressByRid((prev) => {
+      const next = { ...prev }
+      statuses.forEach((status, i) => {
+        if (status?.progress_message) next[activeEval.requestIds[i]] = status.progress_message
+      })
+      return next
+    })
+    // 全部终态（completed/failed）→ 清进行中态、跳分析中心逐项展示
+    const allTerminal = statuses.every(
+      (status) => status && (status.status === 'completed' || status.status === 'failed')
+    )
+    if (allTerminal) {
+      const { projectId, hasCompare } = activeEval
+      setActiveEval(null)
+      setProgress(100)
+      if (hasCompare) void triggerTenderCompare(projectId).catch(() => {})
+      setReviewMode(hasCompare ? 'compare' : 'detail')
+      setScreen('analysis')
+      void queryClient.invalidateQueries({ queryKey: ['tender-project', projectId] })
+      void queryClient.invalidateQueries({ queryKey: ['tender-project-results', projectId] })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeEvalQuery.data])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   function openAnalysis(
     mode: TenderReviewMode = 'detail',
@@ -395,40 +463,13 @@ export function useTenderReviewPage(
       setProgress(10 + Math.round(((index + 1) / bidders.length) * 20))
     }
 
-    let completedCount = 0
-    await Promise.all(
-      acceptedTasks.map((task) =>
-        waitForTenderTask(task.request_id, {
-          onUpdate: (status) => {
-            if (status.progress_message) {
-              setSubmitError('')
-              // 按 request_id 存，避免多 bidder 并发互相覆盖（codex r4 P1）
-              setProgressByRid((prev) => ({
-                ...prev,
-                [task.request_id]: status.progress_message ?? '',
-              }))
-            }
-          },
-        }).then((status) => {
-          completedCount += 1
-          setProgress(30 + Math.round((completedCount / acceptedTasks.length) * 50))
-          return status
-        })
-      )
-    )
-
-    const hasCompare = acceptedTasks.length >= 2
-    if (hasCompare) {
-      setProgress(84)
-      await triggerCompareOrContinue(project.project_id)
-      setProgress(90)
-      await waitForTenderCompare(project.project_id, {
-        onUpdate: () => setProgress((current) => Math.max(current, 92)),
-      })
+    // 解耦（第5轮）：提交即返回，**不再 await 评标完成**——评标交 analyzing 独立轮询，
+    // 用户可离开/回来恢复、不超时掉回。compare 在全部评标终态后由轮询 effect 触发。
+    return {
+      projectId: project.project_id,
+      requestIds: acceptedTasks.map((task) => task.request_id),
+      hasCompare: acceptedTasks.length >= 2,
     }
-
-    setProgress(100)
-    return { projectId: project.project_id, hasCompare }
   }
 
   /**
@@ -571,15 +612,6 @@ function buildCreateProjectBody(
     method: form.method?.trim() || undefined,
     control_price: form.control_price?.trim() || undefined,
     funding_type: form.funding_type || 'unknown',
-  }
-}
-
-async function triggerCompareOrContinue(projectId: string) {
-  try {
-    await triggerTenderCompare(projectId)
-  } catch (error) {
-    const message = error instanceof Error ? error.message : ''
-    if (!message.includes('横比正在进行中')) throw error
   }
 }
 
