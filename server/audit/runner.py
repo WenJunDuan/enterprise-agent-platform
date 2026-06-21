@@ -107,13 +107,21 @@ def load_case_block(directory_path: str) -> str:
     return "\n\n".join(blocks)
 
 
-def build_inline_audit_prompt(directory_path: str) -> str:
-    """Compose a self-contained audit prompt: instructions + case materials + all rules."""
+def build_inline_audit_prompt(directory_path: str, *, ocr_block: str | None = None) -> str:
+    """Compose a self-contained audit prompt: instructions + case materials + all rules.
+
+    ``ocr_block``（P4）：附件的确定性 OCR/直读底稿（发票/收据等）；有则注入，模型无需再 Read。
+    """
     case_block = load_case_block(directory_path) or "（未找到本案材料，请据此输出 manual_review）"
     rules_block = load_expense_rules() or "（本地规则缺失，无适用规则时输出 manual_review / rule_gap）"
+    ocr_section = (
+        f"\n\n=== 附件 OCR/直读底稿（确定性预处理，优先用此文本，无需再 Read）===\n{ocr_block}"
+        if ocr_block
+        else ""
+    )
     return (
         f"{AUDIT_INSTRUCTIONS}\n"
-        f"=== 本案材料 ===\n{case_block}\n\n"
+        f"=== 本案材料 ===\n{case_block}{ocr_section}\n\n"
         f"=== 本地规则（唯一依据）===\n{rules_block}\n"
     )
 
@@ -123,13 +131,18 @@ async def run_inline_directory_audit(
     *,
     request_id: str,
     tenant: str | None,
+    ocr_block: str | None = None,
     **opts: Any,
 ) -> tuple[StructuredJSON, AgentRunMeta]:
-    """Run a directory audit with materials + rules preloaded; keep only Read for attachments."""
+    """Run a directory audit with materials + rules preloaded; keep only Read for attachments.
+
+    ``ocr_block``（P4）：附件确定性 OCR 底稿，**由路由层预处理后传入**（feature 域 audit/ 不可
+    跨域 import ocr/；OCR 预处理放 routes/audit_worker，见 test_layering）。注入后模型无需再 Read。
+    """
     # 所有开关集中在 config.AuditSettings（含各项取舍背景）；每次审核读一次，
     # 部署机改 env 重启即生效。
     settings = get_audit_settings()
-    prompt = build_inline_audit_prompt(directory_path)
+    prompt = build_inline_audit_prompt(directory_path, ocr_block=ocr_block)
 
     for attempt in range(settings.contract_max_retry + 1):
         try:

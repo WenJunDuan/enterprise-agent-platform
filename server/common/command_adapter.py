@@ -17,14 +17,18 @@ def _serialize_command_argument(argument: str) -> str:
     return normalized
 
 
-def build_command_prompt(command_name: str, *arguments: str) -> str:
-    """Render a Claude slash command invocation from a command name and raw arguments."""
+def build_command_prompt(command_name: str, *arguments: str, context: str | None = None) -> str:
+    """Render a Claude slash command invocation from a command name and raw arguments.
+
+    ``context`` 非空时附在命令后（P4：注入确定性 OCR 底稿，模型无需再 Read 文件）。
+    """
     suffix = " ".join(
         serialized
         for arg in arguments
         if (serialized := _serialize_command_argument(arg))
     )
-    return f"/{command_name} {suffix}".strip()
+    command = f"/{command_name} {suffix}".strip()
+    return f"{command}\n\n{context}" if context else command
 
 
 async def run_command_full(
@@ -42,6 +46,7 @@ async def run_command_json(
     schema_name: str,
     project_id: str | None = None,
     archive_to_results: bool = True,
+    context: str | None = None,
     **opts: Any,
 ):
     """Invoke a Claude slash command and return structured JSON output.
@@ -49,9 +54,10 @@ async def run_command_json(
     ``project_id`` 显式透传到归档（tender 招标项目分组键）；显式参数而非 ``**opts``，
     避免被下游 ``build_options`` 当成 SDK 选项（codex P1.3）。
     ``archive_to_results=False`` 时结论不进 ``results`` 表（compare 用，codex P1.1）。
+    ``context`` 附在命令后（P4：注入确定性 OCR 底稿）。
     """
     return await run_agent_json(
-        build_command_prompt(command_name, *arguments),
+        build_command_prompt(command_name, *arguments, context=context),
         schema_name=schema_name,
         project_id=project_id,
         archive_to_results=archive_to_results,

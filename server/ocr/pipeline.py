@@ -28,6 +28,9 @@ _CLARITY_NOTE = {
     "unknown": " [清晰度未知：本文件经图像 OCR 但无逐块置信度信号，关键字段请人工抽查]",
 }
 
+# P4：是否对 case 目录做确定性 OCR 预处理后注入模型上下文（=0 关闭，回落模型自己 Read）。
+OCR_PREPROCESS = os.getenv("OCR_PREPROCESS", "1").lower() in {"1", "true", "yes"}
+
 
 def _iter_files(case_dir: str) -> list[Path]:
     base = Path(case_dir)
@@ -175,3 +178,24 @@ def build_extraction_block(results: list[dict]) -> str:
         head += _CLARITY_NOTE.get(file_clarity(result), "")
         parts.append(f"{head}\n{body}".rstrip())
     return "\n\n".join(parts) or "（无识别内容）"
+
+
+def ocr_preprocess_block(case_dir: str, *, skip: set[str] | None = None) -> str | None:
+    """P4：对 case 目录做确定性 OCR 预处理，返回内联底稿供注入模型上下文（不调判断模型）。
+
+    OCR_PREPROCESS=0 关闭（回落模型自己 Read）。任何失败 → None（降级，**绝不拖垮**审核/评标）。
+    skip：按文件名跳过已单独内联的文件（如 audit-request.json）。**同步**函数，async 调用方须经
+    ``asyncio.to_thread`` 调用（含云 OCR，会阻塞事件循环）。
+    """
+    if not OCR_PREPROCESS:
+        return None
+    try:
+        results = extract_dir(case_dir)
+        if skip:
+            results = [r for r in results if Path(r.get("path", "")).name not in skip]
+        if not results:
+            return None
+        return build_extraction_block(results)
+    except Exception:
+        logger.warning("ocr_preprocess 失败 %s（降级回落模型 Read）", case_dir, exc_info=True)
+        return None
