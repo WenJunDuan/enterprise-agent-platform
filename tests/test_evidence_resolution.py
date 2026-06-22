@@ -533,3 +533,165 @@ def test_pipeline_with_evidence_source_runs_resolution(monkeypatch):
     assert out["extracted_data"]["scoring"][0]["status"] == "manual_review"
     assert out["verdict"] == "manual_review"
     assert out["result"] is False
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# R3: confidence 消费（低置信→manual_review，接 G3）
+# ══════════════════════════════════════════════════════════════════════════════
+
+from server.common.evidence_resolution import (  # noqa: E402
+    _normalize_filename,
+    _parse_file_head,
+)
+
+# 含低置信标记的底稿（盖章/扫描件，file_clarity=low；_CLARITY_NOTE 注入头）
+LOW_CLARITY_CORPUS = (
+    "### 文件: 2.08资格审查资料.pdf (kind=ocr, route=cloud) [检出印章 2 枚] [⚠清晰度低：OCR 部分文本置信度低]\n"
+    "【第 5 页】\n营业执照 注册资本 一千万元\n"
+    "### 文件: 2.07项目管理机构.pdf (kind=pdf_text, route=native)\n"
+    "【第 1 页】\n拟派项目负责人张三\n"
+)
+
+
+def test_parse_file_head_clarity_and_clean_name():
+    # critic F1：文件名不被 (kind=)/[检出印章]/[清晰度] 污染
+    name, clarity = _parse_file_head("2.08资格审查资料.pdf (kind=ocr, route=cloud) [检出印章 2 枚] [⚠清晰度低：x]")
+    assert name == "2.08资格审查资料.pdf"
+    assert clarity == "low"
+    name2, c2 = _parse_file_head("普通.pdf (kind=pdf_text, route=native)")
+    assert name2 == "普通.pdf" and c2 == "clear"
+    _, c3 = _parse_file_head("扫描.pdf (kind=ocr) [清晰度未知：无置信度]")
+    assert c3 == "unknown"
+
+
+def test_normalize_filename():
+    assert _normalize_filename("/path/To/Ｆile.PDF") == "file.pdf"
+    assert _normalize_filename("a\\b\\c.pdf") == "c.pdf"
+
+
+def test_clarity_map_and_low_clarity_files():
+    idx = CorpusIndex(parse_corpus(LOW_CLARITY_CORPUS))
+    lcf = {f["file"]: f["clarity"] for f in idx.low_clarity_files()}
+    assert lcf.get("2.08资格审查资料.pdf") == "low"
+    assert "2.07项目管理机构.pdf" not in lcf  # clear 不列
+
+
+def test_low_clarity_files_emitted_even_without_quotes():
+    # codex#1：只有低置信文件、无可回查 quote → 仍 emit low_clarity_files
+    out = resolve_audit_evidence(_audit_result(extracted_data={"scoring": []}), LOW_CLARITY_CORPUS)
+    er = out["extracted_data"]["evidence_resolution"]
+    assert any(f["file"] == "2.08资格审查资料.pdf" for f in er["low_clarity_files"])
+
+
+def test_g3_score0_on_named_low_clarity_file_downgrades(monkeypatch):
+    monkeypatch.setenv("EVIDENCE_RESOLUTION_DOWNGRADE", "1")
+    out = resolve_audit_evidence(
+        _audit_result(
+            extracted_data={
+                "scoring": [
+                    {
+                        "item": "营业执照",
+                        "max": 5,
+                        "score": 0,
+                        "status": "scored",
+                        # absence 项把文件写进 basis（点名 low 文件）
+                        "basis": "已核投标文件2.08资格审查资料.pdf 未提供营业执照，故0分",
+                    }
+                ]
+            }
+        ),
+        LOW_CLARITY_CORPUS,
+    )
+    sitem = out["extracted_data"]["scoring"][0]
+    assert sitem["status"] == "manual_review"  # 读不清≠没提供
+    assert sitem["score"] is None
+    assert "低置信" in sitem["basis"]
+    assert out["verdict"] == "manual_review"  # verdict 回填
+
+
+def test_g3_score_positive_not_downgraded():
+    out = resolve_audit_evidence(
+        _audit_result(
+            extracted_data={
+                "scoring": [
+                    {
+                        "item": "营业执照",
+                        "max": 5,
+                        "score": 5,
+                        "status": "scored",
+                        "basis": "投标文件2.08资格审查资料.pdf 已提供营业执照",
+                    }
+                ]
+            }
+        ),
+        LOW_CLARITY_CORPUS,
+    )
+    assert out["extracted_data"]["scoring"][0]["status"] == "scored"  # 非0分不降
+
+
+def test_g3_unnamed_source_not_downgraded():
+    # critic F2：source/basis 不点名低置信文件 → 不降级（保守，无误杀）
+    out = resolve_audit_evidence(
+        _audit_result(
+            extracted_data={
+                "scoring": [
+                    {"item": "营业执照", "max": 5, "score": 0, "status": "scored", "basis": "投标第5页未提供"}
+                ]
+            }
+        ),
+        LOW_CLARITY_CORPUS,
+    )
+    assert out["extracted_data"]["scoring"][0]["status"] == "scored"
+
+
+def test_g3_unknown_clarity_not_downgraded():
+    # critic F3：unknown（云 OCR 常态）只 emit 不降级
+    corpus = (
+        "### 文件: 扫描件.pdf (kind=ocr) [清晰度未知：无置信度信号]\n【第 1 页】\nx\n"
+    )
+    out = resolve_audit_evidence(
+        _audit_result(
+            extracted_data={
+                "scoring": [
+                    {"item": "X", "max": 5, "score": 0, "status": "scored", "basis": "已核扫描件.pdf未提供"}
+                ]
+            }
+        ),
+        corpus,
+    )
+    assert out["extracted_data"]["scoring"][0]["status"] == "scored"  # unknown 不降
+    er = out["extracted_data"]["evidence_resolution"]
+    assert any(f["clarity"] == "unknown" for f in er["low_clarity_files"])  # 但 emit 可见
+
+
+def test_r1_r3_combined_downgrade_idempotent(monkeypatch):
+    # codex#3：同项 unresolved(R1) + low_clarity(R3) → 仅降级一次，downgraded_items 不重复
+    monkeypatch.setenv("EVIDENCE_RESOLUTION_DOWNGRADE", "1")
+    out = resolve_audit_evidence(
+        _audit_result(
+            extracted_data={
+                "scoring": [
+                    {
+                        "item": "营业执照",
+                        "max": 5,
+                        "score": 0,
+                        "status": "scored",
+                        "basis": "投标文件2.08资格审查资料.pdf",
+                        "deduction_hits": [
+                            {
+                                "evidence": {
+                                    "source": "2.08资格审查资料.pdf 第5页",
+                                    "quote": "完全编造的不存在原文五十项专利三千万保证金欧盟认证",
+                                }
+                            }
+                        ],
+                    }
+                ]
+            }
+        ),
+        LOW_CLARITY_CORPUS,
+    )
+    er = out["extracted_data"]["evidence_resolution"]
+    sitem = out["extracted_data"]["scoring"][0]
+    assert sitem["status"] == "manual_review"
+    assert er["downgraded_items"].count("营业执照") == 1  # 不重复
