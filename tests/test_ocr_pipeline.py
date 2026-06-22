@@ -540,3 +540,92 @@ def test_build_inline_audit_prompt_no_ocr_block_omits_section(tmp_path):
     from server.audit.runner import build_inline_audit_prompt
 
     assert "OCR/直读底稿" not in build_inline_audit_prompt(str(tmp_path))
+
+
+# ── R2: BOQ 感知抽取 + 截断策略 ────────────────────────────────────────────────
+
+
+def _big_boq_blocks(n_filler_pages: int = 80) -> list[str]:
+    """合成大 BOQ：扉页(总价) + 多页填充行项，逐页一 block（_render_body 按页加锚点）。"""
+    cover = (
+        "1. 扉页\n投标总价(小写):\n381574199.97\n(大写):\n"
+        "叁亿捌仟壹佰伍拾柒万肆仟壹佰玖拾玖元玖角柒分\n投标人:\n二建"
+    )
+    filler = [
+        f"序号\n项目编码\n04050100{i:04d}\n项目名称\n塑料管\n综合单价\n258.56\n合价\n69358.72\n"
+        + ("某项目特征描述很长 " * 50)
+        for i in range(n_filler_pages)
+    ]
+    tail = "分部分项合计\n3012424.9\n单价措施合计\n17765.51\n合计\n3030190.41"
+    return [cover, *filler, tail]
+
+
+def test_build_block_boq_emits_summary(monkeypatch):
+    import server.ocr.pipeline as pipeline_mod
+
+    monkeypatch.setattr(pipeline_mod, "MAX_FILE_BLOCK_CHARS", 5000)
+    results = [
+        {
+            "path": "1.05 已标价工程量清单.pdf",
+            "kind": "pdf_text",
+            "route": "native",
+            "blocks": _big_boq_blocks(),
+        }
+    ]
+    block = pipeline_mod.build_extraction_block(results)
+    assert "BOQ 结构化摘要" in block
+    assert "投标总价: 381574199.97" in block  # 总价提升为结构化字段，非淹没/被截
+    assert "已截断" not in block  # 走摘要而非截断
+    assert len(block) < 30000  # 远小于原始全量
+
+
+def test_build_block_large_non_boq_default_head_truncate(monkeypatch):
+    import server.ocr.pipeline as pipeline_mod
+
+    monkeypatch.setattr(pipeline_mod, "MAX_FILE_BLOCK_CHARS", 100)
+    monkeypatch.delenv("OCR_TRUNCATE_HEAD_TAIL", raising=False)
+    body = "HEAD_" + ("a" * 300) + "_TAILMARKER"
+    results = [{"path": "长合同.txt", "kind": "text", "route": "native", "blocks": [body]}]
+    block = pipeline_mod.build_extraction_block(results)
+    assert "已截断" in block
+    assert "HEAD_" in block
+    assert "_TAILMARKER" not in block  # 默认头截 → 尾部丢（与现状一致）
+
+
+def test_build_block_large_non_boq_head_tail_when_enabled(monkeypatch):
+    import server.ocr.pipeline as pipeline_mod
+
+    monkeypatch.setattr(pipeline_mod, "MAX_FILE_BLOCK_CHARS", 100)
+    monkeypatch.setenv("OCR_TRUNCATE_HEAD_TAIL", "1")
+    body = "HEAD_" + ("a" * 300) + "_TAILMARKER"
+    results = [{"path": "长合同.txt", "kind": "text", "route": "native", "blocks": [body]}]
+    block = pipeline_mod.build_extraction_block(results)
+    assert "已截断" in block
+    assert "HEAD_" in block
+    assert "_TAILMARKER" in block  # 首尾截 → 尾部保留
+
+
+def test_build_block_boq_summary_resolvable_by_r1(monkeypatch):
+    # R1×R2 协同：BOQ 摘要经 build_extraction_block 包裹后，R1 parse_corpus 解析页号 + 总价 resolved
+    import server.ocr.pipeline as pipeline_mod
+    from server.common.evidence_resolution import (
+        CorpusIndex,
+        existence_ratio,
+        normalize_text,
+        parse_corpus,
+    )
+
+    monkeypatch.setattr(pipeline_mod, "MAX_FILE_BLOCK_CHARS", 5000)
+    results = [
+        {
+            "path": "1.05 已标价工程量清单.pdf",
+            "kind": "pdf_text",
+            "route": "native",
+            "blocks": _big_boq_blocks(),
+        }
+    ]
+    block = pipeline_mod.build_extraction_block(results)
+    segs = parse_corpus(block)
+    assert any(seg["page"] is not None for seg in segs)
+    idx = CorpusIndex(segs)
+    assert existence_ratio(normalize_text("投标总价381,574,199.97"), idx.whole_corpus) == 1.0

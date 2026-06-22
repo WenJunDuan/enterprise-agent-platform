@@ -11,6 +11,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from server.ocr import boq as boq_extract
 from server.ocr import cache as ocr_cache
 from server.ocr.classify import classify
 from server.ocr.engine import recognize, recognize_seal
@@ -236,24 +237,56 @@ def file_clarity(result: dict, *, threshold: float = OCR_CLARITY_MIN_CONFIDENCE)
     return "clear"
 
 
+# R2：通用截断「从头切」是否改「首尾切」（保尾部，如合同付款节点/落款）。**默认关**——
+# expense/audit 关键字段多在头部，贸然减头部预算会回归；tender 大非 BOQ 文件需保尾可经 env 开。
+def _truncate_head_tail_enabled() -> bool:
+    return os.getenv("OCR_TRUNCATE_HEAD_TAIL", "0").lower() in {"1", "true", "yes"}
+
+
+def _truncate_body(full_body: str) -> str:
+    """大文件截断：默认头截（向后兼容）；OCR_TRUNCATE_HEAD_TAIL=1 则首尾截（保尾）。
+
+    截断标记**不含 `【第N页】` 字样**——免破 evidence-resolution 的 parse_corpus 页索引（R1 协同）。
+    """
+    n = len(full_body)
+    if _truncate_head_tail_enabled():
+        head_n = int(MAX_FILE_BLOCK_CHARS * 0.7)
+        tail_n = MAX_FILE_BLOCK_CHARS - head_n
+        marker = (
+            f"\n\n...[内容已截断：本文件共 {n} 字符，保留首 {head_n} + 尾 {tail_n}，"
+            f"中间省略；相关字段请标 low_confidence / needs_review]\n\n"
+        )
+        return full_body[:head_n] + marker + full_body[-tail_n:]
+    return full_body[:MAX_FILE_BLOCK_CHARS] + (
+        f"\n\n...[内容已截断：本文件共 {n} 字符，仅保留前 {MAX_FILE_BLOCK_CHARS}；"
+        f"尾部信息（如合同付款节点）可能丢失，相关字段请标 low_confidence / needs_review]"
+    )
+
+
 def build_extraction_block(results: list[dict]) -> str:
     """把结构化产物组装成内联文本底稿，供模型做字段映射。
 
-    单文件超过 MAX_FILE_BLOCK_CHARS 时截断并**显式标记**——避免静默丢掉尾部内容
-    （如合同付款节点）让模型误以为底稿完整。截断段提示模型对相关字段标 needs_review。
+    单文件超过 MAX_FILE_BLOCK_CHARS 时：
+    - **BOQ（已标价工程量清单）** → 结构化抽关键金额（投标总价/各合计/Top-N）紧凑摘要（R2），
+      替代"210 页噪音从头截"——治报价淹没/失据（见 ``server.ocr.boq``）。
+    - 其余大文件 → ``_truncate_body``（默认头截，env 可首尾截），并**显式标记**避免静默丢尾。
     """
     parts: list[str] = []
     for result in results:
         name = Path(result.get("path", "?")).name
         head = f"### 文件: {name} (kind={result.get('kind')}, route={result.get('route')})"
         full_body = _render_body(result)
-        body = full_body[:MAX_FILE_BLOCK_CHARS]
         if len(full_body) > MAX_FILE_BLOCK_CHARS:
-            body += (
-                f"\n\n...[内容已截断：本文件共 {len(full_body)} 字符，仅保留前 "
-                f"{MAX_FILE_BLOCK_CHARS}；尾部信息（如合同付款节点）可能丢失，"
-                f"相关字段请标 low_confidence / needs_review]"
+            summary = (
+                boq_extract.extract_boq_summary(
+                    name, full_body, max_chars=MAX_FILE_BLOCK_CHARS // 4
+                )
+                if boq_extract.is_boq(name, full_body, kind=result.get("kind"))
+                else None
             )
+            body = summary if summary is not None else _truncate_body(full_body)
+        else:
+            body = full_body
         seals = result.get("seals")
         if seals:
             head += f" [检出印章 {len(seals)} 枚]"
