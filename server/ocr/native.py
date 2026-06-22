@@ -7,10 +7,14 @@
 from __future__ import annotations
 
 import importlib
+import logging
+import os
 from pathlib import Path
 
 from server.ocr import OcrDependencyError
 from server.ocr.locks import FITZ_LOCK
+
+logger = logging.getLogger(__name__)
 
 EXCEL_EXT = {".xlsx", ".xlsm", ".xls"}
 WORD_EXT = {".docx"}
@@ -18,6 +22,17 @@ PDF_EXT = {".pdf"}
 
 # 单 sheet 安全上限，防超大表撑爆下游上下文
 MAX_EXCEL_ROWS = 5000
+
+
+# 逐页 find_tables 在超大 PDF 上成本爆炸：实测 8417 页 BOQ 耗 324s + 产 17970 冗余表使 full_body
+# 膨胀到 39.9M（5× blocks）。收益边际——blocks 的 get_text(sort=True) 已含表格文本，R2 BOQ 摘要即
+# 从 blocks 抽。故页数超此上限的 PDF **跳过 find_tables**（仅保留 blocks 文本），把 BOQ 首跑 OCR
+# 从数百秒压到秒级。普通标书/发票/合同（≤ 上限）照常 find_tables。env OCR_FIND_TABLES_MAX_PAGES 可调。
+def _find_tables_max_pages() -> int:
+    try:
+        return int(os.getenv("OCR_FIND_TABLES_MAX_PAGES", "500"))
+    except (TypeError, ValueError):
+        return 500
 
 
 def _require(module: str, package: str):
@@ -69,8 +84,17 @@ def read_pdf_text(path: Path) -> dict:
     blocks: list[str] = []
     tables: list[dict] = []
     with FITZ_LOCK, fitz.open(str(path)) as document:
+        # 超大 PDF（如数千页 BOQ）跳过逐页 find_tables（成本爆炸、收益边际，见模块注释）。
+        run_find_tables = document.page_count <= _find_tables_max_pages()
+        if not run_find_tables:
+            logger.info(
+                "find_tables_skipped_large_pdf",
+                extra={"pages": document.page_count, "path": str(path)},
+            )
         for page in document:
             blocks.append(page.get_text("text", sort=True) or "")
+            if not run_find_tables:
+                continue
             try:
                 found = page.find_tables()
             except Exception:  # 个别畸形页 find_tables 可能抛错，单页失败不毁整篇
