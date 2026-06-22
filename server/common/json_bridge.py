@@ -52,6 +52,7 @@ def _apply_result_message_structured(
     final_structured_output: StructuredJSON | None,
     final_subtype: str,
     request_id: str | None = None,
+    evidence_source: str | None = None,
 ) -> tuple[StructuredJSON | None, str | None]:
     """Try to extract validated structured output from a ResultMessage (structured mode).
 
@@ -63,7 +64,7 @@ def _apply_result_message_structured(
         if not isinstance(structured_output, (dict, list)):
             raise JSONContractError("Claude returned a non-object structured output.")
         structured_output = apply_schema_semantics(
-            schema_name, structured_output, request_id=request_id
+            schema_name, structured_output, request_id=request_id, evidence_source=evidence_source
         )
         return structured_output, utc_now()
     if final_subtype == "error_max_structured_output_retries":
@@ -80,6 +81,7 @@ def _apply_result_message_text(
     final_structured_output: StructuredJSON | None,
     text_accum: list[str],
     request_id: str | None = None,
+    evidence_source: str | None = None,
 ) -> tuple[StructuredJSON | None, str | None]:
     """Try to extract validated structured output from a ResultMessage (text mode).
 
@@ -92,7 +94,9 @@ def _apply_result_message_text(
     raw_text = (getattr(message, "result", "") or "") or "".join(text_accum)
     parsed = _extract_json_object(raw_text)
     if parsed is not None:
-        parsed = apply_schema_semantics(schema_name, parsed, request_id=request_id)
+        parsed = apply_schema_semantics(
+            schema_name, parsed, request_id=request_id, evidence_source=evidence_source
+        )
         return parsed, utc_now()
     return None, None
 
@@ -126,6 +130,7 @@ async def run_agent_json(
     project_id: str | None = None,
     archive_to_results: bool = True,
     on_progress: Callable[[str], None] | None = None,
+    evidence_source: str | None = None,
     **opts: Any,
 ) -> tuple[StructuredJSON, AgentRunMeta]:
     """Run Claude and return the parsed JSON object.
@@ -137,6 +142,10 @@ async def run_agent_json(
     价格横比（compare）传 **False**：其结论不是单投标人 audit-result，自存
     ``tender_compare_results``，**不进 ``results``**，否则会被 ``_project_bid_roster`` 当成
     伪投标人污染名册 / 回看（codex P1.1）。
+
+    ``evidence_source``（可选，R1）= 本案底稿文本，透传给 ``apply_schema_semantics`` 的
+    evidence-resolution 闸做出处回查。**显式命名参数**（不进 ``**opts``）——否则会漂进
+    ``build_options`` 被当未知 SDK 选项报错（codex P2）。不传 → 闸跳过，行为不变。
     """
     # 不变量（codex R1 P2）：schema_name 为空 = 无命名 schema（仅文本模式 passthrough，见
     # apply_schema_semantics）。structured=True 仍会 build_output_format(schema_name)→ None 会崩，
@@ -235,6 +244,7 @@ async def run_agent_json(
                         final_structured_output=final_structured_output,
                         final_subtype=final_subtype,
                         request_id=request_id,
+                        evidence_source=evidence_source,
                     )
                 else:
                     extracted, ts = _apply_result_message_text(
@@ -243,6 +253,7 @@ async def run_agent_json(
                         final_structured_output=final_structured_output,
                         text_accum=text_accum,
                         request_id=request_id,
+                        evidence_source=evidence_source,
                     )
 
                 if extracted is not None:

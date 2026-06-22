@@ -48,6 +48,7 @@ async def run_command_json(
     archive_to_results: bool = True,
     context: str | None = None,
     on_progress: Callable[[str], None] | None = None,
+    evidence_source: str | None = None,
     **opts: Any,
 ):
     """Invoke a Claude slash command and return structured JSON output.
@@ -55,7 +56,9 @@ async def run_command_json(
     ``project_id`` 显式透传到归档（tender 招标项目分组键）；显式参数而非 ``**opts``，
     避免被下游 ``build_options`` 当成 SDK 选项（codex P1.3）。
     ``archive_to_results=False`` 时结论不进 ``results`` 表（compare 用，codex P1.1）。
-    ``context`` 附在命令后（P4：注入确定性 OCR 底稿）。
+    ``context`` 附在命令后（P4：注入确定性 OCR 底稿，**喂模型**）。
+    ``evidence_source`` 透传给 evidence-resolution 闸（R1，**喂校验**，不进 prompt）；显式命名
+    参数而非 ``**opts``，避免漂进 ``build_options``（codex P2）。
     """
     return await run_agent_json(
         build_command_prompt(command_name, *arguments, context=context),
@@ -63,5 +66,6 @@ async def run_command_json(
         project_id=project_id,
         archive_to_results=archive_to_results,
         on_progress=on_progress,
+        evidence_source=evidence_source,
         **opts,
     )

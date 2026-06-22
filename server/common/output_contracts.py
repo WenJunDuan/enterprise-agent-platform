@@ -689,11 +689,16 @@ def normalize_audit_result(
     return structured_output
 
 
+from server.common.evidence_resolution import resolve_audit_evidence  # noqa: E402
+
 register_schema_processor(
     DEFAULT_OUTPUT_SCHEMA_NAME,
     normalize=normalize_audit_result,
     validate=_validate_audit_result,
     enrich=enrich_audit_decision,
+    # R1：拿到本案底稿时回查结论里每条出处真伪（仅 tender_worker 透传 evidence_source 才触发；
+    # audit/expense 不透传 → 跳过，零影响）。
+    resolve=resolve_audit_evidence,
 )
 register_schema_processor(
     INIT_RULES_REPORT_SCHEMA_NAME,
