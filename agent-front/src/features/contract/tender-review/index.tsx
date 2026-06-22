@@ -21,7 +21,7 @@ export function TenderReviewPage({
   return (
     <>
       <Header fixed />
-      <Main constrained className='space-y-5'>
+      <Main className='space-y-5'>
         {showPageHeading ? (
           <PageHeading
             activeScreen={page.screen}

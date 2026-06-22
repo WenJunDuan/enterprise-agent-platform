@@ -54,9 +54,9 @@ export function AnalyzingView({
   }, [progressText])
 
   return (
-    <div className='space-y-4'>
+    <div className='flex flex-col gap-4 xl:h-[calc(100vh-8rem)] xl:max-h-[calc(100vh-8rem)] xl:overflow-hidden'>
       {/* 进度条（全宽） */}
-      <Card>
+      <Card className='shrink-0'>
         <CardHeader>
           <div className='flex items-center justify-between gap-2'>
             <CardTitle className='flex items-center gap-2'>
@@ -90,9 +90,9 @@ export function AnalyzingView({
       </Card>
 
       {/* 三区主体：左（区1+2）右（区3） */}
-      <div className='grid gap-4 xl:grid-cols-[minmax(300px,2fr)_minmax(400px,3fr)]'>
+      <div className='grid min-h-0 flex-1 gap-4 xl:grid-cols-[minmax(320px,1.4fr)_minmax(640px,4fr)]'>
         {/* ─ 左栏：区1 基本信息 + 区2 招标信息 ─ */}
-        <div className='space-y-4'>
+        <div className='grid min-h-0 gap-4 xl:grid-rows-[auto_minmax(0,1fr)]'>
           {/* 区1：基本信息（OCR 抽取优先，回落手填表单）+ 投标公司名 */}
           <Zone1ProjectInfo
             projectForm={projectForm}
@@ -232,14 +232,14 @@ function Zone2TenderInfo({
   const criteria = tenderDocInfo?.criteria ?? null
 
   return (
-    <Card>
+    <Card className='flex min-h-0 flex-col overflow-hidden'>
       <CardHeader className='pb-3'>
         <CardTitle className='flex items-center gap-2 text-base'>
           <FileText className='size-4 text-primary' />
           区2 招标信息
         </CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className='min-h-0 flex-1 overflow-auto'>
         <div className='space-y-3 text-sm'>
           {/* OCR 状态行（招标 + 各投标家） */}
           {docsStatus ? (
@@ -347,7 +347,7 @@ function CriteriaSummary({ criteria }: { criteria: TenderCriteria }) {
           ⚠ 各项满分合计 {sumMax} 与声明满分 {totalMax} 不一致，可能漏抓或抓错评分项。
         </p>
       ) : null}
-      <ul className='max-h-64 space-y-1 overflow-y-auto'>
+      <ul className='space-y-1'>
         {items.map((item, index) => {
           const deductionCount = item.deductions?.length ?? 0
           const bandCount = item.bands?.length ?? 0
@@ -438,7 +438,7 @@ function Zone3StreamOutput({
   scrollRef: React.RefObject<HTMLDivElement | null>
 }) {
   return (
-    <Card className='flex flex-col'>
+    <Card className='flex min-h-0 flex-col overflow-hidden'>
       <CardHeader className='pb-3'>
         <CardTitle className='flex items-center gap-2 text-base'>
           <Brain className='size-4 text-primary' />
@@ -446,24 +446,17 @@ function Zone3StreamOutput({
         </CardTitle>
       </CardHeader>
       {/* R7-#3：flex 链撑满 → 区3 与左栏（区1+区2）等高（grid 默认 items-stretch）。 */}
-      <CardContent className='flex min-h-0 flex-1 flex-col'>
-        {/* 流式输出区：实时展示 AI 评标分析过程，自动滚到最新 */}
-        <div className='flex h-full flex-col rounded-lg border bg-muted/30'>
-          <div className='flex shrink-0 items-center gap-2 border-b px-4 py-2 text-sm font-medium'>
-            <Brain className='size-4 text-primary' />
-            实时分析输出
-          </div>
-          {/* R7-#3：min-h-0 + flex-1 让滚动区随卡片伸缩（去固定 max-h）；markdown 渲染 AI 输出。 */}
-          <div ref={scrollRef} className='min-h-48 flex-1 overflow-auto px-4 py-3'>
-            {progressText?.trim() ? (
-              <MarkdownView>{progressText}</MarkdownView>
-            ) : (
-              <p className='text-xs text-muted-foreground'>
-                分析进行中，等待 AI 评标实时输出…
-              </p>
-            )}
-          </div>
-        </div>
+      <CardContent
+        ref={scrollRef}
+        className='min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-6 py-4'
+      >
+        {progressText?.trim() ? (
+          <MarkdownView>{progressText}</MarkdownView>
+        ) : (
+          <p className='text-sm leading-6 text-muted-foreground'>
+            分析进行中，等待 AI 评标实时输出…
+          </p>
+        )}
       </CardContent>
     </Card>
   )

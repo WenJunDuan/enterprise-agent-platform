@@ -253,7 +253,7 @@ export function AuditTaskDetailPage({ taskId }: { taskId: string }) {
   return (
     <>
       <Header fixed />
-      <Main constrained className='space-y-5'>
+      <Main className='space-y-5'>
         {/* C②: 标题区 — 左标题/ID，右"重新审核"（移出状态卡片，与"任务详情"标题左右并排）*/}
         <div className='flex items-start justify-between gap-3'>
           <div className='min-w-0'>

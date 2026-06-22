@@ -346,7 +346,7 @@ export function AuditTasksPage() {
   return (
     <>
       <Header fixed />
-      <Main constrained className='space-y-5'>
+      <Main className='space-y-5'>
         <div>
           <h1 className='text-2xl font-semibold tracking-tight'>报销审核</h1>
           <p className='text-sm text-muted-foreground'>
