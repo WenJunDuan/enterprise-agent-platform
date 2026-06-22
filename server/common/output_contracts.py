@@ -450,6 +450,17 @@ def _verify_score_mode_consistency(structured_output: dict[str, Any]) -> None:
             if total is not None:
                 expected = max_score - total
                 detail = f"满分{max_score}−扣{total}"
+            elif _SCORE_MODE_TOLERANCE < score < max_score and not item.get("deduction_hits"):
+                # R4 明细完整性：部分扣分(0<score<max)却无 deduction_hits 逐条明细 = 笼统扣X分
+                # （违 tender-evaluate.md「禁止笼统扣X分」）。score==0 由下方 absence 兜底覆盖，不重复。
+                warnings.append(
+                    {
+                        "code": "deduction_scored_no_hits",
+                        "item": item.get("item"),
+                        "detail": f"扣分项判 scored 得 {score}/{max_score}（已扣 {max_score - score}）"
+                        "却无 deduction_hits 逐条明细，疑笼统扣分，请人工核验扣分依据",
+                    }
+                )
         elif mode == "banded":
             band = item.get("selected_band")
             if isinstance(band, dict) and _is_real_number(band.get("points")):
@@ -461,6 +472,16 @@ def _verify_score_mode_consistency(structured_output: dict[str, Any]) -> None:
             if total is not None and _is_real_number(base):
                 expected = base + total
                 detail = f"基础{base}+加{total}"
+            elif _is_real_number(base) and score > base and not item.get("award_hits"):
+                # R4 明细完整性：加了分(score>base)却无 award_hits 明细 → 笼统加分。
+                warnings.append(
+                    {
+                        "code": "additive_scored_no_awards",
+                        "item": item.get("item"),
+                        "detail": f"加分项判 scored 得 {score} > 基础 {base} 却无 award_hits 明细，"
+                        "请人工核验加分依据",
+                    }
+                )
         elif mode == "formula":
             # G5 兜底（codex P1-3）：formula 判了 scored，但 criteria 项缺结构化 formula_spec 或含
             # 不可闭合变量（cross_bid/external_data/live_event/derived）→ 本不该单家自动算，warning
