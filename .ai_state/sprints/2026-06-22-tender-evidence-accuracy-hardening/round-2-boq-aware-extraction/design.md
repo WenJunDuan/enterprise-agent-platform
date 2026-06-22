@@ -171,8 +171,40 @@ else:
 
 > codex 另确认：金额逗号格式非 blocker（R1 `normalize_text` 去逗号 → `381574199.97`/`381,574,199.97` 同串）。两轮无残留 P0/P1，可进 impl。
 
-## 八、自测结果（impl 后回填）
-_（待回填）_
+## 八、自测结果（2026-06-22 实测）
 
-## 九、进度回写（impl 后回填）
-_（待回填）_
+**单测/回归**：`tests/test_boq.py` 13 例 + `tests/test_ocr_pipeline.py` R2 集成 4 例全绿；`uv run pytest -q` **661 全绿**（R1 644 + 17）+ `ruff check .` clean。
+
+**离线实测（真 8417 页 BOQ，二建 1.05）**：
+- `native_read` **324s**、full_body **39,933,050 字符**、find_tables **17970 表**（⚠ 见下"OCR 真相纠偏"）。
+- `is_boq=True`；`extract_boq_summary` **1.5s** → 摘要 **1354 字符**。
+- **投标总价: 381574199.97**（大写"叁亿捌仟壹佰伍拾柒万…元玖角柒分"校验，候选打分 8，@p2）——**真总价被结构化提升**（原被埋在 39.9M 噪音里）。page-carry 生效（tables 尾段金额标【页未知】）。
+
+**R2024-007 dogfood（含 8417 页 BOQ，directory 模式）**：
+
+| 指标 | qwen3.7-max | deepseek-v4-pro[1M] |
+|---|---|---|
+| 总耗时 | ~510s（OCR 324s 首次 + 模型） | ~140s（**OCR 命中 content-sha 缓存**） |
+| **bid_price.amount** | **381574199.97** ✓ | **381574199.97** ✓ |
+| 报价项 status | manual_review（cross-bid，正确） | manual_review（cross-bid，正确） |
+| 报价项 basis | "本家报价 381,574,199.97 元，低于控制价 386,600,000.00 元（下浮率约1.3%），有效报价" | "本家报价=381,574,199.97元(1.02投标函第1页)，控制价 B=386,600,000.00元，有效报价" |
+| evidence_resolution | checked 10 / resolved 5 / unresolved 4 / downgraded **0** | checked 14 / resolved 9 / unresolved 4 / downgraded **0** |
+
+**结论**：
+1. **R2 达成（核心）**：两模型都**精确捕获并使用真投标总价 381,574,199.97**（此前埋在 200k 噪音/97% 不可见 → 失据/脑补）；报价项有据、正确判 manual_review（价格分需横比）。
+2. **上下文巨幅压缩**：BOQ 段 39.9M → 1354 字符摘要，省下海量上下文预算。
+3. **R1×R2 协同不破**：两模型 downgraded=0；unresolved 仍全落 evidence_chain（模型转述句，非逐字，非降级路径）——与 R1 dogfood 同模式。
+4. **content-sha 缓存有效**：deepseek 复用 qwen 已缓存的 OCR → OCR≈0（510s→140s）。
+
+**OCR 真相纠偏（重要，记 backlog）**：深潜称"native 全量 3.6s、OCR 占比可忽略"——**实测错**。`read_pdf_text` 对 8417 页**逐页 `find_tables`** 耗 **324s** 且产 17970 冗余表使 full_body 膨胀到 39.9M（5× blocks）。BOQ 场景 OCR **是**首跑瓶颈（虽 content-sha 缓存后≈0）。**优化方向（→ R3/perf backlog）**：大 PDF 跳过/限制 find_tables（BOQ 走摘要不需要逐页表），或对超大 PDF 早停 find_tables。
+
+## 九、进度回写（2026-06-22）
+
+- **状态**：R2 impl 完成 + 自测通过。commit `0dcd61c`（feat(ocr): R2 BOQ 感知抽取 + 截断策略）。
+- **交付**：新模块 `server/ocr/boq.py`；`build_extraction_block` 截断策略（BOQ→摘要 / 非BOQ→`_truncate` env-gated 首尾截）；17 新测。661 全绿 + ruff。
+- **两轮设计审查**（critic NEEDS_REVISION + codex REWORK）findings 全部落地（见 §七）。
+- **Followup**：
+  - **R3/perf**：find_tables 在超大 PDF 上 324s 瓶颈（见上 OCR 真相纠偏）→ 大 PDF 跳过/限制 find_tables。
+  - **生产 prewarm 一致性**：上传即 OCR 存的旧 ocr_text（头截版）不会因 R2 自动刷新（dogfood 走 directory 模式已规避）；需重传或加 `ocr_version` 失效 → 留 R6/backlog。
+  - 扫描件 BOQ（OCR pages 管道表格）→ R3。
+  - 四建第二家 + glm 第三模型未跑（两模型已验核心），可 R6 全回归补。
