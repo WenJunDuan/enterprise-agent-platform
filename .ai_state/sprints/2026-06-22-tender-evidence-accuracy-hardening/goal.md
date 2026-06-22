@@ -112,3 +112,23 @@
 - 上一 Sprint `2026-06-22-multimodel-tender-optimization` 至 R7 + 非阻塞热修：**main 与 origin 同步**，616 测试绿 + ruff + 前端 lint/build。
 - 三模型评标均可靠跑通（qwen 300s/retries=0、deepseek 370s、glm 评 135s[D 降重试后]）；verdict 纠偏/evidence_chain 归一/criteria 归一全绿。
 - 本 Sprint 从"评分逻辑正确"推进到"**证据可验证 + 报价规模正确 + 置信度消费**"。
+
+---
+
+## 九、完成状态（2026-06-22，R1-R6 全部完成）
+
+main 累计 11 commits（`1a96db7`..`6d3edbe`），**681 测试绿 + ruff clean**。每轮 design + critic + codex 二审 + TDD impl + dogfood（适用轮）。
+
+| 轮 | 交付 | 状态 |
+|---|---|---|
+| **R1** | evidence-resolution 闸 + 底稿→校验透传管道（`evidence_resolution.py` 新模块 + contract/json_bridge/command_adapter/tender_worker 透传） | ✅ qwen/deepseek dogfood 零误杀 |
+| **R2** | BOQ 感知抽取 + 截断策略（`ocr/boq.py` 新模块） | ✅ 两模型捕获真投标总价 381,574,199.97（原埋噪音） |
+| **perf** | 超大 PDF 跳过 find_tables | ✅ BOQ OCR 324s→28.9s（11×） |
+| **R3** | confidence 消费（低置信→manual_review，接 G3）+ low_clarity_files emit | ✅ 单测；R2024-007 全 native 不触发不破 R1/R2 |
+| **R4** | scoring 明细完整性（笼统扣/加分无明细→warning）；grounding 纠偏（本标无 deduction/限价，G5 兜底上轮已具备） | ✅ |
+| **R5** | 基建债 F2/F4/F5 + effort **逐项核对均已完成**（SDK 杀子进程已处理）；补 worker 超时 graceful-fail 回归 | ✅ 招标人合规 MVP 移交 v2（CLAUDE.md 定 v1 不含程序合规 + 缺法规源） |
+| **R6** | e2e/多模型/三层数据/compare 验证（既有测试覆盖）+ 跨轮 bug-hunt（reviewer 5 bug 全修 + codex 关注点自验） | ✅ |
+
+**两个 grounding 纠偏**（深潜数据有误，已实读修正）：① 真投标总价 = 381,574,199.97@p2 扉页（非深潜的 851,886@p8414，那是单位工程税金合计）；② OCR 非"占比可忽略"，`find_tables` 对 8417 页耗 324s 才是 BOQ 真瓶颈。
+
+**移交 backlog**：招标人侧合规 MVP（v2，需法规源 + 确认）；compare 多家真模型 dogfood；真扫描件 confidence 触发率验证；扣分命中/限价 formula 调优（需满分扣减制 + 限价标作素材）。
