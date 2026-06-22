@@ -71,6 +71,10 @@ class SchemaProcessor:
     normalize: Callable[[StructuredJSON, str | None], StructuredJSON] | None = None
     validate: Callable[[StructuredJSON], None] | None = None
     enrich: Callable[[StructuredJSON], StructuredJSON] | None = None
+    # resolve: enrich 之后、拿到本案底稿(evidence_source)时跑的确定性回查（如 evidence-resolution
+    # 闸：校验模型引用的出处是否真在底稿）。仅当调用方透传 evidence_source 才触发；不传则跳过
+    # （向后兼容，audit/旧路径零影响）。签名 (output, evidence_source) → output。
+    resolve: Callable[[StructuredJSON, str], StructuredJSON] | None = None
 
 
 _SCHEMA_PROCESSORS: dict[str, SchemaProcessor] = {}
@@ -82,6 +86,7 @@ def register_schema_processor(
     normalize: Callable[[StructuredJSON, str | None], StructuredJSON] | None = None,
     validate: Callable[[StructuredJSON], None] | None = None,
     enrich: Callable[[StructuredJSON], StructuredJSON] | None = None,
+    resolve: Callable[[StructuredJSON, str], StructuredJSON] | None = None,
 ) -> None:
     """Register conformance hooks for a schema.
 
@@ -89,7 +94,7 @@ def register_schema_processor(
     if/elif — open for extension, closed for modification.
     """
     _SCHEMA_PROCESSORS[schema_name] = SchemaProcessor(
-        normalize=normalize, validate=validate, enrich=enrich
+        normalize=normalize, validate=validate, enrich=enrich, resolve=resolve
     )
 
 
@@ -126,21 +131,28 @@ def apply_schema_semantics(
     structured_output: StructuredJSON,
     *,
     request_id: str | None = None,
+    evidence_source: str | None = None,
 ) -> StructuredJSON:
-    """Run the registered normalize + validate + enrich for schema_name; unregistered ⇒ as-is.
+    """Run the registered normalize + validate + enrich + resolve for schema_name; unregistered ⇒ as-is.
 
     This is the single entry the SDK bridge calls — it stays schema-name agnostic.
 
     ``schema_name`` 为空（None/""）= 「无命名 schema」：仅取模型 JSON 原样返回，不做形/语义校验。
     用于 enrichment 类调用（如 tender-extract-info，输出 {criteria, tender_info} 不对应单一承重
     契约，best-effort 取用、宁缺毋崩）；否则 ``CONTRACTS_DIR / None`` 会抛 TypeError 致整次调用失败。
-    顺序（round4 F1 G1 闸 + metadata 加固）：
+
+    ``evidence_source``（可选）= 本案底稿文本（带 ``### 文件:`` + ``【第 N 页】`` 锚点）。非空且该
+    schema 注册了 ``resolve`` hook 时，在 enrich 之后跑确定性回查（evidence-resolution 闸）。不传 →
+    跳过 resolve（向后兼容：audit/旧路径不透传底稿，行为零变化）。
+    顺序（round4 F1 G1 闸 + metadata 加固 + R1 evidence-resolution）：
       1. normalize：盖 server 权威元数据（claim_id/reviewed_by/timestamp）+ 拍平 envelope 格式，
          **先于**硬 schema 校验——这些是服务端职责，不该逼模型产出（否则模型漏一个就反复重试至失败）。
       2. _validate_against_json_schema：硬『形』校验（normalize 后、enrich 前；enrich 会派生 schema 外
          的 result/conclusion，故仍须先校验原始输出的形）。
       3. processor.validate：语义承重闸（verdict/policy_refs/评分一致性，**不放松**）。
       4. processor.enrich：派生 result/conclusion。
+      5. processor.resolve：拿到底稿时回查出处真伪（**最后一步**——其写的额外标注键不再过 schema
+         硬校验，返回值直接归档；resolve 内若升 verdict 会重跑 enrich 保持一致）。
     """
     if not schema_name:
         return structured_output
@@ -155,6 +167,9 @@ def apply_schema_semantics(
         processor.validate(structured_output)
     if processor.enrich is not None:
         structured_output = processor.enrich(structured_output)
+    # R1 evidence-resolution：仅当调用方透传底稿且 schema 注册了 resolve hook。
+    if evidence_source and processor.resolve is not None:
+        structured_output = processor.resolve(structured_output, evidence_source)
     return structured_output
 
 

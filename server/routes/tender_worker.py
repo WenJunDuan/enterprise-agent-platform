@@ -248,6 +248,10 @@ async def _run_evaluation(
                 project_id=project_id,  # 显式透传 → 结论落 results.project_id（codex P1.3）
                 conversation_id=new_conversation_id(),
                 context=context,
+                # R1 evidence-resolution：透传**原始底稿** ocr_block（带 ### 文件:/【第N页】 锚点）
+                # 给结论校验闸做出处回查。**传 ocr_block 而非 context**——context 尾部已追加 criteria
+                # 注入块 + OCR 头注释，会干扰 tier/page 解析（design critic blind-spot C）。
+                evidence_source=ocr_block,
                 on_progress=on_progress,  # 思考流式：agent 文本片段实时回调给 worker
                 effort=_TENDER_EFFORT,  # 评标 per-call 扩展思考（不全局默认，避免拖慢 audit）
                 # 遗留①：开 include_partial_messages → 端点逐字吐 StreamEvent partial，on_progress
