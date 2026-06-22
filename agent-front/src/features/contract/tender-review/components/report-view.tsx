@@ -11,7 +11,7 @@ type ReportViewProps = {
 export function ReportView({ data, onBack }: ReportViewProps) {
   return (
     <div className='rounded-xl bg-muted/60 p-4 md:p-8'>
-      <div className='mx-auto mb-4 flex max-w-[820px] items-center justify-between gap-3'>
+      <div className='mb-4 flex items-center justify-between gap-3'>
         <div className='text-sm text-muted-foreground'>
           评标报告预览 · 可直接打印或导出 PDF
         </div>
@@ -27,7 +27,7 @@ export function ReportView({ data, onBack }: ReportViewProps) {
         </div>
       </div>
 
-      <article className='mx-auto max-w-[820px] rounded-md bg-background px-8 py-10 shadow-xl md:px-16 md:py-14'>
+      <article className='rounded-md bg-background px-8 py-10 shadow-xl md:px-16 md:py-14'>
         <header className='border-b-2 border-foreground pb-6 text-center'>
           <div className='text-sm font-semibold tracking-wide text-primary'>
             交易大脑 · 智能招投标审核
