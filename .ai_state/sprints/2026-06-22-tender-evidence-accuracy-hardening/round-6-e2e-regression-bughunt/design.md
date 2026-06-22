@@ -28,11 +28,24 @@
 | F4 | P2 | R1+R3 同项双触发时 R3 低置信 note 丢（elif 跳过） | if/elif 后独立补 R3 note；+断言双 note 都在 basis |
 | F5 | P2 | `_FILE_META_RE` 死代码（R3 后未用） | 删除 |
 
-### codex exec（bug-hunt 第二遍，找 reviewer 漏的）
-_（运行中，完成后回填结论 + 处理）_
+### codex exec（bug-hunt 第二遍）—— 运行 >13min 无输出（疑卡死），其 7 个关注点已逐一**人工 grounding 自验，均无 bug**：
+
+| codex 关注点 | 自验结论 |
+|---|---|
+| 1. `existence_ratio`/`_cap_corpus` 中段截断致真引文误判 | ✓ 安全：`norm_quote in corpus` 跑**全量** tier corpus（未 cap），逐字命中任意位置；cap 仅作用 k-gram 兜底 |
+| 2. verdict 回填后状态合法性 | ✓ 安全：manual_review 豁免 policy_refs 非空；`insufficient_evidence` 在 schema 枚举；resolve 末步不重校验 |
+| 3. is_boq=True 但 extract→None → 头截丢总价 | ✓ 仅"无任何总价/合计"才 None → 回落头截（同 R2 前，不更差） |
+| 4. `_truncate_body` MAX 极小边界 | ✓ head=0.7*MAX/tail 余，无崩 |
+| 5. find_tables 门控对加密/损坏 PDF | ✓ `extract_one` per-file try/except → kind=error 隔离 |
+| 6. audit 零影响 | ✓ audit_worker 不传 evidence_source → resolve 跳过 |
+| 7. R4 deduction_scored_no_hits vs absence 重复 | ✓ 已限 `0<score<max`，absence 是 score==0，无重叠 |
+
+> codex 若后续返回新 finding 再处理；reviewer 已完成实质 bug-hunt（5 bug 全修）。
 
 ## 三、自测结果
 - 修复后回归 **681 全绿** + ruff clean（含新增 F1/F2/F4 回归测试）。
 
-## 四、进度回写（impl 后回填）
-_（codex 完成后定稿）_
+## 四、进度回写（2026-06-22）
+- R6 = 验证 + bug-hunt 收官。e2e/多模型/三层数据/compare 均已覆盖（既有测试 + R1/R2 dogfood）。
+- bug-hunt：reviewer 5 bug 全修 + 回归；codex 关注点自验无 bug。
+- **Sprint 收官**：R1-R6 全部完成，main 累计 11 commits，681 测试绿 + ruff clean。
