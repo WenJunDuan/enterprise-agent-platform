@@ -205,10 +205,42 @@
 
 > 两轮审查均无残留未处理 P0/P1。设计自评：REWORK→已收敛，可进 impl（TDD）。
 
-## 七、自测结果（impl 后回填）
+## 七、自测结果（2026-06-22 实测）
 
-_（待 impl 后填：管道打通证据、R2024-007 命中率/假阴性率/降级项、三模型差异、阈值定档）_
+**单测/回归**：`tests/test_evidence_resolution.py` 28 例全绿（含两态解析/连续子串/三档/跨文件不误命中/verdict 回填/loc_only/失败安全/透传集成）；`uv run pytest -q` **644 全绿**（原 616 + 28）；`ruff check .` clean。
 
-## 八、进度回写（impl 后回填）
+**R2024-007 dogfood**（HTTP worker directory 模式，二建一家，**排除 8417 页 BOQ**=R2 范围；招标+18 投标文件，29MB；project `tp-613b5cfcea524b1f`）：
 
-_（待回填）_
+| 指标 | qwen3.7-max | deepseek-v4-pro[1M] |
+|---|---|---|
+| 评标耗时 | ~136s | ~155s |
+| evidence checked | 9 | 19 |
+| resolved | 9 | 12 |
+| weak_match | 0 | 5 |
+| **unresolved** | **0** | **2** |
+| page_mismatch | 2 | 2 |
+| loc_only | 5 | 10 |
+| **降级项 downgraded** | **0** | **0** |
+| verdict | manual_review（model 自判 data_conflict） | manual_review（model 自判 insufficient_evidence） |
+
+**结论（管道打通 + 闸生效 + 不误杀，均验证）**：
+1. **管道打通**：两模型结论 `extracted_data.evidence_resolution.checked > 0` → 底稿确已透传进校验闸。audit 路径不透传 → 回归全绿不受影响。
+2. **闸生效**：确定性回查每条出处逐字命中底稿；resolved/weak/unresolved/page_mismatch/loc_only 五态均产出。
+3. **零误杀（关键）**：两模型 **downgraded=0**——所有承重 `deduction_hits/award_hits` 逐字 quote 全部 resolved，无错误降级真实评分项。验证保守双阈值有效。
+4. **unresolved 全落在 evidence_chain（非降级路径）**：DeepSeek 2 条 unresolved 均是 `evidence_chain[].finding` 写成**模型转述/概括**（如"简历主要工作经历表为空…"、基准价公式概括）而非逐字原文——正是深潜 caveat #1 的假阴性，但**已被设计隔离**：evidence_chain 只标注不降级，仅 scoring 结构化逐字 quote 才降级（两模型该路径 0 unresolved）。
+5. **模型分布差异**（critic blind-spot D 验证）：DeepSeek 引证更多（19 vs 9）且更爱在 evidence_chain 概括（weak 5 + unresolved 2）；qwen 引证少而全逐字（resolved 9/9）。**两者降级路径都干净** → 阈值对多模型鲁棒。
+
+**阈值定档**：保持默认 `RESOLVE=0.65 / ABSENT=0.30 / MIN_QUOTE=8 / PAGE_WINDOW=1`（实测 0 误杀，无需收紧）；`EVIDENCE_RESOLUTION_DOWNGRADE=1`（默认开，dogfood 证明安全）。
+
+**调优观察（非阻塞，记 backlog）**：`evidence_chain[].finding` 模型常写概括非逐字 → unresolved/weak 计数虚高（无害，因不降级）。可选优化：evidence_chain 改判更宽松或单列"narration"类，使指标更干净。R1 不改（不影响承重路径）。
+
+## 八、进度回写（2026-06-22）
+
+- **状态**：R1 impl 完成 + 自测通过。commit `1a96db7`（feat(tender): R1 evidence-resolution 闸 + 透传管道）。
+- **交付**：新模块 `server/common/evidence_resolution.py`（确定性回查纯函数）；透传管道（contract/json_bridge/command_adapter/tender_worker）；resolve hook 注册；提示词对齐；28 单测。644 全绿 + ruff clean。
+- **两轮设计审查**（critic CONCERNS + codex REWORK）findings 全部落地（见 §七 设计审查记录）。
+- **Followup（移交后续轮）**：
+  - **R2**：BOQ 感知抽取（本轮 dogfood 排除了 8417 页 BOQ）；BOQ 入场后 evidence-resolution 对报价类 quote 的回查需复测。
+  - **R6**：compare/前端 null 显示成「0 分/第 N 名」（codex P2，`model.ts:324`）——本轮降级会产 manual_review/null，前端映射修复留 R6 三层 e2e。
+  - 调优观察：evidence_chain narration 假阴性（见 §七，无害）。
+  - 第二家（四建）+ glm 第三模型未跑（时间/范围），降级路径已由两模型验证干净；可在 R6 全回归补。
