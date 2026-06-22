@@ -569,6 +569,14 @@ def test_normalize_filename():
     assert _normalize_filename("a\\b\\c.pdf") == "c.pdf"
 
 
+def test_parse_file_head_keeps_bracket_in_filename():
+    # reviewer F2：文件名含普通 [ 不应被当标记切断（只在已知标记 [检出印章/[清晰度 处切）
+    name, clarity = _parse_file_head("file[1].pdf (kind=pdf_text, route=native)")
+    assert name == "file[1].pdf" and clarity == "clear"
+    name2, c2 = _parse_file_head("data[v2].pdf (kind=ocr) [⚠清晰度低：x]")
+    assert name2 == "data[v2].pdf" and c2 == "low"
+
+
 def test_clarity_map_and_low_clarity_files():
     idx = CorpusIndex(parse_corpus(LOW_CLARITY_CORPUS))
     lcf = {f["file"]: f["clarity"] for f in idx.low_clarity_files()}
@@ -695,3 +703,6 @@ def test_r1_r3_combined_downgrade_idempotent(monkeypatch):
     sitem = out["extracted_data"]["scoring"][0]
     assert sitem["status"] == "manual_review"
     assert er["downgraded_items"].count("营业执照") == 1  # 不重复
+    # reviewer F4：双触发时 R1 与 R3 两条降级原因都在 basis（note 不丢）
+    assert "未在底稿核实" in sitem["basis"]  # R1 note
+    assert "低置信" in sitem["basis"]  # R3 note

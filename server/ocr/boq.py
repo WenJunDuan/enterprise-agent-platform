@@ -94,8 +94,21 @@ def _nonempty_neighbors(lines: list[str], idx: int) -> list[str]:
 
 
 def _find_amount_near(lines: list[str], idx: int, *, loose: bool) -> tuple[float, str] | None:
-    """在 idx 行的邻近行（同行/后/前）找首个金额；loose 档额外允许 ≥5 位整数。返回 (值, 原文) 或 None。"""
+    """在 idx 行的邻近行（同行/后/前）找金额。返回 (值, 原文) 或 None。
+
+    - strict 档：取**首个**带小数/逗号的金额（合计明细相邻行）。
+    - loose 档（投标总价）：额外允许 ≥5 位整数，但邻近窗口可能混入序号/编码（reviewer F1）→
+      取窗口内**最大**金额（投标总价是大数、序号/页码是小数），避免选错成序号。
+    """
     pat = _AMOUNT_LOOSE if loose else _AMOUNT_STRICT
+    if loose:
+        best: tuple[float, str] | None = None
+        for ln in _nonempty_neighbors(lines, idx):
+            for m in pat.finditer(ln):
+                val = normalize_amount(m.group())
+                if best is None or val > best[0]:
+                    best = (val, m.group())
+        return best
     for ln in _nonempty_neighbors(lines, idx):
         m = pat.search(ln)
         if m:

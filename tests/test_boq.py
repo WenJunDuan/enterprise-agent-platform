@@ -87,6 +87,17 @@ def test_bidtotal_picks_cover_not_local_subtotal():
     assert "投标总价全部候选" in s
 
 
+def test_bidtotal_picks_max_not_sequence_number():
+    # reviewer F1：投标总价邻近窗口混入序号(6位整数)，应取最大金额(总价)非首个(序号)
+    body = (
+        "### 文件: x.pdf\n【第 1 页】\n投标总价(小写):\n040501\n381574199.97\n大写\n叁亿元整\n"
+    )
+    s = extract_boq_summary("已标价工程量清单.pdf", body)
+    assert s is not None
+    assert "投标总价: 381574199.97" in s
+    assert "投标总价: 040501" not in s
+
+
 def test_bidtotal_integer_total_extracted():
     # 整数投标总价（无小数无逗号）也要抽出（宽松档，critic F1）
     body = "### 文件: x.pdf\n【第 1 页】\n投标总价(小写):\n4950000\n大写\n肆佰玖拾伍万元整\n"
