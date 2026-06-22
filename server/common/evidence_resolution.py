@@ -128,15 +128,39 @@ def normalize_text(text: str) -> str:
     return "".join(out)
 
 
+# 文件头切分：纯文件名 = 首个 ``(kind=`` 或 ``[`` 之前（剥 (kind=...) 元信息 + [检出印章]/[清晰度]
+# 等方括号标记，critic F1）。clarity 标记由 build_extraction_block 的 _CLARITY_NOTE 注入。
+_FILE_HEAD_SPLIT_RE = re.compile(r"\s*\(kind=|\s*\[")
+
+
+def _parse_file_head(head: str) -> tuple[str, str]:
+    """从 ``### 文件:`` 头串解析 (纯文件名, clarity)。
+
+    clarity: ``[⚠清晰度低`` → low；``[清晰度未知`` → unknown；否则 clear（R3 confidence 消费）。
+    """
+    clarity = "low" if "清晰度低" in head else ("unknown" if "清晰度未知" in head else "clear")
+    name = _FILE_HEAD_SPLIT_RE.split(head, maxsplit=1)[0].strip()
+    return name, clarity
+
+
+def _normalize_filename(s: str) -> str:
+    """文件名规范化：basename + NFKC + lower + 去路径分隔（codex#4，供 source 点名匹配）。"""
+    s = unicodedata.normalize("NFKC", s or "").lower()
+    s = s.replace("\\", "/")
+    return s.rsplit("/", 1)[-1].strip()
+
+
 def parse_corpus(evidence_source: str) -> list[dict[str, Any]]:
-    """把底稿切成 segments ``[{tier, file, page, text}]``（page 可为 None）。
+    """把底稿切成 segments ``[{tier, file, page, text, clarity}]``（page 可为 None）。
 
     两态统一处理：有 ``=== …底稿 ===`` 外层标记（doc-layer）按它定 tier；无标记（inline OCR）
     按每个 ``### 文件:`` 文件名推断 tier。再在每文件块内按 ``【第 N 页】`` 切页。
+    每段带所属文件 clarity（R3：low/unknown/clear，供 confidence 消费）。
     """
     segments: list[dict[str, Any]] = []
     cur_tier: str | None = None  # None = 隐式（由文件名推断）
     cur_file: str | None = None
+    cur_clarity: str = "clear"
     cur_page: int | None = None
     buf: list[str] = []
 
@@ -146,7 +170,15 @@ def parse_corpus(evidence_source: str) -> list[dict[str, Any]]:
             text = "\n".join(buf).strip()
             if text:
                 tier = cur_tier if cur_tier is not None else _tier_of(cur_file)
-                segments.append({"tier": tier, "file": cur_file, "page": cur_page, "text": text})
+                segments.append(
+                    {
+                        "tier": tier,
+                        "file": cur_file,
+                        "page": cur_page,
+                        "text": text,
+                        "clarity": cur_clarity,
+                    }
+                )
         buf = []
 
     for line in evidence_source.splitlines():
@@ -155,12 +187,13 @@ def parse_corpus(evidence_source: str) -> list[dict[str, Any]]:
             flush()
             cur_tier = _tier_of(m_tier.group(1))
             cur_file = None
+            cur_clarity = "clear"
             cur_page = None
             continue
         m_file = _FILE_RE.match(line)
         if m_file:
             flush()
-            cur_file = _FILE_META_RE.sub("", m_file.group(1)).strip()
+            cur_file, cur_clarity = _parse_file_head(m_file.group(1))
             cur_page = None
             continue
         m_page = _PAGE_RE.match(line)
@@ -179,9 +212,17 @@ class CorpusIndex:
     def __init__(self, segments: list[dict[str, Any]]):
         # tier -> file -> page(int, None→0) -> 规范化页文本
         self.tier_files: dict[str, dict[str, dict[int, str]]] = {}
+        # R3：规范化文件名 → clarity（low/unknown/clear），供 confidence 消费
+        self.clarity_map: dict[str, str] = {}
         parts: dict[str, list[str]] = {}
         for seg in segments:
             tier, file, page = seg["tier"], seg["file"], seg["page"]
+            clarity = seg.get("clarity", "clear")
+            if file:
+                norm_name = _normalize_filename(file)
+                # 同文件多段 clarity 一致；非 clear 优先记（low/unknown 是风险信号）
+                if norm_name not in self.clarity_map or clarity != "clear":
+                    self.clarity_map[norm_name] = clarity
             norm = normalize_text(seg["text"])
             if not norm:
                 continue
@@ -191,6 +232,32 @@ class CorpusIndex:
             parts.setdefault(tier, []).append(norm)
         self.tier_corpus: dict[str, str] = {t: "".join(p) for t, p in parts.items()}
         self.whole_corpus: str = "".join(self.tier_corpus.values())
+
+    def low_clarity_files(self) -> list[dict[str, str]]:
+        """非 clear 文件列表 [{file, clarity}]（low + unknown，供结论可见性 emit）。"""
+        return [
+            {"file": name, "clarity": c}
+            for name, c in self.clarity_map.items()
+            if c in {"low", "unknown"}
+        ]
+
+    def source_names_low_clarity_file(self, source: str | None) -> str | None:
+        """source 文本是否点名了某 **low**（confirmed 低置信，不含 unknown）文件 → 返回该文件名。
+
+        匹配：低置信文件完整名或 stem(≥4 字符) 出现在规范化 source 里（不反向短子串）。
+        unknown（云 OCR 常态）不参与降级，仅可见性。
+        """
+        if not source:
+            return None
+        # source 常是"投标文件2.07资料.pdf第6页"——直接对原串 NFKC+lower 匹配（不取 basename）
+        nsrc_full = unicodedata.normalize("NFKC", source).lower()
+        for name, clarity in self.clarity_map.items():
+            if clarity != "low":
+                continue
+            stem = name.rsplit(".", 1)[0]
+            if (name and name in nsrc_full) or (len(stem) >= 4 and stem in nsrc_full):
+                return name
+        return None
 
     def corpus_for(self, tier: str) -> str:
         """该 tier 规范化全文；tier 不可定（whole）或缺该 tier → 用全量。"""
@@ -361,6 +428,54 @@ def _check_hits(
 
 
 _DOWNGRADE_NOTE = " ⚠ 出处未在底稿核实（evidence_unresolved），已降人工复核"
+_LOW_CLARITY_NOTE = " ⚠ 出处文件 OCR 低置信，『读不清≠没提供』，已降人工复核（R3）"
+
+
+def _downgrade_scoring_item(
+    sitem: dict[str, Any],
+    *,
+    note: str,
+    resolution_status: str,
+    summary: dict[str, Any],
+) -> bool:
+    """scored → manual_review（仅迁移一次，幂等）。返回 True 当且仅当本次发生真实状态迁移。
+
+    R1（unresolved）与 R3（low_clarity）共用，保证同项双触发不重复降级 / 不重复 basis（codex#3）。
+    """
+    cur_basis = str(sitem.get("basis") or "")
+    if sitem.get("status") == "scored":
+        sitem["status"] = "manual_review"
+        sitem["score"] = None
+        sitem["basis"] = cur_basis + note
+        sitem["resolution"] = {"status": resolution_status}
+        summary["downgraded_items"].append(sitem.get("item"))
+        return True
+    # 已非 scored（如 R1 先降）：仅补本 note（不重复），不算新迁移
+    if note.strip() not in cur_basis:
+        sitem["basis"] = cur_basis + note
+    return False
+
+
+def _flag_low_clarity_sources(sitem: dict[str, Any], index: CorpusIndex) -> str | None:
+    """扫 scoring 项的 evidence 命中 source + basis，是否点名某 low 文件；命中则给该 evidence 标
+    独立字段 ``clarity_flag``（不碰 R1 的 resolution，codex#2），返回被点名的文件名或 None。"""
+    named: str | None = None
+    for hits_key in ("deduction_hits", "award_hits"):
+        hits = sitem.get(hits_key)
+        if not isinstance(hits, list):
+            continue
+        for hit in hits:
+            if not isinstance(hit, dict):
+                continue
+            ev = hit.get("evidence")
+            if isinstance(ev, dict):
+                f = index.source_names_low_clarity_file(ev.get("source"))
+                if f:
+                    ev["clarity_flag"] = "low"
+                    named = named or f
+    # absence 项常把文件写进 basis（无 evidence hit）→ 也扫 basis（仍需点名 low 文件，保守）
+    f = index.source_names_low_clarity_file(sitem.get("basis"))
+    return named or f
 
 
 def resolve_audit_evidence(structured_output: Any, evidence_source: str) -> Any:
@@ -391,6 +506,7 @@ def resolve_audit_evidence(structured_output: Any, evidence_source: str) -> Any:
             "downgraded_items": [],
             "high_severity_unresolved": [],
             "unresolved_refs": [],
+            "low_clarity_files": index.low_clarity_files(),  # R3 可见性 emit
         }
         downgrade = _downgrade_enabled()
         any_new_manual = False
@@ -423,13 +539,28 @@ def resolve_audit_evidence(structured_output: Any, evidence_source: str) -> Any:
                     has_structured_quote = bool(
                         sitem.get("deduction_hits") or sitem.get("award_hits")
                     )
-                    if unresolved and downgrade and sitem.get("status") == "scored":
-                        sitem["status"] = "manual_review"
-                        sitem["score"] = None
-                        sitem["basis"] = str(sitem.get("basis") or "") + _DOWNGRADE_NOTE
-                        sitem["resolution"] = {"status": "downgraded_unresolved"}
-                        summary["downgraded_items"].append(sitem.get("item"))
-                        any_new_manual = True
+                    # R3：是否点名 low 文件（同时给 evidence 打 clarity_flag）
+                    low_clarity_named = _flag_low_clarity_sources(sitem, index)
+                    # R3 G3 兜底触发：scored 且 score==0（"读不清却判 0"嫌疑）且点名 low 文件
+                    g3_hit = (
+                        low_clarity_named is not None
+                        and sitem.get("status") == "scored"
+                        and sitem.get("score") == 0
+                    )
+                    if downgrade and unresolved:
+                        any_new_manual |= _downgrade_scoring_item(
+                            sitem,
+                            note=_DOWNGRADE_NOTE,
+                            resolution_status="downgraded_unresolved",
+                            summary=summary,
+                        )
+                    elif downgrade and g3_hit:
+                        any_new_manual |= _downgrade_scoring_item(
+                            sitem,
+                            note=_LOW_CLARITY_NOTE,
+                            resolution_status="downgraded_low_clarity",
+                            summary=summary,
+                        )
                     elif not has_structured_quote and sitem.get("status") in {
                         "scored",
                         "manual_review",
@@ -474,8 +605,8 @@ def resolve_audit_evidence(structured_output: Any, evidence_source: str) -> Any:
                 structured_output.setdefault("manual_review_reason", "insufficient_evidence")
             # verdict == "rejected"：终局更强，不因单项未核实翻盘
 
-        # 5. 摘要（仅在确有回查时写，供 dogfood 统计）
-        if summary["checked"] > 0 and isinstance(extracted, dict):
+        # 5. 摘要（有回查 或 有低置信文件即写——codex#1：勿因无 quote 吞掉 low_clarity_files）
+        if isinstance(extracted, dict) and (summary["checked"] > 0 or summary["low_clarity_files"]):
             extracted["evidence_resolution"] = summary
         return structured_output
     except Exception:  # noqa: BLE001 - 失败安全：绝不因回查崩评标
