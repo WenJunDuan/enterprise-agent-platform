@@ -4,9 +4,9 @@
 version: "9.6.4"
 
 # === PACE 路由状态 ===
-path: "System" # storage-restructure 已 ship(357 passed,codex REWORK→fixed symlink逃逸);前端集成已提交待用户测;external 模式设计待实现
-stage: "ship" # tender-harness 第1轮 ship(投标人侧评分多模式+扣分结构化+废标gate+OCR目的);第2轮 design 就绪,待用户实测第1轮后 impl
-current_sprint_slug: "2026-06-22-multimodel-tender-optimization"
+path: "System" # 评标 durable 硬化(证据可验证性+报价规模+准确度);上一 Sprint(multimodel)至R7+热修已ship,main与origin同步
+stage: "design" # 新 Sprint(evidence-accuracy-hardening) R1 待 design:底稿→校验管道 + evidence-resolution 闸(最高价值)
+current_sprint_slug: "2026-06-22-tender-evidence-accuracy-hardening"
 current_roadmap_slug: "" # 跨切面 goal，非单一 roadmap item
 skip_polish: false
 skip_architecture_check: false
@@ -78,7 +78,7 @@ pointers:
   latest_architecture_update: "2026-06-20T10:04:38.538Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "**新Sprint(2026-06-22):多模型评标优化goal** — 见 sprints/2026-06-22-multimodel-tender-optimization/goal.md(完整目标+本会话第1-6轮成果+8个遗留问题+操作备忘)。优化:①OCR速度效率②招投标审核速度准确度(抓招标评分点/分数,应标数据正确抓取对应上下文)③数据存储。多模型轮换:DeepSeek/qwen3.7-max(dashscope)/claude-opus-4-8(anyrouter,偶发429)。每改一版自测+自调优,范围.claude+server+前端,每轮codex配合。**本会话**:第1-6轮(criteria2→20项/G5formula/effort/思考流式/长任务解耦/三层数据+上传即OCR解耦+前端三区),558passed+ruff+前端lint/build,29commits未push,git干净。端到端qwen评标跑通225s(比537s快一半)/rejected正确/20项scoring。**首要遗留**:qwen思考流式不实时(一次性返回,需include_partial_messages或flusher兜底flush)。部署:./deploy/deploy.sh或rsync到mac mini(100.107.151.115)+前端build。"
+next_action: "**新Sprint(2026-06-22):评标证据可验证性+报价规模+准确度durable硬化** — 见 sprints/2026-06-22-tender-evidence-accuracy-hardening/goal.md(合并R2024-007深潜+上轮8遗留+R7deferred;含Athena对深潜的针对性评审/遗留reconciliation/6轮计划/素材路径)。**焦点从评分逻辑→证据可验证性**。R1(最高价值,待design):①打通底稿→apply_schema_semantics校验管道(contract.py:124当前不接收底稿)②evidence-resolution闸(回查模型引用的(文件,页,quote)是否真在底稿,查不到→evidence_unresolved+降needs_review;grep确认零实现)③出处带文件名对齐回查键。R2:BOQ感知抽取(8417页已标价工程量清单被MAX_FILE_BLOCK_CHARS=200000@pipeline.py:24从头截→总价851886@p8414丢→报价失据)。R3:confidence消费(低置信→manual)。R4:扣分调优(R2024-007解锁,素材在knowledge/external/交易大脑/二建+四建两家×19文件)+G5 S2公式变量。R5:招标人侧合规MVP+effort透传+基建债(F2越权/F4同步SQLite阻塞/F5超时不杀子进程)。R6:三层数据e2e+全回归+3模型。**起点**:上轮至R7 main与origin同步,616绿+ruff+前端lint/build,三模型评标均可靠。模型:DeepSeek/qwen3.7-max(dashscope)/glm-5.2@openrouter.ai/api(Anthropic skin,去anyrouter)。部署rsync到mac mini(100.107.151.115)+前端build。"
 last_subagent: "spec-compliance"
 last_subagent_at: "2026-06-21T11:46:34.865037Z"
 active_worktrees: ["agent-a13c533445cf2f1e5"]

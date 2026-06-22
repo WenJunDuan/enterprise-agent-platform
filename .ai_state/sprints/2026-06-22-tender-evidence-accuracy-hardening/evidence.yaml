@@ -1,0 +1,10 @@
+sprint_slug: 2026-06-22-tender-evidence-accuracy-hardening
+collected_evidence:
+  - tool_use_id: "toolu_01L5EKXeYqt8fXYPoa1yaj31"
+    tool: "Edit"
+    file: "/Users/mi_manchi/workspace/enterprise-agent-platform/.ai_state/_index.md"
+    timestamp: "2026-06-22T03:09:40.358Z"
+  - tool_use_id: "toolu_01DLjK77vFM9NmzLN9jTkTye"
+    tool: "Edit"
+    file: "/Users/mi_manchi/workspace/enterprise-agent-platform/.ai_state/_index.md"
+    timestamp: "2026-06-22T03:10:03.085Z"
