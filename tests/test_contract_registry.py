@@ -406,3 +406,92 @@ def test_processor_dataclass_defaults_are_none():
     proc = SchemaProcessor()
     assert proc.validate is None
     assert proc.enrich is None
+
+
+# ── R4: scoring 明细完整性（笼统扣分/加分无明细 → warning）────────────────────
+
+
+def _warning_codes(out: dict) -> set[str]:
+    return {w.get("code") for w in (out.get("extracted_data") or {}).get("validation_warnings", [])}
+
+
+def test_r4_deduction_scored_partial_without_hits_warns():
+    # 部分扣分(0<score<max)却无 deduction_hits 明细 → 笼统扣分告警
+    out = apply_schema_semantics(
+        DEFAULT_OUTPUT_SCHEMA_NAME,
+        _valid_audit_result(
+            extracted_data={
+                "scoring": [
+                    {"item": "技术", "max": 6, "score": 4, "status": "scored", "score_mode": "deduction"}
+                ]
+            }
+        ),
+    )
+    assert "deduction_scored_no_hits" in _warning_codes(out)
+
+
+def test_r4_deduction_full_score_without_hits_no_warn():
+    # 满分不扣，无 hits 合法 → 不告警
+    out = apply_schema_semantics(
+        DEFAULT_OUTPUT_SCHEMA_NAME,
+        _valid_audit_result(
+            extracted_data={
+                "scoring": [
+                    {"item": "技术", "max": 6, "score": 6, "status": "scored", "score_mode": "deduction"}
+                ]
+            }
+        ),
+    )
+    assert "deduction_scored_no_hits" not in _warning_codes(out)
+
+
+def test_r4_deduction_with_hits_no_completeness_warn():
+    # 有逐条明细且算术自洽 → 无完整性告警
+    out = apply_schema_semantics(
+        DEFAULT_OUTPUT_SCHEMA_NAME,
+        _valid_audit_result(
+            extracted_data={
+                "scoring": [
+                    {
+                        "item": "技术",
+                        "max": 6,
+                        "score": 4,
+                        "status": "scored",
+                        "score_mode": "deduction",
+                        "deduction_hits": [{"deduction_id": "d1", "deducted": 2}],
+                    }
+                ]
+            }
+        ),
+    )
+    assert "deduction_scored_no_hits" not in _warning_codes(out)
+
+
+def test_r4_additive_scored_above_base_without_awards_warns():
+    out = apply_schema_semantics(
+        DEFAULT_OUTPUT_SCHEMA_NAME,
+        _valid_audit_result(
+            extracted_data={
+                "criteria": {"items": [{"item": "加分项", "score_mode": "additive", "base": 0}]},
+                "scoring": [
+                    {"item": "加分项", "max": 5, "score": 3, "status": "scored", "score_mode": "additive"}
+                ],
+            }
+        ),
+    )
+    assert "additive_scored_no_awards" in _warning_codes(out)
+
+
+def test_r4_manual_review_item_no_completeness_warn():
+    # manual_review 项不触发明细完整性告警
+    out = apply_schema_semantics(
+        DEFAULT_OUTPUT_SCHEMA_NAME,
+        _valid_audit_result(
+            extracted_data={
+                "scoring": [
+                    {"item": "答辩", "max": 6, "score": None, "status": "manual_review", "score_mode": "deduction"}
+                ]
+            }
+        ),
+    )
+    assert "deduction_scored_no_hits" not in _warning_codes(out)
