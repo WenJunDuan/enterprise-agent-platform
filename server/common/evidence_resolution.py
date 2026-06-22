@@ -98,8 +98,6 @@ _TIER_RE = re.compile(r"^\s*={2,}\s*(.+?)\s*={2,}\s*$")
 _FILE_RE = re.compile(r"^\s*#{2,}\s*文件[:：]\s*(.+?)\s*$")
 # 页锚点（_page_anchor 产 ``【第 N 页】``，带空格 → 正则吃空白）
 _PAGE_RE = re.compile(r"^\s*【第\s*(\d+)\s*页】\s*$")
-# 文件名尾部的元信息 ``(kind=..., route=...)`` 剥掉，留纯文件名
-_FILE_META_RE = re.compile(r"\s*\(kind=.*?\)\s*$")
 
 
 def _tier_of(label: str) -> str:
@@ -128,9 +126,9 @@ def normalize_text(text: str) -> str:
     return "".join(out)
 
 
-# 文件头切分：纯文件名 = 首个 ``(kind=`` 或 ``[`` 之前（剥 (kind=...) 元信息 + [检出印章]/[清晰度]
-# 等方括号标记，critic F1）。clarity 标记由 build_extraction_block 的 _CLARITY_NOTE 注入。
-_FILE_HEAD_SPLIT_RE = re.compile(r"\s*\(kind=|\s*\[")
+# 文件头切分：纯文件名 = 首个 ``(kind=`` 或 **已知方括号标记** 之前。只在 ``[检出印章`` /
+# ``[⚠清晰度`` / ``[清晰度`` 处切，**不切文件名里的普通 ``[``**（如 file[1].pdf，reviewer F2）。
+_FILE_HEAD_SPLIT_RE = re.compile(r"\s*\(kind=|\s*\[(?:检出印章|⚠?清晰度)")
 
 
 def _parse_file_head(head: str) -> tuple[str, str]:
@@ -310,8 +308,9 @@ def page_status(index: CorpusIndex, tier: str, page: int | None, norm_quote: str
         return "no_page"
     window = _page_window()
     files = index.tier_files.get(tier)
-    if files is None and tier != "whole":
-        # tier 不可定 → 跨全部 tier 找
+    if files is None:
+        # tier 不可定 / whole 无独立 key（doclayer 只有 tender/bid）→ 跨全部 tier 找
+        # （与 corpus_for('whole') 用全量语料对称，reviewer F3：避免 whole 恒判 page_mismatch）
         files = {f: pg for t in index.tier_files.values() for f, pg in t.items()}
     hits: list[str] = []
     for fname, pages in (files or {}).items():
@@ -570,6 +569,15 @@ def resolve_audit_evidence(structured_output: Any, evidence_source: str) -> Any:
                         # 不降级；codex P1：不宣称已覆盖全部承重依据）。
                         sitem.setdefault("resolution", {"status": "loc_only"})
                         summary["loc_only"] += 1
+                    # R1+R3 同项双触发：R1(unresolved) 已降级走上面 if 分支、R3 elif 被跳过 → 此处补
+                    # R3 低置信 note，保证降级原因完整不丢（reviewer F4）。
+                    if (
+                        downgrade
+                        and unresolved
+                        and g3_hit
+                        and _LOW_CLARITY_NOTE.strip() not in str(sitem.get("basis") or "")
+                    ):
+                        sitem["basis"] = str(sitem.get("basis") or "") + _LOW_CLARITY_NOTE
 
             # 3. 废标/资格依据（高危，仅标注不动 verdict——废标 verdict 是高代价决定）
             for key in ("disqualification_hits", "eligibility_checks"):
