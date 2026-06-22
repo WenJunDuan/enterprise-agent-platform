@@ -204,7 +204,7 @@ else:
 - **交付**：新模块 `server/ocr/boq.py`；`build_extraction_block` 截断策略（BOQ→摘要 / 非BOQ→`_truncate` env-gated 首尾截）；17 新测。661 全绿 + ruff。
 - **两轮设计审查**（critic NEEDS_REVISION + codex REWORK）findings 全部落地（见 §七）。
 - **Followup**：
-  - **R3/perf**：find_tables 在超大 PDF 上 324s 瓶颈（见上 OCR 真相纠偏）→ 大 PDF 跳过/限制 find_tables。
+  - ~~**R3/perf**：find_tables 在超大 PDF 上 324s 瓶颈~~ → ✅ **已修**：`native.py` 页数 > `OCR_FIND_TABLES_MAX_PAGES`(默认 500) 跳过 find_tables。实测 BOQ native_read **324s→28.9s（11×）**、tables 17970→0、full_body 39.9M→30.3M，投标总价仍正确抽出。+2 测试，663 全绿。
   - **生产 prewarm 一致性**：上传即 OCR 存的旧 ocr_text（头截版）不会因 R2 自动刷新（dogfood 走 directory 模式已规避）；需重传或加 `ocr_version` 失效 → 留 R6/backlog。
   - 扫描件 BOQ（OCR pages 管道表格）→ R3。
   - 四建第二家 + glm 第三模型未跑（两模型已验核心），可 R6 全回归补。

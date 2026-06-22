@@ -344,6 +344,62 @@ def test_read_pdf_text_uses_pymupdf(tmp_path):
     assert "tables" in result  # find_tables 字段存在（本例无表 → 空列表）
 
 
+def test_read_pdf_text_skips_find_tables_for_large_pdf(tmp_path, monkeypatch):
+    # R3-perf：超大 PDF（页数 > 上限）跳过逐页 find_tables（治 8417 页 BOQ 324s 瓶颈），
+    # 仍保留 blocks 文本。用 page.find_tables 被 patch 计数验证"未调用"。
+    import fitz
+
+    import server.ocr.native as native_mod
+    from server.ocr.native import read_pdf_text
+
+    pdf = tmp_path / "big.pdf"
+    doc = fitz.open()
+    for _ in range(4):
+        doc.new_page().insert_text((72, 72), "投标总价 123456.00")
+    doc.save(str(pdf))
+    doc.close()
+
+    monkeypatch.setattr(native_mod, "_find_tables_max_pages", lambda: 2)  # 4 页 > 2 → 跳过
+    calls = {"n": 0}
+    orig = fitz.Page.find_tables
+
+    def _counting(self, *a, **k):
+        calls["n"] += 1
+        return orig(self, *a, **k)
+
+    monkeypatch.setattr(fitz.Page, "find_tables", _counting)
+    result = read_pdf_text(pdf)
+    assert calls["n"] == 0  # 大 PDF 完全不调 find_tables
+    assert result["tables"] == []
+    assert any("123456.00" in b for b in result["blocks"])  # blocks 文本仍在
+
+
+def test_read_pdf_text_runs_find_tables_for_small_pdf(tmp_path, monkeypatch):
+    # 普通小 PDF（≤ 上限）照常 find_tables（不退化）。
+    import fitz
+
+    import server.ocr.native as native_mod
+    from server.ocr.native import read_pdf_text
+
+    pdf = tmp_path / "small.pdf"
+    doc = fitz.open()
+    doc.new_page().insert_text((72, 72), "发票 999")
+    doc.save(str(pdf))
+    doc.close()
+
+    monkeypatch.setattr(native_mod, "_find_tables_max_pages", lambda: 500)
+    calls = {"n": 0}
+    orig = fitz.Page.find_tables
+
+    def _counting(self, *a, **k):
+        calls["n"] += 1
+        return orig(self, *a, **k)
+
+    monkeypatch.setattr(fitz.Page, "find_tables", _counting)
+    read_pdf_text(pdf)
+    assert calls["n"] == 1  # 1 页 → find_tables 调用 1 次
+
+
 # ═════════════════════════════════════════════════════════════════════════════
 # P2：file_clarity 置信度信号 + 底稿清晰度标注
 # ═════════════════════════════════════════════════════════════════════════════
