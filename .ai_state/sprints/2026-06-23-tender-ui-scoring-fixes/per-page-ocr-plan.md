@@ -100,5 +100,22 @@ PDF → 走**已验证**的 `recognize`（当前配置引擎）单 job → `pipe
 `cache._CACHE_VERSION` v1→v2 失效旧纯 native 缓存（否则同内容命中旧缓存绕过子集 OCR）。
 全套 **701 绿 + ruff + format**。
 
-**待真标验收（需 OCR 云在线 + 张謇新和标）**：59 扫描页内容进底稿、技术/业绩/负责人出真分、
-evidence `【第N页】` 定位准。单测已覆盖逻辑，真值验证待用户起服务跑张謇重评。
+**真标验收已完成（2026-06-23，3 模型 e2e via API）✅**：
+- **Phase 0（直接管道）**：张謇新和 45MB/400 页，classify mixed_pdf=True，60 扫描页（ratio 0.150
+  → 证实纯比例 0.4/0.8 是 no-op），**60→0 全补回**，单 job ~29s，底稿 200158(截断)→373372。
+- **Phase 1（API e2e，TENDER_READ_DOC_LAYER=0 绕 stale 底稿，3 模型顺序）**：
+  | 模型 | verdict | scored/manual | 客观得分 | (旧 stale 底稿) |
+  | qwen | manual_review | **7/2** | 45 | (5/4) |
+  | deepseek | rejected | **7/2** | 43 | (7/2) |
+  | glm | manual_review | **7/2** | 45 | (8/1) |
+- **核心验证**：3 模型 **企业综合实力6/类似业绩9/拟派负责人3 全部 scored**，basis 逐字引**补回的扫描页**
+  （第315/316页资质证书、第317-344页业绩合同、第345-348页建造师/职称证书），✓页锚（G2 定位准）。
+  旧 stale 底稿这些项因证书页空白只能 manual。
+- **意外强验证**：deepseek 从**补回的第15页信用中国截图**读出「政府采购严重违法失信行为记录名单」
+  + 投标人全称 → 疑似失信信号（INV-06 废标条款）→ 这是 OCR 补回页才暴露的合规信号（模型诚实标注
+  须人工核验官网）。
+- **残留（非 OCR 问题，model/prompt 层，留后续）**：① 技术参数指标 3 模型仍 manual（偏离表「无偏离」
+  → 模型保守不打分，④ 靶子仍未完全治住，但内容已在底稿）；② deepseek verdict=rejected 对模糊截图偏
+  激进（应 manual_review，另两家是；违「不轻易废标」原则）；③ 大底稿(373k)致文本模式 JSON 偶发不出
+  （qwen 重试1次/glm 重试2次才成），可能需提 CLAUDE_CODE_MAX_OUTPUT_TOKENS 或输出纪律。
+- 价格分 3 模型一致 manual（需横比，正确）；bid_price 1,316,033.66 一致。**OCR 子集回填修复达成设计目标。**
