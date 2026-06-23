@@ -34,6 +34,11 @@ def _probe_pdf(data: bytes) -> dict:
         "pages": pages,
         "has_text_layer": has_text,
         "scanned": image_filters > 0 and not has_text,
+        # 混合 PDF：既有文本层(fonts>0)又含图像编码页(扫描/盖章页)。整体仍判 native（多数页可
+        # 直读），但 pipeline 据此 + 空白页计数决定是否整份转云 OCR 补回扫描页——native 直读对
+        # 扫描页抽出空串被静默丢失（张謇 400 页投标含 ~59 页扫描证书）。纯数字 PDF 的空白页是
+        # 真空页(无扫描内容可补)，故必须用 image_filters>0 区分"空因扫描"vs"空因无内容"。
+        "mixed_pdf": image_filters > 0 and has_text,
     }
 
 
@@ -55,7 +60,7 @@ def _probe_docx(path: Path) -> dict:
     return {"has_text_layer": has_text, "scanned": bool(media) and not has_text}
 
 
-def _route(container, route, handler, has_text, reason, page_count=None) -> dict:
+def _route(container, route, handler, has_text, reason, page_count=None, mixed_pdf=False) -> dict:
     return {
         "container": container,
         "route": route,
@@ -64,6 +69,8 @@ def _route(container, route, handler, has_text, reason, page_count=None) -> dict
         # 页数（int）。刻意命名 page_count 而非 pages —— OCR 引擎产物里的 pages 是
         # list[每页内容]，同名会让下游 _render_body 把整数当列表迭代而崩。
         "page_count": page_count,
+        # 混合 PDF 标记（仅 PDF 有意义；其余容器恒 False）。供 pipeline gate 整份转云 OCR。
+        "mixed_pdf": mixed_pdf,
         "reason": reason,
     }
 
@@ -87,7 +94,15 @@ def classify(path: Path) -> dict:
     elif ext in PDF_EXT:
         probe = _probe_pdf(path.read_bytes())
         result = (
-            _route("pdf", "native", "pdf_text", True, "PDF 含文本层，直抽", probe["pages"])
+            _route(
+                "pdf",
+                "native",
+                "pdf_text",
+                True,
+                "PDF 含文本层，直抽",
+                probe["pages"],
+                mixed_pdf=probe["mixed_pdf"],
+            )
             if probe["has_text_layer"]
             else _route("pdf", "ocr", "pdf_scan", False, "扫描 PDF，转 OCR", probe["pages"])
         )

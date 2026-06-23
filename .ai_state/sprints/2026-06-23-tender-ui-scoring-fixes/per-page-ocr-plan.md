@@ -1,7 +1,22 @@
 # 设计 · 混合 PDF 扫描页 OCR 路由（"逐页 OCR" 计划）
 
 > 由 workflow `per-page-ocr-plan` 产出（5 维 grounding → 2 方案选优 → 风险对抗验证），CC 综合落档。
-> 状态：**设计就绪，待用户确认后实施**。归属 Sprint：2026-06-23-tender-ui-scoring-fixes。
+> 状态：**已确认决策，实施中**。归属 Sprint：2026-06-23-tender-ui-scoring-fixes。
+
+## 🔧 决策修正（2026-06-23，已确认 — 优先于下方原始计划）
+
+CC 实施前对代码做了二次 grounding（`native.read_pdf_text` 一页一项 blocks，扫描页抽出 `""`），
+发现**原计划的纯比例阈值在本案是 no-op**：张謇 59 扫描页 / 400 页 = ratio **0.147**，低于原拟
+阈值 0.4/0.8 → 整份云 OCR **根本不触发**，与验收（59 页进底稿）自相矛盾。根因：ratio 是
+*整份几乎全扫描* 文档的判据；混合 PDF（大量数字页稀释比例）的真信号是**扫描页绝对数量**。
+
+**用户已拍板（2 决策）：**
+1. **触发判据 = 计数为主 + 比例兜底**：`blank_count ≥ OCR_BLANK_PAGE_MIN_COUNT(默认10) OR blank_ratio > OCR_BLANK_PAGE_RATIO(默认0.5)`。张謇 59 页触发；数字 PDF 个别签章页不触发；小份多扫描件靠比例兜底。两阈值 env 可灰度。
+2. **Layer 2（逐页并发）本 Sprint 一起做**——但**前置 gate：先实测 aistudio 单页 PNG 接口兼容性**（需 OCR 云凭证+网络），未通过则停在 Layer 1（整份云 OCR 已能让张謇出真分）。
+
+**CC 追加的正确性细节（超出原计划）**：触发**必须 gate 在 classify 的 `mixed_pdf`（fonts>0 AND image_filters>0）**上——纯数字 PDF 的空白页是*真空页*（章节分隔），无扫描内容可补，触发整份云 OCR 纯属浪费且可能损质。`image_filters>0` 才区分"空因扫描"vs"空因无内容"。
+
+下方原始 Layer 1 步骤 1-3/8 的"纯 ratio"表述以本节为准（计数为主）。
 
 ## 背景（为什么做）
 
@@ -64,7 +79,7 @@ aistudio **单页 PNG 接口兼容性实测通过后**才启用：`_merge_scan_p
 - 数字 PDF（无扫描页）快路径不受影响（early-exit）；纯扫描 PDF 行为不变。
 - `uv run pytest -q` + ruff 全绿；OCR_BLANK_PAGE_RATIO 灰度可调。
 
-## 待用户确认点
-1. **是否实施 Layer 1**（核心，~35 行 + 测试）？
-2. 阈值 `OCR_BLANK_PAGE_RATIO` 初值：灰度 0.8 还是直接 0.4？
-3. Layer 2（逐页并发）是否本 Sprint 做，还是待 Layer 1 验证后另议？
+## 确认结果（2026-06-23）
+1. ✅ 实施 Layer 1 —— 触发判据改为**计数为主 + 比例兜底**（见顶部「决策修正」），gate 在 `mixed_pdf`。
+2. ✅ 阈值：`OCR_BLANK_PAGE_MIN_COUNT=10`（主）+ `OCR_BLANK_PAGE_RATIO=0.5`（兜底），均 env 可灰度。
+3. ✅ Layer 2 本 Sprint 做 —— **前置 gate：先实测 aistudio 单页 PNG 接口**，未通过则停在 Layer 1。

@@ -70,6 +70,27 @@ def test_text_pdf_with_large_embedded_image_routes_native(tmp_path):
     assert result["handler"] == "pdf_text"
 
 
+def test_mixed_pdf_flagged_but_routes_native(tmp_path):
+    # 有字体(文本层) + 含图像滤镜(扫描/盖章页) → 整体判 native pdf_text，但标记 mixed_pdf=True，
+    # 供 pipeline 据空白页计数决定是否整份转云 OCR 补回扫描页（张謇 400 页投标画像）。
+    data = b"%PDF-1.4\n/Type /Page\n/Font /Helvetica\nBT (text) Tj ET\n/DCTDecode\n" + b"\x00" * 5000
+    path = tmp_path / "mixed.pdf"
+    path.write_bytes(data)
+    result = classify(path)
+    assert result["route"] == "native"
+    assert result["handler"] == "pdf_text"
+    assert result["mixed_pdf"] is True
+
+
+def test_pure_text_pdf_not_mixed(tmp_path):
+    # 有字体 + 无图像滤镜 → mixed_pdf=False（纯数字 PDF，无扫描页可补）。
+    data = b"%PDF-1.4\n/Type /Page\n/Font /Helvetica\nBT (hello) Tj ET\n"
+    path = tmp_path / "text.pdf"
+    path.write_bytes(data)
+    result = classify(path)
+    assert result["mixed_pdf"] is False
+
+
 def test_text_docx_routes_native(tmp_path):
     # 正文文字充足、无嵌入图 → 文本型
     path = tmp_path / "text.docx"

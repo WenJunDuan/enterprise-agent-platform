@@ -38,6 +38,18 @@ _CLARITY_NOTE = {
 # P4：是否对 case 目录做确定性 OCR 预处理后注入模型上下文（=0 关闭，回落模型自己 Read）。
 OCR_PREPROCESS = os.getenv("OCR_PREPROCESS", "1").lower() in {"1", "true", "yes"}
 
+# 混合 PDF（数字页 + 扫描页）整份转云 OCR 的触发阈值。背景：classify 以文件级 fonts>0 判 native，
+# 整份 PDF 只要有文本层就全判 native，其中扫描页经 pymupdf get_text 抽出空串被静默丢失（张謇
+# 400 页投标含 ~59 页扫描资质/业绩/职称证书 → 底稿缺据 → 技术/业绩/负责人评分只能 manual）。
+# 触发判据 = 计数为主 + 比例兜底：空白页**数量** ≥ MIN_COUNT（59 页绝对量是强信号，不该被
+# 341 数字页稀释成 ratio 0.147），或空白**比例** > RATIO（兜底小份多扫描件，如 6 页 4 扫 ratio
+# 0.67 但 count 4<10）。仅对 classify 判定的 mixed_pdf 生效（纯数字 PDF 的空白页是真空页，无
+# 扫描内容可补）。两阈值均 env 可灰度。详见 .ai_state/sprints/2026-06-23-tender-ui-scoring-fixes/
+# per-page-ocr-plan.md「决策修正」。
+MAX_BLANK_CHARS = int(os.getenv("OCR_BLANK_PAGE_MIN_CHARS", "20"))
+OCR_BLANK_PAGE_MIN_COUNT = int(os.getenv("OCR_BLANK_PAGE_MIN_COUNT", "10"))
+OCR_BLANK_PAGE_RATIO = float(os.getenv("OCR_BLANK_PAGE_RATIO", "0.5"))
+
 # OCR 文件级并行度：标书常十几个文件，扫描件走云 OCR 是 job-poll（IO 等待为主），串行会数分钟
 # 甚至撞 TENDER_TIMEOUT_SEC；多文件并行把墙钟从"求和"压到"最慢单个"。数字 PDF 走 native 本就快。
 # 受云服务并发上限约束，默认 4 保守（防触发云限流）；高并发云 / 全本地可经 env 调大。
@@ -102,6 +114,26 @@ def _has_extractable_text(native: dict) -> bool:
     )
 
 
+def _blank_page_count(blocks: list[str]) -> int:
+    """统计近空白页数。pdf_text 的 blocks 一页一项（read_pdf_text 逐页 append），扫描页经
+    pymupdf get_text 抽出空串/极短文本 → 视为空白页（< MAX_BLANK_CHARS 个非空白字符）。"""
+    return sum(1 for block in blocks if len(str(block).strip()) < MAX_BLANK_CHARS)
+
+
+def _should_cloud_ocr_mixed_pdf(blocks: list[str]) -> bool:
+    """混合 PDF 是否整份转云 OCR：空白页数 ≥ MIN_COUNT（主信号）OR 空白比例 > RATIO（兜底）。
+
+    计数为主——绝对扫描页量是强信号，不该被大量数字页稀释成低比例；比例兜底小份多扫描件
+    （如 6 页 4 扫，count<阈值但 ratio 高）。仅应对 classify 判定的 mixed_pdf 调用（纯数字 PDF
+    的空白页是真空页，无扫描内容可补，触发只会白送云 OCR）。
+    """
+    total = len(blocks)
+    if total == 0:
+        return False
+    blank = _blank_page_count(blocks)
+    return blank >= OCR_BLANK_PAGE_MIN_COUNT or (blank / total) > OCR_BLANK_PAGE_RATIO
+
+
 def extract_one(path: Path, *, run_seal: bool = False, purpose: str | None = None) -> dict:
     """对单个文件识别（带按文件内容 sha256 的结果缓存，P1）。
 
@@ -134,6 +166,21 @@ def _extract_one_raw(path: Path, *, run_seal: bool = False, purpose: str | None 
                     "route": "ocr",
                     "handler": "pdf_scan",
                     "note": "PDF 有字体但无可抽文本，回退 OCR",
+                }
+                return _recognize_with_seal(path, fallback, run_seal=run_seal, purpose=purpose)
+            # 混合 PDF（数字页 + 扫描页）：native 抽不到扫描页内容（空串被静默丢失）。空白页计数/
+            # 比例达阈值 → 整份转云 OCR 补回扫描页（方案 B，复用已生产验证的云路径，服务端保跨页
+            # 表格连续）。gate 在 mixed_pdf：纯数字 PDF 的空白页是真空页，触发只会白送云 OCR。
+            if (
+                route.get("handler") == "pdf_text"
+                and route.get("mixed_pdf")
+                and _should_cloud_ocr_mixed_pdf(native.get("blocks", []))
+            ):
+                fallback = {
+                    **route,
+                    "route": "ocr",
+                    "handler": "pdf_scan",
+                    "note": "混合 PDF 检出扫描页（native 抽不到），整份转云 OCR 补回",
                 }
                 return _recognize_with_seal(path, fallback, run_seal=run_seal, purpose=purpose)
             return {**route, **native}
