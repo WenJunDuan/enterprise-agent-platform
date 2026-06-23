@@ -1,0 +1,18 @@
+sprint_slug: 2026-06-23-tender-judgment-discipline
+collected_evidence:
+  - tool_use_id: "toolu_01PUG256ucs8KZzzToscs3zr"
+    tool: "Edit"
+    file: "/Users/mi_manchi/workspace/enterprise-agent-platform/.ai_state/_index.md"
+    timestamp: "2026-06-23T15:37:49.855Z"
+  - tool_use_id: "toolu_01UPCfBecPKzzcgTLAikNhKL"
+    tool: "Edit"
+    file: "/Users/mi_manchi/workspace/enterprise-agent-platform/.ai_state/_index.md"
+    timestamp: "2026-06-23T15:37:57.094Z"
+  - tool_use_id: "toolu_01PdZN4G9drCrwFQnVeTV19r"
+    tool: "Edit"
+    file: "/Users/mi_manchi/workspace/enterprise-agent-platform/.ai_state/_index.md"
+    timestamp: "2026-06-23T15:38:45.583Z"
+  - tool_use_id: "toolu_01FrJnUmngz8FTfSCgVbf8Hi"
+    tool: "Edit"
+    file: "/Users/mi_manchi/workspace/enterprise-agent-platform/.ai_state/_index.md"
+    timestamp: "2026-06-23T15:39:17.137Z"
