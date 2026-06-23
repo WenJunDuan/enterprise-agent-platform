@@ -66,19 +66,25 @@ allowed-tools: Read, Glob, Skill, Task
     - **「读不清」≠「没提供」**；把未还原的扫描附件当「客观 0 分」是范畴错误（与「不可判定绝不判 0」同源）。服务端会确定性给出 `extracted_data.evidence_resolution.low_clarity_files`（OCR 低置信文件清单）——**凡判 0 的"未提供/缺失"，若其出处文件在该清单内，必降 `manual_review` 而非 0**（R3 兜底）。
   - **投标确认未满足某客观评分项（底稿完整可读）→ 默认判 0 分 `score:0, status:"scored"`，不要 manual_review（治"明明不对应却标待核查/待人工"，用户实测痛点）**：只要底稿完整、可读、已定位到该评分维度对应章节，而**确认投标未提供 / 未响应 / 不满足**该**客观**条件（非主观档次项、非现场/外部/横比类），就按规则判 `score:0, status:"scored"`，`basis` 写「已核投标第N页该维度，未满足 XX，故 0 分」；属**该评分项自身必交硬性材料缺失**的判 `status:"rejected"`（该项判 0）。**仅以下窄情形才 `manual_review` 不判 0**：(i) 材料疑似已提供但底稿读不清/未还原/印章压字/截断/未定位到（OCR 低置信，见上 (b)）；(ii) 投标根本投错项目、该评分维度在投标全文无任何可对应章节、**无从判断应否给分**（真不可判定）；(iii) 主观档次项（`evaluator_type=subjective`）/ 现场答辩 / 外部数据 / 横向比价 / `data_conflict` / `rule_gap`。**把"确认不满足"误判 `manual_review`，与把"读不清"误判 0 分，同为范畴错误**——前者实得 0、后者待核验，别混。
   - `status:"rejected"`（该项判 0）**仅当该评分项自身必交材料缺失/硬性不符**；**不要因整单废标就把本项判 0**（见下解耦）。
-- **废标/资格独立 gate（与逐项评分解耦，关键，治"全是不通过没扣分"）**：对照 S1 的 `rejection_rules` 逐条核查投标文件，命中写 `extracted_data.disqualification_hits:[{rule_id 回链, finding, evidence:{source, quote}}]`；资格审查写 `extracted_data.eligibility_checks:[{check, status:pass/fail/manual, basis, evidence}]`。**废标/资格不符只决定最终 `verdict`，绝不把各评分项 `scoring[]` 一律归 0/rejected**——投标人确实交了业绩/方案/团队/商务，就照各项 `score_mode` 逐项给分；把"项目名不符"等记入 `disqualification_hits` + 相关项 `basis`，而非抹掉逐项评分。
+- **废标/资格独立 gate（与逐项评分解耦，关键，治"全是不通过没扣分"）**：对照 S1 的 `rejection_rules` 逐条核查投标文件，命中写 `extracted_data.disqualification_hits:[{rule_id 回链, finding, confirmed, evidence:{source, quote}}]`；资格审查写 `extracted_data.eligibility_checks:[{check, status:pass/fail/manual, basis, evidence}]`。**废标/资格不符只决定最终 `verdict`，绝不把各评分项 `scoring[]` 一律归 0/rejected**——投标人确实交了业绩/方案/团队/商务，就照各项 `score_mode` 逐项给分；把"项目名不符"等记入 `disqualification_hits` + 相关项 `basis`，而非抹掉逐项评分。
+  - **`confirmed` 是废标决断的闸（关键，治"把读不清的疑似信号误判废标"）**：仅当废标事实**已确认**（底稿可读、逐字可核、语义明确，如确认逾期/确认投错项目/确认资质缺失）才写 `confirmed:true` → 触发 `rejected`。**疑似 / 读不清 / 扫描截图未还原 / 自相矛盾 / 须人工登官网核验**的信号一律 `confirmed:false`——它只进 `risk_score` + `eligibility_checks.status:manual` 提示人工，**绝不触发 rejected**。典型反例：信用中国查询截图 OCR 只读到页面标题（"…失信…名单"）却读不全查询结果、且投标人把它放在"未被列入"自证章节 → 常规理解是自证清白，**`confirmed:false`**，不得据此废标合规投标人。
+  - **废标/扣分相关证据读不清 → 先重识别再判**（落"读不清先重识别该页再判"）：判罚/扣分相关页若底稿读不清（扫描/印章/截图），**若评标环境提供 `ocr-page` 技能则先对该页重识别**（含 `--seal` 印章页）读清后再判；**重识别后仍不可读 → `confirmed:false` + 须人工核验**，绝不据读不清直接判废标或判 0（"读不清≠违规"，同"读不清≠没提供"）。
 - 一致性核验：若业绩的项目经理与拟派项目负责人不一致，该业绩项 `manual_review`/不得分，`manual_review_reason:"data_conflict"`，证据链**同时引用业绩页与拟派负责人页**两处出处（依据：实施条例第40/42条、业绩与拟派负责人应一致）。
 - **证据定位准确性（硬要求，定位项必须 = 实际找到的）**：每条 `basis` / `evidence_chain` 的出处**只能引底稿里真实存在的页锚点 `【第N页】`**，且所引页**确实包含**你描述的内容——**严禁凭印象/猜测写页码**。⚠ **页码 N 必须取底稿中该原文正上方最近的 `【第N页】` 锚点数字（OCR 顺序页），不是投标文件正文里印刷的页码**——两者常因封面/目录/分册偏移而差几页，照搬印刷页号会被回查闸判 `page_mismatch`。写每条证据前自检一遍：「该原文/字段是否就在我所引的 `【第N页】`？」对不上就改到正确页或降为"未在底稿定位到"。出处统一写**「文件名 + 第N页 + 所在章节/标题」**（如「投标文件第6页《应答函》」「招标文件第79页 报价表」；**带文件名，便于跨多文件归属**），`finding`（及 `deduction_hits/award_hits/disqualification_hits.evidence.quote`）摘所引页的**逐字原文片段**（**照抄底稿原文、勿转述/勿改写/勿缩写**），使定位可核验、带上下文。
   - ⚠ **服务端有确定性回查闸**：会把你引的每条 `quote` 拿去本案底稿逐字核对——引的是**底稿里真实存在的逐字原文**才算核实；编造/严重转述会被标 `evidence_unresolved` 并把该评分项降为人工复核。故务必逐字照抄、引真实页。
 
 ### S4 汇总结论
+- **决断优先、压低 manual（总纲）**：文档判得了的客观项**一律出分 / 给 verdict，不 punt**；`manual_review` **只留给客观算不出**的——单家价格横比 / 外部信用未配 / 现场答辩 / 读不清且重识别后仍未还原 / `data_conflict` / `rule_gap`。把"嫌麻烦/拿不准"的可判定项标 manual 是错误。
 - 合成最终 `verdict`：
-  - `extracted_data.disqualification_hits` 非空，或任一 `eligibility_checks` status=fail → `rejected`（废标/资格否决由**独立 gate** 决定，不依赖某个评分项判 0）
-  - 存在任一 `manual_review` 评分项，或关键证据缺失/规则缺口/证据冲突 → `manual_review`（填 `manual_review_reason`）
-  - 全部评分项已按 `score_mode` 给分（`scored`/档次/加分/通过）且无否决项 → `approved`
+  - `extracted_data.disqualification_hits` 含**至少一条 `confirmed:true`**（已确认废标事实），或任一 `eligibility_checks` status=fail → `rejected`（废标/资格否决由**独立 gate** 决定，不依赖某个评分项判 0）。**全部 disqualification_hits 都是 `confirmed:false`（疑似/读不清）→ 不得 rejected**，转 manual_review 或正常打分 + 风险标注。
+  - 存在任一 `manual_review` 评分项（且确属上"总纲"客观算不出类），或关键证据缺失/规则缺口/证据冲突 → `manual_review`（填 `manual_review_reason`）
+  - 全部评分项已按 `score_mode` 给分（`scored`/档次/加分/通过）且无确认否决项 → `approved`
 - **`verdict` 与 `scoring[]` 解耦**：`verdict` 是整单结论，`scoring[]` 是逐项满分扣减的明细。**即使 `verdict=rejected`（废标），`scoring[]` 仍应保留各项有扣有得的逐项打分**（让评审看到每项扣在哪、扣多少），并在 `explanation` 说明废标主因。不要因 `verdict=rejected` 就把逐项分清零。（满分/实得合计由前端从 `scoring[]` 汇总，无需本步另出汇总字段。）
 - **承重结论（`approved` / `rejected`）的 `policy_refs` 只引通则层真实 `rule_id`**（如 `tender_evalmethod_001` 评标依招标文件、`tender_evalmethod_003` / `tender_evalmethod_004` 综合评估法量化加权、`tender_evalmethod_005` / `tender_evalmethod_006` / `tender_evalmethod_008` 废标 / 资格否决）——这些才是平台真伪闸认可的法定依据。
+- **`policy_refs` 不得为空（任何 verdict，含 `manual_review`）**：至少引 `tender_evalmethod_001`（评标依招标文件）+ `tender_evalmethod_003`（综合评估法量化加权）作法定底座——空 `policy_refs` 使结论无法回溯法律依据（审计硬伤）。但**只引实际据以判断的 rule_id**：未实际命中的废标条款（005/006/008）**不要**列进来凑数（虚引会误导）。
 - **`criteria` 各评分项的具体标准与命中**（来自招标文件评标办法、无 knowledge `rule_id`）**写进 `evidence_chain`**（同时引招标文件评标办法出处页 + 投标文件页），**不要塞进 `policy_refs`**（会被真伪闸当编造 `rule_id` 拒掉）。
+- **`evidence_chain` 不得留空数组、每项 `finding`/`conclusion` 都要填非空**：关键评分项（企业实力 / 业绩 / 负责人 / 技术 / 价格 / 信用）逐条进 `evidence_chain`——`source`=「文件名+第N页+章节」、`finding`=所引页**逐字原文片段**、`conclusion`=据此得出的评分/判定结论（如「业绩3项均≥2022年，得9/9」）。证据明细同时落在 `scoring[].award_hits/deduction_hits` 时，顶层 `evidence_chain` 仍须有对应条目（供审计回溯），不能只塞嵌套结构。
+- **口头总分必须 = 结构化 `scoring[]` 非 null `score` 之和**：`explanation` 里若写汇总分，只能加 `status:scored` 的项；`score:null`（manual）项**不计入**口头总分，单独表述「该项已估算 X 分，待人工/横比确认」（治"explanation 说 64 但结构化只 43"的口径不一致）。
 - 给出页级 `evidence_chain`、`risk_score`，并把逐项 `scoring` 与 `criteria` 一并留在 `extracted_data` 中。
 
 ## 输出契约
