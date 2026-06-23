@@ -71,3 +71,42 @@
 R8 三模型重评：① 技术参数 scored（子项级，至少性能参数 21）；② 整单 manual 仅因单家价格；③ 无自相矛盾
 rejected（读不清→重识别→仍不可读才 manual）；④ evidence_chain 非空、policy_refs 齐、reviewed_by 正确；
 ⑤ 零文本模式重试。`uv run pytest -q` + ruff + format 全绿。用户重新部署手动测试通过。
+
+---
+
+## 实施与验收结论（2026-06-23）
+
+**本会话已交付（5 commit，main，710 绿 + ruff + format）**：
+- **R1**（`2f29eb9`）JSON 抽取鲁棒性：`_extract_json_object` 剥离成对 `<think>…</think>`（治游离尾随
+  `</think>` 致抽取空、重试根因）+ json_bridge result 退化回落 text_accum + MAX_OUTPUT_TOKENS 兜底。+3 测试。
+- **R2a**（`f86cfd2`）子项级证据降级：0 分（无得分主张）未核实子项不连带把有分子项降 manual。+2 测试。
+- **R2b**（`9e6c436`）废标门禁要求 `confirmed`：未确认/疑似命中（`confirmed:false/null`）不强制 rejected
+  （向后兼容：未带 confirmed 视为已确认）。+2 测试。
+- **R3**（`2ceb9d7`）评判纪律 prompt：决断优先压低 manual（决策1）+ confirmed 废标闸 + 读不清→ocr-page
+  重识别再判（决策2，前向兼容）+ policy_refs/evidence_chain/口头总分纪律。
+- **reasons 兜底**（`887f7fd`）：string→string[]（治 deepseek 把 reasons 写成多行编号字符串致重试）。+1 测试。
+
+**R8 e2e（deepseek + glm，跳过 qwen，TENDER_READ_DOC_LAYER=0 新鲜子集 OCR）**：
+
+| 模型 | verdict | scored/manual | 技术参数 | 重试 | vs v1 |
+|---|---|---|---|---|---|
+| deepseek_v2 | **manual_review** | **8/1** | **21 scored** | **0** | v1=7/2 **rejected** |
+| glm_v2 | manual_review | 7/2 | manual | **0** | v1=7/2(重试2) |
+
+**验证通过**：① **零重试**（R1，两模型，原 deepseek 重试1/glm 重试2）；② **deepseek 不再误废标**
+（R2b：信用截图 confirmed:false→manual_review 而非 rejected）；③ **deepseek 技术参数 21 出真分**
+（R2a 子项级，性能参数有检测报告保住）；④ **manual 收窄**（deepseek 仅价格分 manual）；⑤ policy_refs 非空。
+
+**残留（model-inherent / 已知，留后续）**：
+- **glm 技术参数仍 manual**：glm **自身**选 manual（非服务端降级），R2a 管不到（模型没打分就没得保）；
+  R3 prompt 已要求 additive 必打分，glm 未完全遵从——模型保守性，需更强 prompt 或 gate 反向强制。
+- **evidence_chain 顶层空**（F04，两模型）：证据写进了 `scoring[].award_hits`，未复制到顶层
+  evidence_chain。prompt 已要求，模型未遵从——可加服务端从 award_hits 派生 evidence_chain。
+- **R4 #8a ocr-page 重识别 wiring 未做**（安全敏感：agent Bash + 可注入 PDF = RCE，需 can_use_tool
+  白名单 + 对抗验证）——决策2 的"重识别"目前靠 prompt 前向兼容 + confirmed:false 安全兜底；真正
+  落地需独立硬化轮。
+- **R5 schema**（reviewed_by=expense-auditor 错标 / manual_review_reason 缺 tender 枚举 / policy_refs_detail
+  入约 / 去 result/conclusion）、**R6 config**（INFRA-01 TENDER_TIMEOUT vs OCR_MAX_WAIT、INFRA-02 cache v2
+  首跑重 OCR 部署提示）、**R7 前端**（FE-01/02/03 null guard，#4 报告 500 潜根因，交 codex）——P2 polish，未做。
+
+**部署提示**：cache v2（已 bump）首次重评每文件重 OCR 一次（之后命中缓存）。用户重新部署手测验收。
