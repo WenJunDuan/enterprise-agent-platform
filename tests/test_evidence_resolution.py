@@ -210,6 +210,83 @@ def test_fabricated_quote_unresolved_downgrades_and_escalates_verdict(monkeypatc
     assert "技术" in out["extracted_data"]["evidence_resolution"]["downgraded_items"]
 
 
+def test_zero_point_unresolved_subitem_does_not_downgrade_resolved_item(monkeypatch):
+    """R2a/F02 子项级：additive 项含 0 分未核实子项（无偏离常规参数）+ 有分已核实子项（性能参数
+    有检测报告）→ 整项**不降级**（0 分命中无得分主张，不连带拖累有分子项）。"""
+    monkeypatch.setenv("EVIDENCE_RESOLUTION_DOWNGRADE", "1")
+    out = resolve_audit_evidence(
+        _audit_result(
+            extracted_data={
+                "scoring": [
+                    {
+                        "item": "技术参数指标",
+                        "max": 25,
+                        "score": 21,
+                        "status": "scored",
+                        "score_mode": "additive",
+                        "award_hits": [
+                            {  # 0 分 + 未核实（无偏离常规参数，扫描偏离表核不实）
+                                "award_id": "常规参数",
+                                "awarded": 0,
+                                "evidence": {
+                                    "source": "投标文件第6页",
+                                    "quote": "我方拥有五十项发明专利并通过欧盟CE认证及三千万元质量保证金",
+                                },
+                            },
+                            {  # 有分 + 已核实（性能参数有检测报告）
+                                "award_id": "性能参数",
+                                "awarded": 21,
+                                "evidence": {
+                                    "source": "投标文件第6页",
+                                    "quote": "配备塔吊两台、施工电梯一部",
+                                },
+                            },
+                        ],
+                    }
+                ]
+            }
+        ),
+        INLINE_CORPUS,
+    )
+    sitem = out["extracted_data"]["scoring"][0]
+    assert sitem["status"] == "scored"  # 不降级
+    assert sitem["score"] == 21
+
+
+def test_nonzero_point_unresolved_still_downgrades(monkeypatch):
+    """R2a 反例：带**非零分**的命中出处核不实（拿了不可核验的分）→ 仍降级，闸不放松。"""
+    monkeypatch.setenv("EVIDENCE_RESOLUTION_DOWNGRADE", "1")
+    out = resolve_audit_evidence(
+        _audit_result(
+            extracted_data={
+                "scoring": [
+                    {
+                        "item": "技术参数指标",
+                        "max": 25,
+                        "score": 21,
+                        "status": "scored",
+                        "score_mode": "additive",
+                        "award_hits": [
+                            {
+                                "award_id": "性能参数",
+                                "awarded": 21,
+                                "evidence": {
+                                    "source": "投标文件第6页",
+                                    "quote": "我方拥有五十项发明专利并通过欧盟CE认证及三千万元质量保证金",
+                                },
+                            }
+                        ],
+                    }
+                ]
+            }
+        ),
+        INLINE_CORPUS,
+    )
+    sitem = out["extracted_data"]["scoring"][0]
+    assert sitem["status"] == "manual_review"  # 降级
+    assert sitem["score"] is None
+
+
 def test_downgrade_disabled_only_annotates(monkeypatch):
     monkeypatch.setenv("EVIDENCE_RESOLUTION_DOWNGRADE", "0")
     out = resolve_audit_evidence(
@@ -330,7 +407,9 @@ def test_short_quote_skipped():
                         "max": 40,
                         "score": 35,
                         "status": "scored",
-                        "deduction_hits": [{"evidence": {"source": "投标文件第6页", "quote": "短"}}],
+                        "deduction_hits": [
+                            {"evidence": {"source": "投标文件第6页", "quote": "短"}}
+                        ],
                     }
                 ]
             }
@@ -555,7 +634,9 @@ LOW_CLARITY_CORPUS = (
 
 def test_parse_file_head_clarity_and_clean_name():
     # critic F1：文件名不被 (kind=)/[检出印章]/[清晰度] 污染
-    name, clarity = _parse_file_head("2.08资格审查资料.pdf (kind=ocr, route=cloud) [检出印章 2 枚] [⚠清晰度低：x]")
+    name, clarity = _parse_file_head(
+        "2.08资格审查资料.pdf (kind=ocr, route=cloud) [检出印章 2 枚] [⚠清晰度低：x]"
+    )
     assert name == "2.08资格审查资料.pdf"
     assert clarity == "low"
     name2, c2 = _parse_file_head("普通.pdf (kind=pdf_text, route=native)")
@@ -643,7 +724,13 @@ def test_g3_unnamed_source_not_downgraded():
         _audit_result(
             extracted_data={
                 "scoring": [
-                    {"item": "营业执照", "max": 5, "score": 0, "status": "scored", "basis": "投标第5页未提供"}
+                    {
+                        "item": "营业执照",
+                        "max": 5,
+                        "score": 0,
+                        "status": "scored",
+                        "basis": "投标第5页未提供",
+                    }
                 ]
             }
         ),
@@ -654,14 +741,18 @@ def test_g3_unnamed_source_not_downgraded():
 
 def test_g3_unknown_clarity_not_downgraded():
     # critic F3：unknown（云 OCR 常态）只 emit 不降级
-    corpus = (
-        "### 文件: 扫描件.pdf (kind=ocr) [清晰度未知：无置信度信号]\n【第 1 页】\nx\n"
-    )
+    corpus = "### 文件: 扫描件.pdf (kind=ocr) [清晰度未知：无置信度信号]\n【第 1 页】\nx\n"
     out = resolve_audit_evidence(
         _audit_result(
             extracted_data={
                 "scoring": [
-                    {"item": "X", "max": 5, "score": 0, "status": "scored", "basis": "已核扫描件.pdf未提供"}
+                    {
+                        "item": "X",
+                        "max": 5,
+                        "score": 0,
+                        "status": "scored",
+                        "basis": "已核扫描件.pdf未提供",
+                    }
                 ]
             }
         ),
