@@ -364,7 +364,15 @@ def _parse_cloud_jsonl(jsonl_text: str) -> list[dict]:
             layout = res.get("prunedResult") or res.get("layout") or []
             layout = layout if isinstance(layout, list) else []
             pages.append(
-                {"markdown": text, "layout": layout, "confidence": _page_confidence(layout)}
+                {
+                    # 连续页号（跨 jsonl 行累加）。否则 pages 缺 page_number → pipeline._render_body
+                    # 回退按渲染顺序枚举；整份云 OCR（混合 PDF 全文转云）时若下游过滤/重排页列表，
+                    # 枚举序号会与真实页错位 → evidence 回查【第N页】定位失准（伤 G2）。显式钉页号。
+                    "page_number": len(pages) + 1,
+                    "markdown": text,
+                    "layout": layout,
+                    "confidence": _page_confidence(layout),
+                }
             )
     return pages
 

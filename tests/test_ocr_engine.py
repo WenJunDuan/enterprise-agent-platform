@@ -103,3 +103,20 @@ def test_openai_compatible_http_error_includes_response_body(tmp_path, monkeypat
     message = str(exc.value)
     assert "HTTP Error 400: Bad Request" in message
     assert "invalid image_url" in message
+
+
+def test_parse_cloud_jsonl_injects_continuous_page_number():
+    """整份云 OCR：_parse_cloud_jsonl 注入连续页号（跨 jsonl 行累加），_render_body 不再回退枚举。
+
+    每行一个 layoutParsingResult，两行 → 页号 1、2；page_mismatch 回查定位（G2）依赖此连续页号。
+    """
+    jsonl = "\n".join(
+        [
+            json.dumps({"result": {"layoutParsingResults": [{"markdown": {"text": "第一页"}}]}}),
+            json.dumps({"result": {"layoutParsingResults": [{"markdown": {"text": "第二页"}}]}}),
+        ]
+    )
+    pages = engine._parse_cloud_jsonl(jsonl)
+    assert [p["page_number"] for p in pages] == [1, 2]
+    assert pages[0]["markdown"] == "第一页"
+    assert pages[1]["markdown"] == "第二页"
