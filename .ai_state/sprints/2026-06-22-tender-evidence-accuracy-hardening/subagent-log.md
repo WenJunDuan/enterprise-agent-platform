@@ -30,3 +30,53 @@
 - Exit: success
 - Last message: All 147 tests pass. Here are the findings:  ---  # Review Pass 1 — Sprint R1-R5  ## Findings (按严重度排序)  ### F1 [SEVERITY=P1] `_AMOUNT_LOOSE` 的 `\d{5,}` 会把 5-9 位项目序号/段落编码选为投标总价  - File: `server/ocr/boq.
 
+## 2026-06-22T06:56:41.825Z · unknown
+- Duration: 0s
+- Exit: success
+- Last message: Sprint 评标证据可验证性硬化 R1-R6 全部完成、12 commits 已推送 origin、681 测试绿。下一步等你决定是否开始建招标人侧合规 MVP（通用方式，读每份招标文件对照通则层法规）。
+
+## 2026-06-23T09:52:09.060Z · unknown
+- Duration: 0s
+- Exit: success
+- Last message: 
+
+## 2026-06-23T09:52:17.161Z · unknown
+- Duration: 0s
+- Exit: success
+- Last message: 
+
+## 2026-06-23T09:52:57.414Z · unknown
+- Duration: 0s
+- Exit: success
+- Last message: 
+
+## 2026-06-23T09:52:58.887Z · unknown
+- Duration: 0s
+- Exit: success
+- Last message: 
+
+## 2026-06-23T09:53:44.036Z · unknown
+- Duration: 0s
+- Exit: success
+- Last message: 
+
+## 2026-06-23T09:56:19.497Z · unknown
+- Duration: 0s
+- Exit: success
+- Last message: 
+
+## 2026-06-23T09:57:49.249Z · unknown
+- Duration: 0s
+- Exit: success
+- Last message: 
+
+## 2026-06-23T09:59:59.981Z · unknown
+- Duration: 0s
+- Exit: success
+- Last message: 
+
+## 2026-06-23T10:01:19.825Z · unknown
+- Duration: 0s
+- Exit: success
+- Last message: 
+

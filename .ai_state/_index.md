@@ -67,7 +67,7 @@ pointers:
   latest_architecture_update: "2026-06-23T06:38:15.291Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "**Sprint 2026-06-22-tender-evidence-accuracy-hardening 已完成并 ship** — R1-R6 全交付,main 累计 12 commits 与 origin 同步,681 测试绿 + ruff clean(见 goal.md §九)。R1 evidence-resolution 闸 + 底稿→校验透传管道(evidence_resolution.py 新模块);R2 BOQ 感知抽取(ocr/boq.py,捕获真投标总价 381,574,199.97@p2);perf BOQ OCR 324s→28.9s(跳过 find_tables);R3 confidence 消费(低置信→manual_review);R4 scoring 明细完整性 + grounding 纠偏;R5 基建债 F2/F4/F5 + effort 透传(招标人合规 MVP 移交 v2);R6 e2e/多模型/三层数据 + bug-hunt(reviewer 5 bug 全修)。**下一推进点待拍板(backlog)**:①招标人侧合规 MVP(v2,需法规源+用户确认,CLAUDE.md 定 v1 不含程序合规)②compare 多家真模型 dogfood③真扫描件 confidence 触发率验证④扣分命中/限价 formula 调优(需满分扣减制+限价标素材)。**架构档已补(2026-06-23)**:architecture/system-tender-evidence-resolution.md(evidence-resolution 闸+底稿透传管道+BOQ 抽取+confidence 消费)已建 + ARCHITECTURE.md 总入口已挂;YAML 修复后 latest_architecture_update 已被 index-updater hook 自动回填,自动维护链复活。模型:DeepSeek/qwen3.7-max(dashscope)/glm-5.2@openrouter.ai/api。部署 rsync 到 mac mini(100.107.151.115)+前端 build。"
+next_action: "**进行中 2026-06-23-tender-ui-scoring-fixes**（ZJXH单家 dogfood 驱动，用户 8 条实测问题；分工:前端→codex，后端+.claude→CC）。**CC 已交付**（commit d26d90d+e4ff16b，**已 push origin 同步**，684 绿+ruff）:#8b 上传 10MiB→256MiB；#3 底稿截断 OCR_MAX_FILE_BLOCK_CHARS 200k→600k（实测 evidence 回查 71%→92%、unresolved 8→1）；#6 enrich policy_refs→policy_refs_detail[{rule_id,name,source_text}]（+3测试）；④ tender-evaluate.md 禁 additive 整项 punt + 证据页码取底稿【第N页】锚点（治 deepseek/glm 技术参数 punt + page_mismatch）；#8a OCR-as-skill 能力件 .claude/skills/ocr-page（已自测，wiring 待做）。**前端 #1/#5/#7/#4 已交 sprints/2026-06-23-tender-ui-scoring-fixes/codex-handoff.md**（关键纠偏:#1/#2 是前端没渲染 scoring[]，后端实打 64/70、三模型客观项一致）。**3模型 fixed 重测已完成**(qwen 5/4·deepseek 7/2·glm 8/1;#6 e2e✅ 法定原文显示;④✅ 模型诚实 manual 不瞎打分;价格分全 manual 正确;bid_price 三模型一致 1,316,033.66)。**关键发现:真瓶颈=OCR 扫描证书页盲区**——投标 400 页中 **59 页(资质/业绩/职称/社保/检测报告全是扫描件)native 路由没走云 OCR→底稿空→技术参数/企业实力/负责人评分缺据→manual**(qwen/deepseek 严谨标 manual,glm 宽松给分)。**CC 剩余**:①🔴**逐页 OCR 路由**(最高价值,ZJ出真分关键;plan 经 workflow per-page-ocr-plan 产出中→待用户确认实施;detect 空页→pymupdf 渲图→云 OCR→merge,代价~59页云识别变慢,需 env 灰度)②🟡#8a wiring(逐页 OCR 落地后价值降,可降级/合并)。**codex 侧**:前端 #1/#5/#7/#4(已交 handoff)。详见 sprints/2026-06-23-tender-ui-scoring-fixes/{findings,codex-handoff,per-page-ocr-plan}.md。**①招标人侧合规 MVP 用户已明确永久不做，永久剔除 backlog**。上一 Sprint 2026-06-22-evidence-accuracy 已 ship(R1-R6,见其 goal.md §九)。模型切换:logs/tmp/pick_model.py + env -u ANTHROPIC_* MODEL_*=...(详见 findings)。"
 last_subagent: "reviewer"
 last_subagent_at: "2026-06-22T06:56:41.825Z"
 active_worktrees: [] # git worktree list 仅 main；agent-a13c533445cf2f1e5 已不存在(幽灵清理)
@@ -377,6 +377,7 @@ slug 拆分为独立 sprint 目录；`lessons.md` 整体保留为
 - `docs/` — 项目参考文档 (开发指南 / 前端对接 / audit-skills)，非状态机文件
 
 ## 历史 (由 pace-continuator hook 自动追加, 最多保留近 10 条)
+- `2026-06-23 06:41:35`: stage=ship sprint=2026-06-22-tender-evidence-accuracy-hardening turn-end
 - `2026-06-22 03:11:05`: stage=design sprint=2026-06-22-tender-evidence-accuracy-hardening turn-end
 - `2026-06-21 15:37:29`: stage=ship sprint=2026-06-22-multimodel-tender-optimization turn-end
 - `2026-06-21 08:11:37`: stage=ship sprint=2026-06-21-tender-harness-redesign turn-end
@@ -387,6 +388,5 @@ slug 拆分为独立 sprint 目录；`lessons.md` 整体保留为
 - `2026-06-20 06:53:12`: stage=design sprint=2026-06-20-tender-criteria-from-bid-doc turn-end
 
 - `2026-06-20 02:49:56`: stage=ship sprint=2026-06-20-agent-capability-redesign turn-end
-- `2026-06-20 01:47:27`: stage=impl sprint=2026-06-20-agent-capability-redesign turn-end
 
 - 2026-06-02 [migrate] v9.6.2(legacy flat) → v9.6.4. 备份见 `.ai_state.backup-*`。
