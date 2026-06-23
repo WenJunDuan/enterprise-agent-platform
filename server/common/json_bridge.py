@@ -91,8 +91,12 @@ def _apply_result_message_text(
     if final_structured_output is not None:
         return None, None
     # 文本模式：模型把 JSON 当文本输出，这里抽取 + 语义校验。
-    raw_text = (getattr(message, "result", "") or "") or "".join(text_accum)
-    parsed = _extract_json_object(raw_text)
+    # 优先用 message.result，但它可能是退化值（如游离 '</think>' token）——此时回落到累积的
+    # TextBlock 全文 text_accum（真正答案常在此）。两路都抽不到才算失败（治 glm/deepseek 偶发重试）。
+    result_text = getattr(message, "result", "") or ""
+    parsed = _extract_json_object(result_text)
+    if parsed is None:
+        parsed = _extract_json_object("".join(text_accum))
     if parsed is not None:
         parsed = apply_schema_semantics(
             schema_name, parsed, request_id=request_id, evidence_source=evidence_source

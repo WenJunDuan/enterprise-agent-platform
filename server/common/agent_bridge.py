@@ -73,6 +73,9 @@ def build_options(**overrides: Any) -> ClaudeAgentOptions:
     # 内联审核会改用 setting_sources=[] 精简系统提示，放进 env 才不会丢掉长超时与降噪。
     os.environ.setdefault("API_TIMEOUT_MS", "3000000")
     os.environ.setdefault("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1")
+    # 评标大底稿（数百页标书 → 数十项 scoring + evidence_chain）输出 JSON 很长，输出 token 不足
+    # 会截断成半截 JSON 触发重试/失败。给一个稳妥兜底（.env 显式设置仍优先）。
+    os.environ.setdefault("CLAUDE_CODE_MAX_OUTPUT_TOKENS", "32000")
     runtime = get_claude_runtime_snapshot()
     # 内网硬约束：base_url 为空或指向 api.anthropic.com 时直接拒绝运行，
     # 避免 CLI 去拨公网 anthropic、在物理隔离机上拖到 ConnectionRefused/超时。
