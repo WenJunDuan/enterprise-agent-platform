@@ -88,6 +88,60 @@
   animation: slideUp 300ms ease-out;
 }
 
+.tender-report-paper {
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.129 0.042 264.695);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.129 0.042 264.695);
+  --muted: oklch(0.968 0.007 247.896);
+  --muted-foreground: oklch(0.43 0.04 257.417);
+  --primary: oklch(0.208 0.042 265.755);
+  --border: oklch(0.86 0.013 255.508);
+  color: var(--foreground);
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
+}
+
+@media print {
+  @page {
+    margin: 12mm;
+  }
+
+  body {
+    background: white !important;
+  }
+
+  body:has(.tender-report-paper) header,
+  body:has(.tender-report-paper) aside,
+  body:has(.tender-report-paper) nav {
+    display: none !important;
+  }
+
+  body:has(.tender-report-paper) main {
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  body > *:not(#root),
+  .tender-report-actions {
+    display: none !important;
+  }
+
+  .tender-report-shell {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: white !important;
+  }
+
+  .tender-report-paper {
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+  }
+}
+
 @keyframes slideDown {
   from {
     height: 0;

@@ -5,7 +5,7 @@ import type { TenderReviewScreen } from '../types'
 const headingCopy: Record<TenderReviewScreen, { title: string; desc: string }> =
   {
     dashboard: {
-      title: '项目管理',
+      title: '评审列表',
       desc: '查看招投标项目、审核进度与复核状态。',
     },
     create: {
@@ -14,7 +14,7 @@ const headingCopy: Record<TenderReviewScreen, { title: string; desc: string }> =
     },
     history: {
       title: '历史评审',
-      desc: '已完成的评审项目，可查看分析中心与完整审核报告。',
+      desc: '已完成的评审项目，可查看分析中心与完整评标报告。',
     },
     analyzing: {
       title: '开始分析',
@@ -25,7 +25,7 @@ const headingCopy: Record<TenderReviewScreen, { title: string; desc: string }> =
       desc: '查看评审要点、评分对比和投标文件原文。',
     },
     report: {
-      title: '审核报告',
+      title: '评标报告',
       desc: '预览并导出评标报告。',
     },
   }

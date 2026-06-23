@@ -29,11 +29,12 @@ import { Route as AuthenticatedSettingsDisplayRouteImport } from './routes/_auth
 import { Route as AuthenticatedSettingsAppearanceRouteImport } from './routes/_authenticated/settings/appearance'
 import { Route as AuthenticatedSettingsAccountRouteImport } from './routes/_authenticated/settings/account'
 import { Route as AuthenticatedErrorsErrorRouteImport } from './routes/_authenticated/errors/$error'
-import { Route as AuthenticatedContractsTenderReviewRouteImport } from './routes/_authenticated/contracts/tender-review'
+import { Route as AuthenticatedContractsTenderRouteImport } from './routes/_authenticated/contracts/tender'
 import { Route as AuthenticatedAuditSubmitRouteImport } from './routes/_authenticated/audit/submit'
 import { Route as AuthenticatedSectionPageRouteImport } from './routes/_authenticated/$section/$page'
-import { Route as AuthenticatedContractsTenderReviewIndexRouteImport } from './routes/_authenticated/contracts/tender-review/index'
-import { Route as AuthenticatedContractsTenderReviewHistoryRouteImport } from './routes/_authenticated/contracts/tender-review/history'
+import { Route as AuthenticatedContractsTenderListRouteImport } from './routes/_authenticated/contracts/tender/list'
+import { Route as AuthenticatedContractsTenderHistoryRouteImport } from './routes/_authenticated/contracts/tender/history'
+import { Route as AuthenticatedContractsTenderDetailRouteImport } from './routes/_authenticated/contracts/tender/detail'
 import { Route as AuthenticatedAuditTasksTaskIdRouteImport } from './routes/_authenticated/audit/tasks/$taskId'
 
 const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
@@ -143,10 +144,10 @@ const AuthenticatedErrorsErrorRoute =
     path: '/errors/$error',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
-const AuthenticatedContractsTenderReviewRoute =
-  AuthenticatedContractsTenderReviewRouteImport.update({
-    id: '/tender-review',
-    path: '/tender-review',
+const AuthenticatedContractsTenderRoute =
+  AuthenticatedContractsTenderRouteImport.update({
+    id: '/tender',
+    path: '/tender',
     getParentRoute: () => AuthenticatedContractsRoute,
   } as any)
 const AuthenticatedAuditSubmitRoute =
@@ -161,17 +162,23 @@ const AuthenticatedSectionPageRoute =
     path: '/$section/$page',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
-const AuthenticatedContractsTenderReviewIndexRoute =
-  AuthenticatedContractsTenderReviewIndexRouteImport.update({
-    id: '/',
-    path: '/',
-    getParentRoute: () => AuthenticatedContractsTenderReviewRoute,
+const AuthenticatedContractsTenderListRoute =
+  AuthenticatedContractsTenderListRouteImport.update({
+    id: '/list',
+    path: '/list',
+    getParentRoute: () => AuthenticatedContractsTenderRoute,
   } as any)
-const AuthenticatedContractsTenderReviewHistoryRoute =
-  AuthenticatedContractsTenderReviewHistoryRouteImport.update({
+const AuthenticatedContractsTenderHistoryRoute =
+  AuthenticatedContractsTenderHistoryRouteImport.update({
     id: '/history',
     path: '/history',
-    getParentRoute: () => AuthenticatedContractsTenderReviewRoute,
+    getParentRoute: () => AuthenticatedContractsTenderRoute,
+  } as any)
+const AuthenticatedContractsTenderDetailRoute =
+  AuthenticatedContractsTenderDetailRouteImport.update({
+    id: '/detail',
+    path: '/detail',
+    getParentRoute: () => AuthenticatedContractsTenderRoute,
   } as any)
 const AuthenticatedAuditTasksTaskIdRoute =
   AuthenticatedAuditTasksTaskIdRouteImport.update({
@@ -194,7 +201,7 @@ export interface FileRoutesByFullPath {
   '/ocr': typeof AuthenticatedOcrRoute
   '/$section/$page': typeof AuthenticatedSectionPageRoute
   '/audit/submit': typeof AuthenticatedAuditSubmitRoute
-  '/contracts/tender-review': typeof AuthenticatedContractsTenderReviewRouteWithChildren
+  '/contracts/tender': typeof AuthenticatedContractsTenderRouteWithChildren
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/settings/account': typeof AuthenticatedSettingsAccountRoute
   '/settings/appearance': typeof AuthenticatedSettingsAppearanceRoute
@@ -204,8 +211,9 @@ export interface FileRoutesByFullPath {
   '/contracts/': typeof AuthenticatedContractsIndexRoute
   '/settings/': typeof AuthenticatedSettingsIndexRoute
   '/audit/tasks/$taskId': typeof AuthenticatedAuditTasksTaskIdRoute
-  '/contracts/tender-review/history': typeof AuthenticatedContractsTenderReviewHistoryRoute
-  '/contracts/tender-review/': typeof AuthenticatedContractsTenderReviewIndexRoute
+  '/contracts/tender/detail': typeof AuthenticatedContractsTenderDetailRoute
+  '/contracts/tender/history': typeof AuthenticatedContractsTenderHistoryRoute
+  '/contracts/tender/list': typeof AuthenticatedContractsTenderListRoute
 }
 export interface FileRoutesByTo {
   '/otp': typeof authOtpRoute
@@ -218,6 +226,7 @@ export interface FileRoutesByTo {
   '/': typeof AuthenticatedIndexRoute
   '/$section/$page': typeof AuthenticatedSectionPageRoute
   '/audit/submit': typeof AuthenticatedAuditSubmitRoute
+  '/contracts/tender': typeof AuthenticatedContractsTenderRouteWithChildren
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/settings/account': typeof AuthenticatedSettingsAccountRoute
   '/settings/appearance': typeof AuthenticatedSettingsAppearanceRoute
@@ -227,8 +236,9 @@ export interface FileRoutesByTo {
   '/contracts': typeof AuthenticatedContractsIndexRoute
   '/settings': typeof AuthenticatedSettingsIndexRoute
   '/audit/tasks/$taskId': typeof AuthenticatedAuditTasksTaskIdRoute
-  '/contracts/tender-review/history': typeof AuthenticatedContractsTenderReviewHistoryRoute
-  '/contracts/tender-review': typeof AuthenticatedContractsTenderReviewIndexRoute
+  '/contracts/tender/detail': typeof AuthenticatedContractsTenderDetailRoute
+  '/contracts/tender/history': typeof AuthenticatedContractsTenderHistoryRoute
+  '/contracts/tender/list': typeof AuthenticatedContractsTenderListRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -246,7 +256,7 @@ export interface FileRoutesById {
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/_authenticated/$section/$page': typeof AuthenticatedSectionPageRoute
   '/_authenticated/audit/submit': typeof AuthenticatedAuditSubmitRoute
-  '/_authenticated/contracts/tender-review': typeof AuthenticatedContractsTenderReviewRouteWithChildren
+  '/_authenticated/contracts/tender': typeof AuthenticatedContractsTenderRouteWithChildren
   '/_authenticated/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/_authenticated/settings/account': typeof AuthenticatedSettingsAccountRoute
   '/_authenticated/settings/appearance': typeof AuthenticatedSettingsAppearanceRoute
@@ -256,8 +266,9 @@ export interface FileRoutesById {
   '/_authenticated/contracts/': typeof AuthenticatedContractsIndexRoute
   '/_authenticated/settings/': typeof AuthenticatedSettingsIndexRoute
   '/_authenticated/audit/tasks/$taskId': typeof AuthenticatedAuditTasksTaskIdRoute
-  '/_authenticated/contracts/tender-review/history': typeof AuthenticatedContractsTenderReviewHistoryRoute
-  '/_authenticated/contracts/tender-review/': typeof AuthenticatedContractsTenderReviewIndexRoute
+  '/_authenticated/contracts/tender/detail': typeof AuthenticatedContractsTenderDetailRoute
+  '/_authenticated/contracts/tender/history': typeof AuthenticatedContractsTenderHistoryRoute
+  '/_authenticated/contracts/tender/list': typeof AuthenticatedContractsTenderListRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -275,7 +286,7 @@ export interface FileRouteTypes {
     | '/ocr'
     | '/$section/$page'
     | '/audit/submit'
-    | '/contracts/tender-review'
+    | '/contracts/tender'
     | '/errors/$error'
     | '/settings/account'
     | '/settings/appearance'
@@ -285,8 +296,9 @@ export interface FileRouteTypes {
     | '/contracts/'
     | '/settings/'
     | '/audit/tasks/$taskId'
-    | '/contracts/tender-review/history'
-    | '/contracts/tender-review/'
+    | '/contracts/tender/detail'
+    | '/contracts/tender/history'
+    | '/contracts/tender/list'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/otp'
@@ -299,6 +311,7 @@ export interface FileRouteTypes {
     | '/'
     | '/$section/$page'
     | '/audit/submit'
+    | '/contracts/tender'
     | '/errors/$error'
     | '/settings/account'
     | '/settings/appearance'
@@ -308,8 +321,9 @@ export interface FileRouteTypes {
     | '/contracts'
     | '/settings'
     | '/audit/tasks/$taskId'
-    | '/contracts/tender-review/history'
-    | '/contracts/tender-review'
+    | '/contracts/tender/detail'
+    | '/contracts/tender/history'
+    | '/contracts/tender/list'
   id:
     | '__root__'
     | '/_authenticated'
@@ -326,7 +340,7 @@ export interface FileRouteTypes {
     | '/_authenticated/'
     | '/_authenticated/$section/$page'
     | '/_authenticated/audit/submit'
-    | '/_authenticated/contracts/tender-review'
+    | '/_authenticated/contracts/tender'
     | '/_authenticated/errors/$error'
     | '/_authenticated/settings/account'
     | '/_authenticated/settings/appearance'
@@ -336,8 +350,9 @@ export interface FileRouteTypes {
     | '/_authenticated/contracts/'
     | '/_authenticated/settings/'
     | '/_authenticated/audit/tasks/$taskId'
-    | '/_authenticated/contracts/tender-review/history'
-    | '/_authenticated/contracts/tender-review/'
+    | '/_authenticated/contracts/tender/detail'
+    | '/_authenticated/contracts/tender/history'
+    | '/_authenticated/contracts/tender/list'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -492,11 +507,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedErrorsErrorRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/_authenticated/contracts/tender-review': {
-      id: '/_authenticated/contracts/tender-review'
-      path: '/tender-review'
-      fullPath: '/contracts/tender-review'
-      preLoaderRoute: typeof AuthenticatedContractsTenderReviewRouteImport
+    '/_authenticated/contracts/tender': {
+      id: '/_authenticated/contracts/tender'
+      path: '/tender'
+      fullPath: '/contracts/tender'
+      preLoaderRoute: typeof AuthenticatedContractsTenderRouteImport
       parentRoute: typeof AuthenticatedContractsRoute
     }
     '/_authenticated/audit/submit': {
@@ -513,19 +528,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSectionPageRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/_authenticated/contracts/tender-review/': {
-      id: '/_authenticated/contracts/tender-review/'
-      path: '/'
-      fullPath: '/contracts/tender-review/'
-      preLoaderRoute: typeof AuthenticatedContractsTenderReviewIndexRouteImport
-      parentRoute: typeof AuthenticatedContractsTenderReviewRoute
+    '/_authenticated/contracts/tender/list': {
+      id: '/_authenticated/contracts/tender/list'
+      path: '/list'
+      fullPath: '/contracts/tender/list'
+      preLoaderRoute: typeof AuthenticatedContractsTenderListRouteImport
+      parentRoute: typeof AuthenticatedContractsTenderRoute
     }
-    '/_authenticated/contracts/tender-review/history': {
-      id: '/_authenticated/contracts/tender-review/history'
+    '/_authenticated/contracts/tender/history': {
+      id: '/_authenticated/contracts/tender/history'
       path: '/history'
-      fullPath: '/contracts/tender-review/history'
-      preLoaderRoute: typeof AuthenticatedContractsTenderReviewHistoryRouteImport
-      parentRoute: typeof AuthenticatedContractsTenderReviewRoute
+      fullPath: '/contracts/tender/history'
+      preLoaderRoute: typeof AuthenticatedContractsTenderHistoryRouteImport
+      parentRoute: typeof AuthenticatedContractsTenderRoute
+    }
+    '/_authenticated/contracts/tender/detail': {
+      id: '/_authenticated/contracts/tender/detail'
+      path: '/detail'
+      fullPath: '/contracts/tender/detail'
+      preLoaderRoute: typeof AuthenticatedContractsTenderDetailRouteImport
+      parentRoute: typeof AuthenticatedContractsTenderRoute
     }
     '/_authenticated/audit/tasks/$taskId': {
       id: '/_authenticated/audit/tasks/$taskId'
@@ -575,33 +597,36 @@ const AuthenticatedAuditRouteChildren: AuthenticatedAuditRouteChildren = {
 const AuthenticatedAuditRouteWithChildren =
   AuthenticatedAuditRoute._addFileChildren(AuthenticatedAuditRouteChildren)
 
-interface AuthenticatedContractsTenderReviewRouteChildren {
-  AuthenticatedContractsTenderReviewHistoryRoute: typeof AuthenticatedContractsTenderReviewHistoryRoute
-  AuthenticatedContractsTenderReviewIndexRoute: typeof AuthenticatedContractsTenderReviewIndexRoute
+interface AuthenticatedContractsTenderRouteChildren {
+  AuthenticatedContractsTenderDetailRoute: typeof AuthenticatedContractsTenderDetailRoute
+  AuthenticatedContractsTenderHistoryRoute: typeof AuthenticatedContractsTenderHistoryRoute
+  AuthenticatedContractsTenderListRoute: typeof AuthenticatedContractsTenderListRoute
 }
 
-const AuthenticatedContractsTenderReviewRouteChildren: AuthenticatedContractsTenderReviewRouteChildren =
+const AuthenticatedContractsTenderRouteChildren: AuthenticatedContractsTenderRouteChildren =
   {
-    AuthenticatedContractsTenderReviewHistoryRoute:
-      AuthenticatedContractsTenderReviewHistoryRoute,
-    AuthenticatedContractsTenderReviewIndexRoute:
-      AuthenticatedContractsTenderReviewIndexRoute,
+    AuthenticatedContractsTenderDetailRoute:
+      AuthenticatedContractsTenderDetailRoute,
+    AuthenticatedContractsTenderHistoryRoute:
+      AuthenticatedContractsTenderHistoryRoute,
+    AuthenticatedContractsTenderListRoute:
+      AuthenticatedContractsTenderListRoute,
   }
 
-const AuthenticatedContractsTenderReviewRouteWithChildren =
-  AuthenticatedContractsTenderReviewRoute._addFileChildren(
-    AuthenticatedContractsTenderReviewRouteChildren,
+const AuthenticatedContractsTenderRouteWithChildren =
+  AuthenticatedContractsTenderRoute._addFileChildren(
+    AuthenticatedContractsTenderRouteChildren,
   )
 
 interface AuthenticatedContractsRouteChildren {
-  AuthenticatedContractsTenderReviewRoute: typeof AuthenticatedContractsTenderReviewRouteWithChildren
+  AuthenticatedContractsTenderRoute: typeof AuthenticatedContractsTenderRouteWithChildren
   AuthenticatedContractsIndexRoute: typeof AuthenticatedContractsIndexRoute
 }
 
 const AuthenticatedContractsRouteChildren: AuthenticatedContractsRouteChildren =
   {
-    AuthenticatedContractsTenderReviewRoute:
-      AuthenticatedContractsTenderReviewRouteWithChildren,
+    AuthenticatedContractsTenderRoute:
+      AuthenticatedContractsTenderRouteWithChildren,
     AuthenticatedContractsIndexRoute: AuthenticatedContractsIndexRoute,
   }
 

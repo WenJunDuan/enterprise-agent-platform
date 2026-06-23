@@ -91,7 +91,7 @@ export function ScreenContent({ page }: { page: TenderReviewPageState }) {
           onCategory={page.setCategory}
           onBidder={page.setSelectedBidderId}
           onActiveItem={page.setActiveItemId}
-          onHistory={() => page.setScreen('history')}
+          onHistory={() => page.openHistory()}
           onReport={page.openReport}
         />
       )

@@ -179,13 +179,14 @@ export function buildTenderReviewData({
   const projectData = activeProject
     ? mapTenderProject(activeProject, compare, resultSummaries)
     : null
+  const scoringResults = normalizeResultDetails(resultDetails, selectedResult)
   const reviewBidders = buildReviewBidders(
     activeProject,
     resultSummaries,
     selectedResult,
-    compare
+    compare,
+    scoringResults
   )
-  const scoringResults = normalizeResultDetails(resultDetails, selectedResult)
   const scoringItems = buildScoringItems(selectedResult)
 
   return {
@@ -197,7 +198,7 @@ export function buildTenderReviewData({
     uploadBidders: [],
     reviewBidders,
     categories: buildCategories(selectedResult),
-    paragraphs: buildParagraphs(selectedResult),
+    paragraphs: buildParagraphs(selectedResult, scoringItems),
     compareGroups: buildCompareGroups(compare),
     resultVerdict: selectedResult?.verdict,
     resultExplanation: selectedResult?.explanation || selectedResult?.summary || '',
@@ -321,22 +322,34 @@ function buildReviewBidders(
   project: TenderProjectResponse | TenderProjectDetailResponse | null,
   resultSummaries: TenderProjectResultSummary[],
   selectedResult?: AuditResult | null,
-  compare?: TenderCompareResponse | null
+  compare?: TenderCompareResponse | null,
+  resultDetails: AuditResult[] = []
 ): ReviewBidder[] {
+  const displayNameByClaim = buildBidderDisplayNameMap(resultDetails)
   if (compare?.result.bidders.length) {
     return [...compare.result.bidders]
       .sort(
         (left, right) =>
           (left.rank ?? Number.MAX_SAFE_INTEGER) - (right.rank ?? Number.MAX_SAFE_INTEGER)
       )
-      .map((bidder, index) => ({
-        id: bidder.claim_id,
-        tag: getBidderTag(index),
-        name: bidder.claim_id,
-        short: shortenBidderName(bidder.claim_id),
-        total: toNumber(bidder.total_score) ?? 0,
-        rank: bidder.rank ?? index + 1,
-      }))
+      .map((bidder, index) => {
+        const name = resolveBidderDisplayName({
+          claimId: bidder.claim_id,
+          result: resultDetails.find(
+            (result) => toText(result.claim_id) === bidder.claim_id
+          ),
+          mappedName: displayNameByClaim.get(bidder.claim_id),
+          fallback: `投标人 ${index + 1}`,
+        })
+        return {
+          id: bidder.claim_id,
+          tag: getBidderTag(index),
+          name,
+          short: shortenBidderName(name),
+          total: toNumber(bidder.total_score) ?? 0,
+          rank: bidder.rank ?? index + 1,
+        }
+      })
   }
 
   const detailBids = isTenderProjectDetailOrNull(project) ? project.bids : []
@@ -345,17 +358,33 @@ function buildReviewBidders(
     : detailBids.map((bid) => ({
         request_id: bid.request_id,
         claim_id: bid.claim_id,
+        bidder_name: bid.bidder_name,
         verdict: bid.verdict,
       }))
 
   if (summaries.length) {
     return summaries.map((summary, index) => {
       const name =
-        summary.claim_id ||
-        (selectedResult?.claim_id && index === 0 ? selectedResult.claim_id : '') ||
-        `投标人 ${index + 1}`
+        resolveBidderDisplayName({
+          claimId:
+            summary.claim_id ||
+            (selectedResult?.claim_id && index === 0 ? selectedResult.claim_id : ''),
+          bidderName: summary.bidder_name,
+          result:
+            resultDetails.find(
+              (result) =>
+                toText(result.request_id) === summary.request_id ||
+                toText(result.task_id) === summary.request_id ||
+                toText(result.claim_id) === summary.claim_id
+            ) ?? (index === 0 ? selectedResult : null),
+          mappedName: summary.claim_id
+            ? displayNameByClaim.get(summary.claim_id)
+            : undefined,
+          fallback: `投标人 ${index + 1}`,
+        })
+      const id = summary.claim_id || summary.request_id || name
       return {
-        id: name,
+        id,
         tag: getBidderTag(index),
         name,
         short: shortenBidderName(name),
@@ -366,12 +395,17 @@ function buildReviewBidders(
   }
 
   if (selectedResult?.claim_id) {
+    const name = resolveBidderDisplayName({
+      claimId: selectedResult.claim_id,
+      result: selectedResult,
+      fallback: '投标人 1',
+    })
     return [
       {
         id: selectedResult.claim_id,
         tag: getBidderTag(0),
-        name: selectedResult.claim_id,
-        short: shortenBidderName(selectedResult.claim_id),
+        name,
+        short: shortenBidderName(name),
         total: getResultTotalScore(selectedResult),
         rank: 1,
       },
@@ -447,7 +481,18 @@ function buildCategories(result?: AuditResult | null): ReviewCategoryData[] {
     }))
 }
 
-function buildParagraphs(result?: AuditResult | null): DocumentParagraph[] {
+function buildParagraphs(
+  result?: AuditResult | null,
+  scoringItems: TenderScoringItem[] = buildScoringItems(result)
+): DocumentParagraph[] {
+  if (scoringItems.length) {
+    return scoringItems.map((item, index) => ({
+      loc: index,
+      label: item.evidence[0]?.source || `${item.item} · 判定依据`,
+      text: buildScoringParagraphText(item),
+    }))
+  }
+
   const evidence = result?.evidence_chain ?? []
   if (evidence.length) {
     return evidence.map((item, index) => ({
@@ -466,6 +511,24 @@ function buildParagraphs(result?: AuditResult | null): DocumentParagraph[] {
     ]
   }
   return []
+}
+
+function buildScoringParagraphText(item: TenderScoringItem) {
+  const evidenceText = item.evidence
+    .map((evidence) =>
+      [
+        evidence.condition,
+        evidence.quote ? `原文：${evidence.quote}` : '',
+        evidence.finding,
+        evidence.conclusion,
+        evidence.source ? `出处：${evidence.source}` : '',
+      ]
+        .filter(Boolean)
+        .join('；')
+    )
+    .filter(Boolean)
+    .join('\n')
+  return evidenceText || item.basis || '暂无该评分项的证据明细。'
 }
 
 function buildCompareGroups(compare?: TenderCompareResponse | null): CompareGroup[] {
@@ -641,6 +704,73 @@ function normalizeResultDetails(
     if (!byKey.has(key)) byKey.set(key, result)
   })
   return [...byKey.values()]
+}
+
+function buildBidderDisplayNameMap(results: AuditResult[]) {
+  const map = new Map<string, string>()
+  results.forEach((result) => {
+    const claimId = toText(result.claim_id)
+    if (!claimId || map.has(claimId)) return
+    const name = extractBidderCompanyName(result)
+    if (name) map.set(claimId, name)
+  })
+  return map
+}
+
+function resolveBidderDisplayName({
+  claimId,
+  bidderName,
+  result,
+  mappedName,
+  fallback,
+}: {
+  claimId?: string | null
+  bidderName?: string | null
+  result?: AuditResult | null
+  mappedName?: string
+  fallback: string
+}) {
+  const candidates = [
+    mappedName,
+    extractBidderCompanyName(result),
+    bidderName,
+    claimId,
+    fallback,
+  ]
+  return (
+    candidates
+      .map((candidate) => toText(candidate))
+      .find((candidate) => candidate && !looksLikeCreditCode(candidate)) || fallback
+  )
+}
+
+function extractBidderCompanyName(result?: AuditResult | null) {
+  const extracted = result?.extracted_data
+  if (!isRecord(extracted)) return ''
+
+  const bidder = isRecord(extracted.bidder) ? extracted.bidder : null
+  const directCandidates = [
+    bidder?.name,
+    bidder?.company_name,
+    bidder?.bidder_name,
+    bidder?.enterprise_name,
+    extracted.bidder_name,
+    extracted.company_name,
+    extracted.enterprise_name,
+    extracted.supplier_name,
+    extracted.vendor_name,
+  ]
+
+  return (
+    directCandidates
+      .map((candidate) => toText(candidate))
+      .find((candidate) => candidate && !looksLikeCreditCode(candidate)) || ''
+  )
+}
+
+function looksLikeCreditCode(value: string) {
+  const normalized = value.replace(/\s+/g, '').toUpperCase()
+  return /^[0-9A-Z]{18}$/u.test(normalized) || /^\d{15,18}$/u.test(normalized)
 }
 
 function buildCompareScoreRows(

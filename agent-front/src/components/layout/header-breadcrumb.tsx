@@ -49,8 +49,8 @@ export function HeaderBreadcrumb() {
         <BreadcrumbItem className='shrink-0'>
           <BreadcrumbLink asChild>
             <Link
-              to='/contracts/tender-review'
-              aria-label='返回项目管理'
+              to='/contracts/tender/list'
+              aria-label='返回评审列表'
               className='inline-flex size-8 items-center justify-center rounded-full border bg-background text-foreground shadow-xs transition-colors hover:bg-accent'
             >
               <House aria-hidden='true' className='size-4.5 stroke-[2.2]' />

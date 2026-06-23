@@ -30,6 +30,7 @@ export type TenderProjectResponse = {
 export type TenderProjectBid = {
   request_id: string
   claim_id?: string | null
+  bidder_name?: string | null
   status: TaskStatus | TenderProjectStatus | string
   verdict?: string | null
 }
@@ -64,6 +65,7 @@ export type TenderTaskStatusResponse = {
 export type TenderProjectResultSummary = {
   request_id: string
   claim_id?: string | null
+  bidder_name?: string | null
   verdict?: string | null
   manual_review_reason?: string | null
   created_at?: string | null
