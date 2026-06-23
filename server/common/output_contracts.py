@@ -740,6 +740,12 @@ def normalize_audit_result(
         structured_output.pop("manual_review_reason", None)
     for field in ("reasons", "policy_refs"):
         value = structured_output.get(field)
+        if isinstance(value, str):
+            # 模型偶把 string[] 写成单个（常含多行编号）字符串——deepseek 习惯把 reasons 写成
+            # "1. …\n2. …"，契约要求数组 → 整单校验失败重试至失败。按行拆成 string[]（满足契约、
+            # 保留全部内容、可读），单行则单元素。
+            value = [ln.strip() for ln in value.splitlines() if ln.strip()] or [value.strip()]
+            structured_output[field] = value
         if isinstance(value, list):
             structured_output[field] = [_coerce_reason_to_str(item) for item in value]
     if "risk_dimensions" in structured_output:
