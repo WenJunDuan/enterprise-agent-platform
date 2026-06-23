@@ -18,6 +18,7 @@ export type TenderScoringStatus =
   | 'manual_review'
   | 'rejected'
   | string
+export type TenderScoreCategory = 'business' | 'technical'
 
 export type TenderProject = {
   id: string
@@ -96,6 +97,18 @@ export type TenderScoringItem = {
   status: TenderScoringStatus
   basis: string
   category: ReviewCategory
+  scoreCategory: TenderScoreCategory
+  scoreMode?: string
+  evidence: TenderScoreEvidence[]
+}
+
+export type TenderScoreEvidence = {
+  source?: string
+  quote?: string
+  finding?: string
+  conclusion?: string
+  condition?: string
+  points?: number | null
 }
 
 export type TenderScoreIssue = {
@@ -105,6 +118,32 @@ export type TenderScoreIssue = {
   status: TenderScoringStatus
   deduction: number | null
   basis: string
+  scoreCategory: TenderScoreCategory
+}
+
+export type TenderCompareScoreCell = {
+  bidderId: string
+  bidderName: string
+  max: number
+  score: number | null
+  status: TenderScoringStatus
+  deduction: number | null
+  basis: string
+  evidence: TenderScoreEvidence[]
+}
+
+export type TenderCompareScoreRow = {
+  id: string
+  item: string
+  max: number
+  scoreCategory: TenderScoreCategory
+  cells: TenderCompareScoreCell[]
+}
+
+export type TenderPolicyRef = {
+  id: string
+  name?: string
+  sourceText?: string
 }
 
 export type TenderScoreSummary = {
@@ -151,9 +190,10 @@ export type TenderReviewMockData = {
   resultVerdict?: TenderResultVerdict
   resultExplanation?: string
   resultReasons?: string[]
-  resultPolicyRefs?: string[]
+  resultPolicyRefs?: TenderPolicyRef[]
   scoringItems?: TenderScoringItem[]
   scoreSummary?: TenderScoreSummary
+  compareScoreRows?: TenderCompareScoreRow[]
   compareNotice?: {
     stale: boolean
     provisional: boolean

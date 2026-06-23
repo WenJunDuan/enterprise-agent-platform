@@ -1,12 +1,19 @@
+import { useState } from 'react'
 import { Award, Brain, FileText, MapPin, Printer } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import {
+  CompareScoreDetailSheet,
+  CompareScoringDetailTable,
+  ScoringDetailTable,
+} from './scoring-detail-table'
 import type {
   ReviewCategory,
   ReviewItem,
   ReviewBidder,
   ScoreHit,
+  TenderCompareScoreRow,
   TenderReviewMockData,
   TenderReviewMode,
 } from '../types'
@@ -160,7 +167,6 @@ function DetailWorkbench(props: AnalysisWorkbenchViewProps) {
     (item) => item.id === props.activeItemId
   )
   const activeLoc = activeItem?.loc ?? -1
-  const scoreBlocks = getScoreBlocks(props.data)
   const reviewStats = getReviewStats(props.data.categories, selectedBidder)
   const scoreSummary = props.data.scoreSummary ?? emptyScoreSummary
 
@@ -185,7 +191,7 @@ function DetailWorkbench(props: AnalysisWorkbenchViewProps) {
               </div>
             </div>
             <div className='rounded-lg bg-muted/50 p-2'>
-              <div className='text-muted-foreground'>待人工输入</div>
+              <div className='text-muted-foreground'>未计分项</div>
               <div className='mt-1 font-semibold'>
                 {scoreSummary.pendingItems.length} 项
               </div>
@@ -204,29 +210,12 @@ function DetailWorkbench(props: AnalysisWorkbenchViewProps) {
         </div>
 
         <div className='mt-5 space-y-4'>
-          <div className='text-xs font-semibold text-muted-foreground'>分项得分</div>
-          {scoreBlocks.length > 0 ? (
-            scoreBlocks.map((block) => (
-            <div key={block.label}>
-              <div className='mb-1 flex justify-between text-sm'>
-                <span className='font-medium'>{block.label}</span>
-                <span className='text-muted-foreground'>
-                  <b className='text-foreground'>{block.got}</b> / {block.max}
-                </span>
-              </div>
-              <div className='h-2 overflow-hidden rounded-full bg-muted'>
-                <div
-                  className={cn('h-full rounded-full', block.color)}
-                  style={{ width: `${(block.got / block.max) * 100}%` }}
-                />
-              </div>
-            </div>
-            ))
-          ) : (
-            <div className='rounded-lg border border-dashed p-3 text-sm text-muted-foreground'>
-              暂无分项得分。
-            </div>
-          )}
+          <ScoringDetailTable
+            title='分项得分'
+            items={props.data.scoringItems ?? []}
+            variant='compact'
+            emptyText='暂无分项得分。'
+          />
         </div>
 
         <div className='mt-5 rounded-xl border bg-card p-4'>
@@ -370,7 +359,7 @@ function ReviewItemCard({
             </span>
             <span>
               <span className='block text-muted-foreground'>实得</span>
-              <b>{item.got == null ? '待判定' : formatScoreValue(item.got)}</b>
+              <b>{item.got == null ? '—' : formatScoreValue(item.got)}</b>
             </span>
             <span>
               <span className='block text-muted-foreground'>扣分</span>
@@ -380,7 +369,7 @@ function ReviewItemCard({
         ) : null}
         {item.manualReviewReason ? (
           <span className='mt-2 inline-flex w-fit items-center gap-1 rounded bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700'>
-            待人工 · {manualReviewReasonLabel(item.manualReviewReason)}
+            {manualReviewReasonLabel(item.manualReviewReason)}
           </span>
         ) : null}
         {/* R2 扣分明细：逐条命中（扣分 + 原文 quote + 出处页），治"扣分项准确 + 上下文定位与显示" */}
@@ -497,6 +486,10 @@ function getItemBadge(item: ReviewItem) {
 }
 
 function CompareWorkbench({ data }: { data: TenderReviewMockData }) {
+  const [selectedScoreRow, setSelectedScoreRow] =
+    useState<TenderCompareScoreRow | null>(null)
+  const hasMultipleBidders = data.reviewBidders.length >= 2
+
   return (
     <div className='space-y-5 bg-muted/20 p-6'>
       <div className='text-sm text-muted-foreground'>
@@ -553,6 +546,27 @@ function CompareWorkbench({ data }: { data: TenderReviewMockData }) {
         })}
       </div>
       <CompareTable data={data} />
+      {hasMultipleBidders ? (
+        <>
+          <CompareScoringDetailTable
+            rows={data.compareScoreRows ?? []}
+            bidders={data.reviewBidders}
+            selectedRowId={selectedScoreRow?.id}
+            onRowClick={setSelectedScoreRow}
+          />
+          <CompareScoreDetailSheet
+            row={selectedScoreRow}
+            open={Boolean(selectedScoreRow)}
+            onOpenChange={(open) => {
+              if (!open) setSelectedScoreRow(null)
+            }}
+          />
+        </>
+      ) : (
+        <div className='rounded-xl border border-dashed bg-card p-4 text-sm text-muted-foreground'>
+          需至少 2 家投标人后展示横向评分；单家项目不会生成横比结果。
+        </div>
+      )}
     </div>
   )
 }
@@ -646,25 +660,6 @@ const emptyBidder: ReviewBidder = {
   rank: 0,
 }
 
-function getScoreBlocks(data: TenderReviewMockData) {
-  const colors = ['bg-blue-500', 'bg-violet-500', 'bg-emerald-500']
-  return data.categories
-    .map((category, index) => {
-      const scoredItems = category.items.filter(
-        (item) => typeof item.got === 'number' && typeof item.max === 'number'
-      )
-      const got = scoredItems.reduce((sum, item) => sum + (item.got ?? 0), 0)
-      const max = scoredItems.reduce((sum, item) => sum + (item.max ?? 0), 0)
-      return {
-        label: category.label,
-        got: Number(got.toFixed(1)),
-        max: Number(max.toFixed(1)),
-        color: colors[index % colors.length],
-      }
-    })
-    .filter((block) => block.max > 0)
-}
-
 const emptyScoreSummary = {
   maxTotal: 0,
   earnedTotal: 0,
@@ -674,7 +669,7 @@ const emptyScoreSummary = {
 }
 
 function getDeductionLabel(item: ReviewItem) {
-  if (item.got == null || item.max == null) return '待人工'
+  if (item.got == null || item.max == null) return '—'
   return formatScoreValue(Math.max(0, item.max - item.got))
 }
 

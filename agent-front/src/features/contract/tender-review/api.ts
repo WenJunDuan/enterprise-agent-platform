@@ -1,5 +1,5 @@
 import { authHeaders, handleResponse, url } from '@/features/audit/api'
-import type { AuditResult, TaskStatus } from '@/features/audit/types'
+import type { AuditResult, ReasonDetail, TaskStatus } from '@/features/audit/types'
 import type { TenderProjectStatus } from './types'
 
 const DEFAULT_POLL_INTERVAL_MS = 3000
@@ -88,7 +88,7 @@ export type TenderCompareResult = {
   provisional: boolean
   warnings: string[]
   explanation?: string
-  policy_refs: string[]
+  policy_refs: (string | ReasonDetail)[]
   evidence_chain?: Array<{
     source?: string
     finding?: string

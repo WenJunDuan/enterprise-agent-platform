@@ -206,21 +206,64 @@ describe('contract tender review model', () => {
             method: '综合评估法',
             items: [
               {
+                item: '企业实力',
+                max: 6,
+                scoring_rule: '按企业资质和证书评分。',
+                source_ref: '招标文件 p.16',
+                tag: 'scored',
+                category: '商务标',
+              },
+              {
                 item: '技术方案',
                 max: 30,
                 scoring_rule: '按技术方案完整性评分。',
                 source_ref: '招标文件 p.18',
                 tag: 'scored',
+                category: '技术标',
+              },
+              {
+                item: '价格分',
+                max: 40,
+                scoring_rule: '最低有效报价/本报价×40。',
+                source_ref: '招标文件 p.20',
+                tag: 'requires_cross_bid_comparison',
+                score_mode: 'formula',
+                category: '商务标',
               },
             ],
           },
           scoring: [
             {
+              item: '企业实力',
+              max: 6,
+              score: 6,
+              status: 'scored',
+              score_mode: 'additive',
+              category: '商务标',
+              basis: '企业资质证书齐全。',
+            },
+            {
               item: '技术方案',
               max: 30,
               score: 27,
               status: 'scored',
+              score_mode: 'banded',
+              category: '技术标',
               basis: '施工组织设计完整。',
+              selected_band: {
+                level: '良',
+                points: 27,
+                reason: '主要章节完整，细节略有缺失。',
+              },
+            },
+            {
+              item: '价格分',
+              max: 40,
+              score: null,
+              status: 'manual_review',
+              score_mode: 'formula',
+              category: '商务标',
+              basis: '需横比所有投标报价后计算价格分。',
             },
           ],
         },
@@ -231,7 +274,53 @@ describe('contract tender review model', () => {
             conclusion: '技术方案可得分。',
           },
         ],
+        policy_refs: [
+          {
+            rule_id: 'tender_evalmethod_004',
+            name: '综合评估法',
+            source_text: '评标委员会应按招标文件规定的评标标准和方法评审。',
+          },
+        ],
       },
+      resultDetails: [
+        {
+          claim_id: '中铁二局',
+          verdict: 'approved',
+          explanation: '资格和技术响应满足招标要求。',
+          extracted_data: {
+            scoring: [
+              {
+                item: '企业实力',
+                max: 6,
+                score: 5,
+                status: 'scored',
+                score_mode: 'additive',
+                category: '商务标',
+                basis: '企业证书少 1 项。',
+              },
+              {
+                item: '技术方案',
+                max: 30,
+                score: 25,
+                status: 'scored',
+                score_mode: 'banded',
+                category: '技术标',
+                basis: '施工组织设计可行，进度措施略弱。',
+              },
+              {
+                item: '价格分',
+                max: 40,
+                score: null,
+                status: 'manual_review',
+                score_mode: 'formula',
+                category: '商务标',
+                basis: '需横比所有投标报价后计算价格分。',
+              },
+            ],
+          },
+          evidence_chain: [],
+        },
+      ],
       compare: {
         project_id: 'project-1',
         result: {
@@ -282,11 +371,38 @@ describe('contract tender review model', () => {
       max: 30,
       status: 'pass',
     })
+    expect(
+      data.scoringItems?.map((item) => [
+        item.item,
+        item.score,
+        item.max,
+        item.scoreCategory,
+      ])
+    ).toEqual([
+      ['企业实力', 6, 6, 'business'],
+      ['技术方案', 27, 30, 'technical'],
+      ['价格分', null, 40, 'business'],
+    ])
+    expect(data.scoreSummary?.pendingItems[0]).toMatchObject({
+      item: '价格分',
+      deduction: null,
+      basis: '需横比所有投标报价后计算价格分。',
+    })
+    expect(data.resultPolicyRefs?.[0]).toEqual({
+      id: 'tender_evalmethod_004',
+      name: '综合评估法',
+      sourceText: '评标委员会应按招标文件规定的评标标准和方法评审。',
+    })
     expect(data.paragraphs[0]?.text).toContain('施工组织设计覆盖关键工序')
     expect(data.compareGroups[0]?.rows.map((row) => row.cells)).toEqual([
       [38, 36],
       [51, 50],
     ])
+    expect(
+      data.compareScoreRows
+        ?.find((row) => row.item === '技术方案')
+        ?.cells.map((cell) => cell.score)
+    ).toEqual([27, 25])
     expect(data.compareNotice?.warnings).toEqual([
       '有效投标人数量为 2，建议复核竞争性。',
     ])
