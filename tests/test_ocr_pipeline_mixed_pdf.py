@@ -80,27 +80,81 @@ def _patch_route_and_native(monkeypatch, *, mixed_pdf: bool, blocks: list[str]):
         },
     )
     monkeypatch.setattr(
-        pipeline_mod, "native_read", lambda path: {"kind": "pdf_text", "blocks": blocks, "tables": []}
+        pipeline_mod,
+        "native_read",
+        lambda path: {"kind": "pdf_text", "blocks": blocks, "tables": []},
     )
     captured: dict = {}
     monkeypatch.setattr(
         pipeline_mod,
         "_recognize_with_seal",
-        lambda path, route, *, run_seal, purpose=None: captured.update(route=route)
-        or {**route, "kind": "ocr", "pages": [{"markdown": "云识别内容"}]},
+        lambda path, route, *, run_seal, purpose=None: (
+            captured.update(route=route)
+            or {**route, "kind": "ocr", "pages": [{"markdown": "云识别内容"}]}
+        ),
     )
     return captured
 
 
-def test_mixed_pdf_with_many_blanks_routes_whole_doc_to_cloud_ocr(monkeypatch, tmp_path):
-    """混合 PDF + 空白页达阈值 → 整份走云 OCR（fallback handler=pdf_scan）。"""
+def test_mixed_pdf_primary_path_subset_ocr_keeps_digital_native(monkeypatch, tmp_path):
+    """主路径：混合 PDF 只对扫描页子集云 OCR 回填，数字页保原生直读，不走整份云 OCR。"""
+    captured = _patch_route_and_native(
+        monkeypatch, mixed_pdf=True, blocks=[""] * 12 + ["数字页正文内容很多" * 3] * 8
+    )
+    fake_subset = tmp_path / "subset.pdf"
+    fake_subset.write_bytes(b"%PDF-fake")
+    monkeypatch.setattr(pipeline_mod, "extract_pdf_subset", lambda p, idx: fake_subset)
+    seen: dict = {}
+    monkeypatch.setattr(
+        pipeline_mod,
+        "recognize",
+        lambda p, *, purpose=None: (
+            seen.update(path=p)
+            or {"kind": "ocr", "pages": [{"markdown": f"扫描页{i}"} for i in range(12)]}
+        ),
+    )
+    result = pipeline_mod._extract_one_raw(tmp_path / "bid.pdf")
+    assert result["kind"] == "pdf_text"  # 仍是 native 产物（数字页保原生）
+    assert captured == {}  # 整份云 OCR（_recognize_with_seal）未被调用
+    assert seen["path"] == fake_subset  # 只送扫描页子集，不送整份
+    assert result["blocks"][0] == "扫描页0"  # 扫描页回填到真实页位
+    assert "数字页正文内容很多" in result["blocks"][12]  # 数字页保原生直读
+    assert not fake_subset.exists()  # 临时子集文件已删
+
+
+def test_mixed_pdf_subset_failure_falls_back_to_whole_doc_cloud(monkeypatch, tmp_path):
+    """回退：本地抽页失败（extract_pdf_subset→None）→ 整份云 OCR（_recognize_with_seal, pdf_scan）。"""
     captured = _patch_route_and_native(
         monkeypatch, mixed_pdf=True, blocks=[""] * 12 + ["数字页正文" * 5] * 8
     )
+    monkeypatch.setattr(pipeline_mod, "extract_pdf_subset", lambda p, idx: None)
     result = pipeline_mod._extract_one_raw(tmp_path / "bid.pdf")
     assert captured["route"]["route"] == "ocr"
     assert captured["route"]["handler"] == "pdf_scan"
     assert result["kind"] == "ocr"
+
+
+def test_augment_merges_ocr_into_blank_pages_only(monkeypatch, tmp_path):
+    """_augment_mixed_pdf_blocks 纯逻辑：OCR 文本按提交顺序回填到空白页真实位，数字页不动。"""
+    native = {"kind": "pdf_text", "blocks": ["", "", "数字三", "数字四"], "tables": []}
+    route = {"container": "pdf", "route": "native", "handler": "pdf_text", "mixed_pdf": True}
+    fake_subset = tmp_path / "s.pdf"
+    fake_subset.write_bytes(b"%PDF")
+    monkeypatch.setattr(pipeline_mod, "extract_pdf_subset", lambda p, idx: fake_subset)
+    monkeypatch.setattr(
+        pipeline_mod,
+        "recognize",
+        lambda p, *, purpose=None: {
+            "kind": "ocr",
+            "pages": [{"markdown": "扫A"}, {"markdown": "扫B"}],
+        },
+    )
+    result = pipeline_mod._augment_mixed_pdf_blocks(
+        tmp_path / "bid.pdf", route, native, purpose="评标"
+    )
+    assert result["kind"] == "pdf_text"
+    assert result["blocks"] == ["扫A", "扫B", "数字三", "数字四"]
+    assert "扫描页" in result["note"] or "回填" in result["note"]
 
 
 def test_pure_digital_pdf_blank_pages_not_routed_to_cloud(monkeypatch, tmp_path):

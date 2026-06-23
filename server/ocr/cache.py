@@ -19,7 +19,9 @@ from server.platform.paths import DATA_ROOT
 OCR_CACHE_ENABLED = os.getenv("OCR_CACHE_ENABLED", "1").lower() in {"1", "true", "yes"}
 _CACHE_DIR = DATA_ROOT / "ocr-cache"
 # 缓存 schema 版本：产物结构变更时 bump，使旧缓存自动失效。
-_CACHE_VERSION = "v1"
+# v2：混合 PDF 子集 OCR 回填（扫描页内容进 blocks）。旧 v1 对混合 PDF 缓存的是纯 native 产物
+# （扫描页空白），与新键不同的 result——若不 bump，同内容文件命中旧缓存会绕过子集 OCR。
+_CACHE_VERSION = "v2"
 
 
 def _engine_fingerprint() -> str:

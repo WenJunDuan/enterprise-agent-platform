@@ -82,4 +82,23 @@ aistudio **单页 PNG 接口兼容性实测通过后**才启用：`_merge_scan_p
 ## 确认结果（2026-06-23）
 1. ✅ 实施 Layer 1 —— 触发判据改为**计数为主 + 比例兜底**（见顶部「决策修正」），gate 在 `mixed_pdf`。
 2. ✅ 阈值：`OCR_BLANK_PAGE_MIN_COUNT=10`（主）+ `OCR_BLANK_PAGE_RATIO=0.5`（兜底），均 env 可灰度。
-3. ✅ Layer 2 本 Sprint 做 —— **前置 gate：先实测 aistudio 单页 PNG 接口**，未通过则停在 Layer 1。
+3. ✅ Layer 2 本 Sprint 做 —— 用户拍板 **subset-into-one-job**（见下「实施记录」）。
+
+## 实施记录（2026-06-23，已落地）
+
+**Layer 1**（commit `896bfaa`）：classify `mixed_pdf` 标记 + pipeline 计数为主触发 + engine
+`_parse_cloud_jsonl` 注入连续 `page_number`（BLOCKER 修复）。12 测试。
+
+**Layer 2 = subset-into-one-job**（取代原计划的"逐页并发"方案 A，也取代 Layer 1 的"整份云 OCR"作主路径）：
+实施前二次 grounding 发现两点翻转决策——① **Layer 1 整份云 OCR 有隐性质量代价**：把 341 数字页
+的原生高保真文本也用云 OCR 覆盖（OCR 反引误差）；② 原计划逐页并发更慢（~530s）更复杂（~150 行）
+且需验证未知的单页 PNG 接口。**更优解**：`engine.extract_pdf_subset` 只把空白(扫描)页抽成一份临时
+PDF → 走**已验证**的 `recognize`（当前配置引擎）单 job → `pipeline._augment_mixed_pdf_blocks`
+按提交顺序回填到 native blocks 真实页位。**质量最佳**（数字页保原生）+ **更省**（只送扫描页）+
+**更快**（单 job）+ **无新接口**（复用文件提交路径，Layer 2 的接口 gate 消失）+ **可离线单测**。
+本地抽页失败 → 回退 Layer 1 整份云 OCR；云识别失败 → per-file 隔离归 error（不双倍云开销）。
+`cache._CACHE_VERSION` v1→v2 失效旧纯 native 缓存（否则同内容命中旧缓存绕过子集 OCR）。
+全套 **701 绿 + ruff + format**。
+
+**待真标验收（需 OCR 云在线 + ZJXH标）**：59 扫描页内容进底稿、技术/业绩/负责人出真分、
+evidence `【第N页】` 定位准。单测已覆盖逻辑，真值验证待用户起服务跑ZJ重评。

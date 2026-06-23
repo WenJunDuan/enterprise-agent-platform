@@ -18,6 +18,8 @@ PDF_EXT = {".pdf"}
 
 # DOCX 判文本型：正文字符数低于此值且含嵌入图 → 视为图片/扫描型
 DOCX_MIN_TEXT_CHARS = 200
+
+
 def _probe_pdf(data: bytes) -> dict:
     """字节级探测 PDF 是否含文本层。
 
