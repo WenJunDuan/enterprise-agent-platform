@@ -7,6 +7,7 @@
 | 档 | 子系统 | 摘要 |
 |---|---|---|
 | `system-tender-data-model.md` | tender 招标数据模型 | 招标项目实体 owns N 家投标评标 + 多投标人追加 + 回看 + 价格横比（Phase 1+2，2026-06-20） |
+| `system-tender-evidence-resolution.md` | tender 评标证据可验证性 | evidence-resolution 闸（出处回查）+ 底稿→校验透传管道 + BOQ 感知抽取 + confidence 消费（2026-06-22） |
 | （已删） | contract/legal | 2026-06-20 agent-capability-redesign G0 删除（死域，无 knowledge/legal 规则） |
 
 ## 真实业务域（round4 校准）
