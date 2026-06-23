@@ -113,7 +113,9 @@ def _coerce_reason_to_str(reason: Any) -> str:
     if isinstance(reason, str):
         return reason
     if isinstance(reason, dict):
-        desc = str(reason.get("description") or reason.get("message") or reason.get("reason") or "").strip()
+        desc = str(
+            reason.get("description") or reason.get("message") or reason.get("reason") or ""
+        ).strip()
         severity = str(reason.get("severity") or "").strip()
         text = f"[{severity}] {desc}" if severity and desc else desc
         return text or json.dumps(reason, ensure_ascii=False)
@@ -144,9 +146,7 @@ def _coerce_risk_dimensions(value: Any) -> list[dict[str, Any]] | None:
     if isinstance(value, dict):
         pairs: list[tuple[Any, Any]] = list(value.items())
     elif isinstance(value, list):
-        pairs = [
-            (item.get("name"), item.get("score")) for item in value if isinstance(item, dict)
-        ]
+        pairs = [(item.get("name"), item.get("score")) for item in value if isinstance(item, dict)]
     else:
         return None
     normalized = [
@@ -157,16 +157,39 @@ def _coerce_risk_dimensions(value: Any) -> list[dict[str, Any]] | None:
     return normalized or None
 
 
+_UNCONFIRMED_TOKENS = {"false", "no", "0", "疑似", "待确认", "待核验", "unconfirmed", "manual"}
+
+
+def _hit_unconfirmed(hit: dict[str, Any]) -> bool:
+    """该废标命中是否被模型**明确标为未确认**（疑似 / 读不清 / 待人工核验）→ 不应触发 rejected。
+
+    R2b（治 F01/F4：deepseek 把读不清的信用截图疑似信号写进 disqualification_hits、被门禁强制
+    rejected，与其自身"须人工核验、常规理解应属自证清白"分析自相矛盾→误废标合规投标人）：
+    `confirmed:false`/`null`、或 `confirmed` 为疑似类字符串 → 未确认。**未带 `confirmed` 字段 →
+    向后兼容视为已确认（旧行为不变）**——只把"模型自己都说没确认"的疑似命中挡在 rejected 之外。
+    """
+    if "confirmed" not in hit:
+        return False  # 向后兼容：未标 confirmed 视为已确认（不改旧行为）
+    value = hit.get("confirmed")
+    if isinstance(value, bool):
+        return not value
+    if value is None:
+        return True
+    return str(value).strip().lower() in _UNCONFIRMED_TOKENS
+
+
 def _meaningful_disqualification_hits(extracted: Any) -> bool:
-    """``disqualification_hits`` 是否为【非空 list 且含至少一个有内容的 dict】。
+    """``disqualification_hits`` 是否为【非空 list 且含至少一个有内容、**且未被标为未确认**的 dict】。
 
     extracted_data 内部无 schema 形校验（codex R2 P1）：模型可能写 ``"无"``（中文"没有"，truthy
     字符串！）/ ``{}`` / ``[{}]`` / ``[]`` 等假值——朴素 ``bool(...)`` 会把 ``"无"`` 当命中→误判
     rejected。故收窄为"非空 list + 至少一项是有内容的 dict"，把这些假值挡在外面。
+    R2b：再排除模型**明确标为未确认**（疑似/读不清）的命中——它们不该强制 rejected（见 _hit_unconfirmed）。
     """
     hits = extracted.get("disqualification_hits") if isinstance(extracted, dict) else None
     return isinstance(hits, list) and any(
-        isinstance(hit, dict) and any(value for value in hit.values()) for hit in hits
+        isinstance(hit, dict) and not _hit_unconfirmed(hit) and any(value for value in hit.values())
+        for hit in hits
     )
 
 
@@ -371,9 +394,7 @@ def _verify_plan_shape(structured_output: dict[str, Any]) -> None:
     try:
         jsonschema.validate(plan, load_output_schema(PLAN_SCHEMA_NAME))
     except (jsonschema.ValidationError, jsonschema.SchemaError) as exc:
-        raise JSONContractError(
-            f"extracted_data.plan 不满足 plan 契约: {exc.message}"
-        ) from exc
+        raise JSONContractError(f"extracted_data.plan 不满足 plan 契约: {exc.message}") from exc
 
 
 def _verify_scoring_consistency(structured_output: dict[str, Any]) -> None:
@@ -636,7 +657,9 @@ def _validate_init_rules_report(structured_output: StructuredJSON) -> None:
             "init-rules cannot return status=initialized with empty written_files."
         )
     if not isinstance(categories, list) or not categories:
-        raise JSONContractError("init-rules cannot return status=initialized with empty categories.")
+        raise JSONContractError(
+            "init-rules cannot return status=initialized with empty categories."
+        )
     if not isinstance(extracted_rule_count, int) or extracted_rule_count <= 0:
         raise JSONContractError(
             "init-rules cannot return status=initialized with extracted_rule_count <= 0."

@@ -100,6 +100,49 @@ def test_disqualification_hits_coerce_verdict_to_rejected():
     assert "manual_review_reason" not in out  # 非 manual_review 剥离
 
 
+def test_unconfirmed_disqualification_does_not_coerce_rejected():
+    """R2b（治 F01/F4）：disqualification_hits 命中被模型明确标 confirmed:false/null（疑似/读不清，
+    如 deepseek 的信用中国截图）→ **不**强制 rejected，verdict 保持模型本意（manual_review），
+    不误废标合规投标人。"""
+    for confirmed in (False, None):
+        out = apply_schema_semantics(
+            DEFAULT_OUTPUT_SCHEMA_NAME,
+            _valid_audit_result(
+                verdict="manual_review",
+                manual_review_reason="insufficient_evidence",
+                policy_refs=["tender_evalmethod_005"],
+                extracted_data={
+                    "disqualification_hits": [
+                        {
+                            "rule_id": "INV-06",
+                            "finding": "信用中国截图疑似失信",
+                            "confirmed": confirmed,
+                        }
+                    ]
+                },
+            ),
+        )
+        assert out["verdict"] == "manual_review", f"confirmed={confirmed!r} 不应强制 rejected"
+
+
+def test_confirmed_disqualification_still_coerces_rejected():
+    """R2b 反例：confirmed:true 的硬废标命中 → 仍强制 rejected（决断不放松）。"""
+    out = apply_schema_semantics(
+        DEFAULT_OUTPUT_SCHEMA_NAME,
+        _valid_audit_result(
+            verdict="manual_review",
+            manual_review_reason="insufficient_evidence",
+            policy_refs=["tender_evalmethod_005"],
+            extracted_data={
+                "disqualification_hits": [
+                    {"rule_id": "RR2", "finding": "投错标", "confirmed": True}
+                ]
+            },
+        ),
+    )
+    assert out["verdict"] == "rejected"
+
+
 def test_eligibility_fail_coerces_verdict_to_rejected():
     """R2：任一 eligibility_checks.status=fail（资格否决）→ verdict 强制 rejected。"""
     out = apply_schema_semantics(
@@ -142,7 +185,9 @@ def test_falsy_disqualification_does_not_coerce(disq):
 def test_missing_envelope_fields_defaulted_not_rejected():
     """R3：模型漏给信封类必填字段(reasons/risk_score/policy_refs/evidence_chain)→兜底默认而非整单
     契约失败（实测 deepseek 全量评标漏 reasons 反复重试至失败）。manual_review 不需 policy_refs。"""
-    base = _valid_audit_result(verdict="manual_review", manual_review_reason="insufficient_evidence")
+    base = _valid_audit_result(
+        verdict="manual_review", manual_review_reason="insufficient_evidence"
+    )
     for missing in ("reasons", "risk_score", "policy_refs", "evidence_chain"):
         base.pop(missing, None)
     out = apply_schema_semantics(DEFAULT_OUTPUT_SCHEMA_NAME, base)
@@ -160,7 +205,11 @@ def test_evidence_chain_extra_fields_normalized_not_rejected():
         DEFAULT_OUTPUT_SCHEMA_NAME,
         _valid_audit_result(
             evidence_chain=[
-                {"source": "招标文件第14页", "finding": "实质性未响应", "rule_ref": "tender_evalmethod_005"},
+                {
+                    "source": "招标文件第14页",
+                    "finding": "实质性未响应",
+                    "rule_ref": "tender_evalmethod_005",
+                },
                 {"source": "p.62", "finding": "评分标准", "relevance": "不适用本项目"},
             ]
         ),
@@ -237,7 +286,9 @@ def test_manual_review_allowed_with_empty_policy_refs():
     # manual_review 豁免 G1b：人工复核本就因证据/规则不足，不强求引规则（边界快照）。
     out = apply_schema_semantics(
         DEFAULT_OUTPUT_SCHEMA_NAME,
-        _valid_audit_result(verdict="manual_review", manual_review_reason="rule_gap", policy_refs=[]),
+        _valid_audit_result(
+            verdict="manual_review", manual_review_reason="rule_gap", policy_refs=[]
+        ),
     )
     assert out["verdict"] == "manual_review"
 
@@ -252,7 +303,9 @@ def test_rule_ref_check_on_by_default_rejects_unknown_ref(monkeypatch):
     monkeypatch.delenv("RULE_REF_CHECK", raising=False)
     monkeypatch.setattr(oc, "_load_known_rule_ids", lambda: {"expense_travel_001"})
     with pytest.raises(JSONContractError):
-        apply_schema_semantics(DEFAULT_OUTPUT_SCHEMA_NAME, _valid_audit_result(policy_refs=["NOPE-999"]))
+        apply_schema_semantics(
+            DEFAULT_OUTPUT_SCHEMA_NAME, _valid_audit_result(policy_refs=["NOPE-999"])
+        )
 
 
 def test_rule_ref_check_disabled_allows_unknown_ref(monkeypatch):
@@ -261,7 +314,9 @@ def test_rule_ref_check_disabled_allows_unknown_ref(monkeypatch):
 
     monkeypatch.setenv("RULE_REF_CHECK", "0")
     monkeypatch.setattr(oc, "_load_known_rule_ids", lambda: {"expense_travel_001"})
-    apply_schema_semantics(DEFAULT_OUTPUT_SCHEMA_NAME, _valid_audit_result(policy_refs=["NOPE-999"]))
+    apply_schema_semantics(
+        DEFAULT_OUTPUT_SCHEMA_NAME, _valid_audit_result(policy_refs=["NOPE-999"])
+    )
 
 
 def test_rule_ref_check_on_rejects_fabricated_ref(monkeypatch):
@@ -362,7 +417,9 @@ def test_rule_ref_check_on_but_no_rules_loaded_skips(monkeypatch):
 
     monkeypatch.setenv("RULE_REF_CHECK", "1")
     monkeypatch.setattr(oc, "_load_known_rule_ids", lambda: set())  # 无 knowledge → 跳过
-    apply_schema_semantics(DEFAULT_OUTPUT_SCHEMA_NAME, _valid_audit_result(policy_refs=["ANYTHING"]))
+    apply_schema_semantics(
+        DEFAULT_OUTPUT_SCHEMA_NAME, _valid_audit_result(policy_refs=["ANYTHING"])
+    )
 
 
 # ── G1c 评分项内部一致性（score ≤ max，验证非判断）──────────────────────────
@@ -379,7 +436,9 @@ def test_scoring_consistency_rejects_score_over_max():
 def test_scoring_consistency_allows_null_score():
     # 不可判定项 score=null（manual_review）→ 跳过，不报错（呼应"绝不判 0"）。
     ok = _valid_audit_result(
-        extracted_data={"scoring": [{"item": "答辩", "max": 10, "score": None, "status": "manual_review"}]}
+        extracted_data={
+            "scoring": [{"item": "答辩", "max": 10, "score": None, "status": "manual_review"}]
+        }
     )
     out = apply_schema_semantics(DEFAULT_OUTPUT_SCHEMA_NAME, ok)
     assert out["result"] is True
@@ -461,7 +520,13 @@ def test_r4_deduction_scored_partial_without_hits_warns():
         _valid_audit_result(
             extracted_data={
                 "scoring": [
-                    {"item": "技术", "max": 6, "score": 4, "status": "scored", "score_mode": "deduction"}
+                    {
+                        "item": "技术",
+                        "max": 6,
+                        "score": 4,
+                        "status": "scored",
+                        "score_mode": "deduction",
+                    }
                 ]
             }
         ),
@@ -476,7 +541,13 @@ def test_r4_deduction_full_score_without_hits_no_warn():
         _valid_audit_result(
             extracted_data={
                 "scoring": [
-                    {"item": "技术", "max": 6, "score": 6, "status": "scored", "score_mode": "deduction"}
+                    {
+                        "item": "技术",
+                        "max": 6,
+                        "score": 6,
+                        "status": "scored",
+                        "score_mode": "deduction",
+                    }
                 ]
             }
         ),
@@ -513,7 +584,13 @@ def test_r4_additive_scored_above_base_without_awards_warns():
             extracted_data={
                 "criteria": {"items": [{"item": "加分项", "score_mode": "additive", "base": 0}]},
                 "scoring": [
-                    {"item": "加分项", "max": 5, "score": 3, "status": "scored", "score_mode": "additive"}
+                    {
+                        "item": "加分项",
+                        "max": 5,
+                        "score": 3,
+                        "status": "scored",
+                        "score_mode": "additive",
+                    }
                 ],
             }
         ),
@@ -528,7 +605,13 @@ def test_r4_manual_review_item_no_completeness_warn():
         _valid_audit_result(
             extracted_data={
                 "scoring": [
-                    {"item": "答辩", "max": 6, "score": None, "status": "manual_review", "score_mode": "deduction"}
+                    {
+                        "item": "答辩",
+                        "max": 6,
+                        "score": None,
+                        "status": "manual_review",
+                        "score_mode": "deduction",
+                    }
                 ]
             }
         ),
