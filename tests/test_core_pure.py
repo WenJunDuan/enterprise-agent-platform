@@ -92,7 +92,7 @@ class TestExtractJsonObject:
 
     def test_think_json_only_in_think_returns_none(self):
         """如果唯一 JSON 在 </think> 里，截断后应返回 None。"""
-        text = "<think>{\"draft\": 1}</think>no json after"
+        text = '<think>{"draft": 1}</think>no json after'
         assert _extract_json_object(text) is None
 
     def test_nested_json(self):
@@ -103,6 +103,22 @@ class TestExtractJsonObject:
     def test_only_invalid_json_returns_none(self):
         """存在 {} 但无法 parse 成 dict，返回 None。"""
         assert _extract_json_object("{not valid}") is None
+
+    def test_trailing_think_after_answer(self):
+        """R1 修复：答案 JSON 后跟一个游离的 </think>（glm/deepseek 偶发）——旧 rsplit 截到
+        末尾 </think> 之后=空 → 误返 None；应剥离成对 think 块后仍找到答案。"""
+        text = '{"verdict": "approved"}</think>'
+        assert _extract_json_object(text) == {"verdict": "approved"}
+
+    def test_reasoning_then_answer_then_stray_close(self):
+        """成对 <think>…</think> 草稿 + 答案 + 游离尾随 </think>：剥离草稿块后答案仍可取。"""
+        text = '<think>reasoning here</think>{"verdict": "final"}</think>'
+        assert _extract_json_object(text) == {"verdict": "final"}
+
+    def test_draft_in_think_then_answer_with_stray_close(self):
+        """草稿 JSON 在成对 think 内 + 答案在外 + 尾随游离 </think>：取答案而非草稿。"""
+        text = '<think>{"verdict": "draft"}</think>{"verdict": "final"}</think>'
+        assert _extract_json_object(text) == {"verdict": "final"}
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -207,13 +223,17 @@ class TestCoerceRiskDimensions:
         assert names == {"anomaly", "invoice"}
         # anomaly: 85 → div by 10 → 8 (or 9 depending on rounding)
         anomaly = next(d for d in result if d["name"] == "anomaly")
-        assert anomaly["score"] == 8  # round(8.5) = 8 in Python banker's rounding, but 85/10=8.5 → round=8 or 9
+        assert (
+            anomaly["score"] == 8
+        )  # round(8.5) = 8 in Python banker's rounding, but 85/10=8.5 → round=8 or 9
         # Actually Python rounds 8.5 → 8 (banker's rounding). Let's be precise:
 
         assert anomaly["score"] == round(8.5)  # banker's rounding == 8
 
     def test_list_of_dicts_form(self):
-        result = _coerce_risk_dimensions([{"name": "amount", "score": 6}, {"name": "approval", "score": 9}])
+        result = _coerce_risk_dimensions(
+            [{"name": "amount", "score": 6}, {"name": "approval", "score": 9}]
+        )
         assert result is not None
         assert len(result) == 2
 

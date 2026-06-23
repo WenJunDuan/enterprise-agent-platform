@@ -10,6 +10,7 @@ by feature domains, never the other way around. Pure functions, no SDK import.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -22,6 +23,7 @@ CONTRACTS_DIR = PROJECT_ROOT / ".claude" / "contracts"
 DEFAULT_OUTPUT_SCHEMA_NAME = "common/audit-result.schema.json"
 INIT_RULES_REPORT_SCHEMA_NAME = "system/init-rules-report.schema.json"
 StructuredJSON = dict[str, Any] | list[Any]
+
 
 class JSONContractError(ValueError):
     """Raised when a Claude response does not satisfy the JSON contract."""
@@ -190,16 +192,18 @@ def validate_structured_output_semantics(
 def _extract_json_object(text: str) -> dict[str, Any] | None:
     """从模型文本里抽取**最终**的 JSON 对象。
 
-    针对 reasoning 模型：思考/草稿（常含一段草稿 JSON）在 </think> 之前，真正答案在
-    之后；所以先截到最后一个 </think> 之后，去掉 ```json 围栏，扫出所有平衡的 {...}，
-    返回**最后一个**能解析成 dict 的（最终答案通常在最后）。这样不会误抓推理里的草稿。
+    针对 reasoning 模型：思考/草稿（常含一段草稿 JSON）在成对 <think>…</think> 内，真正
+    答案在块外；所以**剥离成对思考块**后去掉 ```json 围栏，扫出所有平衡的 {...}，返回
+    **最后一个**能解析成 dict 的（最终答案通常在最后）。这样不会误抓推理里的草稿。
     用于"文本模式"：网关模型（如 qwen）直接输出 JSON 文本，由服务端解析。
     """
     if not text:
         return None
-    # reasoning 模型把草稿放 </think> 之前，真正答案在最后一个 </think> 之后
-    if "</think>" in text:
-        text = text.rsplit("</think>", 1)[-1]
+    # 剥离**成对** <think>…</think> 草稿块（非贪婪，DOTALL 跨行）。旧实现 `rsplit("</think>")`
+    # 取最后一个 </think> 之后的文本——当模型把答案输出后又跟一个**游离尾随 </think>**
+    # （glm/deepseek 文本模式偶发）时会截成空串、误返 None → 整单 JSONContractError 重试。
+    # 剥离成对块既去草稿、又不丢答案；游离的单个 </think>（无配对 <think>）保留但不含 `{` 无害。
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
     cleaned = text.replace("```json", "").replace("```", "")
     # 扫出所有平衡的顶层 {...}
     objects: list[str] = []
