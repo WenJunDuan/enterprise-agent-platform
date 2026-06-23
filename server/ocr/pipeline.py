@@ -19,10 +19,12 @@ from server.ocr.native import native_read
 
 logger = logging.getLogger(__name__)
 
-# 单文件底稿截断上限，防超大扫描件撑爆映射 prompt。默认 200000：评标场景标书动辄上百页
-# （华为南通用例 158 页），旧 40000 只够开头几页、正文/业绩被静默砍掉致评标失真。大上下文
-# 模型（如 deepseek [1M]）可吃下；本机/小上下文模型经 env OCR_MAX_FILE_BLOCK_CHARS 调小。
-MAX_FILE_BLOCK_CHARS = int(os.getenv("OCR_MAX_FILE_BLOCK_CHARS", "200000"))
+# 单文件底稿截断上限，防超大扫描件撑爆映射 prompt。默认 600000：评标标书动辄数百页（张謇 400 页
+# 投标底稿 ~215k，旧 200000 恰好截掉尾 ~15k——而那正是模型引用的证据所在，致 evidence 回查
+# unresolved 偏高；提到 600k 后实测回查率 71%→92%、unresolved 8→1，见
+# sprints/2026-06-23-tender-ui-scoring-fixes/findings.md）。大上下文模型（如 deepseek [1M]）可吃下；
+# 本机/小上下文模型经 env OCR_MAX_FILE_BLOCK_CHARS 调小。
+MAX_FILE_BLOCK_CHARS = int(os.getenv("OCR_MAX_FILE_BLOCK_CHARS", "600000"))
 
 # P2 置信度门控：OCR 逐块 score 低于此阈值 → 文件标 low（依赖字段须人工复核）。可经 env 调。
 OCR_CLARITY_MIN_CONFIDENCE = float(os.getenv("OCR_CLARITY_MIN_CONFIDENCE", "0.6"))
