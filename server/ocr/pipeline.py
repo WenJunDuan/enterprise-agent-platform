@@ -14,7 +14,7 @@ from pathlib import Path
 from server.ocr import boq as boq_extract
 from server.ocr import cache as ocr_cache
 from server.ocr.classify import classify
-from server.ocr.engine import recognize, recognize_seal
+from server.ocr.engine import extract_pdf_subset, recognize, recognize_seal
 from server.ocr.native import native_read
 
 logger = logging.getLogger(__name__)
@@ -49,6 +49,7 @@ OCR_PREPROCESS = os.getenv("OCR_PREPROCESS", "1").lower() in {"1", "true", "yes"
 MAX_BLANK_CHARS = int(os.getenv("OCR_BLANK_PAGE_MIN_CHARS", "20"))
 OCR_BLANK_PAGE_MIN_COUNT = int(os.getenv("OCR_BLANK_PAGE_MIN_COUNT", "10"))
 OCR_BLANK_PAGE_RATIO = float(os.getenv("OCR_BLANK_PAGE_RATIO", "0.5"))
+
 
 # OCR 文件级并行度：标书常十几个文件，扫描件走云 OCR 是 job-poll（IO 等待为主），串行会数分钟
 # 甚至撞 TENDER_TIMEOUT_SEC；多文件并行把墙钟从"求和"压到"最慢单个"。数字 PDF 走 native 本就快。
@@ -134,6 +135,42 @@ def _should_cloud_ocr_mixed_pdf(blocks: list[str]) -> bool:
     return blank >= OCR_BLANK_PAGE_MIN_COUNT or (blank / total) > OCR_BLANK_PAGE_RATIO
 
 
+def _augment_mixed_pdf_blocks(
+    path: Path, route: dict, native: dict, *, purpose: str | None
+) -> dict | None:
+    """混合 PDF 子集 OCR：只对扫描(空白)页做云 OCR 并回填进 native blocks，数字页保原生直读。
+
+    比"整份转云 OCR"更优——避免用云 OCR 覆盖 341 数字页的原生高保真文本（OCR 反而引误差），
+    且只送扫描页（更省）、单 job（更快）、复用已验证的云文件提交路径（无新接口）。回填后页号仍
+    取真实页（blocks 一页一项 → _render_body 按真实页打锚点），evidence 回查【第N页】不失准。
+
+    本地抽页失败（fitz 缺失/渲染错）→ 返回 None，调用方回退整份云 OCR（Layer 1）；云识别失败由
+    外层 per-file 隔离归 error（不在此重试整份，避免双倍云开销）。
+    """
+    blocks = list(native.get("blocks", []))
+    blank_indices = [i for i, b in enumerate(blocks) if len(str(b).strip()) < MAX_BLANK_CHARS]
+    subset = extract_pdf_subset(path, blank_indices)
+    if subset is None:
+        return None  # 本地抽页失败 → 回退整份云 OCR
+    try:
+        ocr_pages = recognize(subset, purpose=purpose).get("pages", [])
+    finally:
+        try:
+            subset.unlink()
+        except OSError:
+            pass
+    # OCR 结果按提交顺序对应 blank_indices；回填到真实页位（空文本不覆盖，保留原空白页跳过逻辑）。
+    for offset, true_idx in enumerate(blank_indices):
+        if offset < len(ocr_pages) and (text := (ocr_pages[offset].get("markdown") or "")).strip():
+            blocks[true_idx] = text
+    return {
+        **route,
+        **native,
+        "blocks": blocks,
+        "note": f"混合 PDF：{len(blank_indices)} 个扫描页经子集云 OCR 回填，数字页保原生直读",
+    }
+
+
 def extract_one(path: Path, *, run_seal: bool = False, purpose: str | None = None) -> dict:
     """对单个文件识别（带按文件内容 sha256 的结果缓存，P1）。
 
@@ -169,18 +206,21 @@ def _extract_one_raw(path: Path, *, run_seal: bool = False, purpose: str | None 
                 }
                 return _recognize_with_seal(path, fallback, run_seal=run_seal, purpose=purpose)
             # 混合 PDF（数字页 + 扫描页）：native 抽不到扫描页内容（空串被静默丢失）。空白页计数/
-            # 比例达阈值 → 整份转云 OCR 补回扫描页（方案 B，复用已生产验证的云路径，服务端保跨页
-            # 表格连续）。gate 在 mixed_pdf：纯数字 PDF 的空白页是真空页，触发只会白送云 OCR。
+            # 比例达阈值 → 只对扫描页做子集云 OCR 并回填（主路径，保数字页原生保真）；本地抽页失败
+            # 回退整份云 OCR（Layer 1）。gate 在 mixed_pdf：纯数字 PDF 的空白页是真空页，无内容可补。
             if (
                 route.get("handler") == "pdf_text"
                 and route.get("mixed_pdf")
                 and _should_cloud_ocr_mixed_pdf(native.get("blocks", []))
             ):
+                augmented = _augment_mixed_pdf_blocks(path, route, native, purpose=purpose)
+                if augmented is not None:
+                    return augmented
                 fallback = {
                     **route,
                     "route": "ocr",
                     "handler": "pdf_scan",
-                    "note": "混合 PDF 检出扫描页（native 抽不到），整份转云 OCR 补回",
+                    "note": "混合 PDF 子集抽页失败，回退整份云 OCR 补回扫描页",
                 }
                 return _recognize_with_seal(path, fallback, run_seal=run_seal, purpose=purpose)
             return {**route, **native}

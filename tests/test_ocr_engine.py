@@ -53,10 +53,7 @@ def test_openai_compatible_pdf_renders_pages_as_images(tmp_path, monkeypatch):
     result = engine._recognize_via_openai_compatible(pdf)
 
     assert [page["markdown"] for page in result["pages"]] == ["第 1 页", "第 2 页"]
-    urls = [
-        call["messages"][0]["content"][0]["image_url"]["url"]
-        for call in calls
-    ]
+    urls = [call["messages"][0]["content"][0]["image_url"]["url"] for call in calls]
     assert len(urls) == 2
     assert all(url.startswith("data:image/png;base64,") for url in urls)
     assert all("application/pdf" not in url for url in urls)
@@ -120,3 +117,39 @@ def test_parse_cloud_jsonl_injects_continuous_page_number():
     assert [p["page_number"] for p in pages] == [1, 2]
     assert pages[0]["markdown"] == "第一页"
     assert pages[1]["markdown"] == "第二页"
+
+
+def test_extract_pdf_subset_selects_only_requested_pages(tmp_path):
+    """混合 PDF 子集 OCR：抽指定页成临时 PDF（只送扫描页，不送整份）。"""
+    import fitz
+
+    src_path = tmp_path / "src.pdf"
+    doc = fitz.open()
+    for i in range(3):
+        doc.new_page().insert_text((72, 72), f"page-{i}")
+    doc.save(str(src_path))
+    doc.close()
+
+    out = engine.extract_pdf_subset(src_path, [0, 2])
+    assert out is not None
+    try:
+        with fitz.open(out) as sub:
+            assert sub.page_count == 2
+    finally:
+        out.unlink()
+
+
+def test_extract_pdf_subset_empty_indices_returns_none(tmp_path):
+    import fitz
+
+    src_path = tmp_path / "src.pdf"
+    doc = fitz.open()
+    doc.new_page()
+    doc.save(str(src_path))
+    doc.close()
+    assert engine.extract_pdf_subset(src_path, []) is None
+
+
+def test_extract_pdf_subset_missing_file_returns_none(tmp_path):
+    # 本地失败（文件不存在/fitz 打不开）返回 None 而非抛——调用方据此回退整份云 OCR。
+    assert engine.extract_pdf_subset(tmp_path / "nope.pdf", [0]) is None

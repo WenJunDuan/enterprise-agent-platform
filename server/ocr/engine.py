@@ -16,6 +16,7 @@ import base64
 import json
 import os
 import ssl
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -130,7 +131,9 @@ def _render_pdf_pages(path: Path) -> list[dict]:
     try:
         import fitz  # PyMuPDF
     except ImportError as exc:
-        raise OcrDependencyError("缺少 PyMuPDF：请安装 pymupdf 以支持 PDF 调用远端 OCR VLM") from exc
+        raise OcrDependencyError(
+            "缺少 PyMuPDF：请安装 pymupdf 以支持 PDF 调用远端 OCR VLM"
+        ) from exc
 
     pages: list[dict] = []
     try:
@@ -187,7 +190,9 @@ def _call_openai_compatible_vlm(*, data_url: str, prompt: str) -> str:
         headers=headers,
     )
     try:
-        with urllib.request.urlopen(request, timeout=OCR_VL_TIMEOUT, context=_SSL_CONTEXT) as response:
+        with urllib.request.urlopen(
+            request, timeout=OCR_VL_TIMEOUT, context=_SSL_CONTEXT
+        ) as response:
             payload = json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         detail = f"HTTP Error {exc.code}: {exc.reason}"
@@ -210,7 +215,9 @@ def _call_openai_compatible_vlm(*, data_url: str, prompt: str) -> str:
 def _recognize_via_openai_compatible(path: Path, *, purpose: str | None = None) -> dict:
     """LiteLLM/OpenAI-compatible fallback：让已部署 PaddleOCR-VL 读取图片页面。"""
     if not OCR_VL_SERVER_URL or not OCR_VL_MODEL_NAME:
-        raise OcrDependencyError("OCR_VL_SERVER_URL / OCR_VL_MODEL_NAME 未配置，无法调用远端 OCR VLM")
+        raise OcrDependencyError(
+            "OCR_VL_SERVER_URL / OCR_VL_MODEL_NAME 未配置，无法调用远端 OCR VLM"
+        )
 
     prompt = "Extract all visible document text. Return concise markdown only."
     if purpose:
@@ -296,7 +303,9 @@ def _post_multipart(
         parts.append(f'Content-Disposition: form-data; name="{key}"\r\n\r\n'.encode())
         parts.append(f"{value}\r\n".encode())
     parts.append(f"--{boundary}\r\n".encode())
-    parts.append(f'Content-Disposition: form-data; name="file"; filename="{safe_name}"\r\n'.encode())
+    parts.append(
+        f'Content-Disposition: form-data; name="file"; filename="{safe_name}"\r\n'.encode()
+    )
     parts.append(b"Content-Type: application/octet-stream\r\n\r\n")
     parts.append(file_path.read_bytes())
     parts.append(f"\r\n--{boundary}--\r\n".encode())
@@ -335,7 +344,9 @@ def _cloud_poll_until_done(job_id: str) -> str:
     deadline = time.monotonic() + OCR_VL_CLOUD_MAX_WAIT
     while True:
         request = urllib.request.Request(job_url, headers=headers)
-        with urllib.request.urlopen(request, timeout=OCR_VL_TIMEOUT, context=_SSL_CONTEXT) as response:
+        with urllib.request.urlopen(
+            request, timeout=OCR_VL_TIMEOUT, context=_SSL_CONTEXT
+        ) as response:
             data = json.loads(response.read().decode("utf-8")).get("data", {})
         state = data.get("state")
         if state == "done":
@@ -393,7 +404,9 @@ def _recognize_via_paddle_cloud(path: Path, *, purpose: str | None = None) -> di
         job_id = _cloud_submit_job(path)
         jsonl_url = _cloud_poll_until_done(job_id)
         request = urllib.request.Request(jsonl_url)
-        with urllib.request.urlopen(request, timeout=OCR_VL_TIMEOUT, context=_SSL_CONTEXT) as response:
+        with urllib.request.urlopen(
+            request, timeout=OCR_VL_TIMEOUT, context=_SSL_CONTEXT
+        ) as response:
             jsonl_text = response.read().decode("utf-8")
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
         raise OcrError(f"PaddleOCR 云调用失败：{exc}") from exc
@@ -403,6 +416,47 @@ def _recognize_via_paddle_cloud(path: Path, *, purpose: str | None = None) -> di
         "engine": "paddleocr-cloud",
         "pages": _parse_cloud_jsonl(jsonl_text),
     }
+
+
+def extract_pdf_subset(path: Path, page_indices: list[int]) -> Path | None:
+    """把 PDF 的指定页（0-based, 升序）抽成一份临时 PDF，返回路径；本地失败返回 None。
+
+    用于混合 PDF 只补扫描页：调用方对返回的子集 PDF 跑 ``recognize`` 走当前配置引擎，只 OCR
+    扫描页、避免整份重 OCR 覆盖数字页的原生高保真文本。**调用方负责删除**返回的临时文件。
+    fitz 缺失 / 渲染失败 → None（调用方据此回退整份云 OCR）；不抛异常以保留回退路径。
+
+    fitz 非线程安全，经共享 ``FITZ_LOCK`` 串行化（与 native 直读 / 整页渲染共用同一把锁）。
+    """
+    if not page_indices:
+        return None
+    try:
+        import fitz  # PyMuPDF
+    except ImportError:
+        return None
+    tmp_path: Path | None = None
+    try:
+        with FITZ_LOCK, fitz.open(path) as src:
+            subset = fitz.open()
+            try:
+                for idx in page_indices:
+                    if 0 <= idx < src.page_count:
+                        subset.insert_pdf(src, from_page=idx, to_page=idx)
+                if subset.page_count == 0:
+                    return None
+                fd, name = tempfile.mkstemp(suffix=".pdf")
+                os.close(fd)
+                tmp_path = Path(name)
+                subset.save(str(tmp_path))
+            finally:
+                subset.close()
+        return tmp_path
+    except Exception:
+        if tmp_path is not None:
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
+        return None
 
 
 def recognize(path: Path, *, purpose: str | None = None) -> dict:
