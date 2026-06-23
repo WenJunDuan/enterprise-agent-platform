@@ -5,6 +5,7 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query'
+import type { AuditResult } from '@/features/audit/types'
 import {
   createTenderProject,
   deleteTenderProject,
@@ -283,6 +284,23 @@ export function useTenderReviewPage(
     enabled: Boolean(shouldLoadSelectedProject && selectedResultRequestId),
   })
 
+  const resultDetails = useQueries({
+    queries: (resultsQuery.data ?? []).map((result) => ({
+      queryKey: [
+        'tender-project-result',
+        selectedProjectIdForQuery,
+        result.request_id,
+      ],
+      queryFn: () => getTenderProjectResult(selectedProjectIdForQuery, result.request_id),
+      enabled: Boolean(shouldLoadSelectedProject && result.request_id),
+      staleTime: 5000,
+    })),
+    combine: (results) =>
+      results
+        .map((result) => result.data)
+        .filter((result): result is AuditResult => Boolean(result)),
+  })
+
   const projects = useMemo(() => {
     const rawProjects = projectsQuery.data ?? []
     const selectedDetail = projectDetailQuery.data
@@ -325,6 +343,7 @@ export function useTenderReviewPage(
         project: selectedProject,
         resultSummaries: resultsQuery.data ?? [],
         selectedResult: resultDetailQuery.data ?? null,
+        resultDetails,
         compare: compareQuery.data ?? null,
       }),
       projects,
@@ -334,6 +353,7 @@ export function useTenderReviewPage(
       projects,
       projectsQuery.data,
       resultDetailQuery.data,
+      resultDetails,
       resultsQuery.data,
       selectedProject,
     ]

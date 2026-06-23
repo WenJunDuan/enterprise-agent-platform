@@ -16,6 +16,10 @@ import type {
   ReviewCategoryData,
   ReviewItem,
   ScoreHit,
+  TenderCompareScoreRow,
+  TenderPolicyRef,
+  TenderScoreCategory,
+  TenderScoreEvidence,
   TenderScoreIssue,
   TenderScoreSummary,
   TenderScoringItem,
@@ -38,6 +42,7 @@ type BuildTenderReviewDataInput = {
   project?: TenderProjectResponse | TenderProjectDetailResponse | null
   resultSummaries?: TenderProjectResultSummary[]
   selectedResult?: AuditResult | null
+  resultDetails?: AuditResult[]
   compare?: TenderCompareResponse | null
 }
 
@@ -166,6 +171,7 @@ export function buildTenderReviewData({
   project,
   resultSummaries = [],
   selectedResult,
+  resultDetails = [],
   compare,
 }: BuildTenderReviewDataInput): TenderReviewMockData {
   const mappedProjects = projects.map((item) => mapTenderProject(item))
@@ -179,6 +185,7 @@ export function buildTenderReviewData({
     selectedResult,
     compare
   )
+  const scoringResults = normalizeResultDetails(resultDetails, selectedResult)
   const scoringItems = buildScoringItems(selectedResult)
 
   return {
@@ -195,9 +202,10 @@ export function buildTenderReviewData({
     resultVerdict: selectedResult?.verdict,
     resultExplanation: selectedResult?.explanation || selectedResult?.summary || '',
     resultReasons: normalizeDisplayList(selectedResult?.reasons),
-    resultPolicyRefs: normalizeDisplayList(selectedResult?.policy_refs),
+    resultPolicyRefs: normalizePolicyRefs(selectedResult),
     scoringItems,
     scoreSummary: buildScoreSummary(scoringItems),
+    compareScoreRows: buildCompareScoreRows(scoringResults, reviewBidders),
     compareNotice: buildCompareNotice(activeProject, compare),
   }
 }
@@ -536,9 +544,14 @@ function parseScoreHits(raw: unknown): ScoreHit[] | undefined {
 function buildScoringItems(result?: AuditResult | null): TenderScoringItem[] {
   return getScoringItems(result).map((item, index) => {
     const title = toText(item.item) || `评分项 ${index + 1}`
+    const criteria = findCriteriaItem(result, title)
     const max = toNumber(item.max) ?? 0
     const score = toNumber(item.score)
     const status = toText(item.status) || (score == null ? 'manual_review' : 'scored')
+    const scoreCategory = inferScoreCategory(
+      title,
+      toText(item.category) || toText(criteria?.category)
+    )
     return {
       id: `score-${index}`,
       item: title,
@@ -546,7 +559,10 @@ function buildScoringItems(result?: AuditResult | null): TenderScoringItem[] {
       score,
       status,
       basis: toText(item.basis) || result?.explanation || '暂无判定依据。',
-      category: inferCategory(title),
+      category: inferReviewCategory(title, scoreCategory),
+      scoreCategory,
+      scoreMode: toText(item.score_mode) || toText(criteria?.score_mode) || undefined,
+      evidence: buildScoringEvidence(item, result, title),
     }
   })
 }
@@ -594,6 +610,7 @@ function toScoreIssue(item: TenderScoringItem): TenderScoreIssue {
     status: item.status,
     deduction,
     basis: item.basis,
+    scoreCategory: item.scoreCategory,
   }
 }
 
@@ -607,31 +624,247 @@ function findCriteriaItem(result: AuditResult | null | undefined, title: string)
   return items.filter(isRecord).find((item) => toText(item.item) === title)
 }
 
+function normalizeResultDetails(
+  resultDetails: AuditResult[],
+  selectedResult?: AuditResult | null
+) {
+  const results = [...resultDetails, selectedResult].filter(
+    (item): item is AuditResult => Boolean(item)
+  )
+  const byKey = new Map<string, AuditResult>()
+  results.forEach((result, index) => {
+    const key =
+      toText(result.claim_id) ||
+      toText(result.request_id) ||
+      toText(result.task_id) ||
+      `result-${index}`
+    if (!byKey.has(key)) byKey.set(key, result)
+  })
+  return [...byKey.values()]
+}
+
+function buildCompareScoreRows(
+  results: AuditResult[],
+  bidders: ReviewBidder[]
+): TenderCompareScoreRow[] {
+  if (bidders.length < 2 || results.length === 0) return []
+
+  const resultByClaim = new Map(
+    results
+      .map((result) => [toText(result.claim_id), result] as const)
+      .filter(([claimId]) => claimId)
+  )
+  const orderedResults = bidders.map(
+    (bidder, index) =>
+      resultByClaim.get(bidder.id) ??
+      resultByClaim.get(bidder.name) ??
+      results[index] ??
+      null
+  )
+  const itemOrder: string[] = []
+  const itemsByResult = orderedResults.map((result) => {
+    const items = result ? buildScoringItems(result) : []
+    const map = new Map<string, TenderScoringItem>()
+    items.forEach((item) => {
+      if (!itemOrder.includes(item.item)) itemOrder.push(item.item)
+      map.set(item.item, item)
+    })
+    return map
+  })
+
+  return itemOrder
+    .map((itemName, rowIndex) => {
+      const firstItem = itemsByResult
+        .map((items) => items.get(itemName))
+        .find((item): item is TenderScoringItem => Boolean(item))
+      const max = firstItem?.max ?? 0
+      const scoreCategory =
+        firstItem?.scoreCategory ?? inferScoreCategory(itemName, '')
+
+      return {
+        id: `compare-score-${rowIndex}`,
+        item: itemName,
+        max,
+        scoreCategory,
+        cells: bidders.map((bidder, bidderIndex) => {
+          const item = itemsByResult[bidderIndex]?.get(itemName)
+          const score = item?.score ?? null
+          return {
+            bidderId: bidder.id,
+            bidderName: bidder.name,
+            max: item?.max ?? max,
+            score,
+            status: item?.status ?? 'manual_review',
+            deduction:
+              score == null
+                ? null
+                : roundScore(Math.max(0, (item?.max ?? max) - score)),
+            basis: item?.basis ?? '该投标人暂无该评分项明细。',
+            evidence: item?.evidence ?? [],
+          }
+        }),
+      }
+    })
+    .filter((row) =>
+      row.cells.some((cell) => cell.score != null || cell.basis.trim())
+    )
+}
+
+function buildScoringEvidence(
+  raw: UnknownRecord,
+  result: AuditResult | null | undefined,
+  itemTitle: string
+): TenderScoreEvidence[] {
+  const evidence: TenderScoreEvidence[] = []
+  const addEvidence = (item: TenderScoreEvidence) => {
+    const normalized = {
+      source: item.source?.trim(),
+      quote: item.quote?.trim(),
+      finding: item.finding?.trim(),
+      conclusion: item.conclusion?.trim(),
+      condition: item.condition?.trim(),
+      points: item.points ?? null,
+    }
+    if (
+      !normalized.source &&
+      !normalized.quote &&
+      !normalized.finding &&
+      !normalized.conclusion &&
+      !normalized.condition
+    ) {
+      return
+    }
+    const key = JSON.stringify(normalized)
+    if (!evidence.some((existing) => JSON.stringify(existing) === key)) {
+      evidence.push(normalized)
+    }
+  }
+
+  for (const hit of [
+    ...(parseScoreHits(raw.deduction_hits) ?? []),
+    ...(parseScoreHits(raw.award_hits) ?? []),
+  ]) {
+    addEvidence({
+      source: hit.source,
+      quote: hit.quote,
+      condition: hit.condition,
+      points: hit.points,
+    })
+  }
+
+  const selectedBand = isRecord(raw.selected_band) ? raw.selected_band : null
+  if (selectedBand) {
+    addEvidence({
+      condition: toText(selectedBand.level),
+      finding: toText(selectedBand.reason),
+      points: toNumber(selectedBand.points),
+    })
+  }
+
+  const directEvidence = isRecord(raw.evidence) ? raw.evidence : null
+  if (directEvidence) {
+    addEvidence({
+      source: toText(directEvidence.source),
+      quote: toText(directEvidence.quote),
+      finding: toText(directEvidence.finding),
+      conclusion: toText(directEvidence.conclusion),
+    })
+  }
+
+  if (evidence.length > 0) return evidence
+
+  const chain = result?.evidence_chain ?? []
+  const relevant = chain.filter((item) =>
+    `${item.source ?? ''} ${item.finding ?? ''} ${item.conclusion ?? ''}`.includes(
+      itemTitle
+    )
+  )
+  const fallback = relevant.length ? relevant : chain.slice(0, 2)
+  fallback.forEach((item) =>
+    addEvidence({
+      source: item.source,
+      finding: item.finding,
+      conclusion: item.conclusion,
+    })
+  )
+  return evidence
+}
+
 function getResultTotalScore(result?: AuditResult | null) {
   return roundScore(
     getScoringItems(result).reduce((sum, item) => sum + (toNumber(item.score) ?? 0), 0)
   )
 }
 
-function inferCategory(title: string): ReviewCategory {
-  if (title.includes('资格') || title.includes('资质')) return 'qual'
+function inferReviewCategory(
+  title: string,
+  scoreCategory: TenderScoreCategory
+): ReviewCategory {
+  if (scoreCategory === 'technical') return 'tech'
+  if (title.includes('资格审查') || title.includes('符合性审查')) return 'qual'
+  return 'comm'
+}
+
+function inferScoreCategory(
+  title: string,
+  rawCategory?: string
+): TenderScoreCategory {
+  const category = rawCategory?.trim() ?? ''
   if (
-    title.includes('报价') ||
-    title.includes('价格') ||
-    title.includes('商务') ||
-    title.includes('财务') ||
-    title.includes('信誉') ||
-    title.includes('业绩')
+    category.includes('技术') ||
+    category.toLowerCase().includes('technical')
   ) {
-    return 'comm'
+    return 'technical'
   }
-  return 'tech'
+  if (
+    category.includes('商务') ||
+    category.includes('报价') ||
+    category.includes('价格') ||
+    category.toLowerCase().includes('business') ||
+    category.toLowerCase().includes('commercial')
+  ) {
+    return 'business'
+  }
+  const normalized = title
+  if (
+    normalized.includes('技术') ||
+    normalized.includes('方案') ||
+    normalized.includes('参数') ||
+    normalized.includes('实施') ||
+    normalized.includes('培训') ||
+    normalized.includes('售后') ||
+    normalized.includes('服务') ||
+    normalized.includes('质量') ||
+    normalized.includes('进度') ||
+    normalized.toLowerCase().includes('technical')
+  ) {
+    return 'technical'
+  }
+  if (
+    normalized.includes('报价') ||
+    normalized.includes('价格') ||
+    normalized.includes('商务') ||
+    normalized.includes('财务') ||
+    normalized.includes('信誉') ||
+    normalized.includes('信用') ||
+    normalized.includes('业绩') ||
+    normalized.includes('企业') ||
+    normalized.includes('资质') ||
+    normalized.includes('资格') ||
+    normalized.includes('负责人') ||
+    normalized.includes('项目经理') ||
+    normalized.toLowerCase().includes('business') ||
+    normalized.toLowerCase().includes('commercial')
+  ) {
+    return 'business'
+  }
+  return 'technical'
 }
 
 function getCategoryLabel(category: ReviewCategory) {
   if (category === 'qual') return '资格审查'
-  if (category === 'tech') return '技术评分'
-  return '商务·信誉'
+  if (category === 'tech') return '技术标'
+  return '商务标'
 }
 
 function getScoringStatus(status: string, score: number | null): ReviewItem['status'] {
@@ -650,7 +883,7 @@ function getVerdictStatus(verdict?: string): ReviewItem['status'] {
 function getVerdictLabel(verdict?: string) {
   if (verdict === 'approved') return '审核通过'
   if (verdict === 'rejected') return '不通过'
-  if (verdict === 'manual_review') return '待人工复核'
+  if (verdict === 'manual_review') return '需复核'
   return '等待评审结果'
 }
 
@@ -704,11 +937,51 @@ function normalizeDisplayList(value: unknown): string[] {
   return value.map(toDisplayText).filter(Boolean)
 }
 
+function normalizePolicyRefs(result?: AuditResult | null): TenderPolicyRef[] {
+  const refs = Array.isArray(result?.policy_refs_detail)
+    ? result?.policy_refs_detail
+    : result?.policy_refs
+  if (!Array.isArray(refs)) return []
+  return refs
+    .map((ref) => {
+      if (typeof ref === 'string') {
+        const id = ref.trim()
+        return id ? { id } : null
+      }
+      if (!isRecord(ref)) return null
+      const id =
+        toText(ref.rule_id) ||
+        toText(ref.id) ||
+        toText(ref.code) ||
+        toText(ref.name)
+      const name = toText(ref.name)
+      const sourceText =
+        toText(ref.source_text) ||
+        toText(ref.sourceText) ||
+        toText(ref.description) ||
+        toText(ref.message)
+      if (!id && !name && !sourceText) return null
+      return {
+        id: id || name || sourceText.slice(0, 24),
+        name: name || undefined,
+        sourceText: sourceText || undefined,
+      }
+    })
+    .filter((ref): ref is TenderPolicyRef => Boolean(ref))
+}
+
 function toDisplayText(value: unknown): string {
   if (typeof value === 'string') return value.trim()
   if (isRecord(value)) {
     const desc = String(
-      value.description ?? value.message ?? value.reason ?? value.code ?? ''
+      value.description ??
+        value.message ??
+        value.reason ??
+        value.name ??
+        value.source_text ??
+        value.rule_id ??
+        value.code ??
+        ''
     ).trim()
     const severity = String(value.severity ?? '').trim()
     if (severity && desc) return `[${severity}] ${desc}`

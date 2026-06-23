@@ -1,6 +1,7 @@
 import { ArrowLeft, Printer } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import { ScoringDetailTable } from './scoring-detail-table'
 import type { TenderReviewMockData } from '../types'
 
 type ReportViewProps = {
@@ -120,14 +121,19 @@ function ResultSection({ data }: { data: TenderReviewMockData }) {
             {policyRefs.length > 0 ? (
               <div className='mt-4'>
                 <div className='text-sm font-semibold'>法定依据</div>
-                <div className='mt-2 flex flex-wrap gap-2'>
+                <div className='mt-2 space-y-2'>
                   {policyRefs.map((ref, index) => (
-                    <span
-                      key={`${index}-${ref}`}
-                      className='rounded-md bg-muted px-2 py-1 font-mono text-xs text-muted-foreground'
-                    >
-                      {ref}
-                    </span>
+                    <div key={`${index}-${ref.id}`} className='rounded-md bg-muted p-2'>
+                      <div className='font-mono text-xs font-semibold text-foreground'>
+                        {ref.id}
+                        {ref.name ? ` · ${ref.name}` : ''}
+                      </div>
+                      {ref.sourceText ? (
+                        <div className='mt-1 text-xs leading-5 text-muted-foreground'>
+                          {ref.sourceText}
+                        </div>
+                      ) : null}
+                    </div>
                   ))}
                 </div>
               </div>
@@ -152,7 +158,7 @@ function ScoreSummaryCard({ data }: { data: TenderReviewMockData }) {
         <ScoreMetric label='满分合计' value={formatScore(summary.maxTotal)} />
         <ScoreMetric label='实得合计' value={formatScore(summary.earnedTotal)} />
         <ScoreMetric label='扣分/未得分' value={`${deductedCount} 项`} />
-        <ScoreMetric label='待人工输入' value={`${summary.pendingItems.length} 项`} />
+        <ScoreMetric label='未计分项' value={`${summary.pendingItems.length} 项`} />
       </div>
       {!hasScoring ? (
         <div className='mt-3 rounded-md border border-dashed p-2 text-xs text-muted-foreground'>
@@ -160,7 +166,7 @@ function ScoreSummaryCard({ data }: { data: TenderReviewMockData }) {
         </div>
       ) : data.resultVerdict === 'rejected' ? (
         <div className='mt-3 rounded-md bg-red-50 p-2 text-xs leading-5 text-red-700'>
-          废标时实得分为 0；下方展示废标项及判定依据。
+          废标时实得分为 0；下方展示否决依据及判定说明。
         </div>
       ) : null}
     </aside>
@@ -179,50 +185,12 @@ function ScoreMetric({ label, value }: { label: string; value: string }) {
 function ScoringDetailSection({ data }: { data: TenderReviewMockData }) {
   const items = data.scoringItems ?? []
   if (items.length === 0) return null
-  const rejected = data.resultVerdict === 'rejected'
 
   return (
     <section className='mt-8'>
-      <ReportTitle>{rejected ? '废标项明细' : '逐项评分明细'}</ReportTitle>
-      <div className='mt-4 overflow-x-auto rounded-lg border'>
-        <div className='min-w-[720px]'>
-          <div className='grid grid-cols-[1.2fr_72px_72px_96px_1.4fr] border-b bg-muted/40 text-xs font-semibold text-muted-foreground'>
-            <div className='p-3'>评分项</div>
-            <div className='p-3 text-center'>满分</div>
-            <div className='p-3 text-center'>实得</div>
-            <div className='p-3 text-center'>扣分</div>
-            <div className='p-3'>判定依据</div>
-          </div>
-          {items.map((item, index) => {
-            const deduction =
-              item.score == null ? null : Math.max(0, item.max - item.score)
-            return (
-              <div
-                key={item.id}
-                className={`grid grid-cols-[1.2fr_72px_72px_96px_1.4fr] border-b last:border-b-0 ${
-                  index % 2 ? 'bg-muted/20' : ''
-                }`}
-              >
-                <div className='p-3 text-sm font-medium'>{item.item}</div>
-                <div className='p-3 text-center text-sm text-muted-foreground'>
-                  {formatScore(item.max)}
-                </div>
-                <div className='p-3 text-center text-sm font-semibold'>
-                  {item.score == null ? '待判定' : formatScore(item.score)}
-                </div>
-                <div className='p-3 text-center text-sm text-muted-foreground'>
-                  {deduction == null ? '待人工' : formatScore(deduction)}
-                </div>
-                <div className='p-3 text-sm leading-6 text-muted-foreground'>
-                  <span className='font-medium text-foreground'>
-                    {getScoringStatusLabel(item.status)}
-                  </span>
-                  {item.basis ? ` · ${item.basis}` : ''}
-                </div>
-              </div>
-            )
-          })}
-        </div>
+      <ReportTitle>评标项目明细</ReportTitle>
+      <div className='mt-4'>
+        <ScoringDetailTable items={items} title='' />
       </div>
     </section>
   )
@@ -460,15 +428,8 @@ const emptyScoreSummary = {
 function getVerdictLabel(verdict: TenderReviewMockData['resultVerdict']) {
   if (verdict === 'approved') return '通过'
   if (verdict === 'rejected') return '废标'
-  if (verdict === 'manual_review') return '待人工复核'
+  if (verdict === 'manual_review') return '需复核'
   return '未出结论'
-}
-
-function getScoringStatusLabel(status: string) {
-  if (status === 'scored') return '已评分'
-  if (status === 'manual_review') return '待人工/外部输入'
-  if (status === 'rejected') return '未得分'
-  return status || '未标注'
 }
 
 function formatScore(score: number) {
