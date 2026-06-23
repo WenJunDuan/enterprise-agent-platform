@@ -86,7 +86,7 @@ function CompactScoringRows({ items }: { items: TenderScoringItem[] }) {
   return (
     <div className='overflow-x-auto'>
       <div className='min-w-[620px]'>
-        <div className='grid grid-cols-[minmax(140px,1.2fr)_56px_56px_68px_minmax(220px,1.6fr)] border-b px-3 py-2 text-xs font-semibold text-muted-foreground'>
+        <div className='grid h-10 grid-cols-[minmax(140px,1.2fr)_56px_56px_68px_minmax(220px,1.6fr)] items-center border-b px-3 text-xs font-semibold text-muted-foreground'>
           <div>评标项目</div>
           <div className='text-center'>得分</div>
           <div className='text-center'>满分</div>
@@ -97,11 +97,13 @@ function CompactScoringRows({ items }: { items: TenderScoringItem[] }) {
           <div
             key={item.id}
             className={cn(
-              'grid grid-cols-[minmax(140px,1.2fr)_56px_56px_68px_minmax(220px,1.6fr)] px-3 py-2 text-xs',
+              'grid h-[72px] grid-cols-[minmax(140px,1.2fr)_56px_56px_68px_minmax(220px,1.6fr)] items-center px-3 text-xs',
               index % 2 ? 'bg-muted/20' : ''
             )}
           >
-            <div className='font-medium text-foreground'>{item.item}</div>
+            <div className='line-clamp-2 pr-2 font-medium text-foreground'>
+              {item.item}
+            </div>
             <div className='text-center font-semibold'>
               {formatNullableScore(item.score)}
             </div>
@@ -111,7 +113,9 @@ function CompactScoringRows({ items }: { items: TenderScoringItem[] }) {
             <div className='text-center text-muted-foreground'>
               {getStatusLabel(item.status)}
             </div>
-            <div className='leading-5 text-muted-foreground'>{item.basis || '—'}</div>
+            <div className='line-clamp-2 leading-5 text-muted-foreground'>
+              {item.basis || '—'}
+            </div>
           </div>
         ))}
       </div>

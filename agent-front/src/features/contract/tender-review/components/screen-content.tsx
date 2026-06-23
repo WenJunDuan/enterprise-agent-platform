@@ -92,7 +92,7 @@ export function ScreenContent({ page }: { page: TenderReviewPageState }) {
           onBidder={page.setSelectedBidderId}
           onActiveItem={page.setActiveItemId}
           onHistory={() => page.openHistory()}
-          onReport={page.openReport}
+          onReport={() => page.openReport()}
         />
       )
     case 'report':

@@ -1,3 +1,4 @@
+import { useSearch } from '@tanstack/react-router'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
 import { PageHeading } from './components/page-heading'
@@ -39,5 +40,9 @@ export function TenderReviewHistoryPage() {
 }
 
 export function TenderReviewDetailPage() {
-  return <TenderReviewPage initialScreen='analysis' />
+  const detailView = useSearch({
+    from: '/_authenticated/contracts/tender/detail',
+    select: (search) => search.view,
+  })
+  return <TenderReviewPage initialScreen={detailView === 'report' ? 'report' : 'analysis'} />
 }

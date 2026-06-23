@@ -75,7 +75,8 @@ function writeActiveEval(value: ActiveEval | null): void {
 
 function readSelectedProjectId(): string | null {
   try {
-    return localStorage.getItem(SELECTED_PROJECT_KEY)
+    const projectId = localStorage.getItem(SELECTED_PROJECT_KEY)?.trim() ?? ''
+    return projectId && projectId !== '[object Object]' ? projectId : null
   } catch {
     return null
   }
@@ -126,15 +127,18 @@ export function useTenderReviewPage(
 ) {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
-  // 恢复：mount 时若 localStorage 有进行中评标 → 直接进 analyzing 继续流式（lazy init 免 effect）。
+  const [activeEvalSnapshot] = useState<ActiveEval | null>(readActiveEval)
+  const resumableActiveEval =
+    initialScreen === 'report' ? null : activeEvalSnapshot
+  // 恢复：mount 时若 localStorage 有进行中评标 → 直接进 analyzing；报告页不抢占。
   const [screen, setScreen] = useState<TenderReviewScreen>(() =>
-    readActiveEval() ? 'analyzing' : initialScreen
+    resumableActiveEval ? 'analyzing' : initialScreen
   )
   const [reviewMode, setReviewMode] = useState<TenderReviewMode>('detail')
   const [category, setCategory] = useState<ReviewCategory>('qual')
   // 恢复：若 localStorage 有进行中评标，selectedProjectId 直接指向该项目（不落到列表[0]，codex r5 P1）。
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
-    () => readActiveEval()?.projectId ?? readSelectedProjectId()
+    () => resumableActiveEval?.projectId ?? readSelectedProjectId()
   )
   const [selectedBidderId, setSelectedBidderId] = useState('')
   const [activeItemId, setActiveItemId] = useState('result-summary')
@@ -144,7 +148,8 @@ export function useTenderReviewPage(
   // 思考流式：按 request_id 存各投标人评标进度，避免多 bidder 并发覆盖（codex r4 P1）。
   const [progressByRid, setProgressByRid] = useState<Record<string, string>>({})
   // 长任务解耦（第5轮）：进行中评标（持久化），可离开/回来恢复、不阻塞、不超时掉回。
-  const [activeEval, setActiveEvalState] = useState<ActiveEval | null>(readActiveEval)
+  const [activeEval, setActiveEvalState] =
+    useState<ActiveEval | null>(() => activeEvalSnapshot)
   const setActiveEval = (value: ActiveEval | null) => {
     setActiveEvalState(value)
     writeActiveEval(value)
@@ -455,11 +460,16 @@ export function useTenderReviewPage(
       setActiveEval(null)
       setProgress(100)
       if (hasCompare) void triggerTenderCompare(projectId).catch(() => {})
-      setReviewMode(hasCompare ? 'compare' : 'detail')
-      setScreen('analysis')
-      void navigate({ to: '/contracts/tender/detail' })
       void queryClient.invalidateQueries({ queryKey: ['tender-project', projectId] })
       void queryClient.invalidateQueries({ queryKey: ['tender-project-results', projectId] })
+      if (screen === 'analyzing') {
+        setReviewMode(hasCompare ? 'compare' : 'detail')
+        setScreen('analysis')
+        void navigate({
+          to: '/contracts/tender/detail',
+          search: { view: 'analysis' },
+        })
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeEvalQuery.data])
@@ -481,7 +491,10 @@ export function useTenderReviewPage(
     if (projectId) selectProject(projectId)
     setReviewMode(mode)
     setScreen('analysis')
-    void navigate({ to: '/contracts/tender/detail' })
+    void navigate({
+      to: '/contracts/tender/detail',
+      search: { view: 'analysis' },
+    })
   }
 
   function openHistory() {
@@ -521,7 +534,10 @@ export function useTenderReviewPage(
         })
         setReviewMode(bids.length >= 2 ? 'compare' : 'detail')
         setScreen('analyzing')
-        void navigate({ to: '/contracts/tender/detail' })
+        void navigate({
+          to: '/contracts/tender/detail',
+          search: { view: 'analysis' },
+        })
         return
       }
     } catch {
@@ -530,10 +546,18 @@ export function useTenderReviewPage(
     openAnalysis('detail', projectId)
   }
 
-  function openReport(projectId = selectedProjectIdForQuery) {
-    if (projectId) selectProject(projectId)
+  function openReport(projectId?: string) {
+    const targetProjectId =
+      typeof projectId === 'string' && projectId.trim()
+        ? projectId
+        : selectedProjectIdForQuery
+    if (targetProjectId) selectProject(targetProjectId)
+    setSelectedBidderId('')
     setScreen('report')
-    void navigate({ to: '/contracts/tender/detail' })
+    void navigate({
+      to: '/contracts/tender/detail',
+      search: { view: 'report' },
+    })
   }
 
   /** A①: update a single field in the project creation form */
