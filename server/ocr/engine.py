@@ -46,7 +46,9 @@ OCR_SEAL_PIPELINE = os.getenv("OCR_SEAL_PIPELINE", "seal_recognition")
 # OCR_VL_SERVER_URL(=job url)/OCR_VL_API_KEY/OCR_VL_MODEL_NAME，换 litellm 只改 .env 这三行的值。
 OCR_CLOUD = os.getenv("OCR_CLOUD", "0").lower() in {"1", "true", "yes"}
 OCR_VL_CLOUD_POLL_INTERVAL = float(os.getenv("OCR_VL_CLOUD_POLL_INTERVAL", "5"))
-OCR_VL_CLOUD_MAX_WAIT = float(os.getenv("OCR_VL_CLOUD_MAX_WAIT", "600"))
+# 云 job 轮询总超时。默认 1200 对齐 TENDER_TIMEOUT_SEC——混合大标书整份/子集云 OCR 在云端排队时，
+# 旧默认 600 会误判超时（评标整体仍有 TENDER_TIMEOUT 兜底，audit 侧由 AUDIT_TIMEOUT_SEC 上限收口）。
+OCR_VL_CLOUD_MAX_WAIT = float(os.getenv("OCR_VL_CLOUD_MAX_WAIT", "1200"))
 
 
 def _make_ssl_context() -> ssl.SSLContext | None:

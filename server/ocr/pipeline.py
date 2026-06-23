@@ -11,6 +11,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from server.ocr import OcrDependencyError, OcrError
 from server.ocr import boq as boq_extract
 from server.ocr import cache as ocr_cache
 from server.ocr.classify import classify
@@ -38,7 +39,25 @@ _CLARITY_NOTE = {
 # P4：是否对 case 目录做确定性 OCR 预处理后注入模型上下文（=0 关闭，回落模型自己 Read）。
 OCR_PREPROCESS = os.getenv("OCR_PREPROCESS", "1").lower() in {"1", "true", "yes"}
 
-# 混合 PDF（数字页 + 扫描页）整份转云 OCR 的触发阈值。背景：classify 以文件级 fonts>0 判 native，
+
+def _env_int(name: str, default: int) -> int:
+    """防御解析整数 env：非法值（typo / 非数字）回退默认。模块级常量绝不能因坏 env 抛
+    ValueError——否则 `import server.ocr.pipeline` 失败会拖垮整个服务启动，而非只影响 OCR。"""
+    try:
+        return int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
+def _env_float(name: str, default: float) -> float:
+    """防御解析浮点 env：非法值回退默认（理由同 _env_int）。"""
+    try:
+        return float(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
+# 混合 PDF（数字页 + 扫描页）子集云 OCR 的触发阈值。背景：classify 以文件级 fonts>0 判 native，
 # 整份 PDF 只要有文本层就全判 native，其中扫描页经 pymupdf get_text 抽出空串被静默丢失（张謇
 # 400 页投标含 ~59 页扫描资质/业绩/职称证书 → 底稿缺据 → 技术/业绩/负责人评分只能 manual）。
 # 触发判据 = 计数为主 + 比例兜底：空白页**数量** ≥ MIN_COUNT（59 页绝对量是强信号，不该被
@@ -46,9 +65,9 @@ OCR_PREPROCESS = os.getenv("OCR_PREPROCESS", "1").lower() in {"1", "true", "yes"
 # 0.67 但 count 4<10）。仅对 classify 判定的 mixed_pdf 生效（纯数字 PDF 的空白页是真空页，无
 # 扫描内容可补）。两阈值均 env 可灰度。详见 .ai_state/sprints/2026-06-23-tender-ui-scoring-fixes/
 # per-page-ocr-plan.md「决策修正」。
-MAX_BLANK_CHARS = int(os.getenv("OCR_BLANK_PAGE_MIN_CHARS", "20"))
-OCR_BLANK_PAGE_MIN_COUNT = int(os.getenv("OCR_BLANK_PAGE_MIN_COUNT", "10"))
-OCR_BLANK_PAGE_RATIO = float(os.getenv("OCR_BLANK_PAGE_RATIO", "0.5"))
+MAX_BLANK_CHARS = _env_int("OCR_BLANK_PAGE_MIN_CHARS", 20)
+OCR_BLANK_PAGE_MIN_COUNT = _env_int("OCR_BLANK_PAGE_MIN_COUNT", 10)
+OCR_BLANK_PAGE_RATIO = _env_float("OCR_BLANK_PAGE_RATIO", 0.5)
 
 
 # OCR 文件级并行度：标书常十几个文件，扫描件走云 OCR 是 job-poll（IO 等待为主），串行会数分钟
@@ -144,25 +163,35 @@ def _augment_mixed_pdf_blocks(
     且只送扫描页（更省）、单 job（更快）、复用已验证的云文件提交路径（无新接口）。回填后页号仍
     取真实页（blocks 一页一项 → _render_body 按真实页打锚点），evidence 回查【第N页】不失准。
 
-    本地抽页失败（fitz 缺失/渲染错）→ 返回 None，调用方回退整份云 OCR（Layer 1）；云识别失败由
-    外层 per-file 隔离归 error（不在此重试整份，避免双倍云开销）。
+    返回 None → 调用方回退整份云 OCR（Layer 1），覆盖三种"子集路径不可靠"情形（与"无法抽页"
+    对称，最大化张謇出真分机会，整份云路径的页→内容映射由云直接给出，不依赖本函数 offset 假设）：
+    ① 本地抽页失败（fitz 缺失/渲染错，extract_pdf_subset→None）；
+    ② 子集云 OCR 失败（OcrError/OcrDependencyError，如 transient 网络/job 失败）；
+    ③ 云返回页数 ≠ 提交扫描页数（云端切页/合并与预期不符，按 offset 回填会错位）。
     """
     blocks = list(native.get("blocks", []))
     blank_indices = [i for i, b in enumerate(blocks) if len(str(b).strip()) < MAX_BLANK_CHARS]
     subset = extract_pdf_subset(path, blank_indices)
     if subset is None:
-        return None  # 本地抽页失败 → 回退整份云 OCR
+        return None  # ① 本地抽页失败 → 回退整份云 OCR
     try:
         ocr_pages = recognize(subset, purpose=purpose).get("pages", [])
+    except (OcrError, OcrDependencyError):
+        return None  # ② 子集云 OCR 失败 → 回退整份云 OCR（不在此抛，否则跳过 Layer 1 兜底）
     finally:
         try:
             subset.unlink()
         except OSError:
             pass
-    # OCR 结果按提交顺序对应 blank_indices；回填到真实页位（空文本不覆盖，保留原空白页跳过逻辑）。
+    if len(ocr_pages) != len(blank_indices):
+        return None  # ③ 页数不匹配 → 放弃按 offset 回填（会错位），回退整份云 OCR
+    # ocr_pages 按提交顺序对应 blank_indices，回填到**真实页位** blocks[blank_indices[offset]]。
+    # 注意：ocr_pages[*]["page_number"] 是**子集相对序号**(1..M)，非原始页号——真实页号由 blocks
+    # 下标经 _render_body 的 enumerate 给出，故此处只取 markdown，切勿用其 page_number 打锚点。
     for offset, true_idx in enumerate(blank_indices):
-        if offset < len(ocr_pages) and (text := (ocr_pages[offset].get("markdown") or "")).strip():
-            blocks[true_idx] = text
+        markdown = ocr_pages[offset].get("markdown") or ""
+        if markdown.strip():  # 空 OCR 文本不覆盖，保留原空白页跳过逻辑
+            blocks[true_idx] = markdown
     return {
         **route,
         **native,
