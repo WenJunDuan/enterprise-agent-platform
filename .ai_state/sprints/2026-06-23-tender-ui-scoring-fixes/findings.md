@@ -49,3 +49,17 @@
 - 项目 `tp-1de490325fe54594` bid `bd-860e703c9cf04d46`（OCR 已入库 SQLite，换模型复用免重 OCR）。
 - 跑法：`logs/tmp/run_eval.sh <model>` + `logs/tmp/pick_model.py <域名>`（非破坏 export 切模型）。
 - 服务起法：`env -u ANTHROPIC_* MODEL_BASE_URL/TOKEN/NAME=... nohup uv run python -m server.cli serve`。
+- 跑法脚本：`logs/tmp/run_eval.sh`（首评）/ `rerun_bid.sh`（提上限后重传重评）/ `pick_model.py`（切模型）。
+
+## 进展（2026-06-23 修复轮，commit d26d90d + OCR skill）
+
+| 项 | 归属 | 状态 |
+|---|---|---|
+| #8b 上传 256MiB | CC | ✅ commit d26d90d |
+| #3 底稿上限 600k | CC | ✅ 实测回查 71%→92%、unresolved 8→1（commit d26d90d）|
+| #6 policy_refs_detail enrich | CC | ✅ +3 测试，684 绿（commit d26d90d）|
+| ④ 禁 additive punt + 页码取底稿锚点 | CC | ✅ commit d26d90d（治技术参数 punt + page_mismatch）|
+| 前端 #1/#5/#7/#4 | codex | ✅ 已交 codex-handoff.md |
+| #8a OCR-as-skill | CC | 🟡 **能力件成**：`.claude/skills/ocr-page/{ocr.py,SKILL.md}` 已建+自测（投标第7页 OCR 通过）。**接进评标 agent 待做**：需 `can_use_tool` 回调把 Bash 限死只跑 `ocr.py`（评标 agent 处理可能含注入的投标 PDF + bypassPermissions，裸 Bash=RCE 风险），须对抗性验证。#3 已被提上限解决，#8a 降为架构改进，wiring 不紧急。|
+
+**下一步（CC）**：#8a wiring（受限 Bash 回调 + 引 SKILL 进 tender-evaluate.md S2/S3 + 对抗验证 + 全 e2e 重跑 3 模型确认 ④/#6 生效）。**待验**：deepseek/glm 在提上限+④后回查率/技术参数 punt 是否改善（v2 仅 qwen 重跑过）。
