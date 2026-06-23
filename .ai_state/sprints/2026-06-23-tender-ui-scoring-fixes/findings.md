@@ -62,4 +62,30 @@
 | 前端 #1/#5/#7/#4 | codex | ✅ 已交 codex-handoff.md |
 | #8a OCR-as-skill | CC | 🟡 **能力件成**：`.claude/skills/ocr-page/{ocr.py,SKILL.md}` 已建+自测（投标第7页 OCR 通过）。**接进评标 agent 待做**：需 `can_use_tool` 回调把 Bash 限死只跑 `ocr.py`（评标 agent 处理可能含注入的投标 PDF + bypassPermissions，裸 Bash=RCE 风险），须对抗性验证。#3 已被提上限解决，#8a 降为架构改进，wiring 不紧急。|
 
-**下一步（CC）**：#8a wiring（受限 Bash 回调 + 引 SKILL 进 tender-evaluate.md S2/S3 + 对抗验证 + 全 e2e 重跑 3 模型确认 ④/#6 生效）。**待验**：deepseek/glm 在提上限+④后回查率/技术参数 punt 是否改善（v2 仅 qwen 重跑过）。
+**下一步（CC）**：#8a wiring（受限 Bash 回调 + 引 SKILL 进 tender-evaluate.md S2/S3 + 对抗验证 + 全 e2e 重跑 3 模型确认 ④/#6 生效）。
+
+## fixed 重测（3 模型，带 #6/④ + 完整 600k 底稿，2026-06-23）
+
+| 模型 | scored/manual | 技术参数(25) | 价格分(30) | bid_price | #6 |
+|---|---|---|---|---|---|
+| qwen | 5/4 | manual | manual | 1,316,033.66 | ✅ |
+| deepseek | 7/2 | manual | manual | 1,316,033.66 | ✅ |
+| glm | 8/1 | **scored** | manual | 1,316,033.66 | ✅ |
+
+**验证结论**：
+- **#6 ✅ e2e 通过**——`policy_refs_detail` 三模型全显示法定原文（评标办法 001/003/004 规则名）。
+- **④ ✅ 按预期**——非"恶化"：模型不再无证据瞎打分，而是诚实 manual（v2 旧码给技术参数 21/25 是错的，证书读不到却给分）。qwen_fixed manual 项 basis 明写「证书扫描件 OCR 未能还原」。
+- **价格分** 三模型一致 manual（低价优先需≥2家横比，正确）；**bid_price 三模型完全一致 1,316,033.66**（价格抽取稳）。
+- **真瓶颈 = OCR 扫描证书页盲区**：投标 400 页中 **59 页（资质/业绩/职称/社保/检测报告全是扫描件）native 路由没走云 OCR→底稿空→技术参数/企业实力/负责人评分缺据**。qwen/deepseek 严谨→manual，glm 宽松→给分（不稳）。**这是评标拿不到全自动真分的唯一卡点。**
+
+## 当前 Sprint 剩余（2026-06-23-tender-ui-scoring-fixes）
+
+**CC 已完成并 push**（commit d26d90d/e4ff16b，origin 同步，684 绿）：#8b ✅ · #3 ✅(验证) · #6 ✅(e2e 验证) · ④ ✅(e2e 验证) · #8a OCR-skill 能力件 ✅(自测) · 3 模型 fixed dogfood ✅。
+
+**CC 剩余**：
+1. 🔴 **逐页 OCR 路由**（最高价值，张謇出真分的关键）：plan 经 workflow 产出中 → 待用户确认后实施（detect 空页→渲图→云 OCR→merge；代价 ~59 页云识别变慢，需 env 开关/灰度）。
+2. 🟡 **#8a OCR-skill wiring**（接进评标 agent，安全敏感需 can_use_tool 限死 Bash + 对抗验证）；逐页 OCR 路由落地后其价值降低（证书已进底稿），可降级/合并。
+
+**codex 侧（非 CC）**：前端 #1/#5/#7（渲染 scoring/分项表/分类聚合）+ #4（报告 500 复现），已交 codex-handoff.md。
+
+**永久剔除**：①招标人侧合规 MVP（用户定永久不做）。
