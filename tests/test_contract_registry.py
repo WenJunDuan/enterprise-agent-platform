@@ -143,6 +143,23 @@ def test_confirmed_disqualification_still_coerces_rejected():
     assert out["verdict"] == "rejected"
 
 
+def test_string_reasons_coerced_to_list_not_rejected():
+    """R-extra：模型把 reasons 写成多行编号字符串（deepseek 习惯）→ 拆成 string[] 满足契约，
+    不再整单校验失败重试（实测 deepseek_v2 因此重试至失败）。"""
+    out = apply_schema_semantics(
+        DEFAULT_OUTPUT_SCHEMA_NAME,
+        _valid_audit_result(
+            verdict="manual_review",
+            manual_review_reason="insufficient_evidence",
+            policy_refs=["tender_evalmethod_001"],
+            reasons="1. 全部废标规则逐一核查未发现确认废标\n2. 价格分需横比",
+        ),
+    )
+    assert isinstance(out["reasons"], list)
+    assert out["reasons"] == ["1. 全部废标规则逐一核查未发现确认废标", "2. 价格分需横比"]
+    assert out["verdict"] == "manual_review"
+
+
 def test_eligibility_fail_coerces_verdict_to_rejected():
     """R2：任一 eligibility_checks.status=fail（资格否决）→ verdict 强制 rejected。"""
     out = apply_schema_semantics(
