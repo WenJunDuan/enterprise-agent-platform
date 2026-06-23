@@ -1,0 +1,6 @@
+import { createFileRoute } from '@tanstack/react-router'
+import { TenderReviewDetailPage } from '@/features/contract/tender-review'
+
+export const Route = createFileRoute('/_authenticated/contracts/tender/detail')({
+  component: TenderReviewDetailPage,
+})

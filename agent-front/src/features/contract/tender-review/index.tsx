@@ -37,3 +37,7 @@ export function TenderReviewPage({
 export function TenderReviewHistoryPage() {
   return <TenderReviewPage initialScreen='history' />
 }
+
+export function TenderReviewDetailPage() {
+  return <TenderReviewPage initialScreen='analysis' />
+}

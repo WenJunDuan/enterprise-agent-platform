@@ -407,4 +407,151 @@ describe('contract tender review model', () => {
       '有效投标人数量为 2，建议复核竞争性。',
     ])
   })
+
+  test('buildTenderReviewData displays enterprise names instead of credit-code claim ids', () => {
+    const data = buildTenderReviewData({
+      project: {
+        project_id: 'project-credit-code',
+        tender_no: 'JSZC-2026-001',
+        title: '智慧园区采购项目',
+        tenderee: null,
+        method: '综合评估法',
+        control_price: '5000000',
+        funding_type: 'state_funded',
+        status: 'done',
+        created_at: '2026-06-20T02:30:00+00:00',
+        updated_at: '2026-06-20T06:30:00+00:00',
+        bidder_count: 2,
+        bids: [
+          {
+            request_id: 'req-a',
+            claim_id: '91320602MA1X9Y1234',
+            bidder_name: '投标人XH',
+            status: 'completed',
+            verdict: 'manual_review',
+          },
+          {
+            request_id: 'req-b',
+            claim_id: '91320602MA1X9Y5678',
+            bidder_name: '投标人YQ',
+            status: 'completed',
+            verdict: 'manual_review',
+          },
+        ],
+        recommended_bidder: null,
+        compare_stale: false,
+      },
+      resultSummaries: [
+        {
+          request_id: 'req-a',
+          claim_id: '91320602MA1X9Y1234',
+          bidder_name: '投标人XH',
+          verdict: 'manual_review',
+        },
+        {
+          request_id: 'req-b',
+          claim_id: '91320602MA1X9Y5678',
+          bidder_name: '投标人YQ',
+          verdict: 'manual_review',
+        },
+      ],
+      selectedResult: {
+        claim_id: '91320602MA1X9Y1234',
+        verdict: 'manual_review',
+        explanation: '需横比后确认价格分。',
+        extracted_data: {
+          bidder: {
+            name: '投标人XH',
+            credit_code: '91320602MA1X9Y1234',
+            legal_rep: '张三',
+          },
+          scoring: [
+            {
+              item: '企业实力',
+              max: 6,
+              score: 6,
+              status: 'scored',
+              basis: '企业资质证书齐全。',
+              evidence: {
+                source: '投标文件【第315页】',
+                quote: '企业资质证书齐全',
+              },
+            },
+          ],
+        },
+        evidence_chain: [
+          {
+            source: '投标文件【第315页】',
+            finding: '企业资质证书齐全。',
+            conclusion: '企业实力可得 6 分。',
+          },
+        ],
+      },
+      resultDetails: [
+        {
+          claim_id: '91320602MA1X9Y5678',
+          verdict: 'manual_review',
+          explanation: '需横比后确认价格分。',
+          extracted_data: {
+            bidder: {
+              name: '投标人YQ',
+              credit_code: '91320602MA1X9Y5678',
+              legal_rep: '李四',
+            },
+            scoring: [
+              {
+                item: '企业实力',
+                max: 6,
+                score: 5,
+                status: 'scored',
+                basis: '缺少 1 项证书。',
+              },
+            ],
+          },
+        },
+      ],
+      compare: {
+        project_id: 'project-credit-code',
+        result: {
+          project_id: 'project-credit-code',
+          bidders: [
+            {
+              claim_id: '91320602MA1X9Y1234',
+              price_score: 30,
+              other_score: 45,
+              total_score: 75,
+              rank: 1,
+              status: 'manual_review',
+            },
+            {
+              claim_id: '91320602MA1X9Y5678',
+              price_score: 29,
+              other_score: 44,
+              total_score: 73,
+              rank: 2,
+              status: 'manual_review',
+            },
+          ],
+          recommended: null,
+          provisional: true,
+          warnings: [],
+          policy_refs: [],
+        },
+        stale: false,
+      },
+    })
+
+    expect(data.reviewBidders.map((bidder) => bidder.name)).toEqual([
+      '投标人XH',
+      '投标人YQ',
+    ])
+    expect(
+      data.compareScoreRows
+        ?.find((row) => row.item === '企业实力')
+        ?.cells.map((cell) => cell.bidderName)
+    ).toEqual(['投标人XH', '投标人YQ'])
+    expect(data.paragraphs[0]).toMatchObject({
+      label: '投标文件【第315页】',
+    })
+  })
 })

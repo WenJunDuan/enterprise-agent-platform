@@ -46,7 +46,7 @@ export function AnalysisWorkbenchView(props: AnalysisWorkbenchViewProps) {
                 className='hover:text-primary'
                 onClick={props.onHistory}
               >
-                历史评审
+                评审列表
               </button>
               <span>›</span>
               <span className='text-foreground'>{viewLabel}</span>
@@ -72,7 +72,7 @@ export function AnalysisWorkbenchView(props: AnalysisWorkbenchViewProps) {
             </div>
             <Button size='sm' onClick={props.onReport}>
               <Printer className='size-4' />
-              生成报告
+              查看报告
             </Button>
           </div>
         </div>
@@ -198,12 +198,12 @@ function DetailWorkbench(props: AnalysisWorkbenchViewProps) {
             </div>
           </div>
           {props.data.resultVerdict !== 'rejected' ? (
-            <Badge className='mt-3 bg-emerald-100 text-emerald-700 hover:bg-emerald-100'>
+            <Badge className='mt-3 bg-emerald-100 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-950/50 dark:text-emerald-300'>
               <Award className='size-3' />
               排名第 {selectedBidder.rank} / {props.data.reviewBidders.length}
             </Badge>
           ) : (
-            <Badge className='mt-3 bg-red-100 text-red-700 hover:bg-red-100'>
+            <Badge className='mt-3 bg-red-100 text-red-700 hover:bg-red-100 dark:bg-red-950/50 dark:text-red-300'>
               整标废标
             </Badge>
           )}
@@ -280,16 +280,16 @@ function DetailWorkbench(props: AnalysisWorkbenchViewProps) {
               <div
                 key={paragraph.loc}
                 className={cn(
-                  'rounded-lg border-l-4 bg-card p-4 text-sm shadow-sm',
-                  active
-                    ? 'border-l-amber-500 bg-amber-50'
+                'rounded-lg border-l-4 bg-card p-4 text-sm shadow-sm',
+                active
+                    ? 'border-l-amber-500 bg-amber-50 dark:bg-amber-950/30'
                     : 'border-l-transparent'
                 )}
               >
                 <div
                   className={cn(
                     'mb-1 text-xs font-bold',
-                    active ? 'text-amber-700' : 'text-muted-foreground'
+                    active ? 'text-amber-700 dark:text-amber-300' : 'text-muted-foreground'
                   )}
                 >
                   {paragraph.label}
@@ -330,7 +330,7 @@ function ReviewItemCard({
     >
       <span
         className={cn(
-          'flex size-7 shrink-0 items-center justify-center rounded-lg text-xs font-semibold',
+        'flex size-7 shrink-0 items-center justify-center rounded-lg text-xs font-semibold',
           active ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
         )}
       >
@@ -368,7 +368,7 @@ function ReviewItemCard({
           </span>
         ) : null}
         {item.manualReviewReason ? (
-          <span className='mt-2 inline-flex w-fit items-center gap-1 rounded bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700'>
+          <span className='mt-2 inline-flex w-fit items-center gap-1 rounded bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-950/40 dark:text-amber-300'>
             {manualReviewReasonLabel(item.manualReviewReason)}
           </span>
         ) : null}
@@ -422,7 +422,9 @@ function ScoreHitRow({ hit, sign }: { hit: ScoreHit; sign: 'deduct' | 'award' })
           <b
             className={cn(
               'shrink-0',
-              sign === 'deduct' ? 'text-red-600' : 'text-emerald-600'
+              sign === 'deduct'
+                ? 'text-red-600 dark:text-red-300'
+                : 'text-emerald-600 dark:text-emerald-300'
             )}
           >
             {ptsLabel}
@@ -463,25 +465,25 @@ function getItemBadge(item: ReviewItem) {
   if (item.status === 'warning') {
     return {
       label: '待核查',
-      className: 'bg-amber-100 text-amber-700',
+      className: 'bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300',
     }
   }
   if (item.status === 'fail') {
     return {
       label: '不通过',
-      className: 'bg-red-100 text-red-700',
+      className: 'bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-300',
     }
   }
   if (item.status === 'pass') {
     return {
       label: '通过',
-      className: 'bg-emerald-100 text-emerald-700',
+      className: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300',
     }
   }
 
   return {
     label: `${item.got} / ${item.max} 分`,
-    className: 'bg-blue-100 text-blue-700',
+    className: 'bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300',
   }
 }
 
@@ -504,7 +506,8 @@ function CompareWorkbench({ data }: { data: TenderReviewMockData }) {
               key={bidder.id}
               className={cn(
                 'relative overflow-hidden rounded-xl border bg-card p-4 shadow-sm',
-                winner && 'border-emerald-200 shadow-emerald-100'
+                winner &&
+                  'border-emerald-200 shadow-emerald-100 dark:border-emerald-900 dark:shadow-none'
               )}
             >
               <div
@@ -518,7 +521,8 @@ function CompareWorkbench({ data }: { data: TenderReviewMockData }) {
                   className={cn(
                     winner
                       ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-100'
-                      : 'bg-muted text-muted-foreground hover:bg-muted'
+                      : 'bg-muted text-muted-foreground hover:bg-muted',
+                    winner && 'dark:bg-emerald-950/50 dark:text-emerald-300'
                   )}
                 >
                   第 {bidder.rank} 名
@@ -530,11 +534,11 @@ function CompareWorkbench({ data }: { data: TenderReviewMockData }) {
               <div className='mt-3 line-clamp-2 min-h-10 text-sm font-semibold'>
                 {bidder.name}
               </div>
-              <div className='mt-2 flex items-baseline gap-1'>
+      <div className='mt-2 flex items-baseline gap-1'>
                 <span
                   className={cn(
                     'text-3xl font-semibold tracking-tight',
-                    winner && 'text-emerald-700'
+                    winner && 'text-emerald-700 dark:text-emerald-300'
                   )}
                 >
                   {bidder.total}
@@ -617,7 +621,8 @@ function CompareTable({ data }: { data: TenderReviewMockData }) {
                   <span
                     className={cn(
                       'text-sm font-medium',
-                      value === max && 'font-semibold text-emerald-700'
+                      value === max &&
+                        'font-semibold text-emerald-700 dark:text-emerald-300'
                     )}
                   >
                     {value}
@@ -638,7 +643,7 @@ function CompareTable({ data }: { data: TenderReviewMockData }) {
             </div>
           )
         })}
-        <div className='grid bg-blue-50 font-semibold' style={gridStyle}>
+        <div className='grid bg-primary/10 font-semibold' style={gridStyle}>
           <div className='px-5 py-4'>综合总分</div>
           {data.reviewBidders.map((bidder) => (
             <div key={bidder.id} className='px-3 py-4 text-center text-primary'>

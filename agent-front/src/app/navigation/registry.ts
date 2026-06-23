@@ -17,12 +17,17 @@ const STATIC_BREADCRUMBS: Record<string, BreadcrumbConfig[]> = {
     { label: '新建报销审核' },
   ],
   '/ocr': [{ label: '智能 OCR' }, { label: 'OCR 识别' }],
-  '/contracts': [{ label: '智能招投标审核' }, { label: '项目管理' }],
-  '/contracts/tender-review': [
+  '/contracts': [{ label: '智能招投标审核' }, { label: '评审列表' }],
+  '/contracts/tender/list': [
     { label: '智能招投标审核' },
-    { label: '项目管理' },
+    { label: '评审列表' },
   ],
-  '/contracts/tender-review/history': [
+  '/contracts/tender/detail': [
+    { label: '智能招投标审核' },
+    { label: '评审列表', href: '/contracts/tender/list' },
+    { label: '分析中心' },
+  ],
+  '/contracts/tender/history': [
     { label: '智能招投标审核' },
     { label: '历史评审' },
   ],
@@ -47,13 +52,13 @@ const DOMAIN_NAV_GROUPS: Record<(typeof MENU_GROUP_ORDER)[number], NavItem[]> =
     ],
     智能招投标审核: [
       {
-        title: '项目管理',
-        url: '/contracts/tender-review',
+        title: '评审列表',
+        url: '/contracts/tender/list',
         icon: FileSearch,
       },
       {
         title: '历史评审',
-        url: '/contracts/tender-review/history',
+        url: '/contracts/tender/history',
         icon: History,
       },
     ],

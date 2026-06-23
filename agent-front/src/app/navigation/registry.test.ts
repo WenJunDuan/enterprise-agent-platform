@@ -33,12 +33,12 @@ describe('navigation registry', () => {
     )
 
     expect(tenderGroup?.items.map((item) => item.title)).toEqual([
-      '项目管理',
+      '评审列表',
       '历史评审',
     ])
     expect(tenderGroup?.items.map((item) => item.url)).toEqual([
-      '/contracts/tender-review',
-      '/contracts/tender-review/history',
+      '/contracts/tender/list',
+      '/contracts/tender/history',
     ])
   })
 
@@ -53,15 +53,20 @@ describe('navigation registry', () => {
   test('uses tender breadcrumbs for tender routes', () => {
     expect(getBreadcrumbsForPath('/contracts')).toEqual([
       { label: '智能招投标审核' },
-      { label: '项目管理' },
+      { label: '评审列表' },
     ])
-    expect(getBreadcrumbsForPath('/contracts/tender-review')).toEqual([
+    expect(getBreadcrumbsForPath('/contracts/tender/list')).toEqual([
       { label: '智能招投标审核' },
-      { label: '项目管理' },
+      { label: '评审列表' },
     ])
-    expect(getBreadcrumbsForPath('/contracts/tender-review/history')).toEqual([
+    expect(getBreadcrumbsForPath('/contracts/tender/history')).toEqual([
       { label: '智能招投标审核' },
       { label: '历史评审' },
+    ])
+    expect(getBreadcrumbsForPath('/contracts/tender/detail')).toEqual([
+      { label: '智能招投标审核' },
+      { label: '评审列表', href: '/contracts/tender/list' },
+      { label: '分析中心' },
     ])
   })
 

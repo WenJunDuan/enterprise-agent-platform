@@ -11,15 +11,15 @@ type ReportViewProps = {
 
 export function ReportView({ data, onBack }: ReportViewProps) {
   return (
-    <div className='rounded-xl bg-muted/60 p-4 md:p-8'>
-      <div className='mb-4 flex items-center justify-between gap-3'>
+    <div className='tender-report-shell rounded-xl bg-muted/60 p-4 md:p-8'>
+      <div className='tender-report-actions mb-4 flex items-center justify-between gap-3'>
         <div className='text-sm text-muted-foreground'>
           评标报告预览 · 可直接打印或导出 PDF
         </div>
         <div className='flex gap-2'>
           <Button type='button' variant='outline' size='sm' onClick={onBack}>
             <ArrowLeft className='size-4' />
-            返回对比
+            返回详情
           </Button>
           <Button type='button' size='sm' onClick={() => window.print()}>
             <Printer className='size-4' />
@@ -28,7 +28,7 @@ export function ReportView({ data, onBack }: ReportViewProps) {
         </div>
       </div>
 
-      <article className='rounded-md bg-background px-8 py-10 shadow-xl md:px-16 md:py-14'>
+      <article className='tender-report-paper rounded-md bg-background px-8 py-10 shadow-xl md:px-16 md:py-14'>
         <header className='border-b-2 border-foreground pb-6 text-center'>
           <div className='text-sm font-semibold tracking-wide text-primary'>
             交易大脑 · 智能招投标审核
@@ -81,66 +81,61 @@ function ResultSection({ data }: { data: TenderReviewMockData }) {
 
   return (
     <section className='mt-8'>
-      <div className='flex flex-col gap-4 md:flex-row md:items-start md:justify-between'>
-        <div className='min-w-0 flex-1'>
-          <ReportTitle>评标结论</ReportTitle>
-          <div className='mt-4 rounded-lg border p-4'>
-            <div className='flex flex-wrap items-center gap-2'>
-              <span
-                className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                  rejected
-                    ? 'bg-red-100 text-red-700'
-                    : data.resultVerdict === 'manual_review'
-                      ? 'bg-amber-100 text-amber-700'
-                      : 'bg-emerald-100 text-emerald-700'
-                }`}
-              >
-                {getVerdictLabel(data.resultVerdict)}
-              </span>
-              {rejected ? (
-                <span className='text-xs font-medium text-red-700'>
-                  整标废标，不进入有效投标评分排序
-                </span>
-              ) : null}
-            </div>
-            <p className='mt-3 text-sm leading-7 text-muted-foreground'>
-              {explanation}
-            </p>
-
-            {reasons.length > 0 ? (
-              <div className='mt-4'>
-                <div className='text-sm font-semibold'>审核理由</div>
-                <ul className='mt-2 space-y-1 text-sm leading-6 text-muted-foreground'>
-                  {reasons.map((reason, index) => (
-                    <li key={`${index}-${reason}`}>· {reason}</li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-
-            {policyRefs.length > 0 ? (
-              <div className='mt-4'>
-                <div className='text-sm font-semibold'>法定依据</div>
-                <div className='mt-2 space-y-2'>
-                  {policyRefs.map((ref, index) => (
-                    <div key={`${index}-${ref.id}`} className='rounded-md bg-muted p-2'>
-                      <div className='font-mono text-xs font-semibold text-foreground'>
-                        {ref.id}
-                        {ref.name ? ` · ${ref.name}` : ''}
-                      </div>
-                      {ref.sourceText ? (
-                        <div className='mt-1 text-xs leading-5 text-muted-foreground'>
-                          {ref.sourceText}
-                        </div>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-          </div>
+      <ReportTitle>评标结论</ReportTitle>
+      <div className='mt-4 rounded-lg border p-4'>
+        <div className='flex flex-wrap items-center gap-2'>
+          <span
+            className={`rounded-full px-3 py-1 text-xs font-semibold ${
+              rejected
+                ? 'bg-red-100 text-red-700'
+                : data.resultVerdict === 'manual_review'
+                  ? 'bg-amber-100 text-amber-700'
+                  : 'bg-emerald-100 text-emerald-700'
+            }`}
+          >
+            {getVerdictLabel(data.resultVerdict)}
+          </span>
+          {rejected ? (
+            <span className='text-xs font-medium text-red-700'>
+              整标废标，不进入有效投标评分排序
+            </span>
+          ) : null}
         </div>
-        <ScoreSummaryCard data={data} />
+        <p className='mt-3 text-sm leading-7 text-muted-foreground'>
+          {explanation}
+        </p>
+
+        {reasons.length > 0 ? (
+          <div className='mt-4'>
+            <div className='text-sm font-semibold'>审核理由</div>
+            <ul className='mt-2 space-y-1 text-sm leading-6 text-muted-foreground'>
+              {reasons.map((reason, index) => (
+                <li key={`${index}-${reason}`}>· {reason}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        {policyRefs.length > 0 ? (
+          <div className='mt-4'>
+            <div className='text-sm font-semibold'>法定依据</div>
+            <div className='mt-2 space-y-2'>
+              {policyRefs.map((ref, index) => (
+                <div key={`${index}-${ref.id}`} className='rounded-md bg-muted p-2'>
+                  <div className='font-mono text-xs font-semibold text-foreground'>
+                    {ref.id}
+                    {ref.name ? ` · ${ref.name}` : ''}
+                  </div>
+                  {ref.sourceText ? (
+                    <div className='mt-1 text-xs leading-5 text-muted-foreground'>
+                      {ref.sourceText}
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </div>
     </section>
   )
@@ -152,7 +147,7 @@ function ScoreSummaryCard({ data }: { data: TenderReviewMockData }) {
   const hasScoring = (data.scoringItems?.length ?? 0) > 0
 
   return (
-    <aside className='w-full rounded-lg border bg-muted/30 p-4 md:w-64 md:shrink-0'>
+    <div className='w-full rounded-lg border bg-muted/30 p-4'>
       <div className='text-sm font-semibold'>评分汇总</div>
       <div className='mt-3 grid grid-cols-2 gap-3'>
         <ScoreMetric label='满分合计' value={formatScore(summary.maxTotal)} />
@@ -169,7 +164,7 @@ function ScoreSummaryCard({ data }: { data: TenderReviewMockData }) {
           废标时实得分为 0；下方展示否决依据及判定说明。
         </div>
       ) : null}
-    </aside>
+    </div>
   )
 }
 
@@ -189,7 +184,8 @@ function ScoringDetailSection({ data }: { data: TenderReviewMockData }) {
   return (
     <section className='mt-8'>
       <ReportTitle>评标项目明细</ReportTitle>
-      <div className='mt-4'>
+      <div className='mt-4 space-y-4'>
+        <ScoreSummaryCard data={data} />
         <ScoringDetailTable items={items} title='' />
       </div>
     </section>

@@ -185,8 +185,8 @@ function HistoryRow({
         <StatusBadge status={item.status} />
       </div>
       <div className='flex justify-center gap-2 px-4 py-3'>
-        <HistoryAction label='分析中心' onClick={() => onAnalysis(item.id)} />
-        <HistoryAction label='审核报告' primary onClick={() => onReport(item.id)} />
+        <HistoryAction label='查看详情' onClick={() => onAnalysis(item.id)} />
+        <HistoryAction label='查看报告' primary onClick={() => onReport(item.id)} />
       </div>
     </div>
   )

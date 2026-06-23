@@ -5,6 +5,7 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query'
+import { useNavigate } from '@tanstack/react-router'
 import type { AuditResult } from '@/features/audit/types'
 import {
   createTenderProject,
@@ -42,6 +43,7 @@ import type {
 import type { ProjectFormData } from './components/create-review-view'
 
 const TENDER_PROJECTS_QUERY_KEY = ['tender-projects'] as const
+const SELECTED_PROJECT_KEY = 'tender-selected-project'
 
 // 长任务解耦（第5轮）：进行中评标持久化，可离开/回来恢复，不阻塞 mutation、不超时掉回。
 const ACTIVE_EVAL_KEY = 'tender-active-eval'
@@ -68,6 +70,23 @@ function writeActiveEval(value: ActiveEval | null): void {
     else localStorage.removeItem(ACTIVE_EVAL_KEY)
   } catch {
     // localStorage 不可用（隐私模式等）→ 退化为纯内存态，不阻断流程
+  }
+}
+
+function readSelectedProjectId(): string | null {
+  try {
+    return localStorage.getItem(SELECTED_PROJECT_KEY)
+  } catch {
+    return null
+  }
+}
+
+function writeSelectedProjectId(projectId: string | null): void {
+  try {
+    if (projectId) localStorage.setItem(SELECTED_PROJECT_KEY, projectId)
+    else localStorage.removeItem(SELECTED_PROJECT_KEY)
+  } catch {
+    // localStorage 不可用时只保留 React 内存态。
   }
 }
 
@@ -106,6 +125,7 @@ export function useTenderReviewPage(
   initialScreen: TenderReviewScreen = 'dashboard'
 ) {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   // 恢复：mount 时若 localStorage 有进行中评标 → 直接进 analyzing 继续流式（lazy init 免 effect）。
   const [screen, setScreen] = useState<TenderReviewScreen>(() =>
     readActiveEval() ? 'analyzing' : initialScreen
@@ -114,7 +134,7 @@ export function useTenderReviewPage(
   const [category, setCategory] = useState<ReviewCategory>('qual')
   // 恢复：若 localStorage 有进行中评标，selectedProjectId 直接指向该项目（不落到列表[0]，codex r5 P1）。
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
-    () => readActiveEval()?.projectId ?? null
+    () => readActiveEval()?.projectId ?? readSelectedProjectId()
   )
   const [selectedBidderId, setSelectedBidderId] = useState('')
   const [activeItemId, setActiveItemId] = useState('result-summary')
@@ -156,6 +176,11 @@ export function useTenderReviewPage(
   const [projectForm, setProjectForm] = useState<ProjectFormData>(
     createDefaultProjectForm
   )
+
+  function selectProject(projectId: string | null) {
+    setSelectedProjectId(projectId)
+    writeSelectedProjectId(projectId)
+  }
 
   const projectsQuery = useQuery({
     queryKey: TENDER_PROJECTS_QUERY_KEY,
@@ -371,7 +396,7 @@ export function useTenderReviewPage(
     mutationFn: submitReview,
     onSuccess: ({ projectId, requestIds, hasCompare }) => {
       // 解耦：提交成功即把进行中评标交给 analyzing 独立轮询（不阻塞、不超时掉回）。
-      setSelectedProjectId(projectId)
+      selectProject(projectId)
       setReviewMode(hasCompare ? 'compare' : 'detail')
       setProgressByRid({})
       setProgress(30)
@@ -432,6 +457,7 @@ export function useTenderReviewPage(
       if (hasCompare) void triggerTenderCompare(projectId).catch(() => {})
       setReviewMode(hasCompare ? 'compare' : 'detail')
       setScreen('analysis')
+      void navigate({ to: '/contracts/tender/detail' })
       void queryClient.invalidateQueries({ queryKey: ['tender-project', projectId] })
       void queryClient.invalidateQueries({ queryKey: ['tender-project-results', projectId] })
     }
@@ -452,9 +478,15 @@ export function useTenderReviewPage(
     mode: TenderReviewMode = 'detail',
     projectId = selectedProjectIdForQuery
   ) {
-    if (projectId) setSelectedProjectId(projectId)
+    if (projectId) selectProject(projectId)
     setReviewMode(mode)
     setScreen('analysis')
+    void navigate({ to: '/contracts/tender/detail' })
+  }
+
+  function openHistory() {
+    setScreen('history')
+    void navigate({ to: '/contracts/tender/history' })
   }
 
   /**
@@ -465,7 +497,7 @@ export function useTenderReviewPage(
    * 取项目详情失败 / 无投标 → 安全回退到 openAnalysis（分析中心）。
    */
   async function resumeOrOpenProject(projectId: string) {
-    setSelectedProjectId(projectId)
+    selectProject(projectId)
     try {
       // staleTime:0 强制新取最新投标状态——否则吃 dashboard useQueries 的 5s 缓存，可能拿到旧的
       // 完成态/空态 bids → inProgress=0 → 误落分析中心（B-C 复发根因）。
@@ -489,6 +521,7 @@ export function useTenderReviewPage(
         })
         setReviewMode(bids.length >= 2 ? 'compare' : 'detail')
         setScreen('analyzing')
+        void navigate({ to: '/contracts/tender/detail' })
         return
       }
     } catch {
@@ -498,8 +531,9 @@ export function useTenderReviewPage(
   }
 
   function openReport(projectId = selectedProjectIdForQuery) {
-    if (projectId) setSelectedProjectId(projectId)
+    if (projectId) selectProject(projectId)
     setScreen('report')
+    void navigate({ to: '/contracts/tender/detail' })
   }
 
   /** A①: update a single field in the project creation form */
@@ -869,6 +903,7 @@ export function useTenderReviewPage(
     addBidderFile,
     removeBidderFile,
     openAnalysis,
+    openHistory,
     resumeOrOpenProject,
     openReport,
     batchDeleteProjects,
