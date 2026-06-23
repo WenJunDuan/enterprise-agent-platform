@@ -65,6 +65,36 @@ def _load_known_rule_ids() -> set[str]:
                 known.add(rule["rule_id"])
     return known
 
+
+def _load_rule_details() -> dict[str, dict[str, str]]:
+    """扫 ``knowledge/{domain}/*.rules.json`` 建 ``rule_id → {rule_id, name, source_text}`` 映射。
+
+    供 ``enrich_audit_decision`` 把承重 ``policy_refs`` 的裸 rule_id（如 ``tender_evalmethod_001``）
+    解析成可读规则名 + 法定原文，前端直接展示法定依据文本而非内部规则号（#6）。无 ``knowledge/``
+    或读不出 → 空 dict（调用方对未知 id 兜底显 id，向后兼容、不崩）。
+    """
+    details: dict[str, dict[str, str]] = {}
+    if not _KNOWLEDGE_DIR.is_dir():
+        return details
+    for path in _KNOWLEDGE_DIR.glob("*/*.rules.json"):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        rules = data.get("rules") if isinstance(data, dict) else None
+        if not isinstance(rules, list):
+            continue
+        for rule in rules:
+            if isinstance(rule, dict) and isinstance(rule.get("rule_id"), str):
+                rid = rule["rule_id"]
+                details[rid] = {
+                    "rule_id": rid,
+                    "name": str(rule.get("description") or rid),
+                    "source_text": str(rule.get("source_text") or ""),
+                }
+    return details
+
+
 # `verdict` is the single source of truth; `result` (bool) and `conclusion` (label)
 # are derived from it server-side so the model never has to keep three fields in sync.
 AUDIT_DECISION_DERIVATION: dict[str, tuple[bool, str]] = {
@@ -171,6 +201,18 @@ def enrich_audit_decision(structured_output: StructuredJSON) -> StructuredJSON:
             value = structured_output.get(field)
             if isinstance(value, list):
                 structured_output[field] = [_coerce_reason_to_str(item) for item in value]
+        # #6：承重 policy_refs（裸 rule_id）解析成 {rule_id, name, source_text} 供前端直接展示法定
+        # 依据原文（不再显示 tender_evalmethod_001 这类内部号）。enrich 在 schema 校验之后跑（同
+        # result/conclusion 派生），故新增字段不过硬校验。未知 id 兜底 {name:id, source_text:""}（不崩、
+        # 前端可显 id）。空/无 refs → 不加该字段。
+        refs = structured_output.get("policy_refs")
+        if isinstance(refs, list) and refs:
+            rule_details = _load_rule_details()
+            structured_output["policy_refs_detail"] = [
+                rule_details.get(r, {"rule_id": r, "name": r, "source_text": ""})
+                for r in refs
+                if isinstance(r, str)
+            ]
         # risk_dimensions 契约为对象数组；模型给成 {name: score} 映射或 0-100 量纲时归一。
         if "risk_dimensions" in structured_output:
             normalized_dims = _coerce_risk_dimensions(structured_output["risk_dimensions"])

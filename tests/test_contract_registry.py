@@ -275,6 +275,45 @@ def test_rule_ref_check_on_rejects_fabricated_ref(monkeypatch):
         )
 
 
+# ── #6 policy_refs 解析成法定依据文本（enrich 注入 policy_refs_detail）─────────────
+
+
+def test_enrich_adds_policy_refs_detail(monkeypatch):
+    """#6：enrich 把裸 rule_id 解析成 [{rule_id, name, source_text}]；未知 id 兜底显 id。"""
+    monkeypatch.setattr(
+        _oc,
+        "_load_rule_details",
+        lambda: {
+            "tender_evalmethod_001": {
+                "rule_id": "tender_evalmethod_001",
+                "name": "评标只能依据招标文件规定的评标标准和方法",
+                "source_text": "评标委员会应当根据招标文件规定的评标标准和方法……（第十七条）",
+            }
+        },
+    )
+    out = _oc.enrich_audit_decision(
+        {"verdict": "rejected", "policy_refs": ["tender_evalmethod_001", "unknown_x"]}
+    )
+    detail = out["policy_refs_detail"]
+    assert detail[0]["name"].startswith("评标只能依据")
+    assert detail[0]["source_text"]
+    assert detail[1] == {"rule_id": "unknown_x", "name": "unknown_x", "source_text": ""}
+
+
+def test_enrich_no_policy_refs_detail_when_empty():
+    """空 policy_refs → 不加 policy_refs_detail（不污染输出）。"""
+    out = _oc.enrich_audit_decision({"verdict": "manual_review", "policy_refs": []})
+    assert "policy_refs_detail" not in out
+
+
+def test_load_rule_details_real_rules_if_present():
+    """若本地有 knowledge/tender 规则，则真规则的 source_text 非空（gitignored，CI 无则跳过）。"""
+    details = _oc._load_rule_details()
+    if "tender_evalmethod_001" in details:
+        assert details["tender_evalmethod_001"]["source_text"]
+        assert details["tender_evalmethod_001"]["name"]
+
+
 def test_rule_ref_check_on_allows_real_ref(monkeypatch):
     import server.common.output_contracts as oc
 

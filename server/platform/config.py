@@ -302,7 +302,8 @@ def get_app_settings() -> AppSettings:
         session_archive_after_days=_env_int("SESSION_ARCHIVE_AFTER_DAYS", 7),
         audit_task_running_timeout_seconds=_env_int("AUDIT_TASK_RUNNING_TIMEOUT_SECONDS", 600),
         submission_retention_days=_env_int("SUBMISSION_RETENTION_DAYS", 7),
-        max_upload_file_bytes=_env_int("MAX_UPLOAD_FILE_BYTES", 10 * 1024 * 1024),
+        # 投标标书常达数百 MB（图纸/已标价清单扫描件）；默认 10MiB→256MiB，MAX_UPLOAD_FILE_BYTES 可再调。
+        max_upload_file_bytes=_env_int("MAX_UPLOAD_FILE_BYTES", 256 * 1024 * 1024),
         runtime_log_max_bytes=_env_int("APP_SERVER_LOG_MAX_BYTES", 5 * 1024 * 1024),
         runtime_log_backups=_env_int("APP_SERVER_LOG_BACKUPS", 5),
         app_server_name=os.getenv("APP_SERVER_NAME", "enterprise-agent-api"),
