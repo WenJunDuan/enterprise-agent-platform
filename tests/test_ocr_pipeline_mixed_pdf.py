@@ -11,6 +11,7 @@ from __future__ import annotations
 import pytest
 
 import server.ocr.pipeline as pipeline_mod
+from server.ocr import OcrError
 from server.ocr.pipeline import _blank_page_count, _should_cloud_ocr_mixed_pdf
 
 
@@ -136,7 +137,10 @@ def test_mixed_pdf_subset_failure_falls_back_to_whole_doc_cloud(monkeypatch, tmp
 
 def test_augment_merges_ocr_into_blank_pages_only(monkeypatch, tmp_path):
     """_augment_mixed_pdf_blocks 纯逻辑：OCR 文本按提交顺序回填到空白页真实位，数字页不动。"""
-    native = {"kind": "pdf_text", "blocks": ["", "", "数字三", "数字四"], "tables": []}
+    # 数字页文本须 ≥ MAX_BLANK_CHARS(20) 才不被当空白页；否则会进 blank_indices 触发页数不匹配。
+    digital_3 = "数字第三页正文内容" * 3  # 27 字符 ≥ 20
+    digital_4 = "数字第四页正文内容" * 3
+    native = {"kind": "pdf_text", "blocks": ["", "", digital_3, digital_4], "tables": []}
     route = {"container": "pdf", "route": "native", "handler": "pdf_text", "mixed_pdf": True}
     fake_subset = tmp_path / "s.pdf"
     fake_subset.write_bytes(b"%PDF")
@@ -153,8 +157,47 @@ def test_augment_merges_ocr_into_blank_pages_only(monkeypatch, tmp_path):
         tmp_path / "bid.pdf", route, native, purpose="评标"
     )
     assert result["kind"] == "pdf_text"
-    assert result["blocks"] == ["扫A", "扫B", "数字三", "数字四"]
+    assert result["blocks"] == ["扫A", "扫B", digital_3, digital_4]  # 扫描页回填，数字页不动
     assert "扫描页" in result["note"] or "回填" in result["note"]
+
+
+def test_mixed_pdf_subset_cloud_failure_falls_back_to_whole_doc(monkeypatch, tmp_path):
+    """子集云 OCR 失败（OcrError）→ 回退整份云 OCR（与本地抽页失败对称），不归 error。"""
+    captured = _patch_route_and_native(
+        monkeypatch, mixed_pdf=True, blocks=[""] * 12 + ["数字页正文" * 5] * 8
+    )
+    fake_subset = tmp_path / "subset.pdf"
+    fake_subset.write_bytes(b"%PDF")
+    monkeypatch.setattr(pipeline_mod, "extract_pdf_subset", lambda p, idx: fake_subset)
+
+    def boom(p, *, purpose=None):
+        raise OcrError("云 job 失败")
+
+    monkeypatch.setattr(pipeline_mod, "recognize", boom)
+    result = pipeline_mod._extract_one_raw(tmp_path / "bid.pdf")
+    assert captured["route"]["handler"] == "pdf_scan"  # 回退整份云 OCR
+    assert result["kind"] == "ocr"
+    assert not fake_subset.exists()  # 临时子集已删（finally）
+
+
+def test_augment_returns_none_on_page_count_mismatch(monkeypatch, tmp_path):
+    """云返回页数 ≠ 提交扫描页数 → 放弃按 offset 回填（会错位），返回 None 让调用方回退整份云。"""
+    digital = "数字页正文内容很多很多很多很多很多"  # ≥20 字符，不计入空白页
+    native = {"kind": "pdf_text", "blocks": ["", "", digital, digital], "tables": []}
+    route = {"container": "pdf", "route": "native", "handler": "pdf_text", "mixed_pdf": True}
+    fake_subset = tmp_path / "s.pdf"
+    fake_subset.write_bytes(b"%PDF")
+    monkeypatch.setattr(pipeline_mod, "extract_pdf_subset", lambda p, idx: fake_subset)
+    # 提交 2 个空白页，但云只返回 1 页 → 不匹配
+    monkeypatch.setattr(
+        pipeline_mod,
+        "recognize",
+        lambda p, *, purpose=None: {"kind": "ocr", "pages": [{"markdown": "只有一页"}]},
+    )
+    result = pipeline_mod._augment_mixed_pdf_blocks(
+        tmp_path / "bid.pdf", route, native, purpose=None
+    )
+    assert result is None
 
 
 def test_pure_digital_pdf_blank_pages_not_routed_to_cloud(monkeypatch, tmp_path):
