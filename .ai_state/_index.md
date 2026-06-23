@@ -4,8 +4,8 @@
 version: "9.6.4"
 
 # === PACE 路由状态 ===
-path: "System" # 评标 durable 硬化(证据可验证性+报价规模+准确度);上一 Sprint(multimodel)至R7+热修已ship,main与origin同步
-stage: "design" # 新 Sprint(evidence-accuracy-hardening) R1 待 design:底稿→校验管道 + evidence-resolution 闸(最高价值)
+path: "System" # 评标 durable 硬化(证据可验证性+报价规模+准确度) — Sprint 已 ship,下一推进点待拍板
+stage: "ship" # Sprint(evidence-accuracy-hardening) R1-R6 全完成:681绿+ruff,12 commits,main与origin同步(见 goal.md §九)
 current_sprint_slug: "2026-06-22-tender-evidence-accuracy-hardening"
 current_roadmap_slug: "" # 跨切面 goal，非单一 roadmap item
 skip_polish: false
@@ -58,32 +58,21 @@ counts:
     explore: 0
 # === Pointers (指向最新相关文件) ===
 pointers:
-  latest_design: "sprints/2026-06-20-tender-data-model/design.md"
-  latest_review: "sprints/2026-06-20-tender-data-model/reviews/codex-design-review.md"
+  latest_design: "sprints/2026-06-22-tender-evidence-accuracy-hardening/round-1-evidence-resolution-pipeline/design.md"
+  latest_review: "sprints/2026-06-22-tender-evidence-accuracy-hardening/goal.md" # 本 sprint review 为内联 subagent，无 reviews/ 文件；完成状态见 goal.md §九
   latest_cleanup: "sprints/2026-06-19-contract-audit-feature/cleanup-pass.md"
   latest_brainstorm: ""
-  latest_decisions:
-    ["compound/2026-06-20-decision-verification-gate-and-scaffolding.md", "compound/2026-06-19-decision-ops-below-routes-layering.md", "compound/2026-06-19-decision-agent-front-cc-out-of-scope.md"]
-      "compound/2026-06-20-decision-verification-gate-and-scaffolding.md",
-      "compound/2026-06-19-decision-ops-below-routes-layering.md",
-      "compound/2026-06-19-decision-agent-front-cc-out-of-scope.md",
-    ]
-  latest_lessons:
-    ["compound/2026-06-22-learning-jsonschema-too-brittle-for-llm-output.md", "compound/2026-06-18-learning-absence-is-not-zero.md", "compound/2026-06-17-learning-cross-review-and-soft-timeout.md", "compound/2026-06-17-learning-classify-fix-exposes-latent-bug.md", "compound/2026-06-02-learning-legacy-v962-migration.md"]
-      "compound/2026-06-18-learning-absence-is-not-zero.md",
-      "compound/2026-06-17-learning-cross-review-and-soft-timeout.md",
-      "compound/2026-06-17-learning-classify-fix-exposes-latent-bug.md",
-      "compound/2026-06-02-learning-legacy-v962-migration.md",
-    ]
-  latest_architecture_update: "2026-06-20T10:04:38.538Z"
+  latest_decisions: ["compound/2026-06-20-decision-verification-gate-and-scaffolding.md", "compound/2026-06-19-decision-ops-below-routes-layering.md", "compound/2026-06-19-decision-agent-front-cc-out-of-scope.md"]
+  latest_lessons: ["compound/2026-06-22-learning-jsonschema-too-brittle-for-llm-output.md", "compound/2026-06-18-learning-absence-is-not-zero.md", "compound/2026-06-17-learning-cross-review-and-soft-timeout.md", "compound/2026-06-17-learning-classify-fix-exposes-latent-bug.md", "compound/2026-06-02-learning-legacy-v962-migration.md"]
+  latest_architecture_update: "2026-06-23T06:38:15.291Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "**新Sprint(2026-06-22):评标证据可验证性+报价规模+准确度durable硬化** — 见 sprints/2026-06-22-tender-evidence-accuracy-hardening/goal.md(合并R2024-007深潜+上轮8遗留+R7deferred;含Athena对深潜的针对性评审/遗留reconciliation/6轮计划/素材路径)。**焦点从评分逻辑→证据可验证性**。R1(最高价值,待design):①打通底稿→apply_schema_semantics校验管道(contract.py:124当前不接收底稿)②evidence-resolution闸(回查模型引用的(文件,页,quote)是否真在底稿,查不到→evidence_unresolved+降needs_review;grep确认零实现)③出处带文件名对齐回查键。R2:BOQ感知抽取(8417页已标价工程量清单被MAX_FILE_BLOCK_CHARS=200000@pipeline.py:24从头截→总价851886@p8414丢→报价失据)。R3:confidence消费(低置信→manual)。R4:扣分调优(R2024-007解锁,素材在knowledge/external/交易大脑/二建+四建两家×19文件)+G5 S2公式变量。R5:招标人侧合规MVP+effort透传+基建债(F2越权/F4同步SQLite阻塞/F5超时不杀子进程)。R6:三层数据e2e+全回归+3模型。**起点**:上轮至R7 main与origin同步,616绿+ruff+前端lint/build,三模型评标均可靠。模型:DeepSeek/qwen3.7-max(dashscope)/glm-5.2@openrouter.ai/api(Anthropic skin,去anyrouter)。部署rsync到mac mini(100.107.151.115)+前端build。"
-last_subagent: "spec-compliance"
-last_subagent_at: "2026-06-21T11:46:34.865037Z"
-active_worktrees: ["agent-a13c533445cf2f1e5"]
+next_action: "**Sprint 2026-06-22-tender-evidence-accuracy-hardening 已完成并 ship** — R1-R6 全交付,main 累计 12 commits 与 origin 同步,681 测试绿 + ruff clean(见 goal.md §九)。R1 evidence-resolution 闸 + 底稿→校验透传管道(evidence_resolution.py 新模块);R2 BOQ 感知抽取(ocr/boq.py,捕获真投标总价 381,574,199.97@p2);perf BOQ OCR 324s→28.9s(跳过 find_tables);R3 confidence 消费(低置信→manual_review);R4 scoring 明细完整性 + grounding 纠偏;R5 基建债 F2/F4/F5 + effort 透传(招标人合规 MVP 移交 v2);R6 e2e/多模型/三层数据 + bug-hunt(reviewer 5 bug 全修)。**下一推进点待拍板(backlog)**:①招标人侧合规 MVP(v2,需法规源+用户确认,CLAUDE.md 定 v1 不含程序合规)②compare 多家真模型 dogfood③真扫描件 confidence 触发率验证④扣分命中/限价 formula 调优(需满分扣减制+限价标素材)。**架构档已补(2026-06-23)**:architecture/system-tender-evidence-resolution.md(evidence-resolution 闸+底稿透传管道+BOQ 抽取+confidence 消费)已建 + ARCHITECTURE.md 总入口已挂;YAML 修复后 latest_architecture_update 已被 index-updater hook 自动回填,自动维护链复活。模型:DeepSeek/qwen3.7-max(dashscope)/glm-5.2@openrouter.ai/api。部署 rsync 到 mac mini(100.107.151.115)+前端 build。"
+last_subagent: "reviewer"
+last_subagent_at: "2026-06-22T06:56:41.825Z"
+active_worktrees: [] # git worktree list 仅 main；agent-a13c533445cf2f1e5 已不存在(幽灵清理)
 last_critic_round: 0
-design_changed_after_impl: true
+design_changed_after_impl: false # sprint 已按 6 轮(critic+codex+review)ship 完成，原 in-flight 警告已消解
 
 # === 用户偏好 ===
 plan_critique_max_rounds: 4
@@ -118,7 +107,9 @@ fingerprint: ""
 
 ## 当前状态
 
-2026-06-21（**会话收尾归档 · 用户去 mac mini 部署** · ⟵ 从这读起）: 本会话全部代码已 push origin/main、421 passed/ruff、
+2026-06-23（**ai_state 对账修正 · ⟵ 从这读起**）: 发现 `_index.md` frontmatter YAML 损坏(`latest_decisions`/`latest_lessons` 单行 flow 数组后又跟 block 数组 + 孤立 `]`)→ `yaml.safe_load` 抛 `ParserError` → **所有读 _index.md 的 Athena hook(index-updater/pace-continuator/delivery-gate)静默失败**,这是状态冻结在 2026-06-22 03:11 design 阶段的根因。已修:① 修复坏 YAML(改回单行 flow 数组,已 `python3 -c yaml.safe_load` 验证 parse 通过)。② 对账滞后字段:stage design→ship、active_worktrees 清空(`git worktree list` 仅 main,`agent-a13c533445cf2f1e5` 是幽灵)、design_changed_after_impl→false、last_subagent/at 刷新、pointers 指向本 sprint、next_action 重写为完成态+backlog。③ 补本叙事条目。**Sprint(evidence-accuracy-hardening) R1-R6 实际早已 ship**(12 commits/681 绿/origin 同步,见 `sprints/2026-06-22-tender-evidence-accuracy-hardening/goal.md` §九),只是 index 没跟上。**架构档已补**:architecture/system-tender-evidence-resolution.md + ARCHITECTURE.md 总入口(铁律[架构现状即真相]);**未动 counts**(hook 自维护;YAML 修复后 hook 已自动回填 latest_architecture_update → 自动维护链确认复活)。
+
+2026-06-21（**会话收尾归档 · 用户去 mac mini 部署**）: 本会话全部代码已 push origin/main、421 passed/ruff、
 进程全关、交叉 review(codex+reviewer+spec) 无 P0 + cleanup 4 项已修(`10fc2ad`)。**可部署**。
 - **评标 goal G1/G2 三指标(有扣有得/扣分明细/上下文章节定位)均已实现并在用户给的 `烛照-标段一v3.pdf` 上跑通**
   (13 项 scored/6 项部分得分/basis 扣分明细/evidence 章节定位)。
