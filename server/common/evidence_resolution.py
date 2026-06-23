@@ -395,6 +395,22 @@ def _check_one(
     return status
 
 
+def _hit_moves_score(hit: dict[str, Any], hits_key: str) -> bool:
+    """该命中是否实际影响得分（award_hits 的 ``awarded`` / deduction_hits 的 ``deducted`` ≠ 0）。
+
+    子项级降级（治"含一个 0 分未核实子项就把整项 manual"）：得 0 分的命中（如「无偏离」常规参数
+    子项 awarded=0）没有可核验的"得分主张"，其出处即便 unresolved 也**不应**把同项里有检测报告
+    支撑的有分子项（如性能参数 21 分 resolved）连带降人工。仅当一条**带非零分**的命中出处核不实，
+    才说明"拿了不可核验的分"→ 触发降级。分值字段缺失 / 非数 → 保守视为移动得分（仍触发，不放松）。
+    """
+    points = hit.get("awarded") if hits_key == "award_hits" else hit.get("deducted")
+    if points is None:
+        return True  # 缺分值字段 → 保守仍触发（不削弱闸）
+    if isinstance(points, bool) or not isinstance(points, (int, float)):
+        return True
+    return points != 0
+
+
 def _check_hits(
     sitem: dict[str, Any],
     hits_key: str,
@@ -402,7 +418,11 @@ def _check_hits(
     index: CorpusIndex,
     summary: dict[str, Any],
 ) -> bool:
-    """回查一个评分项的 ``deduction_hits``/``award_hits``；任一 unresolved → True（触发降级）。"""
+    """回查一个评分项的 ``deduction_hits``/``award_hits``；任一**带非零分**命中 unresolved → True（触发降级）。
+
+    子项级：得 0 分的命中（无得分主张）出处 unresolved 不触发降级——避免有检测报告支撑的有分子项
+    被同项里的 0 分未核实子项连带 manual（F02：技术参数「无偏离」常规子项拖累性能参数 21 分）。
+    """
     has_unresolved = False
     hits = sitem.get(hits_key)
     if not isinstance(hits, list):
@@ -421,7 +441,7 @@ def _check_hits(
             index=index,
             summary=summary,
         )
-        if status == "unresolved":
+        if status == "unresolved" and _hit_moves_score(hit, hits_key):
             has_unresolved = True
     return has_unresolved
 
