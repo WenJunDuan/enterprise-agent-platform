@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Award, Brain, FileText, MapPin, Printer } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
@@ -70,7 +70,7 @@ export function AnalysisWorkbenchView(props: AnalysisWorkbenchViewProps) {
                 评分对比
               </ModeButton>
             </div>
-            <Button size='sm' onClick={props.onReport}>
+            <Button size='sm' onClick={() => props.onReport()}>
               <Printer className='size-4' />
               查看报告
             </Button>
@@ -169,6 +169,15 @@ function DetailWorkbench(props: AnalysisWorkbenchViewProps) {
   const activeLoc = activeItem?.loc ?? -1
   const reviewStats = getReviewStats(props.data.categories, selectedBidder)
   const scoreSummary = props.data.scoreSummary ?? emptyScoreSummary
+  const activeEvidenceRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (activeLoc < 0) return
+    activeEvidenceRef.current?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'center',
+    })
+  }, [activeLoc])
 
   return (
     <div className='grid min-h-[620px] xl:h-[calc(100vh-220px)] xl:min-h-[620px] xl:grid-cols-[288px_minmax(0,1.2fr)_minmax(340px,1fr)]'>
@@ -279,6 +288,7 @@ function DetailWorkbench(props: AnalysisWorkbenchViewProps) {
             return (
               <div
                 key={paragraph.loc}
+                ref={active ? activeEvidenceRef : undefined}
                 className={cn(
                 'rounded-lg border-l-4 bg-card p-4 text-sm shadow-sm',
                 active
