@@ -69,6 +69,10 @@
             "enum": ["objective", "subjective", "mixed"],
             "description": "客观/主观/混合。subjective(主观档次项,如技术方案优良中)默认需人工复核：S3 给建议分+依据，但带低置信 warning，不冒充客观分。"
           },
+          "category": {
+            "type": "string",
+            "description": "该评分项在招标文件评标办法中的【所属类目/章节原名】，照标书原文填（如 商务标 / 技术标 / 价格 / 信用 / 服务 / 综合 等）；不预设固定三类，标书有几类就标几类。仅供报告按标书实际要素动态分栏展示，不参与判分（与 score_mode/tag/evaluator_type 正交）。资格审查类目走顶层 eligibility_rules，不在此重复。"
+          },
           "deductions": {
             "type": "array",
             "description": "score_mode=deduction 的扣分细则（第一次读招标文件就把每条扣分情形逐条结构化提取；无明列扣分细则的项为 []）。S3 据此逐条核查投标文件、命中即扣。",
