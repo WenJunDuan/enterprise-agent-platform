@@ -18,21 +18,22 @@ skills:
 
 1. 接收符合 `.claude/contracts/tender/extract-result.schema.json` 的提取结果作为事实底稿；若只有原始材料没有 extract-result，先回到提取阶段。
 2. 一次性取齐本案评判依据：
-   - **本项目评分标准（criteria）**：`Read` 招标文件，**定位其中规定评分标准的评标办法**（标题与章节位置因标书而异，常见《评标办法》《评分细则》《评标方法》等，**以实际招标文件为准，不预设第三章**），直读解析为评分标准（评分项 / 满分 / 评分规则 / 出处 / 可判定性标签），写入 `extracted_data.criteria`（对齐 `.claude/contracts/tender/criteria.schema.json`）；若上游已在 `extracted_data.criteria` 传入则直接复用。
+   - **本项目规则（criteria）**：`Read` 招标文件，**定位其中规定资格审查/初步评审和评分标准的评标办法**（标题与章节位置因标书而异，常见《资格审查》《资格评审标准》《初步评审》《评标办法》《评分细则》《评标方法》等，**以实际招标文件为准，不预设第三章**），直读解析为项目规则（`eligibility_rules[]` + 评分项 / 满分 / 评分规则 / 出处 / 可判定性标签），写入 `extracted_data.criteria`（对齐 `.claude/contracts/tender/criteria.schema.json`）；若上游已在 `extracted_data.criteria` 传入则直接复用。资格审查是与评分项并列的最高优先级招标项，先运行，不计入满分。
    - **通则层国家法规（法律底座，非项目评分标准）**：`knowledge/tender/evalmethod.rules.json`（评标方法暂行规定）、`knowledge/tender/regulation.rules.json`（招标投标法实施条例），读取顶层 `source_path` / `source_version` 作为追溯。
-   招标文件载明的评分标准**直读即权威**；招标文件没写的标准不得臆造补充。**缺招标文件 / 招标文件里定位不到评标办法** → 相关评分项降级输出 `manual_review`（`rule_gap`）。
+   招标文件载明的资格审查与评分标准**直读即权威**；招标文件没写的标准不得臆造补充。**缺招标文件 / 招标文件里定位不到资格审查或评标办法** → 相关项降级输出 `manual_review`（`rule_gap`）。
 3. 如 `knowledge/memory/tender/` 中存在与本案高度相似的案例 / 异常记忆，读取并作为 `memory:` 辅助证据，不能替代结构化规则。
-4. 在**同一次推理**中**对照 `criteria` 逐评分项按其 `score_mode` 判分**，写入 `extracted_data.scoring`（每项 `{item, max, score, status, score_mode, basis, …明细}`）。**⚠ S3 评分细则一律以 `/tender-evaluate` 命令为权威**（含 dogfood 后 G1-G7 + A「投标无实质对应内容→manual_review 不判 0」+ G5「限价类 formula 单家算 vs 群体变量横比」）；本 agent 仅在多投标并行抽取等特殊场景按需调度，下面要点为摘录、可能滞后，判分须回到命令 S3：
+4. 在**同一次推理**中先对照 `criteria.eligibility_rules[]` 运行资格审查，写入 `extracted_data.eligibility_checks`；再**对照 `criteria.items[]` 逐评分项按其 `score_mode` 判分**，写入 `extracted_data.scoring`（每项 `{item, max, score, status, score_mode, basis, …明细}`）。**⚠ S3 评分细则一律以 `/tender-evaluate` 命令为权威**（含 dogfood 后 G1-G7 + A「投标无实质对应内容→manual_review 不判 0」+ G5「限价类 formula 单家算 vs 群体变量横比」）；本 agent 仅在多投标并行抽取等特殊场景按需调度，下面要点为摘录、可能滞后，判分须回到命令 S3：
    - `deduction` 满分扣减 → 逐条核对 `deductions` 命中写 `deduction_hits`（含触发扣分的投标原文 `quote`+`【第N页】`），`score=max−Σ扣`；**已识别问题都落成扣分明细**，禁止笼统"不通过"。
    - `banded` 档次给分 → `selected_band`，`score=该档分`（**不是从满分扣**）；`additive` → `award_hits`，`score=base+Σ加`。
    - `formula` → **以 `formula_spec` 为准**（详见命令 S3）：全变量闭合（限价常量 `tender_constant` + 本家报价 `bid_component`）的限价类**代入算分**（basis 逐步列式）；含群体/现场/外部变量、或缺 `formula_spec`/语义不一致 → `score:null`+`manual_review`，**绝不判 0**。
    - 单项必交材料缺失/硬性不符 → 该项 `status:"rejected"`；**整单废标不归零各项**。
-   - **废标/资格独立 gate**：对照 criteria 顶层 `rejection_rules` 写 `extracted_data.disqualification_hits`/`eligibility_checks`，**只决定 `verdict`，与逐项 `scoring` 解耦**。
+   - **废标/资格独立 gate**：先对照 criteria 顶层 `eligibility_rules` 写 `extracted_data.eligibility_checks`，再对照 `rejection_rules` 写 `extracted_data.disqualification_hits`，**只决定 `verdict`，与逐项 `scoring` 解耦**。资格证据明确不满足才 fail；外部数据/读不清标 manual，不得直接 fail。
    - 证据定位：每条 `evidence`/`basis` 只引底稿真实 `【第N页】` 且确含所述内容，出处写「文件+第N页+章节」并摘 `quote`。
 5. 汇总 `verdict`：
-   - `disqualification_hits` 非空 / 任一 `eligibility_checks` fail / 实质性不响应 → `rejected`（由独立 gate 决定）
+   - `disqualification_hits` 非空 / 任一 `eligibility_checks` fail / 实质性不响应 → `rejected`（由最高优先级资格/否决 gate 决定）
    - 存在任一 `manual_review` 评分项，或关键证据缺失 / 规则缺口 / 证据冲突 → `manual_review`（并填 `manual_review_reason`）
    - 全部评分项已按 `score_mode` 给分且无否决项 → `approved`
+   - 资格不通过时，综合意见直接说明按废标处理；后续评分明细仍继续逐项列示，不参与有效投标排序。
 6. 直接产出符合 `.claude/contracts/common/audit-result.schema.json` 的最终 JSON。
 
 ## 输入约束

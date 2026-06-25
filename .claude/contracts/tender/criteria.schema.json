@@ -1,14 +1,14 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "tender_criteria",
-  "description": "会话项目评分标准：从该项目招标文件载明的评标办法（评分标准）直读解析得到，作为本次评标的项目规则，随结论写入 extracted_data.criteria 持久化。评标办法的章节位置与标题因标书而异（不预设固定在第三章），以实际招标文件为准。区别于通则层 knowledge/tender/{evalmethod,regulation}.rules.json（国家法规，跨项目稳定）。v2：每个评分项显式声明 score_mode（评分方式：扣减/档次/加分/公式/通过否/主观），各模式带对应规则容器；废标/否决条款进顶层 rejection_rules，与逐项评分解耦。",
+  "description": "会话项目规则：从该项目招标文件载明的资格审查/初步评审与评标办法（评分标准）直读解析得到，作为本次评标的项目规则，随结论写入 extracted_data.criteria 持久化。评标办法的章节位置与标题因标书而异（不预设固定在第三章），以实际招标文件为准。区别于通则层 knowledge/tender/{evalmethod,regulation}.rules.json（国家法规，跨项目稳定）。v2：每个评分项显式声明 score_mode（评分方式：扣减/档次/加分/公式/通过否/主观），各模式带对应规则容器。v3：资格审查规则进入顶层 eligibility_rules，与评分 items 并列，最高优先级先运行，不计入 total_max；废标/否决条款进顶层 rejection_rules，与逐项评分解耦。",
   "type": "object",
   "additionalProperties": false,
   "properties": {
     "source_ref": {
       "type": "string",
       "minLength": 1,
-      "description": "评分标准出处：评标办法在本招标文件的实际位置（文件名 + 章节/标题 + 页码）。示例（仅示例，实际以本标书为准）：'XX项目招标文件.pdf 评标办法 p.18'。"
+      "description": "项目规则出处：资格审查/初步评审/评标办法在本招标文件的实际位置（文件名 + 章节/标题 + 页码）。示例（仅示例，实际以本标书为准）：'XX项目招标文件.pdf 评标办法 p.18'。"
     },
     "method": {
       "type": "string",
@@ -169,6 +169,57 @@
               "min_score": { "type": ["number", "null"], "description": "得分下限（如不低于 0；招标设保底分则填）。" },
               "cap": { "type": ["number", "null"], "description": "该项得分封顶（通常 = max；招标对价格分单设上限则填）。" }
             }
+          }
+        }
+      }
+    },
+    "eligibility_rules": {
+      "type": "array",
+      "description": "与 items[] 并列的资格审查/资格评审/初步评审规则。它们是评标前最高优先级的招标评审项，必须先于 scoring[] 执行；不计入 total_max，不作为扣分项或价格/技术评分项。S3 输出到 extracted_data.eligibility_checks，并据 pass/fail/manual 决定是否继续后续评分或进入人工复核。",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["check", "source_ref", "priority"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "稳定 id，供 extracted_data.eligibility_checks[].rule_id 回链。"
+          },
+          "check": {
+            "type": "string",
+            "minLength": 1,
+            "description": "资格审查项名称，如营业执照、资质证书、项目负责人资格、信用记录、主体库信息等。"
+          },
+          "requirement": {
+            "type": "string",
+            "description": "招标文件载明的资格要求/通过条件。"
+          },
+          "evidence_required": {
+            "type": "string",
+            "description": "投标文件或外部数据中需要核验的证明材料。"
+          },
+          "stage": {
+            "type": "string",
+            "enum": ["qualification_review", "preliminary_review", "responsiveness_review"],
+            "description": "所属审查阶段。资格审查/资格评审用 qualification_review；初步评审用 preliminary_review；符合性/响应性审查用 responsiveness_review。"
+          },
+          "priority": {
+            "type": "string",
+            "const": "highest",
+            "description": "执行优先级。资格审查必须先于详细评分运行。"
+          },
+          "external_data": {
+            "type": "boolean",
+            "description": "是否依赖投标文件外的数据（如信用中国、主体库动态监管结果）。依赖外部数据且上下文未提供时，S3 应标 manual，不得直接 fail。"
+          },
+          "source_quote": {
+            "type": "string",
+            "description": "招标文件该资格审查规则原文片段。"
+          },
+          "source_ref": {
+            "type": "string",
+            "minLength": 1,
+            "description": "出处（文件+章节/标题+页）。"
           }
         }
       }

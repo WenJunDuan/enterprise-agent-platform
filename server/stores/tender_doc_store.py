@@ -203,7 +203,7 @@ def update_project_doc_criteria(project_id: str, tenant: str, criteria_json: str
     """
     with connect_sqlite(PLATFORM_DB_FILE, immediate=True) as conn:
         conn.execute(
-            "UPDATE tender_project_docs SET criteria = ?, updated_at = ? "
+            "UPDATE tender_project_docs SET criteria = ?, criteria_status = 'ready', updated_at = ? "
             "WHERE project_id = ? AND tenant = ?",
             (criteria_json, _utc_now(), project_id, tenant),
         )

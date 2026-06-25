@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import jsonschema
 import pytest
 
 from server.common.contract import DEFAULT_OUTPUT_SCHEMA_NAME, load_output_schema
@@ -48,3 +49,34 @@ def test_audit_result_verdict_enum_covers_tender_outcomes():
     schema = load_output_schema(DEFAULT_OUTPUT_SCHEMA_NAME)
     verdict_enum = set(schema["properties"]["verdict"]["enum"])
     assert {"approved", "rejected", "manual_review"} <= verdict_enum
+
+
+def test_tender_extract_result_allows_eligibility_evidence_facts():
+    # S2 只传资格证明事实，不在 Python/schema 层判断资格通过或失败。
+    schema = load_output_schema("tender/extract-result.schema.json")
+    payload = {
+        "claim_id": "BID-001",
+        "source_path": "data/tender/BID-001",
+        "tender": {"tender_no": "T-001", "title": "示例项目", "tenderee": "示例招标人"},
+        "bidder": {"name": "示例投标人", "credit_code": "91320000XXXX", "legal_rep": "张三"},
+        "proposed_pm": {"name": "李四", "cert_no": "苏132XXXX", "source_ref": "投标文件第12页"},
+        "bid_price": {"amount": 1000000, "currency": "CNY"},
+        "eligibility_evidence": [
+            {
+                "check": "企业资质证书",
+                "found": True,
+                "source_ref": "投标文件第22页",
+                "quote": "建筑工程施工总承包一级",
+                "needs_external_verification": False,
+            }
+        ],
+        "track_records": [],
+        "chapters": [],
+        "attachments": [],
+        "extracted_fields": [],
+        "missing_fields": [],
+        "ambiguities": [],
+        "reviewed_by": "tender-extractor",
+        "timestamp": "2026-06-25T00:00:00Z",
+    }
+    jsonschema.validate(payload, schema)

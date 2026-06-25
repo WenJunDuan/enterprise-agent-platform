@@ -115,6 +115,7 @@ def test_update_project_doc_criteria():
     row = get_project_doc(pid, "t1")
     assert row is not None
     assert row["criteria"] == criteria
+    assert row["criteria_status"] == "ready"
     loaded = json.loads(row["criteria"])
     assert loaded[0]["item"] == "技术评分"
 

@@ -21,6 +21,7 @@ tools: Read, Glob
 - `bidder`：投标人名称 / 统一社会信用代码 / 法定代表人
 - `proposed_pm`：拟派项目负责人 `name / cert_no（注册证号）/ source_ref（出处文件+页）`，逐项据实填写
 - `bid_price`：投标报价金额与币种
+- `eligibility_evidence`：按招标文件 `criteria.eligibility_rules[]` 需要的资格证明事实记录材料名称、是否找到、出处文件+页；如营业执照、资质证书、安全生产许可证、项目负责人证书、劳动合同/社保证明、信用承诺/信用查询截图、主体库材料等。只提事实，不判通过/失败。
 - `track_records`：每条业绩写 `project_name / project_manager / source_ref`（出处文件+页）
 - `chapters`：投标文件章节-页码索引，写 `chapter / title / file / pages`
 - `attachments`：按材料事实列出 `name / path / media_type / document_type`
