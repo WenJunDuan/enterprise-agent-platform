@@ -327,6 +327,68 @@ def _mismatch_warns(out: dict) -> list:
     return [w for w in warns if str(w.get("code", "")).endswith("_mismatch")]
 
 
+def test_expense_explanation_summary_sentence_is_not_stripped():
+    """D0: expense 合法结论里的“综上…合计…”不是 tender 得分小结，不应被剥离。"""
+    explanation = (
+        "发票与审批单一致，金额在预算内。"
+        "综上，本次差旅报销合计 1200 元，符合制度规定，予以通过。"
+    )
+    out = oc.enrich_audit_decision(
+        {
+            "verdict": "approved",
+            "explanation": explanation,
+            "extracted_data": {"invoice_no": "fp_2026_0420"},
+        }
+    )
+    assert out["explanation"] == explanation
+
+
+def test_expense_explanation_keeps_legitimate_underscore_identifier():
+    """D0: 非 tender 结论中的发票号/文件名等下划线标识不应被通配替换。"""
+    explanation = "发票编号 fp_2026_0420 与审批单一致，予以通过。"
+    out = oc.enrich_audit_decision(
+        {
+            "verdict": "approved",
+            "explanation": explanation,
+            "extracted_data": {"invoice_no": "fp_2026_0420"},
+        }
+    )
+    assert out["explanation"] == explanation
+
+
+def test_tender_explanation_score_summary_stays_server_canonical(monkeypatch):
+    """D0: tender 结论仍按 scoring[] 重算小结，覆盖模型写错的总分。"""
+    monkeypatch.setenv("RULE_REF_CHECK", "1")
+    monkeypatch.setattr(oc, "_load_known_rule_ids", lambda: _TENDER_KNOWN)
+    out = apply_schema_semantics(
+        DEFAULT_OUTPUT_SCHEMA_NAME,
+        _scored_with(
+            {
+                "criteria": _scored_criteria(),
+                "scoring": [
+                    {
+                        "item": "技术方案",
+                        "max": 60,
+                        "score": 52,
+                        "status": "scored",
+                        "basis": "技术响应齐全",
+                    },
+                    {
+                        "item": "商务响应",
+                        "max": 40,
+                        "score": 36,
+                        "status": "scored",
+                        "basis": "商务条款全部响应",
+                    },
+                ],
+            },
+            explanation="投标文件满足要求。综上，评分项总分 999 分。",
+        ),
+    )
+    assert "999" not in out["explanation"]
+    assert "得分小结：评分表共 2 项，满分 100 分；已有分数 2 项，合计 88 分。" in out["explanation"]
+
+
 def test_score_mode_deduction_inconsistent_records_warning(monkeypatch):
     # deduction 项 score≠max−Σ扣 → validation_warnings 记一条，不抛错。
     monkeypatch.setenv("RULE_REF_CHECK", "1")
