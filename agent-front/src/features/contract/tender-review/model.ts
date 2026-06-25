@@ -126,7 +126,10 @@ export function mapTenderProject(
 ): TenderProject {
   const detail = isTenderProjectDetail(project) ? project : null
   const baseStatus = normalizeProjectStatus(project.status)
-  const bidderCount = Math.max(detail?.bidder_count ?? 0, resultSummaries.length)
+  const bidderCount = Math.max(
+    detail?.bidder_count ?? 0,
+    resultSummaries.length
+  )
   const completedCount = Math.max(
     detail?.bids.filter((bid) => bid.status === 'completed').length ?? 0,
     resultSummaries.length
@@ -138,7 +141,8 @@ export function mapTenderProject(
 
   return {
     id: project.project_id,
-    name: project.title?.trim() || project.tender_no?.trim() || EMPTY_PROJECT_TITLE,
+    name:
+      project.title?.trim() || project.tender_no?.trim() || EMPTY_PROJECT_TITLE,
     code: project.tender_no?.trim() || project.project_id,
     method: project.method?.trim() || compare?.result.method || DEFAULT_METHOD,
     bidderCount,
@@ -148,7 +152,12 @@ export function mapTenderProject(
     stage: getProjectStage(status, completedCount, bidderCount, compareStale),
     progress,
     riskCount: getRiskCount(detail, resultSummaries),
-    recommendedBidder: getRecommendedBidder(detail, compare, status, compareStale),
+    recommendedBidder: getRecommendedBidder(
+      detail,
+      compare,
+      status,
+      compareStale
+    ),
   }
 }
 
@@ -157,8 +166,12 @@ export function mapTenderProjects(
   details: TenderProjectDetailResponse[] = [],
   compares: TenderCompareResponse[] = []
 ) {
-  const detailById = new Map(details.map((detail) => [detail.project_id, detail]))
-  const compareById = new Map(compares.map((compare) => [compare.project_id, compare]))
+  const detailById = new Map(
+    details.map((detail) => [detail.project_id, detail])
+  )
+  const compareById = new Map(
+    compares.map((compare) => [compare.project_id, compare])
+  )
   return projects.map((project) =>
     mapTenderProject(
       detailById.get(project.project_id) ?? project,
@@ -192,7 +205,10 @@ export function buildTenderReviewData({
 
   return {
     projects: projectData
-      ? [projectData, ...mappedProjects.filter((item) => item.id !== projectData.id)]
+      ? [
+          projectData,
+          ...mappedProjects.filter((item) => item.id !== projectData.id),
+        ]
       : mappedProjects,
     projectInfo: buildProjectInfo(activeProject, compare),
     tenderFiles: [],
@@ -202,7 +218,8 @@ export function buildTenderReviewData({
     paragraphs: buildParagraphs(selectedResult, scoringItems),
     compareGroups: buildCompareGroups(compare),
     resultVerdict: selectedResult?.verdict,
-    resultExplanation: selectedResult?.explanation || selectedResult?.summary || '',
+    resultExplanation:
+      selectedResult?.explanation || selectedResult?.summary || '',
     resultReasons: normalizeDisplayList(selectedResult?.reasons),
     resultPolicyRefs: normalizePolicyRefs(selectedResult),
     resultEligibilityChecks: buildEligibilityChecks(selectedResult),
@@ -248,7 +265,8 @@ function getProjectProgress(
   completedCount: number,
   bidderCount: number
 ) {
-  if (status === 'done' || status === 'archived' || status === 'review') return 100
+  if (status === 'done' || status === 'archived' || status === 'review')
+    return 100
   if (bidderCount > 0) return Math.round((completedCount / bidderCount) * 100)
   return 0
 }
@@ -275,7 +293,8 @@ function getRiskCount(
     detail?.bids.filter((bid) => bid.verdict === 'manual_review').length ?? 0
   const summaryRisks = resultSummaries.filter(
     (summary) =>
-      summary.verdict === 'manual_review' || Boolean(summary.manual_review_reason)
+      summary.verdict === 'manual_review' ||
+      Boolean(summary.manual_review_reason)
   ).length
   return Math.max(bidRisks, summaryRisks)
 }
@@ -299,7 +318,9 @@ function getRecommendedBidder(
 function getTopCompareScore(compare?: TenderCompareResponse | null) {
   if (!compare?.result.bidders.length) return null
   const ranked = [...compare.result.bidders].sort(
-    (left, right) => (left.rank ?? Number.MAX_SAFE_INTEGER) - (right.rank ?? Number.MAX_SAFE_INTEGER)
+    (left, right) =>
+      (left.rank ?? Number.MAX_SAFE_INTEGER) -
+      (right.rank ?? Number.MAX_SAFE_INTEGER)
   )
   return toNumber(ranked[0]?.total_score)
 }
@@ -308,10 +329,14 @@ function buildProjectInfo(
   project?: TenderProjectResponse | TenderProjectDetailResponse | null,
   compare?: TenderCompareResponse | null
 ): ProjectInfo {
-  const date = compare?.computed_at || project?.updated_at || project?.created_at || ''
+  const date =
+    compare?.computed_at || project?.updated_at || project?.created_at || ''
   const id = project?.project_id || 'new'
   return {
-    name: project?.title?.trim() || project?.tender_no?.trim() || EMPTY_PROJECT_TITLE,
+    name:
+      project?.title?.trim() ||
+      project?.tender_no?.trim() ||
+      EMPTY_PROJECT_TITLE,
     code: project?.tender_no?.trim() || (project ? project.project_id : '-'),
     method: project?.method?.trim() || compare?.result.method || DEFAULT_METHOD,
     controlPrice: project?.control_price?.trim() || '-',
@@ -332,7 +357,8 @@ function buildReviewBidders(
     const bidders = [...compare.result.bidders]
       .sort(
         (left, right) =>
-          (left.rank ?? Number.MAX_SAFE_INTEGER) - (right.rank ?? Number.MAX_SAFE_INTEGER)
+          (left.rank ?? Number.MAX_SAFE_INTEGER) -
+          (right.rank ?? Number.MAX_SAFE_INTEGER)
       )
       .map((bidder, index) => {
         const name = resolveBidderDisplayName({
@@ -370,18 +396,19 @@ function buildReviewBidders(
       const result =
         findResultForSummary(summary, resultDetails) ??
         findResultForSummary(summary, selectedResult ? [selectedResult] : [])
-      const name =
-        resolveBidderDisplayName({
-          claimId:
-            summary.claim_id ||
-            (selectedResult?.claim_id && index === 0 ? selectedResult.claim_id : ''),
-          bidderName: summary.bidder_name,
-          result,
-          mappedName: summary.claim_id
-            ? displayNameByClaim.get(summary.claim_id)
-            : undefined,
-          fallback: `投标人 ${index + 1}`,
-        })
+      const name = resolveBidderDisplayName({
+        claimId:
+          summary.claim_id ||
+          (selectedResult?.claim_id && index === 0
+            ? selectedResult.claim_id
+            : ''),
+        bidderName: summary.bidder_name,
+        result,
+        mappedName: summary.claim_id
+          ? displayNameByClaim.get(summary.claim_id)
+          : undefined,
+        fallback: `投标人 ${index + 1}`,
+      })
       const id = summary.claim_id || summary.request_id || name
       return {
         id,
@@ -447,7 +474,11 @@ function findResultForSummary(
 }
 
 function isTenderProjectDetailOrNull(
-  project: TenderProjectResponse | TenderProjectDetailResponse | null | undefined
+  project:
+    | TenderProjectResponse
+    | TenderProjectDetailResponse
+    | null
+    | undefined
 ): project is TenderProjectDetailResponse {
   return Boolean(project && isTenderProjectDetail(project))
 }
@@ -602,13 +633,21 @@ function buildEligibilityParagraphText(item: TenderEligibilityCheck) {
   return evidenceText || item.basis || '暂无该资格审查项的证据明细。'
 }
 
-function buildCompareGroups(compare?: TenderCompareResponse | null): CompareGroup[] {
+function buildCompareGroups(
+  compare?: TenderCompareResponse | null
+): CompareGroup[] {
   const bidders = compare?.result.bidders ?? []
   if (!bidders.length) return []
 
   const rows = [
-    buildCompareRow('价格分', bidders.map((bidder) => bidder.price_score)),
-    buildCompareRow('其他评审分', bidders.map((bidder) => bidder.other_score)),
+    buildCompareRow(
+      '价格分',
+      bidders.map((bidder) => bidder.price_score)
+    ),
+    buildCompareRow(
+      '其他评审分',
+      bidders.map((bidder) => bidder.other_score)
+    ),
   ].filter((row): row is CompareGroup['rows'][number] => row != null)
 
   return rows.length
@@ -621,7 +660,10 @@ function buildCompareGroups(compare?: TenderCompareResponse | null): CompareGrou
     : []
 }
 
-function buildCompareRow(name: string, values: Array<number | null | undefined>) {
+function buildCompareRow(
+  name: string,
+  values: Array<number | null | undefined>
+) {
   if (!values.some((value) => value != null)) return null
   const cells = values.map((value) => roundScore(toNumber(value) ?? 0))
   return {
@@ -636,7 +678,8 @@ function buildCompareNotice(
   compare?: TenderCompareResponse | null
 ) {
   const stale = Boolean(
-    (isTenderProjectDetailOrNull(project) && project.compare_stale) || compare?.stale
+    (isTenderProjectDetailOrNull(project) && project.compare_stale) ||
+    compare?.stale
   )
   const result = compare?.result
   return {
@@ -655,7 +698,9 @@ function getScoringItems(result?: AuditResult | null): UnknownRecord[] {
   return Array.isArray(scoring) ? scoring.filter(isRecord) : []
 }
 
-function getEligibilityCheckRecords(result?: AuditResult | null): UnknownRecord[] {
+function getEligibilityCheckRecords(
+  result?: AuditResult | null
+): UnknownRecord[] {
   const checks = result?.extracted_data?.eligibility_checks
   return Array.isArray(checks) ? checks.filter(isRecord) : []
 }
@@ -670,7 +715,10 @@ function buildEligibilityChecks(
       id: toText(item.rule_id) || toText(item.id) || `eligibility-${index}`,
       check,
       status: toText(item.status) || 'manual',
-      basis: toText(item.basis) || result?.explanation || '按招标文件资格审查要求核验。',
+      basis:
+        toText(item.basis) ||
+        result?.explanation ||
+        '按招标文件资格审查要求核验。',
       evidence,
     }
   })
@@ -741,7 +789,10 @@ function parseScoreHits(raw: unknown): ScoreHit[] | undefined {
     const evidence = isRecord(hit.evidence) ? hit.evidence : undefined
     return {
       condition: toText(hit.condition) || '—',
-      points: toNumber(hit.deducted) ?? toNumber(hit.awarded) ?? toNumber(hit.points_each),
+      points:
+        toNumber(hit.deducted) ??
+        toNumber(hit.awarded) ??
+        toNumber(hit.points_each),
       quote: toText(evidence?.quote) || toText(hit.quote) || undefined,
       source: toText(evidence?.source) || toText(hit.source) || undefined,
     }
@@ -755,7 +806,8 @@ function buildScoringItems(result?: AuditResult | null): TenderScoringItem[] {
     const criteria = findCriteriaItem(result, title)
     const max = toNumber(item.max) ?? 0
     const score = toNumber(item.score)
-    const status = toText(item.status) || (score == null ? 'manual_review' : 'scored')
+    const status =
+      toText(item.status) || (score == null ? 'manual_review' : 'scored')
     const scoreCategory = inferScoreCategory(
       title,
       toText(item.category) || toText(criteria?.category)
@@ -769,7 +821,8 @@ function buildScoringItems(result?: AuditResult | null): TenderScoringItem[] {
       basis: toText(item.basis) || result?.explanation || '暂无判定依据。',
       category: inferReviewCategory(title, scoreCategory),
       scoreCategory,
-      scoreMode: toText(item.score_mode) || toText(criteria?.score_mode) || undefined,
+      scoreMode:
+        toText(item.score_mode) || toText(criteria?.score_mode) || undefined,
       evidence: buildScoringEvidence(item, result, title),
     }
   })
@@ -844,7 +897,10 @@ function getIssueLostScore(item: TenderScoreIssue): number {
   return 0
 }
 
-function findCriteriaItem(result: AuditResult | null | undefined, title: string) {
+function findCriteriaItem(
+  result: AuditResult | null | undefined,
+  title: string
+) {
   const criteria = result?.extracted_data?.criteria
   const items = Array.isArray(criteria)
     ? criteria
@@ -907,7 +963,8 @@ function resolveBidderDisplayName({
   return (
     candidates
       .map((candidate) => toText(candidate))
-      .find((candidate) => candidate && !looksLikeCreditCode(candidate)) || fallback
+      .find((candidate) => candidate && !looksLikeCreditCode(candidate)) ||
+    fallback
   )
 }
 
@@ -1089,7 +1146,10 @@ function buildScoringEvidence(
 
 function getResultTotalScore(result?: AuditResult | null) {
   return roundScore(
-    getScoringItems(result).reduce((sum, item) => sum + (toNumber(item.score) ?? 0), 0)
+    getScoringItems(result).reduce(
+      (sum, item) => sum + (toNumber(item.score) ?? 0),
+      0
+    )
   )
 }
 
@@ -1164,7 +1224,10 @@ function getCategoryLabel(category: ReviewCategory) {
   return '商务标'
 }
 
-function getScoringStatus(status: string, score: number | null): ReviewItem['status'] {
+function getScoringStatus(
+  status: string,
+  score: number | null
+): ReviewItem['status'] {
   if (status === 'manual_review') return 'warning'
   if (status === 'rejected' || status === 'failed') return 'fail'
   if (score == null) return 'warning'
@@ -1173,7 +1236,8 @@ function getScoringStatus(status: string, score: number | null): ReviewItem['sta
 
 function getEligibilityStatus(status: string): ReviewItem['status'] {
   if (status === 'pass' || status === 'passed') return 'pass'
-  if (status === 'fail' || status === 'failed' || status === 'rejected') return 'fail'
+  if (status === 'fail' || status === 'failed' || status === 'rejected')
+    return 'fail'
   return 'warning'
 }
 

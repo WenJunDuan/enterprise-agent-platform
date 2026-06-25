@@ -373,7 +373,9 @@ describe('contract tender review model', () => {
       method: '综合评估法',
       controlPrice: '120000000',
     })
-    expect(data.reviewBidders.map((bidder) => [bidder.name, bidder.total])).toEqual([
+    expect(
+      data.reviewBidders.map((bidder) => [bidder.name, bidder.total])
+    ).toEqual([
       ['中建一局', 89],
       ['中铁二局', 86],
     ])

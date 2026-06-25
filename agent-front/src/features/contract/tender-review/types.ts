@@ -12,7 +12,11 @@ export type TenderReviewScreen =
 export type TenderReviewMode = 'detail' | 'compare'
 export type ReviewCategory = 'qual' | 'tech' | 'comm'
 export type ReviewItemStatus = 'pass' | 'warning' | 'fail'
-export type TenderResultVerdict = 'approved' | 'rejected' | 'manual_review' | string
+export type TenderResultVerdict =
+  | 'approved'
+  | 'rejected'
+  | 'manual_review'
+  | string
 export type TenderScoringStatus =
   | 'scored'
   | 'manual_review'
