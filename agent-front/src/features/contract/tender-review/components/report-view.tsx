@@ -1,8 +1,8 @@
 import { ArrowLeft, Printer } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { ScoringDetailTable } from './scoring-detail-table'
 import type { TenderReviewMockData, TenderScoreIssue } from '../types'
+import { ScoringDetailTable } from './scoring-detail-table'
 
 type ReportViewProps = {
   data: TenderReviewMockData
@@ -58,7 +58,9 @@ export function ReportView({ data, onBack }: ReportViewProps) {
             报告编号：{data.projectInfo.reportNo}
           </div>
           <div className='text-center'>
-            <div className='text-xs text-muted-foreground'>评标委员会（签章）</div>
+            <div className='text-xs text-muted-foreground'>
+              评标委员会（签章）
+            </div>
             <div className='mt-8 h-px w-32 bg-foreground' />
             <div className='mt-2 text-xs text-muted-foreground'>
               {data.projectInfo.reviewDate}
@@ -121,7 +123,10 @@ function ResultSection({ data }: { data: TenderReviewMockData }) {
             <div className='text-sm font-semibold'>法定依据</div>
             <div className='mt-2 space-y-2'>
               {policyRefs.map((ref, index) => (
-                <div key={`${index}-${ref.id}`} className='rounded-md bg-muted p-2'>
+                <div
+                  key={`${index}-${ref.id}`}
+                  className='rounded-md bg-muted p-2'
+                >
                   <div className='font-mono text-xs font-semibold text-foreground'>
                     {ref.id}
                     {ref.name ? ` · ${ref.name}` : ''}
@@ -151,7 +156,10 @@ function ScoreSummaryCard({ data }: { data: TenderReviewMockData }) {
       <div className='text-sm font-semibold'>评分汇总</div>
       <div className='mt-3 grid grid-cols-2 gap-3'>
         <ScoreMetric label='满分合计' value={formatScore(summary.maxTotal)} />
-        <ScoreMetric label='实得合计' value={formatScore(summary.earnedTotal)} />
+        <ScoreMetric
+          label='实得合计'
+          value={formatScore(summary.earnedTotal)}
+        />
         <ScoreMetric
           label='扣分/未得分'
           value={`${formatScore(summary.deductedTotal)} 分 · ${deductedItems.length} 项`}
@@ -230,7 +238,9 @@ function ReportMeta({ data }: { data: TenderReviewMockData }) {
           key={label}
           className={index % 2 === 0 ? 'bg-background p-4' : 'bg-muted/40 p-4'}
         >
-          <div className='text-xs font-medium text-muted-foreground'>{label}</div>
+          <div className='text-xs font-medium text-muted-foreground'>
+            {label}
+          </div>
           <div className='mt-1 text-sm font-semibold'>{value}</div>
         </div>
       ))}
@@ -240,7 +250,10 @@ function ReportMeta({ data }: { data: TenderReviewMockData }) {
 
 function CompareNotice({ data }: { data: TenderReviewMockData }) {
   const notice = data.compareNotice
-  if (!notice || (!notice.stale && !notice.provisional && notice.warnings.length === 0)) {
+  if (
+    !notice ||
+    (!notice.stale && !notice.provisional && notice.warnings.length === 0)
+  ) {
     return null
   }
 
@@ -254,7 +267,9 @@ function CompareNotice({ data }: { data: TenderReviewMockData }) {
             : '横比告警'}
       </AlertTitle>
       <AlertDescription className='mt-2 space-y-1'>
-        {notice.stale ? <div>投标人有变化，请重新横比后再展示推荐结论。</div> : null}
+        {notice.stale ? (
+          <div>投标人有变化，请重新横比后再展示推荐结论。</div>
+        ) : null}
         {notice.provisional ? (
           <div>暂定排名，定标由招标人依法确定。</div>
         ) : null}
@@ -299,7 +314,9 @@ function RankingSection({ data }: { data: TenderReviewMockData }) {
 }
 
 function DetailSection({ data }: { data: TenderReviewMockData }) {
-  const winnerIndex = data.reviewBidders.findIndex((bidder) => bidder.rank === 1)
+  const winnerIndex = data.reviewBidders.findIndex(
+    (bidder) => bidder.rank === 1
+  )
   const firstIndex = winnerIndex >= 0 ? winnerIndex : 0
   const rows = data.compareGroups.flatMap((group) =>
     group.rows.map((row) => ({
@@ -314,27 +331,32 @@ function DetailSection({ data }: { data: TenderReviewMockData }) {
     <section className='mt-8'>
       <ReportTitle>第一中标候选人横比明细</ReportTitle>
       <div className='mt-2 text-sm text-muted-foreground'>
-        {data.reviewBidders[0]?.name} · 综合得分 {data.reviewBidders[0]?.total} 分
+        {data.reviewBidders[0]?.name} · 综合得分 {data.reviewBidders[0]?.total}{' '}
+        分
       </div>
       {rows.length > 0 ? (
         <div className='mt-4 overflow-hidden rounded-lg border'>
           {rows.map((row, index) => (
-          <div
-            key={`${row.group}-${row.name}`}
-            className={`grid grid-cols-[1fr_90px_90px] border-b last:border-b-0 ${
-              index % 2 ? 'bg-muted/20' : ''
-            }`}
-          >
-            <div className='p-3 text-sm'>
-              <span className='text-xs text-muted-foreground'>{row.group}</span>
-              <br />
-              {row.name}
+            <div
+              key={`${row.group}-${row.name}`}
+              className={`grid grid-cols-[1fr_90px_90px] border-b last:border-b-0 ${
+                index % 2 ? 'bg-muted/20' : ''
+              }`}
+            >
+              <div className='p-3 text-sm'>
+                <span className='text-xs text-muted-foreground'>
+                  {row.group}
+                </span>
+                <br />
+                {row.name}
+              </div>
+              <div className='p-3 text-center text-sm text-muted-foreground'>
+                {row.max}
+              </div>
+              <div className='p-3 text-center text-sm font-semibold'>
+                {row.got}
+              </div>
             </div>
-            <div className='p-3 text-center text-sm text-muted-foreground'>
-              {row.max}
-            </div>
-            <div className='p-3 text-center text-sm font-semibold'>{row.got}</div>
-          </div>
           ))}
         </div>
       ) : (
