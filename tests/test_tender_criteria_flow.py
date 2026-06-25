@@ -201,6 +201,50 @@ def test_criteria_with_score_modes_validates():
     jsonschema.validate(crit, load_output_schema(CRITERIA_SCHEMA))
 
 
+def test_criteria_with_highest_priority_eligibility_rules_validates():
+    # 资格审查与评分 items 并列：最高优先级先跑，不计入 total_max。
+    crit = _scored_criteria()
+    crit["eligibility_rules"] = [
+        {
+            "id": "q1",
+            "check": "企业资质证书",
+            "requirement": "具备建筑工程施工总承包一级及以上资质",
+            "evidence_required": "企业资质证书",
+            "stage": "qualification_review",
+            "priority": "highest",
+            "external_data": False,
+            "source_quote": "资质等级：具备建筑工程施工总承包一级及以上资质",
+            "source_ref": "招标文件第三章 资格评审标准 第22页",
+        },
+        {
+            "id": "q2",
+            "check": "信用记录",
+            "requirement": "未被列入失信被执行人等不得投标情形",
+            "evidence_required": "信用中国查询结果",
+            "stage": "qualification_review",
+            "priority": "highest",
+            "external_data": True,
+            "source_quote": "将在信用中国网站查询投标人的信用记录",
+            "source_ref": "招标文件第五部分 资格性审查 第18页",
+        },
+    ]
+    jsonschema.validate(crit, load_output_schema(CRITERIA_SCHEMA))
+
+
+def test_criteria_eligibility_rule_requires_highest_priority():
+    # 防止模型把资格审查降级成普通评分项或后置检查。
+    bad = _scored_criteria()
+    bad["eligibility_rules"] = [
+        {
+            "check": "企业资质证书",
+            "source_ref": "招标文件第三章 资格评审标准 第22页",
+            "priority": "normal",
+        }
+    ]
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate(bad, load_output_schema(CRITERIA_SCHEMA))
+
+
 def test_criteria_rejects_unknown_score_mode():
     # score_mode 是枚举：乱造 "magic_mode" → 拒。
     bad = _scored_criteria()
@@ -392,7 +436,7 @@ def test_score_mode_skips_null_and_manual(monkeypatch):
 
 
 def test_criteria_hash_ignores_empty_optional_fields():
-    # 同标多家：一家输出空容器(deductions:[]/bands:[]/rejection_rules:[])一家省略 → 同 hash。
+    # 同标多家：一家输出空容器(deductions:[]/bands:[]/eligibility_rules:[]/rejection_rules:[])一家省略 → 同 hash。
     from server.stores.tender_compare_store import compute_criteria_hash
 
     a = _scored_criteria()
@@ -401,6 +445,7 @@ def test_criteria_hash_ignores_empty_optional_fields():
     b["items"][0]["score_mode"] = "deduction"
     b["items"][0]["deductions"] = []
     b["items"][0]["bands"] = []
+    b["eligibility_rules"] = []
     b["rejection_rules"] = []
     assert compute_criteria_hash(a) == compute_criteria_hash(b)
 
@@ -471,6 +516,101 @@ def test_criteria_mode_container_mismatch_warns(monkeypatch):
     codes = [w["code"] for w in out["extracted_data"].get("validation_warnings", [])]
     assert "criteria_deduction_missing_deductions" in codes
     assert "criteria_banded_missing_bands" in codes
+
+
+def test_tender_explanation_is_user_facing_and_score_summary_is_canonical(monkeypatch):
+    """出结果时按 scoring[] 重算小结，并清理模型泄漏的内部字段名。"""
+    monkeypatch.setenv("RULE_REF_CHECK", "1")
+    monkeypatch.setattr(oc, "_load_known_rule_ids", lambda: _TENDER_KNOWN)
+    out = apply_schema_semantics(
+        DEFAULT_OUTPUT_SCHEMA_NAME,
+        _scored_with(
+            {
+                "criteria": _scored_criteria(),
+                "scoring": [
+                    {
+                        "item": "施工组织设计",
+                        "max": 6,
+                        "score": 5.0,
+                        "status": "scored",
+                        "basis": "已有初步分数",
+                    },
+                    {
+                        "item": "业绩",
+                        "max": 2,
+                        "score": 0,
+                        "status": "scored",
+                        "score_mode": "pass_fail",
+                        "basis": "未提供合格业绩",
+                    },
+                    {
+                        "item": "投标报价",
+                        "max": 92,
+                        "score": None,
+                        "status": "manual_review",
+                        "basis": "需全部投标报价",
+                    },
+                ],
+            },
+            verdict="manual_review",
+            manual_review_reason="insufficient_evidence",
+            explanation=(
+                "价格分公式含cross_bid变量，单家无法闭合。"
+                "综上，已判定项合计约5.00分（施工组织设计初评5.05/6 + 业绩0/2）。"
+            ),
+        ),
+    )
+    explanation = out["explanation"]
+    assert "cross_bid" not in explanation
+    assert "manual_review" not in explanation
+    assert "5.05/6" not in explanation
+    assert "得分小结：评分表共 3 项，满分 100 分；已有分数 2 项，合计 5 分" in explanation
+    assert "还有 1 项、共 92 分需要补充信息后确认" in explanation
+
+
+def test_failed_eligibility_rejected_explanation_skips_score_summary(monkeypatch):
+    """资格审查失败时综合意见只说废标，分数保留在明细里。"""
+    monkeypatch.setenv("RULE_REF_CHECK", "1")
+    monkeypatch.setattr(oc, "_load_known_rule_ids", lambda: _TENDER_KNOWN)
+    out = apply_schema_semantics(
+        DEFAULT_OUTPUT_SCHEMA_NAME,
+        _scored_with(
+            {
+                "criteria": _scored_criteria(),
+                "eligibility_checks": [
+                    {
+                        "rule_id": "q1",
+                        "check": "企业资质证书",
+                        "status": "fail",
+                        "basis": "未提供招标文件要求的企业资质证书。",
+                    }
+                ],
+                "scoring": [
+                    {
+                        "item": "施工组织设计",
+                        "max": 60,
+                        "score": 48,
+                        "status": "scored",
+                        "basis": "技术方案章节完整。",
+                    },
+                    {
+                        "item": "商务响应",
+                        "max": 40,
+                        "score": 0,
+                        "status": "scored",
+                        "basis": "未响应商务条款。",
+                    },
+                ],
+            },
+            verdict="manual_review",
+            manual_review_reason="insufficient_evidence",
+            explanation="未提供招标文件要求的企业资质证书。综上，已有分数项合计 48 分。",
+        ),
+    )
+    assert out["verdict"] == "rejected"
+    assert "资格审查不通过，按废标处理" in out["explanation"]
+    assert "得分小结" not in out["explanation"]
+    assert out["extracted_data"]["scoring"][0]["score"] == 48
 
 
 # ── C 根因:模型多输出未知顶层字段不再整单被拒(normalize 剥离)──────────────

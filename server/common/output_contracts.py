@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -102,6 +103,25 @@ AUDIT_DECISION_DERIVATION: dict[str, tuple[bool, str]] = {
     "rejected": (False, "不合规"),
     "manual_review": (False, "待人工复核"),
 }
+
+_USER_SUMMARY_MARKER = "得分小结："
+_TECH_TERM_REPLACEMENTS = (
+    ("manual_review_reason", "复核原因"),
+    ("manual_review", "需人工复核"),
+    ("cross_bid变量", "需要全部投标报价一起计算"),
+    ("cross_bid", "需要全部投标报价一起计算"),
+    ("bid_component", "本次报价数据"),
+    ("tender_constant", "招标文件固定数据"),
+    ("external_data", "外部资料"),
+    ("live_event", "现场记录"),
+    ("formula_spec", "公式明细"),
+    ("score_mode", "评分方式"),
+    ("extracted_data", "明细"),
+    ("policy_refs", "依据"),
+    ("evidence_chain", "证据"),
+    ("risk_score", "风险分"),
+    ("verdict", "结论"),
+)
 
 
 def _coerce_reason_to_str(reason: Any) -> str:
@@ -204,6 +224,15 @@ def _has_hard_disqualification(extracted: Any) -> bool:
         return False
     if _meaningful_disqualification_hits(extracted):
         return True
+    if _has_failed_eligibility(extracted):
+        return True
+    return False
+
+
+def _has_failed_eligibility(extracted: Any) -> bool:
+    """True when Claude has explicitly marked a qualification check as failed."""
+    if not isinstance(extracted, dict):
+        return False
     checks = extracted.get("eligibility_checks")
     if isinstance(checks, list):
         return any(
@@ -241,7 +270,98 @@ def enrich_audit_decision(structured_output: StructuredJSON) -> StructuredJSON:
             normalized_dims = _coerce_risk_dimensions(structured_output["risk_dimensions"])
             if normalized_dims is not None:
                 structured_output["risk_dimensions"] = normalized_dims
+        _finalize_user_explanation(structured_output)
     return structured_output
+
+
+def _format_score(value: float) -> str:
+    rounded = round(value + 0.0, 2)
+    if rounded.is_integer():
+        return str(int(rounded))
+    return f"{rounded:.2f}"
+
+
+def _strip_existing_score_summary(text: str) -> str:
+    idx = text.find(_USER_SUMMARY_MARKER)
+    if idx == -1:
+        base = text
+    else:
+        base = text[:idx]
+    # Models often add a final arithmetic recap and may mis-add decimals. Drop that
+    # recap and append the server-calculated one below.
+    base = re.sub(r"综上[，,].*?(?:合计|总分).*?(?:。|$)", "", base, flags=re.DOTALL)
+    return base.rstrip(" \n；。")
+
+
+def _sanitize_explanation_terms(text: str) -> str:
+    cleaned = text
+    for raw, replacement in _TECH_TERM_REPLACEMENTS:
+        cleaned = cleaned.replace(raw, replacement)
+    cleaned = cleaned.replace("公式含需要全部投标报价一起计算", "需要全部投标报价一起计算")
+    # Clean common snake_case leftovers that may appear when a model leaks internal field names.
+    cleaned = re.sub(r"\b[a-z]+(?:_[a-z0-9]+)+\b", "相关字段", cleaned)
+    return cleaned.strip()
+
+
+def _score_summary(extracted: Any) -> str | None:
+    if not isinstance(extracted, dict):
+        return None
+    scoring = extracted.get("scoring")
+    if not isinstance(scoring, list) or not scoring:
+        return None
+
+    total_items = 0
+    scored_items = 0
+    pending_items = 0
+    score_sum = 0.0
+    scored_max = 0.0
+    pending_max = 0.0
+    total_max = 0.0
+    for item in scoring:
+        if not isinstance(item, dict):
+            continue
+        max_score = item.get("max")
+        if not _is_real_number(max_score):
+            continue
+        total_items += 1
+        total_max += float(max_score)
+        score = item.get("score")
+        if _is_real_number(score):
+            scored_items += 1
+            score_sum += float(score)
+            scored_max += float(max_score)
+        else:
+            pending_items += 1
+            pending_max += float(max_score)
+
+    if total_items == 0:
+        return None
+    summary = (
+        f"{_USER_SUMMARY_MARKER}评分表共 {total_items} 项，满分 {_format_score(total_max)} 分；"
+        f"已有分数 {scored_items} 项，合计 {_format_score(score_sum)} 分"
+    )
+    if pending_items:
+        summary += (
+            f"；还有 {pending_items} 项、共 {_format_score(pending_max)} 分需要补充信息后确认"
+        )
+    summary += "。"
+    return summary
+
+
+def _finalize_user_explanation(output: dict[str, Any]) -> None:
+    explanation = output.get("explanation")
+    if not isinstance(explanation, str) or not explanation.strip():
+        return
+    cleaned = _sanitize_explanation_terms(_strip_existing_score_summary(explanation))
+    extracted = output.get("extracted_data")
+    if output.get("verdict") == "rejected" and _has_failed_eligibility(extracted):
+        prefix = "资格审查不通过，按废标处理。"
+        if "资格审查不通过" not in cleaned or "废标" not in cleaned:
+            cleaned = f"{prefix}{cleaned}" if cleaned else prefix
+    summary = None
+    if not (output.get("verdict") == "rejected" and _has_hard_disqualification(extracted)):
+        summary = _score_summary(extracted)
+    output["explanation"] = f"{cleaned}\n\n{summary}" if summary else cleaned
 
 
 _VALID_RISK_DIM_NAMES = {"invoice", "amount", "approval", "budget", "anomaly"}

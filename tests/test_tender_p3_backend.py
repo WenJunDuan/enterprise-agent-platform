@@ -64,6 +64,7 @@ def test_criteria_backfill_writes_when_none(monkeypatch):
     stored = json.loads(row["criteria"])
     assert stored["method"] == "综合评估法"
     assert stored["items"][0]["item"] == "技术方案"
+    assert row["criteria_status"] == "ready"
 
 
 def test_criteria_backfill_first_writer_wins(monkeypatch):

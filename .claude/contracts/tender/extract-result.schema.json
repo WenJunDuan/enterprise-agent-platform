@@ -51,6 +51,22 @@
       },
       "required": ["amount", "currency"]
     },
+    "eligibility_evidence": {
+      "type": "array",
+      "description": "资格审查证明事实清单，只记录材料是否找到与出处，不做通过/失败判断。",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "check": { "type": "string" },
+          "found": { "type": "boolean" },
+          "source_ref": { "type": ["string", "null"] },
+          "quote": { "type": ["string", "null"] },
+          "needs_external_verification": { "type": "boolean" }
+        },
+        "required": ["check", "found", "source_ref"]
+      }
+    },
     "track_records": {
       "type": "array",
       "items": {

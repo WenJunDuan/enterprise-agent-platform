@@ -393,6 +393,7 @@ slug 拆分为独立 sprint 目录；`lessons.md` 整体保留为
 - `docs/` — 项目参考文档 (开发指南 / 前端对接 / audit-skills)，非状态机文件
 
 ## 历史 (由 pace-continuator hook 自动追加, 最多保留近 10 条)
+- `2026-06-23 15:40:09`: stage=ship sprint=2026-06-23-tender-judgment-discipline turn-end
 - `2026-06-23 06:41:35`: stage=ship sprint=2026-06-22-tender-evidence-accuracy-hardening turn-end
 - `2026-06-22 03:11:05`: stage=design sprint=2026-06-22-tender-evidence-accuracy-hardening turn-end
 - `2026-06-21 15:37:29`: stage=ship sprint=2026-06-22-multimodel-tender-optimization turn-end
@@ -403,6 +404,5 @@ slug 拆分为独立 sprint 目录；`lessons.md` 整体保留为
 - `2026-06-20 07:57:58`: stage=review sprint=2026-06-20-tender-task-api-parity turn-end
 - `2026-06-20 06:53:12`: stage=design sprint=2026-06-20-tender-criteria-from-bid-doc turn-end
 
-- `2026-06-20 02:49:56`: stage=ship sprint=2026-06-20-agent-capability-redesign turn-end
 
 - 2026-06-02 [migrate] v9.6.2(legacy flat) → v9.6.4. 备份见 `.ai_state.backup-*`。

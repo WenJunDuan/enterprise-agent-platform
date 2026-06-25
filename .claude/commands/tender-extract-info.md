@@ -1,5 +1,5 @@
 ---
-description: 招标信息抽取：从招标文件 OCR 底稿一次性抽取评分标准（criteria）与招标基本信息（tender_info），聚焦招标文件，不读投标，不评分
+description: 招标信息抽取：从招标文件 OCR 底稿一次性抽取资格审查规则、评分标准（criteria）与招标基本信息（tender_info），聚焦招标文件，不读投标，不评分
 allowed-tools: Read, Glob
 ---
 
@@ -10,6 +10,7 @@ allowed-tools: Read, Glob
 - **只处理招标文件**，不读投标文件、不评分、不给分、不写结论。
 - **优先使用服务端注入的 OCR 底稿上下文**（已由 `[` 标注页锚点并重点还原评分表格）；仅在底稿不完整时 `Read` 原文件补充。
 - **直读即权威**：招标文件载明的内容直读解析，不凭训练记忆补充或臆造任何评分标准。
+- **资格审查是最高优先级招标项**：凡招标文件出现「资格审查 / 资格性审查 / 资格评审 / 初步评审 / 符合性审查 / 响应性评审」等章节，须抽进 `criteria.eligibility_rules[]`，与评分 `items[]` 并列；它不计入 `total_max`，但评审时先于评分运行。
 - **定位不到 → 降级不臆造**：找不到评标办法/评分标准时，`criteria` 各项标注 `tag: manual`、`score_mode: manual`，写明缺什么；不得现场编造规则。
 - **输出只有一个 JSON 对象**，首字符是 `{`、末字符是 `}`。分析/思考只能写在 `<think></think>` 内，`</think>` 之后只准有这一个 JSON 对象。
 
@@ -17,22 +18,24 @@ allowed-tools: Read, Glob
 
 ## 执行步骤（单趟，无需 spawn 子 agent）
 
-### 步骤 1 — 定位评标办法/评分标准
+### 步骤 1 — 定位资格审查与评标办法/评分标准
 
 **完全复用 tender-evaluate.md S1 的定位指令**（已注入的 OCR 底稿优先）：
 
+- 先找资格/初步审查章节：标题或表格含「资格审查 / 资格性审查 / 资格评审 / 初步评审 / 符合性审查 / 响应性评审 / 资格审查证明文件」等，均为最高优先级审查规则来源。
 - 找含「序号 / 评分点名称 / 评审标准 / 最高分 / 最低分」或「评分项 / 分值 / 权重」的评分表。
-- 章节标题含「开标 / 评标 / 评审 / 资格审查 / 商务技术标 / 报价标」即是；**不限于《评标办法》字样**。
+- 章节标题含「开标 / 评标 / 评审 / 商务技术标 / 报价标」即是；**不限于《评标办法》字样**。
 - **关键排除**：绝对不要把「考核方案 / 绩效考核 / 季度考核 / 履约考核 / KPI」等中标后阶段的表当评分表——它们同样列分值，但属履约阶段，误取会导致整套 criteria 取错。
-- 定位后自检：各项 `max` 之和是否 = `total_max`；对不上 → 回去重定位。
+- 定位后自检：评分 `items[].max` 之和是否 = `total_max`；资格审查只进 `eligibility_rules[]`，不参与总分。对不上 → 回去重定位。
 
-### 步骤 2 — 抽取 criteria（评分标准）
+### 步骤 2 — 抽取 criteria（资格审查 + 评分标准）
 
-按 `.claude/contracts/tender/criteria.schema.json` v2 规范完整解析评分标准：
+按 `.claude/contracts/tender/criteria.schema.json` 当前规范完整解析项目规则：
 
 - `source_ref`：评标办法在本招标文件的实际出处（文件 + 章节/标题 + 页）。
 - `method`：综合评估法 / 经评审的最低投标价法 / 其他。
 - `total_max`：满分合计。
+- `eligibility_rules[]`：资格审查/资格评审/初步评审规则，逐条提取 `{id, check, requirement, evidence_required, stage, priority:"highest", external_data, source_quote, source_ref}`。**这些规则与 `items[]` 并列，但不计入总分；后续评审必须先运行它们。**外部网站/主体库/动态监管等上下文缺失时只标 `external_data:true`，不得在抽取阶段判失败。
 - `items[]`：每项除 `{item, max, scoring_rule, source_ref, tag}` 外，**必须判定 `score_mode` 并提取对应结构化细则**：
   - `deduction`（满分扣减）→ 逐条 `deductions[]`：`{condition, points, unit, max_times, max_deduct, source_quote, source_ref}`。**扣分项全摘，不留到评标临场猜。**
   - `banded`（档次给分）→ `bands[]`：`{level, points, criteria, source_quote}`。

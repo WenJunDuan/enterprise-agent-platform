@@ -26,6 +26,7 @@ import {
   type TenderProjectCreateRequest,
   type TenderProjectDetailResponse,
 } from './api'
+import type { ProjectFormData } from './components/create-review-view'
 import {
   buildDashboardSummary,
   buildTenderReviewData,
@@ -40,21 +41,29 @@ import type {
   TenderReviewMode,
   UploadBidder,
 } from './types'
-import type { ProjectFormData } from './components/create-review-view'
 
 const TENDER_PROJECTS_QUERY_KEY = ['tender-projects'] as const
 const SELECTED_PROJECT_KEY = 'tender-selected-project'
 
 // 长任务解耦（第5轮）：进行中评标持久化，可离开/回来恢复，不阻塞 mutation、不超时掉回。
 const ACTIVE_EVAL_KEY = 'tender-active-eval'
-type ActiveEval = { projectId: string; requestIds: string[]; hasCompare: boolean }
+type ActiveEval = {
+  projectId: string
+  requestIds: string[]
+  hasCompare: boolean
+}
 function readActiveEval(): ActiveEval | null {
   try {
     const raw = localStorage.getItem(ACTIVE_EVAL_KEY)
     if (!raw) return null
     const parsed = JSON.parse(raw) as Partial<ActiveEval>
     // shape 校验：脏数据（{}、缺 requestIds）一律丢弃，防 .length 崩溃（codex r5 A+B P1）。
-    if (!parsed || !Array.isArray(parsed.requestIds) || parsed.requestIds.length === 0) return null
+    if (
+      !parsed ||
+      !Array.isArray(parsed.requestIds) ||
+      parsed.requestIds.length === 0
+    )
+      return null
     return {
       projectId: String(parsed.projectId ?? ''),
       requestIds: parsed.requestIds,
@@ -148,8 +157,9 @@ export function useTenderReviewPage(
   // 思考流式：按 request_id 存各投标人评标进度，避免多 bidder 并发覆盖（codex r4 P1）。
   const [progressByRid, setProgressByRid] = useState<Record<string, string>>({})
   // 长任务解耦（第5轮）：进行中评标（持久化），可离开/回来恢复、不阻塞、不超时掉回。
-  const [activeEval, setActiveEvalState] =
-    useState<ActiveEval | null>(() => activeEvalSnapshot)
+  const [activeEval, setActiveEvalState] = useState<ActiveEval | null>(
+    () => activeEvalSnapshot
+  )
   const setActiveEval = (value: ActiveEval | null) => {
     setActiveEvalState(value)
     writeActiveEval(value)
@@ -166,9 +176,13 @@ export function useTenderReviewPage(
   const [uploadProjectId, setUploadProjectId] = useState<string | null>(null)
   // A（上传即 OCR，每区一次多选→自动传→锁定）：招标层一份/每投标一个 bid，故各区上传一次。
   // uploadedBidderIds：已自动上传的投标单位 id（锁定其文件区，防重复 bid）。
-  const [uploadedBidderIds, setUploadedBidderIds] = useState<Set<number>>(new Set())
+  const [uploadedBidderIds, setUploadedBidderIds] = useState<Set<number>>(
+    new Set()
+  )
   const [uploadingTender, setUploadingTender] = useState(false)
-  const [uploadingBidderIds, setUploadingBidderIds] = useState<Set<number>>(new Set())
+  const [uploadingBidderIds, setUploadingBidderIds] = useState<Set<number>>(
+    new Set()
+  )
   // R6-R2：记各家预热 bid_id（uploadBid 返回）→ 提交评标时透传，worker 复用预热 OCR 免重 OCR。
   const [prewarmBidIds, setPrewarmBidIds] = useState<Record<number, string>>({})
   // 防招标文件多选时并发重复建项目（createTenderProject 异步，第二次 add 在 resolve 前会重复建）。
@@ -195,8 +209,7 @@ export function useTenderReviewPage(
   const selectedProjectIdForQuery =
     selectedProjectId ?? projectsQuery.data?.[0]?.project_id ?? ''
   const shouldLoadSelectedProject = Boolean(
-    selectedProjectIdForQuery &&
-      (screen === 'analysis' || screen === 'report')
+    selectedProjectIdForQuery && (screen === 'analysis' || screen === 'report')
   )
 
   const projectDetailQuery = useQuery({
@@ -223,7 +236,8 @@ export function useTenderReviewPage(
 
   const resultsQuery = useQuery({
     queryKey: ['tender-project-results', selectedProjectIdForQuery],
-    queryFn: () => listTenderProjectResults(selectedProjectIdForQuery, { limit: 200 }),
+    queryFn: () =>
+      listTenderProjectResults(selectedProjectIdForQuery, { limit: 200 }),
     enabled: shouldLoadSelectedProject,
   })
 
@@ -231,7 +245,8 @@ export function useTenderReviewPage(
     queryKey: ['tender-project-compare', selectedProjectIdForQuery],
     queryFn: () => getTenderCompareOrNull(selectedProjectIdForQuery),
     enabled:
-      shouldLoadSelectedProject && (projectDetailQuery.data?.bidder_count ?? 0) >= 2,
+      shouldLoadSelectedProject &&
+      (projectDetailQuery.data?.bidder_count ?? 0) >= 2,
     refetchInterval: (query) => {
       const compare = query.state.data
       // 遗留③：首次横比由 triggerTenderCompare 异步生成，期间查询返回 null(404)。旧逻辑 null→停轮询
@@ -268,7 +283,10 @@ export function useTenderReviewPage(
     screen === 'create'
       ? uploadProjectId
       : screen === 'analyzing'
-        ? (activeEval?.projectId ?? selectedProjectId ?? uploadProjectId ?? null)
+        ? (activeEval?.projectId ??
+          selectedProjectId ??
+          uploadProjectId ??
+          null)
         : null
   // criteria_status 非终态时每 2.5s 轮询（OCR 后台抽取进度），ready/failed 即停。
   const tenderDocInfoQuery = useQuery({
@@ -310,7 +328,10 @@ export function useTenderReviewPage(
       selectedResultRequestId,
     ],
     queryFn: () =>
-      getTenderProjectResult(selectedProjectIdForQuery, selectedResultRequestId),
+      getTenderProjectResult(
+        selectedProjectIdForQuery,
+        selectedResultRequestId
+      ),
     enabled: Boolean(shouldLoadSelectedProject && selectedResultRequestId),
   })
 
@@ -321,7 +342,8 @@ export function useTenderReviewPage(
         selectedProjectIdForQuery,
         result.request_id,
       ],
-      queryFn: () => getTenderProjectResult(selectedProjectIdForQuery, result.request_id),
+      queryFn: () =>
+        getTenderProjectResult(selectedProjectIdForQuery, result.request_id),
       enabled: Boolean(shouldLoadSelectedProject && result.request_id),
       staleTime: 5000,
     })),
@@ -364,7 +386,9 @@ export function useTenderReviewPage(
   const selectedProject =
     projectDetailQuery.data ??
     projectDetailById.get(selectedProjectIdForQuery) ??
-    projectsQuery.data?.find((project) => project.project_id === selectedProjectIdForQuery) ??
+    projectsQuery.data?.find(
+      (project) => project.project_id === selectedProjectIdForQuery
+    ) ??
     null
   const viewData = useMemo(
     () => ({
@@ -389,6 +413,19 @@ export function useTenderReviewPage(
     ]
   )
 
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    const categories = viewData.categories
+    if (categories.length === 0) return
+    const activeCategory = categories.find((item) => item.key === category)
+    const nextCategory = activeCategory ?? categories[0]
+    if (!activeCategory) setCategory(nextCategory.key)
+    if (!nextCategory.items.some((item) => item.id === activeItemId)) {
+      setActiveItemId(nextCategory.items[0]?.id ?? 'result-summary')
+    }
+  }, [activeItemId, category, viewData.categories])
+  /* eslint-enable react-hooks/set-state-in-effect */
+
   // R7：开始分析**只看本地选了文件**，完全不等任何上传/OCR/预热完成（用户："直接传上去,后台做,
   // 前台不要有提示,不要卡"）。选了招标 + ≥1 家投标文件即可点开始；预热上传/OCR 全在后台，submitReview
   // 内部兜底（await 在途建项目 / 缺预热则现传），用户一路下一步到「开始分析」即可走人。
@@ -406,11 +443,15 @@ export function useTenderReviewPage(
       setProgressByRid({})
       setProgress(30)
       setActiveEval({ projectId, requestIds, hasCompare })
-      void queryClient.invalidateQueries({ queryKey: TENDER_PROJECTS_QUERY_KEY })
+      void queryClient.invalidateQueries({
+        queryKey: TENDER_PROJECTS_QUERY_KEY,
+      })
       // 保持 analyzing 界面；全部评标终态后由轮询 effect 跳 analysis
     },
     onError: (error) => {
-      setSubmitError(error instanceof Error ? error.message : '分析失败，请稍后重试。')
+      setSubmitError(
+        error instanceof Error ? error.message : '分析失败，请稍后重试。'
+      )
       setProgress(0)
       setScreen('create') // submitReview 只做提交（建项目/上传），失败才回 create 让用户重试
     },
@@ -427,7 +468,9 @@ export function useTenderReviewPage(
     refetchInterval: 2500,
     queryFn: async () =>
       Promise.all(
-        (activeEval?.requestIds ?? []).map((rid) => getTenderTask(rid).catch(() => null))
+        (activeEval?.requestIds ?? []).map((rid) =>
+          getTenderTask(rid).catch(() => null)
+        )
       ),
   })
 
@@ -441,27 +484,39 @@ export function useTenderReviewPage(
     setProgressByRid((prev) => {
       const next = { ...prev }
       statuses.forEach((status, i) => {
-        if (status?.progress_message) next[activeEval.requestIds[i]] = status.progress_message
+        if (status?.progress_message)
+          next[activeEval.requestIds[i]] = status.progress_message
       })
       return next
     })
     // 终态判定：completed/failed 是终态；null（任务 404/已删/不存在）也当终态，否则脏 rid 会永远
     // 停 analyzing 卡死、不清 localStorage（codex r5 A+B P1）。
     const allTerminal = statuses.every(
-      (status) => status === null || status.status === 'completed' || status.status === 'failed'
+      (status) =>
+        status === null ||
+        status.status === 'completed' ||
+        status.status === 'failed'
     )
     if (allTerminal) {
       const { projectId, hasCompare } = activeEval
       // 失败可见（P1-4）：有 failed / 任务丢失 → 提示，不被结果列表静默掩盖。
-      const failedCount = statuses.filter((s) => !s || s.status === 'failed').length
+      const failedCount = statuses.filter(
+        (s) => !s || s.status === 'failed'
+      ).length
       if (failedCount > 0) {
-        setSubmitError(`${failedCount} 家评标未成功（失败或任务丢失），可在结果页查看或重试。`)
+        setSubmitError(
+          `${failedCount} 家评标未成功（失败或任务丢失），可在结果页查看或重试。`
+        )
       }
       setActiveEval(null)
       setProgress(100)
       if (hasCompare) void triggerTenderCompare(projectId).catch(() => {})
-      void queryClient.invalidateQueries({ queryKey: ['tender-project', projectId] })
-      void queryClient.invalidateQueries({ queryKey: ['tender-project-results', projectId] })
+      void queryClient.invalidateQueries({
+        queryKey: ['tender-project', projectId],
+      })
+      void queryClient.invalidateQueries({
+        queryKey: ['tender-project-results', projectId],
+      })
       if (screen === 'analyzing') {
         setReviewMode(hasCompare ? 'compare' : 'detail')
         setScreen('analysis')
@@ -600,14 +655,18 @@ export function useTenderReviewPage(
     // 后台预热：建项目 + 上传招标 → 触发后台 OCR。promise 存入 ref 供 submitReview 兜底 await。
     const promise = (async (): Promise<string | null> => {
       try {
-        const project = await createTenderProject(buildCreateProjectBody(projectForm, natives[0]))
+        const project = await createTenderProject(
+          buildCreateProjectBody(projectForm, natives[0])
+        )
         await uploadTenderDoc(project.project_id, natives) // 触发后台 OCR
         setUploadProjectId(project.project_id)
         return project.project_id
       } catch (error) {
         // 失败回退：清掉刚 staged 的招标文件，让用户重选
         setTenderFiles([])
-        setSubmitError(error instanceof Error ? error.message : '招标文件上传失败，请重试')
+        setSubmitError(
+          error instanceof Error ? error.message : '招标文件上传失败，请重试'
+        )
         return null
       } finally {
         setUploadingTender(false)
@@ -625,7 +684,9 @@ export function useTenderReviewPage(
    */
   async function removeTenderFile(index: number) {
     if (!uploadProjectId) {
-      setTenderFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))
+      setTenderFiles((current) =>
+        current.filter((_, itemIndex) => itemIndex !== index)
+      )
       return
     }
     const pid = uploadProjectId
@@ -643,7 +704,9 @@ export function useTenderReviewPage(
       await deleteTenderProject(pid)
     } catch {
       // 删除失败不阻断重传（孤儿项目可在列表手动删）；如实提示。
-      setSubmitError('已清空当前上传，但后台项目删除失败，可在项目列表中手动删除。')
+      setSubmitError(
+        '已清空当前上传，但后台项目删除失败，可在项目列表中手动删除。'
+      )
     }
     void queryClient.invalidateQueries({ queryKey: TENDER_PROJECTS_QUERY_KEY })
   }
@@ -695,7 +758,9 @@ export function useTenderReviewPage(
 
     setUploadBidders((current) =>
       current.map((bidder) =>
-        bidder.id === id ? { ...bidder, files: [...bidder.files, ...nextFiles] } : bidder
+        bidder.id === id
+          ? { ...bidder, files: [...bidder.files, ...nextFiles] }
+          : bidder
       )
     )
     setUploadError(false)
@@ -705,14 +770,20 @@ export function useTenderReviewPage(
       const res = await uploadBid(uploadProjectId, bidderName, natives) // 触发后台 OCR
       setPrewarmBidIds((prev) => ({ ...prev, [id]: res.bid_id })) // R6-R2：记预热 bid_id 供评标复用
       setUploadedBidderIds((prev) => new Set(prev).add(id))
-      void queryClient.invalidateQueries({ queryKey: ['tender-docs-status', uploadProjectId] })
+      void queryClient.invalidateQueries({
+        queryKey: ['tender-docs-status', uploadProjectId],
+      })
     } catch (error) {
       // 失败回退：清掉该家刚 staged 的文件，让用户重选
       setUploadBidders((current) =>
-        current.map((bidder) => (bidder.id === id ? { ...bidder, files: [] } : bidder))
+        current.map((bidder) =>
+          bidder.id === id ? { ...bidder, files: [] } : bidder
+        )
       )
       setSubmitError(
-        error instanceof Error ? error.message : `投标文件上传失败（${bidderName ?? id}），请重试`
+        error instanceof Error
+          ? error.message
+          : `投标文件上传失败（${bidderName ?? id}），请重试`
       )
     } finally {
       setUploadingBidderIds((prev) => {
@@ -758,11 +829,15 @@ export function useTenderReviewPage(
   }
 
   async function submitReview() {
-    const nativeTenderFiles = tenderFiles.filter(hasNativeFile).map((item) => item.file)
+    const nativeTenderFiles = tenderFiles
+      .filter(hasNativeFile)
+      .map((item) => item.file)
     const bidders = uploadBidders
       .map((bidder) => ({
         ...bidder,
-        nativeFiles: bidder.files.filter(hasNativeFile).map((item) => item.file),
+        nativeFiles: bidder.files
+          .filter(hasNativeFile)
+          .map((item) => item.file),
       }))
       .filter((bidder) => bidder.nativeFiles.length > 0)
 
@@ -772,11 +847,17 @@ export function useTenderReviewPage(
 
     // R7：复用已建项目（uploadProjectId）→ 若预热上传仍在途，await 其 promise 拿 project_id（不另建，
     // 防孤儿/重复）→ 都没有才现建项目（直接点"开始分析"的 legacy 路径）。
-    const inflightProjectId = tenderUploadRef.current ? await tenderUploadRef.current : null
+    const inflightProjectId = tenderUploadRef.current
+      ? await tenderUploadRef.current
+      : null
     const projectId =
       uploadProjectId ??
       inflightProjectId ??
-      (await createTenderProject(buildCreateProjectBody(projectForm, nativeTenderFiles[0]))).project_id
+      (
+        await createTenderProject(
+          buildCreateProjectBody(projectForm, nativeTenderFiles[0])
+        )
+      ).project_id
 
     setProgress(10)
 
@@ -801,7 +882,9 @@ export function useTenderReviewPage(
       throw new Error(`全部投标提交失败：${submitFailures.join('、')}`)
     }
     if (submitFailures.length > 0) {
-      setSubmitError(`部分投标提交失败：${submitFailures.join('、')}（其余已在后台分析）。`)
+      setSubmitError(
+        `部分投标提交失败：${submitFailures.join('、')}（其余已在后台分析）。`
+      )
     }
 
     // 解耦（第5轮）：提交即返回，**不再 await 评标完成**——评标交 analyzing 独立轮询，
@@ -829,7 +912,9 @@ export function useTenderReviewPage(
         })
       )
     )
-    return details.flatMap((detail) => (detail.bids ?? []).map((bid) => bid.request_id))
+    return details.flatMap((detail) =>
+      (detail.bids ?? []).map((bid) => bid.request_id)
+    )
   }
 
   /** B⑤: Batch delete — 删整个招标项目（后端级联删投标任务/结论/横比），空项目也能删。 */
@@ -869,17 +954,23 @@ export function useTenderReviewPage(
       bidderFiles,
     })
     await queryClient.invalidateQueries({ queryKey: TENDER_PROJECTS_QUERY_KEY })
-    await queryClient.invalidateQueries({ queryKey: ['tender-project', projectId] })
+    await queryClient.invalidateQueries({
+      queryKey: ['tender-project', projectId],
+    })
   }
 
   // 思考流式：多投标人并行时按序号分段拼接各家进度，单家直接显示（codex r4 P1：防并发覆盖）。
   // 按提交顺序（activeEval.requestIds）排列各家进度，标签不错位（codex r5 P2）。
   const orderedRids = activeEval?.requestIds ?? Object.keys(progressByRid)
-  const progressEntries = orderedRids.map((rid) => progressByRid[rid]).filter(Boolean)
+  const progressEntries = orderedRids
+    .map((rid) => progressByRid[rid])
+    .filter(Boolean)
   const progressText =
     progressEntries.length <= 1
-      ? progressEntries[0] ?? ''
-      : progressEntries.map((text, i) => `── 投标 ${i + 1} ──\n${text}`).join('\n\n')
+      ? (progressEntries[0] ?? '')
+      : progressEntries
+          .map((text, i) => `── 投标 ${i + 1} ──\n${text}`)
+          .join('\n\n')
 
   return {
     screen,
@@ -958,7 +1049,9 @@ function buildCreateProjectBody(
   firstTenderFile: File
 ): TenderProjectCreateRequest {
   const title =
-    form.title?.trim() || stripExtension(firstTenderFile.name) || '新建招投标项目'
+    form.title?.trim() ||
+    stripExtension(firstTenderFile.name) ||
+    '新建招投标项目'
   const tender_no =
     form.tender_no?.trim() || deriveTenderNo(firstTenderFile.name)
   return {
