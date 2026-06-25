@@ -10,7 +10,10 @@ export type TenderReviewScreen =
   | 'analysis'
   | 'report'
 export type TenderReviewMode = 'detail' | 'compare'
-export type ReviewCategory = 'qual' | 'tech' | 'comm'
+// 'qual'=资格审查（固定类目，来自 eligibility_checks）。其余为招标文件评标办法的
+// 实际类目原名（动态字符串，criteria.items[].category）；'tech'/'comm' 仅作旧数据
+// （无 category）的推断兜底键。(string & {}) 保留字面量补全又允许任意标书类目名。
+export type ReviewCategory = 'qual' | 'tech' | 'comm' | (string & {})
 export type ReviewItemStatus = 'pass' | 'warning' | 'fail'
 export type TenderResultVerdict =
   | 'approved'
@@ -24,6 +27,10 @@ export type TenderScoringStatus =
   | string
 export type TenderEligibilityStatus = 'pass' | 'fail' | 'manual' | string
 export type TenderScoreCategory = 'business' | 'technical'
+export type TenderReviewDimension =
+  | 'price'
+  | 'business_objective'
+  | 'technical_subjective'
 
 export type TenderProject = {
   id: string
@@ -103,6 +110,7 @@ export type TenderScoringItem = {
   basis: string
   category: ReviewCategory
   scoreCategory: TenderScoreCategory
+  reviewDimension: TenderReviewDimension
   scoreMode?: string
   evidence: TenderScoreEvidence[]
 }
@@ -132,6 +140,7 @@ export type TenderScoreIssue = {
   deduction: number | null
   basis: string
   scoreCategory: TenderScoreCategory
+  reviewDimension: TenderReviewDimension
 }
 
 export type TenderCompareScoreCell = {
@@ -150,7 +159,23 @@ export type TenderCompareScoreRow = {
   item: string
   max: number
   scoreCategory: TenderScoreCategory
+  reviewDimension: TenderReviewDimension
   cells: TenderCompareScoreCell[]
+}
+
+export type TenderPriceCompareCell = {
+  bidderId: string
+  bidderName: string
+  bidPrice: string
+  score: number | null
+  status: TenderScoringStatus
+  note?: string
+}
+
+export type TenderPriceCompareDetail = {
+  formula: string
+  evidence: TenderScoreEvidence[]
+  cells: TenderPriceCompareCell[]
 }
 
 export type TenderPolicyRef = {
@@ -210,6 +235,7 @@ export type TenderReviewMockData = {
   scoringItems?: TenderScoringItem[]
   scoreSummary?: TenderScoreSummary
   compareScoreRows?: TenderCompareScoreRow[]
+  comparePriceDetail?: TenderPriceCompareDetail
   compareNotice?: {
     stale: boolean
     provisional: boolean

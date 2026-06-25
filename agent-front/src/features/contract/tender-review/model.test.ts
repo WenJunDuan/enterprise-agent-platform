@@ -3,12 +3,62 @@ import { tenderReviewMockData } from './mock-data'
 import {
   buildDashboardSummary,
   buildTenderReviewData,
+  deriveReviewDimension,
   filterReviewHistory,
   mapTenderProject,
 } from './model'
 import type { TenderReviewMockData } from './types'
 
 describe('contract tender review model', () => {
+  test('deriveReviewDimension prioritizes structured price signals', () => {
+    expect(
+      deriveReviewDimension(
+        { item: '评标基准价得分' },
+        { item: '评标基准价得分', tag: 'requires_cross_bid_comparison' }
+      )
+    ).toBe('price')
+    expect(
+      deriveReviewDimension(
+        { item: '报价测算', score_mode: 'formula' },
+        { item: '报价测算', evaluator_type: 'objective' }
+      )
+    ).toBe('price')
+    expect(deriveReviewDimension({ item: '投标报价' })).toBe('price')
+  })
+
+  test('deriveReviewDimension identifies subjective technical review', () => {
+    expect(
+      deriveReviewDimension(
+        { item: '技术方案' },
+        { item: '技术方案', evaluator_type: 'subjective' }
+      )
+    ).toBe('technical_subjective')
+    expect(
+      deriveReviewDimension(
+        { item: '施工组织设计' },
+        { item: '施工组织设计', evaluator_type: 'mixed' }
+      )
+    ).toBe('technical_subjective')
+  })
+
+  test('deriveReviewDimension keeps objective and unknown legacy data in business objective', () => {
+    expect(
+      deriveReviewDimension(
+        { item: '企业业绩', score_mode: 'additive' },
+        { item: '企业业绩', evaluator_type: 'objective' }
+      )
+    ).toBe('business_objective')
+    expect(
+      deriveReviewDimension(
+        { item: '质保服务', score_mode: 'banded' },
+        { item: '质保服务', evaluator_type: 'objective' }
+      )
+    ).toBe('business_objective')
+    expect(deriveReviewDimension({ item: '技术方案' })).toBe(
+      'business_objective'
+    )
+  })
+
   test('buildDashboardSummary aggregates prototype workbench counts', () => {
     const summary = buildDashboardSummary(tenderReviewMockData)
 
@@ -212,6 +262,7 @@ describe('contract tender review model', () => {
                 source_ref: '招标文件 p.16',
                 tag: 'scored',
                 category: '商务标',
+                evaluator_type: 'objective',
               },
               {
                 item: '技术方案',
@@ -220,6 +271,7 @@ describe('contract tender review model', () => {
                 source_ref: '招标文件 p.18',
                 tag: 'scored',
                 category: '技术标',
+                evaluator_type: 'subjective',
               },
               {
                 item: '价格分',
@@ -229,6 +281,7 @@ describe('contract tender review model', () => {
                 tag: 'requires_cross_bid_comparison',
                 score_mode: 'formula',
                 category: '商务标',
+                evaluator_type: 'objective',
               },
             ],
           },
@@ -340,6 +393,7 @@ describe('contract tender review model', () => {
           bidders: [
             {
               claim_id: '中建一局',
+              bid_price: { amount: 1000000, currency: 'CNY' },
               price_score: 38,
               other_score: 51,
               total_score: 89,
@@ -348,6 +402,7 @@ describe('contract tender review model', () => {
             },
             {
               claim_id: '中铁二局',
+              bid_price: { amount: 1055555, currency: 'CNY' },
               price_score: 36,
               other_score: 50,
               total_score: 86,
@@ -360,6 +415,13 @@ describe('contract tender review model', () => {
           warnings: ['有效投标人数量为 2，建议复核竞争性。'],
           explanation: '中建一局综合排名第一。',
           policy_refs: ['tender_evalmethod_004'],
+          evidence_chain: [
+            {
+              source: '横比计算',
+              finding: '价格分公式：最低有效报价/本投标报价×40。',
+              conclusion: '中建一局价格分 38 分，中铁二局价格分 36 分。',
+            },
+          ],
         },
         stale: false,
         computed_at: '2026-06-20T07:00:00+00:00',
@@ -379,11 +441,22 @@ describe('contract tender review model', () => {
       ['中建一局', 89],
       ['中铁二局', 86],
     ])
+    // D6：报告类目按招标文件实际要素（criteria/scoring.category）动态分栏——
+    // 资格审查恒首位，其余按标书出现顺序、用标书原始类目名作小标题（有几类显示几类）。
+    expect(data.categories.map((c) => [c.key, c.label])).toEqual([
+      ['qual', '资格审查'],
+      ['商务标', '商务标'],
+      ['技术标', '技术标'],
+    ])
     expect(data.categories[0]?.items[0]).toMatchObject({
       title: '资格审查：企业资质证书',
       status: 'pass',
     })
-    expect(data.categories[0]?.items[1]).toMatchObject({
+    expect(data.categories[1]?.items.map((item) => item.title)).toEqual([
+      '企业实力',
+      '价格分',
+    ])
+    expect(data.categories[2]?.items[0]).toMatchObject({
       title: '技术方案',
       got: 27,
       max: 30,
@@ -395,11 +468,12 @@ describe('contract tender review model', () => {
         item.score,
         item.max,
         item.scoreCategory,
+        item.reviewDimension,
       ])
     ).toEqual([
-      ['企业实力', 6, 6, 'business'],
-      ['技术方案', 27, 30, 'technical'],
-      ['价格分', null, 40, 'business'],
+      ['企业实力', 6, 6, 'business', 'business_objective'],
+      ['技术方案', 27, 30, 'technical', 'technical_subjective'],
+      ['价格分', null, 40, 'business', 'price'],
     ])
     expect(data.scoreSummary?.pendingItems[0]).toMatchObject({
       item: '价格分',
@@ -433,11 +507,23 @@ describe('contract tender review model', () => {
       [38, 36],
       [51, 50],
     ])
+    expect(data.comparePriceDetail).toMatchObject({
+      formula: '价格分公式：最低有效报价/本投标报价×40。；中建一局价格分 38 分，中铁二局价格分 36 分。',
+      cells: [
+        { bidderName: '中建一局', bidPrice: '1,000,000 CNY', score: 38 },
+        { bidderName: '中铁二局', bidPrice: '1,055,555 CNY', score: 36 },
+      ],
+    })
     expect(
       data.compareScoreRows
         ?.find((row) => row.item === '技术方案')
-        ?.cells.map((cell) => cell.score)
-    ).toEqual([27, 25])
+    ).toMatchObject({
+      reviewDimension: 'technical_subjective',
+      cells: [
+        { score: 27, basis: '施工组织设计完整。' },
+        { score: 25, basis: '施工组织设计可行，进度措施略弱。' },
+      ],
+    })
     expect(data.compareNotice?.warnings).toEqual([
       '有效投标人数量为 2，建议复核竞争性。',
     ])

@@ -19,6 +19,7 @@ import type {
   TenderCompareScoreRow,
   TenderEligibilityCheck,
   TenderPolicyRef,
+  TenderPriceCompareDetail,
   TenderScoreCategory,
   TenderScoreEvidence,
   TenderScoreIssue,
@@ -26,6 +27,7 @@ import type {
   TenderScoringItem,
   TenderProject,
   TenderProjectStatus,
+  TenderReviewDimension,
   TenderReviewMockData,
 } from './types'
 
@@ -226,6 +228,7 @@ export function buildTenderReviewData({
     scoringItems,
     scoreSummary: buildScoreSummary(scoringItems),
     compareScoreRows: buildCompareScoreRows(scoringResults, reviewBidders),
+    comparePriceDetail: buildComparePriceDetail(compare, reviewBidders),
     compareNotice: buildCompareNotice(activeProject, compare),
   }
 }
@@ -490,8 +493,8 @@ function buildCategories(result?: AuditResult | null): ReviewCategoryData[] {
     if (eligibilityItems.length) {
       return [
         {
-          key: 'tech',
-          label: getCategoryLabel('tech'),
+          key: 'qual',
+          label: getCategoryLabel('qual'),
           items: eligibilityItems,
         },
       ]
@@ -518,7 +521,9 @@ function buildCategories(result?: AuditResult | null): ReviewCategoryData[] {
   const rawScoring = getScoringItems(result)
   const groups = new Map<ReviewCategory, ReviewItem[]>()
   if (eligibilityItems.length) {
-    groups.set('tech', eligibilityItems)
+    // 资格审查是与技术标/商务标并列的独立审查类目（不计入评分总分），
+    // 归到 'qual' 单独成一栏（含自己的小标题），不要混进技术标。
+    groups.set('qual', eligibilityItems)
   }
   scoring.forEach((item, index) => {
     const title = item.item || `评分项 ${index + 1}`
@@ -547,13 +552,20 @@ function buildCategories(result?: AuditResult | null): ReviewCategoryData[] {
     groups.set(category, groupItems)
   })
 
-  return (['qual', 'tech', 'comm'] as const)
-    .filter((key) => groups.has(key))
-    .map((key) => ({
-      key,
-      label: getCategoryLabel(key),
-      items: groups.get(key) ?? [],
-    }))
+  // 资格审查恒首位；其余类目按招标文件评分项出现顺序动态展开——
+  // criteria 有几类显示几类，缺的不显示，多于三类也全显示（D6：类目即标书实际要素）。
+  const orderedKeys: ReviewCategory[] = []
+  if (groups.has('qual')) orderedKeys.push('qual')
+  scoring.forEach((item) => {
+    if (item.category !== 'qual' && !orderedKeys.includes(item.category)) {
+      orderedKeys.push(item.category)
+    }
+  })
+  return orderedKeys.map((key) => ({
+    key,
+    label: getCategoryLabel(key),
+    items: groups.get(key) ?? [],
+  }))
 }
 
 function buildParagraphs(
@@ -693,6 +705,67 @@ function buildCompareNotice(
   }
 }
 
+function buildComparePriceDetail(
+  compare: TenderCompareResponse | null | undefined,
+  bidders: ReviewBidder[]
+): TenderPriceCompareDetail | undefined {
+  if (!compare) return undefined
+  const compareBidders = compare.result.bidders
+  if (!compareBidders.length || bidders.length < 2) return undefined
+  const bidderByClaim = new Map(
+    compareBidders.map((bidder) => [bidder.claim_id, bidder])
+  )
+  const cells: TenderPriceCompareDetail['cells'] = []
+  bidders.forEach((bidder, index) => {
+    const raw = bidderByClaim.get(bidder.id) ?? compareBidders[index]
+    if (!raw) return
+    cells.push({
+      bidderId: bidder.id,
+      bidderName: bidder.name,
+      bidPrice: formatBidPrice(raw.bid_price),
+      score: toNumber(raw.price_score),
+      status: raw.status,
+      note: raw.note || undefined,
+    })
+  })
+
+  if (!cells.length) return undefined
+  return {
+    formula: buildPriceFormulaText(compare),
+    evidence: buildComparePriceEvidence(compare),
+    cells,
+  }
+}
+
+function buildPriceFormulaText(compare: TenderCompareResponse) {
+  const evidenceText = buildComparePriceEvidence(compare)
+    .map((item) => [item.finding, item.conclusion].filter(Boolean).join('；'))
+    .find(Boolean)
+  return (
+    evidenceText ||
+    compare.result.explanation ||
+    '价格分由横比结果按招标文件价格公式统一计算；前端仅展示 compare 侧返回结果。'
+  )
+}
+
+function buildComparePriceEvidence(compare: TenderCompareResponse): TenderScoreEvidence[] {
+  const evidence = compare.result.evidence_chain ?? []
+  return evidence
+    .filter((item) =>
+      `${item.source ?? ''} ${item.finding ?? ''} ${item.conclusion ?? ''}`.match(
+        /价格|报价|评标价|基准价|公式/u
+      )
+    )
+    .map((item) => ({
+      source: item.source?.trim(),
+      finding: item.finding?.trim(),
+      conclusion: item.conclusion?.trim(),
+    }))
+    .filter(
+      (item) => item.source || item.finding || item.conclusion
+    )
+}
+
 function getScoringItems(result?: AuditResult | null): UnknownRecord[] {
   const scoring = result?.extracted_data?.scoring
   return Array.isArray(scoring) ? scoring.filter(isRecord) : []
@@ -812,6 +885,7 @@ function buildScoringItems(result?: AuditResult | null): TenderScoringItem[] {
       title,
       toText(item.category) || toText(criteria?.category)
     )
+    const reviewDimension = deriveReviewDimension(item, criteria)
     return {
       id: `score-${index}`,
       item: title,
@@ -819,8 +893,13 @@ function buildScoringItems(result?: AuditResult | null): TenderScoringItem[] {
       score,
       status,
       basis: toText(item.basis) || result?.explanation || '暂无判定依据。',
-      category: inferReviewCategory(title, scoreCategory),
+      // 类目优先用招标文件标注的实际类目原名（criteria/scoring.category），动态分栏；
+      // 旧数据无 category 时回退关键词推断的 tech/comm，保证不崩。
+      category:
+        normalizeDocCategory(toText(item.category) || toText(criteria?.category)) ||
+        inferReviewCategory(title, scoreCategory),
       scoreCategory,
+      reviewDimension,
       scoreMode:
         toText(item.score_mode) || toText(criteria?.score_mode) || undefined,
       evidence: buildScoringEvidence(item, result, title),
@@ -882,6 +961,7 @@ function toScoreIssue(item: TenderScoringItem): TenderScoreIssue {
     deduction,
     basis: item.basis,
     scoreCategory: item.scoreCategory,
+    reviewDimension: item.reviewDimension,
   }
 }
 
@@ -1034,12 +1114,16 @@ function buildCompareScoreRows(
       const max = firstItem?.max ?? 0
       const scoreCategory =
         firstItem?.scoreCategory ?? inferScoreCategory(itemName, '')
+      const reviewDimension =
+        firstItem?.reviewDimension ??
+        deriveReviewDimension({ item: itemName }, null)
 
       return {
         id: `compare-score-${rowIndex}`,
         item: itemName,
         max,
         scoreCategory,
+        reviewDimension,
         cells: bidders.map((bidder, bidderIndex) => {
           const item = itemsByResult[bidderIndex]?.get(itemName)
           const score = item?.score ?? null
@@ -1153,6 +1237,46 @@ function getResultTotalScore(result?: AuditResult | null) {
   )
 }
 
+export function deriveReviewDimension(
+  scoringItem: UnknownRecord,
+  criteriaItem?: UnknownRecord | null
+): TenderReviewDimension {
+  const tag = normalizeDimensionSignal(
+    toText(scoringItem.tag) || toText(criteriaItem?.tag)
+  )
+  const scoreMode = normalizeDimensionSignal(
+    toText(scoringItem.score_mode) || toText(criteriaItem?.score_mode)
+  )
+  if (tag === 'requires_cross_bid_comparison' || scoreMode === 'formula') {
+    return 'price'
+  }
+
+  const evaluatorType = normalizeDimensionSignal(
+    toText(scoringItem.evaluator_type) || toText(criteriaItem?.evaluator_type)
+  )
+  if (evaluatorType === 'subjective' || evaluatorType === 'mixed') {
+    return 'technical_subjective'
+  }
+
+  if (!scoreMode && !evaluatorType && isLegacyPriceItemName(scoringItem, criteriaItem)) {
+    return 'price'
+  }
+
+  return 'business_objective'
+}
+
+function normalizeDimensionSignal(value: string) {
+  return value.trim().toLowerCase()
+}
+
+function isLegacyPriceItemName(
+  scoringItem: UnknownRecord,
+  criteriaItem?: UnknownRecord | null
+) {
+  const name = `${toText(scoringItem.item)} ${toText(criteriaItem?.item)}`
+  return /价格|报价|投标报价|最高限价/u.test(name)
+}
+
 function inferReviewCategory(
   title: string,
   scoreCategory: TenderScoreCategory
@@ -1221,7 +1345,22 @@ function inferScoreCategory(
 function getCategoryLabel(category: ReviewCategory) {
   if (category === 'qual') return '资格审查'
   if (category === 'tech') return '技术标'
-  return '商务标'
+  if (category === 'comm') return '商务标'
+  // 动态类目：招标文件标注的类目原名直接作小标题。
+  return category
+}
+
+const _ELIGIBILITY_CATEGORY = /资格(性|预)?审查|资格评审|符合性审查|响应性(审查|评审)/
+
+/**
+ * 归一招标文件标注的类目名：资格审查类合并到固定 'qual' 列（避免与
+ * eligibility_checks 列重复），其余返回去空白后的原名（空串→落回推断兜底）。
+ */
+function normalizeDocCategory(raw: string): ReviewCategory | '' {
+  const value = raw.trim()
+  if (!value) return ''
+  if (_ELIGIBILITY_CATEGORY.test(value)) return 'qual'
+  return value
 }
 
 function getScoringStatus(
@@ -1288,6 +1427,13 @@ function formatChineseDate(value?: string | null) {
 
 function formatScore(score: number) {
   return Number.isInteger(score) ? String(score) : score.toFixed(1)
+}
+
+function formatBidPrice(value: { amount?: number | null; currency?: string | null } | null | undefined) {
+  const amount = toNumber(value?.amount)
+  if (amount == null) return '待补充'
+  const currency = value?.currency?.trim() || '元'
+  return `${amount.toLocaleString('zh-CN')} ${currency}`
 }
 
 function roundScore(score: number) {
