@@ -4,9 +4,9 @@
 version: "9.6.4"
 
 # === PACE 路由状态 ===
-path: "System" # 评标判分纪律强化(gate+prompt) — 核心 R1/R2a/R2b/R3 已 ship,R4/R5/R6/R7 留后续
-stage: "ship" # Sprint(tender-judgment-discipline) 核心已交付:710绿+ruff+format,6 commits,main与origin同步(见该 sprint design.md「实施与验收结论」);前端 codex 重构已落 d6d86da
-current_sprint_slug: "2026-06-23-tender-judgment-discipline"
+path: "Feature" # 评标报告三维度展示优化：资格审查、价格分、商务客观分、技术主观分、综合结论
+stage: "ship" # D0-D6 完成并验全绿(727/ruff/前端11+build+lint)+真实UI跑通；commit 分逻辑后 push main；见 sprints/2026-06-25-tender-report-dimensions/{design.md,runtime-verify.md}
+current_sprint_slug: "2026-06-25-tender-report-dimensions"
 current_roadmap_slug: "" # 跨切面 goal，非单一 roadmap item
 skip_polish: false
 skip_architecture_check: false
@@ -53,12 +53,12 @@ counts:
   cleanup_count: 1
   compound:
     learning: 6
-    trick: 0
+    trick: 1
     decision: 3
     explore: 0
 # === Pointers (指向最新相关文件) ===
 pointers:
-  latest_design: "sprints/2026-06-23-tender-judgment-discipline/design.md"
+  latest_design: "sprints/2026-06-25-tender-report-dimensions/design.md"
   latest_review: "sprints/2026-06-23-tender-judgment-discipline/design.md" # 本 sprint 用 workflow(5 finder)发现 41 残留项替代正式 review；R8 e2e(deepseek+glm)验收见 design.md「实施与验收结论」
   latest_cleanup: "sprints/2026-06-19-contract-audit-feature/cleanup-pass.md"
   latest_brainstorm: ""
@@ -67,9 +67,9 @@ pointers:
   latest_architecture_update: "2026-06-23T06:38:15.291Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "**进行中 2026-06-23-tender-ui-scoring-fixes**（ZJXH单家 dogfood 驱动，用户 8 条实测问题；分工:前端→codex，后端+.claude→CC）。**CC 已交付**（commit d26d90d+e4ff16b，**已 push origin 同步**，684 绿+ruff）:#8b 上传 10MiB→256MiB；#3 底稿截断 OCR_MAX_FILE_BLOCK_CHARS 200k→600k（实测 evidence 回查 71%→92%、unresolved 8→1）；#6 enrich policy_refs→policy_refs_detail[{rule_id,name,source_text}]（+3测试）；④ tender-evaluate.md 禁 additive 整项 punt + 证据页码取底稿【第N页】锚点（治 deepseek/glm 技术参数 punt + page_mismatch）；#8a OCR-as-skill 能力件 .claude/skills/ocr-page（已自测，wiring 待做）。**前端 #1/#5/#7/#4 已交 sprints/2026-06-23-tender-ui-scoring-fixes/codex-handoff.md**（关键纠偏:#1/#2 是前端没渲染 scoring[]，后端实打 64/70、三模型客观项一致）。**3模型 fixed 重测已完成**(qwen 5/4·deepseek 7/2·glm 8/1;#6 e2e✅ 法定原文显示;④✅ 模型诚实 manual 不瞎打分;价格分全 manual 正确;bid_price 三模型一致 1,316,033.66)。**关键发现:真瓶颈=OCR 扫描证书页盲区**——投标 400 页中 **59 页(资质/业绩/职称/社保/检测报告全是扫描件)native 路由没走云 OCR→底稿空→技术参数/企业实力/负责人评分缺据→manual**(qwen/deepseek 严谨标 manual,glm 宽松给分)。**CC 已完成混合 PDF OCR**(commit 896bfaa Layer1+419ce48 Layer2+a5a4d78 review-fix,**未 push**,703 绿+ruff+format,交叉审查 reviewer/spec 已修 F1/F2/F3/M1):classify `mixed_pdf` 标记 + **计数为主触发**(count≥10 OR ratio>0.5,gate mixed_pdf,env 灰度;纠正原计划纯比例阈值在ZJ 0.147 是 no-op) + **Layer2 subset-into-one-job**(只抽扫描页成临时 PDF 走单 job recognize→回填 native blocks 真实页位,数字页保原生保真;本地抽页失败/云失败/页数不匹配三重回退整份云 OCR) + engine.extract_pdf_subset + _parse_cloud_jsonl 注入连续 page_number + cache v1→v2 + OCR_VL_CLOUD_MAX_WAIT 600→1200。**前端 #1/#5/#7/#4 已由 codex 实现(commit 9a382b8,lint/build/19测绿)**:ScoringDetailTable 复用组件+分项渲染+评标项目明细聚合+compare 分项;#4 报告500 codex 沙箱无法监听端口未复现,代码侧确认无报告API(纯 setScreen)+加固 null 路径,待用户环境复验。**全部已 push origin/main**。**真标验收已完成(3118d38)✅**:ZJXH 3 模型 e2e via API(TENDER_READ_DOC_LAYER=0 绕 stale 底稿)——Phase0 直接管道 60 扫描页 60→0 全补回(单 job ~29s,底稿 200158→373372);Phase1 三模型 **企业实力6/业绩9/负责人3 全 scored**,basis 引补回扫描页(第315/316资质·317-344业绩合同·345-348建造师职称),✓页锚;deepseek 从补回第15页信用中国截图读出疑似失信信号(INV-06)=OCR 补回页才暴露的合规信号。qwen 7/2 manual·deepseek 7/2 rejected·glm 7/2 manual(旧 stale:5/4·7/2·8/1);价格分全 manual 正确;bid_price 1,316,033.66 一致。**OCR 主线闭环**。#8a wiring 降级不 wire(子集 OCR 已自动补)。**新 Sprint 2026-06-23-tender-judgment-discipline 已交付核心**(workflow 发现 41 残留项→8簇；本会话做 R1/R2a/R2b/R3+reasons 兜底，5 commit，710 绿+ruff+format；详见该 sprint design.md「实施与验收结论」)。**R8 e2e(deepseek+glm，跳 qwen)验证**:①**零重试**(R1 修 `</think>` 抽取根因)②**deepseek 8/1 manual_review 技术参数21 出真分**(R2a 子项级降级)+**不再误废标**(R2b 废标门禁要 confirmed，信用截图 confirmed:false→manual)③manual 收窄(decision1)+policy_refs 非空(R3)。**用户 2 决策**:manual 只留客观算不出 / 读不清先重识别再判。**残留(留后续)**:glm 技术参数仍 manual(模型自身选 manual 非服务端降级，R2a 管不到，需更强 prompt/反向 gate)；evidence_chain 顶层空(F04,可服务端从 award_hits 派生)；**R4 #8a ocr-page 重识别 wiring(安全敏感:agent Bash+可注入PDF=RCE，需 can_use_tool 白名单+对抗验证，独立硬化轮)**；R5 schema(reviewed_by 错标/manual_review_reason 枚举/policy_refs_detail 入约/去 result-conclusion)；R6 config(INFRA-01/02)；R7 前端(FE-01/02/03 null guard，#4 报告500 潜根因，交 codex)。**codex 侧**:前端 #1/#5/#7/#4(已交 handoff)。详见 sprints/2026-06-23-tender-ui-scoring-fixes/{findings,codex-handoff,per-page-ocr-plan}.md。**①招标人侧合规 MVP 用户已明确永久不做，永久剔除 backlog**。上一 Sprint 2026-06-22-evidence-accuracy 已 ship(R1-R6,见其 goal.md §九)。模型切换:logs/tmp/pick_model.py + env -u ANTHROPIC_* MODEL_*=...(详见 findings)。"
-last_subagent: "discovery-workflow" # tender-residual-discovery 5 finder 并行发现 41 残留项(wf_feace21e-8fd)
-last_subagent_at: "2026-06-23T00:00:00.000Z"
+next_action: "Sprint 2026-06-25-tender-report-dimensions 已 ship：D0-D6 用户确认后分 4 逻辑提交并 push origin/main（fix(tender) D0 + feat(tender) 后端 category/prompt + feat(tender-ui) 动态类目 + docs(state)）。门禁全绿(727/ruff/前端11+build+lint)，真实评标跑通(deepseek)。本地服务与 codex 进程已全部停。worktree 仅 main、无多余。下一步=用户重新部署手测；如需正式 Feature 交叉复审(reviewer+spec+evaluator)可另起。"
+last_subagent: "codex-exec" # tender-report-dimensions D0-D5 headless (codex 0.142.1, gpt-5.5)；必须 env -u HTTP_PROXY -u HTTPS_PROXY 否则 streaming API 挂起，见 compound/2026-06-25-trick-codex-proxy-hangs-streaming.md
+last_subagent_at: "2026-06-25T00:00:00.000Z"
 active_worktrees: [] # git worktree list 仅 main；无其他分支/worktree(2026-06-23 复核确认)
 last_critic_round: 0
 design_changed_after_impl: false # judgment-discipline 核心 R1-R3 已 ship,R4-R7 明确 backlog(非 in-flight)
@@ -393,6 +393,8 @@ slug 拆分为独立 sprint 目录；`lessons.md` 整体保留为
 - `docs/` — 项目参考文档 (开发指南 / 前端对接 / audit-skills)，非状态机文件
 
 ## 历史 (由 pace-continuator hook 自动追加, 最多保留近 10 条)
+- `2026-06-25 14:31:20`: stage=impl sprint=2026-06-25-tender-report-dimensions turn-end
+- `2026-06-25 09:46:58`: stage=design sprint=2026-06-25-tender-report-dimensions turn-end
 - `2026-06-23 15:40:09`: stage=ship sprint=2026-06-23-tender-judgment-discipline turn-end
 - `2026-06-23 06:41:35`: stage=ship sprint=2026-06-22-tender-evidence-accuracy-hardening turn-end
 - `2026-06-22 03:11:05`: stage=design sprint=2026-06-22-tender-evidence-accuracy-hardening turn-end
@@ -401,8 +403,6 @@ slug 拆分为独立 sprint 目录；`lessons.md` 整体保留为
 - `2026-06-20 13:56:20`: stage=ship sprint=2026-06-20-external-source-mode turn-end
 - `2026-06-20 10:49:49`: stage=ship sprint=2026-06-20-tender-data-model turn-end
 - `2026-06-20 08:32:52`: stage=impl sprint=2026-06-20-tender-data-model turn-end
-- `2026-06-20 07:57:58`: stage=review sprint=2026-06-20-tender-task-api-parity turn-end
-- `2026-06-20 06:53:12`: stage=design sprint=2026-06-20-tender-criteria-from-bid-doc turn-end
 
 
 - 2026-06-02 [migrate] v9.6.2(legacy flat) → v9.6.4. 备份见 `.ai_state.backup-*`。
