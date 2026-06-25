@@ -1,10 +1,9 @@
-import type { ApiResult } from '@/types/api'
 import { toId } from '@/lib/ids'
-import { apiClient } from '@/lib/http'
 import {
   buildMenuCreatePayload,
   buildMenuUpdatePayload,
   dedupeMenuTreeRoots,
+  filterMenuTree,
   type BoolFlag,
   type MenuDetail,
   type MenuFormInput,
@@ -14,9 +13,144 @@ import {
   type MenuType,
 } from './model'
 
-function unwrapResult<T>(result: ApiResult<T>) {
-  return result.data
-}
+const STORAGE_KEY = 'enterprise-agent-front:system-menu-tree:v1'
+
+const defaultMenuTree: MenuTreeNode[] = [
+  {
+    menuId: '100',
+    parentId: '0',
+    menuName: '系统管理',
+    orderNum: 0,
+    path: 'system',
+    component: null,
+    queryParam: null,
+    isFrame: 1,
+    isCache: 0,
+    menuType: 'M',
+    visible: 1,
+    perms: null,
+    icon: 'settings',
+    status: 1,
+    remark: '本地 JSON 系统菜单根节点',
+    createTime: '2026-06-25 00:00:00',
+    children: [
+      {
+        menuId: '101',
+        parentId: '100',
+        menuName: '用户管理',
+        orderNum: 0,
+        path: 'user',
+        component: 'system/user/index',
+        queryParam: null,
+        isFrame: 1,
+        isCache: 0,
+        menuType: 'C',
+        visible: 1,
+        perms: null,
+        icon: 'users',
+        status: 1,
+        remark: '本地 JSON 数据',
+        createTime: '2026-06-25 00:00:00',
+        children: [],
+      },
+      {
+        menuId: '102',
+        parentId: '100',
+        menuName: '角色管理',
+        orderNum: 1,
+        path: 'role',
+        component: 'system/role/index',
+        queryParam: null,
+        isFrame: 1,
+        isCache: 0,
+        menuType: 'C',
+        visible: 1,
+        perms: null,
+        icon: 'shield-check',
+        status: 1,
+        remark: '本地 JSON 数据',
+        createTime: '2026-06-25 00:00:00',
+        children: [],
+      },
+      {
+        menuId: '103',
+        parentId: '100',
+        menuName: '菜单管理',
+        orderNum: 2,
+        path: 'menu',
+        component: 'system/menu/index',
+        queryParam: null,
+        isFrame: 1,
+        isCache: 0,
+        menuType: 'C',
+        visible: 1,
+        perms: null,
+        icon: 'menu',
+        status: 1,
+        remark: '本地 JSON 数据',
+        createTime: '2026-06-25 00:00:00',
+        children: [],
+      },
+      {
+        menuId: '104',
+        parentId: '100',
+        menuName: '部门管理',
+        orderNum: 3,
+        path: 'dept',
+        component: 'system/dept/index',
+        queryParam: null,
+        isFrame: 1,
+        isCache: 0,
+        menuType: 'C',
+        visible: 1,
+        perms: null,
+        icon: 'building-2',
+        status: 1,
+        remark: '本地 JSON 数据',
+        createTime: '2026-06-25 00:00:00',
+        children: [],
+      },
+      {
+        menuId: '105',
+        parentId: '100',
+        menuName: '字典管理',
+        orderNum: 4,
+        path: 'dict',
+        component: 'system/dict/index',
+        queryParam: null,
+        isFrame: 1,
+        isCache: 0,
+        menuType: 'C',
+        visible: 1,
+        perms: null,
+        icon: 'book-open-text',
+        status: 1,
+        remark: '本地 JSON 数据',
+        createTime: '2026-06-25 00:00:00',
+        children: [],
+      },
+      {
+        menuId: '106',
+        parentId: '100',
+        menuName: '文件管理',
+        orderNum: 5,
+        path: 'file',
+        component: 'system/file/index',
+        queryParam: null,
+        isFrame: 1,
+        isCache: 0,
+        menuType: 'C',
+        visible: 1,
+        perms: null,
+        icon: 'database',
+        status: 1,
+        remark: '本地 JSON 数据',
+        createTime: '2026-06-25 00:00:00',
+        children: [],
+      },
+    ],
+  },
+]
 
 function getRecord(input: unknown) {
   return (input && typeof input === 'object' ? input : {}) as Record<
@@ -78,46 +212,177 @@ function normalizeMenuNode(input: unknown): MenuTreeNode {
   }
 }
 
-export async function fetchMenuTree(search?: Partial<MenuListQuery>) {
-  const response = await apiClient.get<ApiResult<unknown[]>>('/system/menu/list', {
-    params: {
-      menuName: search?.menuName?.trim() || undefined,
-      status: search?.status,
-    },
+function cloneMenuTree(nodes: MenuTreeNode[]) {
+  return JSON.parse(JSON.stringify(nodes)) as MenuTreeNode[]
+}
+
+function getStorage() {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  try {
+    return window.localStorage
+  } catch {
+    return null
+  }
+}
+
+function readMenuTree() {
+  const storage = getStorage()
+  if (!storage) {
+    return cloneMenuTree(defaultMenuTree)
+  }
+
+  try {
+    const rawValue = storage.getItem(STORAGE_KEY)
+    if (!rawValue) {
+      return cloneMenuTree(defaultMenuTree)
+    }
+
+    const parsedValue = JSON.parse(rawValue)
+    if (!Array.isArray(parsedValue)) {
+      return cloneMenuTree(defaultMenuTree)
+    }
+
+    return dedupeMenuTreeRoots(parsedValue.map(normalizeMenuNode))
+  } catch {
+    return cloneMenuTree(defaultMenuTree)
+  }
+}
+
+function writeMenuTree(nodes: MenuTreeNode[]) {
+  const storage = getStorage()
+  if (!storage) {
+    return
+  }
+
+  storage.setItem(STORAGE_KEY, JSON.stringify(nodes))
+}
+
+function flattenMenuTree(nodes: MenuTreeNode[]) {
+  const result: MenuTreeNode[] = []
+
+  function visit(node: MenuTreeNode) {
+    result.push(node)
+    node.children.forEach(visit)
+  }
+
+  nodes.forEach(visit)
+  return result
+}
+
+function createMenuId(nodes: MenuTreeNode[]) {
+  const maxNumericId = flattenMenuTree(nodes).reduce((currentMax, node) => {
+    const numericId = Number(node.menuId)
+    return Number.isFinite(numericId) ? Math.max(currentMax, numericId) : currentMax
+  }, 100)
+
+  return String(maxNumericId + 1)
+}
+
+function mapMenuTree(
+  nodes: MenuTreeNode[],
+  mapper: (node: MenuTreeNode) => MenuTreeNode | null
+): MenuTreeNode[] {
+  return nodes.flatMap((node) => {
+    const mappedNode = mapper({
+      ...node,
+      children: mapMenuTree(node.children, mapper),
+    })
+
+    return mappedNode ? [mappedNode] : []
+  })
+}
+
+function appendMenuNode(nodes: MenuTreeNode[], parentId: string, node: MenuTreeNode) {
+  if (parentId === '0') {
+    return [...nodes, node]
+  }
+
+  let appended = false
+  const nextNodes = mapMenuTree(nodes, (currentNode) => {
+    if (currentNode.menuId !== parentId) {
+      return currentNode
+    }
+
+    appended = true
+    return {
+      ...currentNode,
+      children: [...currentNode.children, node],
+    }
   })
 
-  return dedupeMenuTreeRoots(unwrapResult(response.data).map(normalizeMenuNode))
+  return appended ? nextNodes : [...nodes, node]
+}
+
+export async function fetchMenuTree(search?: Partial<MenuListQuery>) {
+  const tree = readMenuTree()
+  const keyword = search?.menuName?.trim() ?? ''
+  const status = search?.status
+
+  return filterMenuTree(tree, keyword).flatMap((node) => {
+    if (status === undefined) {
+      return [node]
+    }
+
+    const filterByStatus = (nodes: MenuTreeNode[]): MenuTreeNode[] =>
+      nodes.flatMap((currentNode) => {
+        const children = filterByStatus(currentNode.children)
+        if (currentNode.status === status || children.length > 0) {
+          return [{ ...currentNode, children }]
+        }
+
+        return []
+      })
+
+    return filterByStatus([node])
+  })
 }
 
 export async function fetchMenuDetail(menuId: string) {
-  const response = await apiClient.get<ApiResult<unknown>>(`/system/menu/${menuId}`)
+  const matchedMenu = flattenMenuTree(readMenuTree()).find(
+    (node) => node.menuId === menuId
+  )
 
-  return normalizeMenuNode(unwrapResult(response.data)) as MenuDetail
+  return (matchedMenu ?? normalizeMenuNode({ menuId: '0' })) as MenuDetail
 }
 
 export async function createMenu(input: MenuFormInput) {
-  const response = await apiClient.post<ApiResult<string | number | null>>(
-    '/system/menu',
-    buildMenuCreatePayload(input)
-  )
+  const currentTree = readMenuTree()
+  const menuId = createMenuId(currentTree)
+  const payload = buildMenuCreatePayload(input)
+  const node = normalizeMenuNode({
+    ...payload,
+    menuId,
+    createTime: new Date().toLocaleString('zh-CN', { hour12: false }),
+    children: [],
+  })
 
-  const data = unwrapResult(response.data)
-  return toId(data)
+  writeMenuTree(appendMenuNode(currentTree, node.parentId, node))
+  return toId(menuId)
 }
 
 export async function updateMenu(input: MenuFormInput, menuId: string) {
-  const response = await apiClient.put<ApiResult<null>>(
-    '/system/menu',
-    buildMenuUpdatePayload(input, menuId)
+  const payload = buildMenuUpdatePayload(input, menuId)
+  const currentTree = readMenuTree()
+  const nextTree = mapMenuTree(currentTree, (node) =>
+    node.menuId === menuId
+      ? normalizeMenuNode({
+          ...node,
+          ...payload,
+          children: node.children,
+        })
+      : node
   )
 
-  return unwrapResult(response.data)
+  writeMenuTree(nextTree)
+  return null
 }
 
 export async function deleteMenu(menuId: string) {
-  const response = await apiClient.delete<ApiResult<null>>(
-    `/system/menu/${menuId}`
+  writeMenuTree(
+    mapMenuTree(readMenuTree(), (node) => (node.menuId === menuId ? null : node))
   )
-
-  return unwrapResult(response.data)
+  return null
 }

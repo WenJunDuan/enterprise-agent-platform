@@ -13,7 +13,7 @@ import { NavUser } from './nav-user'
 
 export function AppSidebar() {
   const { collapsible, variant } = useLayout()
-  const { navGroups, user } = useNavigation()
+  const { navGroups } = useNavigation()
 
   return (
     <Sidebar collapsible={collapsible} variant={variant}>
@@ -26,7 +26,7 @@ export function AppSidebar() {
         ))}
       </SidebarContent>
       <SidebarFooter>
-        <NavUser user={user} />
+        <NavUser />
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>

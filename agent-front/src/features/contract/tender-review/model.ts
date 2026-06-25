@@ -17,6 +17,7 @@ import type {
   ReviewItem,
   ScoreHit,
   TenderCompareScoreRow,
+  TenderEligibilityCheck,
   TenderPolicyRef,
   TenderScoreCategory,
   TenderScoreEvidence,
@@ -204,6 +205,7 @@ export function buildTenderReviewData({
     resultExplanation: selectedResult?.explanation || selectedResult?.summary || '',
     resultReasons: normalizeDisplayList(selectedResult?.reasons),
     resultPolicyRefs: normalizePolicyRefs(selectedResult),
+    resultEligibilityChecks: buildEligibilityChecks(selectedResult),
     scoringItems,
     scoreSummary: buildScoreSummary(scoringItems),
     compareScoreRows: buildCompareScoreRows(scoringResults, reviewBidders),
@@ -327,7 +329,7 @@ function buildReviewBidders(
 ): ReviewBidder[] {
   const displayNameByClaim = buildBidderDisplayNameMap(resultDetails)
   if (compare?.result.bidders.length) {
-    return [...compare.result.bidders]
+    const bidders = [...compare.result.bidders]
       .sort(
         (left, right) =>
           (left.rank ?? Number.MAX_SAFE_INTEGER) - (right.rank ?? Number.MAX_SAFE_INTEGER)
@@ -350,6 +352,7 @@ function buildReviewBidders(
           rank: bidder.rank ?? index + 1,
         }
       })
+    return rankReviewBiddersByScore(bidders)
   }
 
   const detailBids = isTenderProjectDetailOrNull(project) ? project.bids : []
@@ -363,20 +366,17 @@ function buildReviewBidders(
       }))
 
   if (summaries.length) {
-    return summaries.map((summary, index) => {
+    const bidders = summaries.map((summary, index) => {
+      const result =
+        findResultForSummary(summary, resultDetails) ??
+        findResultForSummary(summary, selectedResult ? [selectedResult] : [])
       const name =
         resolveBidderDisplayName({
           claimId:
             summary.claim_id ||
             (selectedResult?.claim_id && index === 0 ? selectedResult.claim_id : ''),
           bidderName: summary.bidder_name,
-          result:
-            resultDetails.find(
-              (result) =>
-                toText(result.request_id) === summary.request_id ||
-                toText(result.task_id) === summary.request_id ||
-                toText(result.claim_id) === summary.claim_id
-            ) ?? (index === 0 ? selectedResult : null),
+          result,
           mappedName: summary.claim_id
             ? displayNameByClaim.get(summary.claim_id)
             : undefined,
@@ -388,10 +388,11 @@ function buildReviewBidders(
         tag: getBidderTag(index),
         name,
         short: shortenBidderName(name),
-        total: index === 0 ? getResultTotalScore(selectedResult) : 0,
+        total: getResultTotalScore(result),
         rank: index + 1,
       }
     })
+    return rankReviewBiddersByScore(bidders)
   }
 
   if (selectedResult?.claim_id) {
@@ -415,6 +416,36 @@ function buildReviewBidders(
   return []
 }
 
+function rankReviewBiddersByScore(bidders: ReviewBidder[]): ReviewBidder[] {
+  return bidders
+    .map((bidder, index) => ({ bidder, index }))
+    .sort((left, right) => {
+      const scoreDelta = right.bidder.total - left.bidder.total
+      if (Math.abs(scoreDelta) > 0.000001) return scoreDelta
+      const rankDelta = left.bidder.rank - right.bidder.rank
+      if (rankDelta !== 0) return rankDelta
+      return left.index - right.index
+    })
+    .map(({ bidder }, index) => ({
+      ...bidder,
+      tag: getBidderTag(index),
+      rank: index + 1,
+    }))
+}
+
+function findResultForSummary(
+  summary: TenderProjectResultSummary,
+  results: AuditResult[]
+) {
+  return results.find(
+    (result) =>
+      (summary.request_id &&
+        (toText(result.request_id) === summary.request_id ||
+          toText(result.task_id) === summary.request_id)) ||
+      (summary.claim_id && toText(result.claim_id) === summary.claim_id)
+  )
+}
+
 function isTenderProjectDetailOrNull(
   project: TenderProjectResponse | TenderProjectDetailResponse | null | undefined
 ): project is TenderProjectDetailResponse {
@@ -423,7 +454,17 @@ function isTenderProjectDetailOrNull(
 
 function buildCategories(result?: AuditResult | null): ReviewCategoryData[] {
   const scoring = buildScoringItems(result)
+  const eligibilityItems = buildEligibilityReviewItems(result, 0)
   if (!scoring.length) {
+    if (eligibilityItems.length) {
+      return [
+        {
+          key: 'tech',
+          label: getCategoryLabel('tech'),
+          items: eligibilityItems,
+        },
+      ]
+    }
     return [
       {
         key: 'qual',
@@ -445,6 +486,9 @@ function buildCategories(result?: AuditResult | null): ReviewCategoryData[] {
   // R2：原始 scoring 项（与 buildScoringItems 1:1 同序）→ 取逐条扣分/加分明细 + score_mode + 原因。
   const rawScoring = getScoringItems(result)
   const groups = new Map<ReviewCategory, ReviewItem[]>()
+  if (eligibilityItems.length) {
+    groups.set('tech', eligibilityItems)
+  }
   scoring.forEach((item, index) => {
     const title = item.item || `评分项 ${index + 1}`
     const criteria = findCriteriaItem(result, title)
@@ -458,7 +502,7 @@ function buildCategories(result?: AuditResult | null): ReviewCategoryData[] {
         toText(criteria?.scoring_rule) ||
         toText(criteria?.source_ref) ||
         '按招标文件评分标准判定。',
-      loc: index,
+      loc: index + eligibilityItems.length,
       aiNote: item.basis || result?.explanation || '该评分项已完成判定。',
       status: getScoringStatus(item.status, item.score),
       got: item.score ?? undefined,
@@ -485,13 +529,23 @@ function buildParagraphs(
   result?: AuditResult | null,
   scoringItems: TenderScoringItem[] = buildScoringItems(result)
 ): DocumentParagraph[] {
+  const eligibility = buildEligibilityChecks(result)
+  const eligibilityParagraphs = eligibility.map((item, index) => ({
+    loc: index,
+    label: item.evidence[0]?.source || `${item.check} · 资格审查`,
+    text: buildEligibilityParagraphText(item),
+  }))
   if (scoringItems.length) {
-    return scoringItems.map((item, index) => ({
-      loc: index,
-      label: item.evidence[0]?.source || `${item.item} · 判定依据`,
-      text: buildScoringParagraphText(item),
-    }))
+    return [
+      ...eligibilityParagraphs,
+      ...scoringItems.map((item, index) => ({
+        loc: index + eligibilityParagraphs.length,
+        label: item.evidence[0]?.source || `${item.item} · 判定依据`,
+        text: buildScoringParagraphText(item),
+      })),
+    ]
   }
+  if (eligibilityParagraphs.length) return eligibilityParagraphs
 
   const evidence = result?.evidence_chain ?? []
   if (evidence.length) {
@@ -529,6 +583,23 @@ function buildScoringParagraphText(item: TenderScoringItem) {
     .filter(Boolean)
     .join('\n')
   return evidenceText || item.basis || '暂无该评分项的证据明细。'
+}
+
+function buildEligibilityParagraphText(item: TenderEligibilityCheck) {
+  const evidenceText = item.evidence
+    .map((evidence) =>
+      [
+        evidence.quote ? `原文：${evidence.quote}` : '',
+        evidence.finding,
+        evidence.conclusion,
+        evidence.source ? `出处：${evidence.source}` : '',
+      ]
+        .filter(Boolean)
+        .join('；')
+    )
+    .filter(Boolean)
+    .join('\n')
+  return evidenceText || item.basis || '暂无该资格审查项的证据明细。'
 }
 
 function buildCompareGroups(compare?: TenderCompareResponse | null): CompareGroup[] {
@@ -582,6 +653,80 @@ function buildCompareNotice(
 function getScoringItems(result?: AuditResult | null): UnknownRecord[] {
   const scoring = result?.extracted_data?.scoring
   return Array.isArray(scoring) ? scoring.filter(isRecord) : []
+}
+
+function getEligibilityCheckRecords(result?: AuditResult | null): UnknownRecord[] {
+  const checks = result?.extracted_data?.eligibility_checks
+  return Array.isArray(checks) ? checks.filter(isRecord) : []
+}
+
+function buildEligibilityChecks(
+  result?: AuditResult | null
+): TenderEligibilityCheck[] {
+  return getEligibilityCheckRecords(result).map((item, index) => {
+    const check = toText(item.check) || `资格审查 ${index + 1}`
+    const evidence = buildEligibilityEvidence(item)
+    return {
+      id: toText(item.rule_id) || toText(item.id) || `eligibility-${index}`,
+      check,
+      status: toText(item.status) || 'manual',
+      basis: toText(item.basis) || result?.explanation || '按招标文件资格审查要求核验。',
+      evidence,
+    }
+  })
+}
+
+function buildEligibilityReviewItems(
+  result?: AuditResult | null,
+  startLoc = 0
+): ReviewItem[] {
+  return buildEligibilityChecks(result).map((item, index) => ({
+    id: item.id || `eligibility-${index}`,
+    title: `资格审查：${item.check}`,
+    desc: '投标文件进入详细评分前的资格审查项；不计入评分总分。',
+    loc: startLoc + index,
+    aiNote: item.basis,
+    status: getEligibilityStatus(item.status),
+  }))
+}
+
+function buildEligibilityEvidence(raw: UnknownRecord): TenderScoreEvidence[] {
+  const evidence: TenderScoreEvidence[] = []
+  const addEvidence = (item: TenderScoreEvidence) => {
+    const normalized = {
+      source: item.source?.trim(),
+      quote: item.quote?.trim(),
+      finding: item.finding?.trim(),
+      conclusion: item.conclusion?.trim(),
+      condition: item.condition?.trim(),
+      points: item.points ?? null,
+    }
+    if (
+      !normalized.source &&
+      !normalized.quote &&
+      !normalized.finding &&
+      !normalized.conclusion &&
+      !normalized.condition
+    ) {
+      return
+    }
+    evidence.push(normalized)
+  }
+
+  const directEvidence = isRecord(raw.evidence) ? raw.evidence : null
+  if (directEvidence) {
+    addEvidence({
+      source: toText(directEvidence.source),
+      quote: toText(directEvidence.quote),
+      finding: toText(directEvidence.finding),
+      conclusion: toText(directEvidence.conclusion),
+    })
+  }
+  addEvidence({
+    finding: toText(raw.basis),
+    conclusion: eligibilityStatusLabel(toText(raw.status)),
+  })
+  return evidence
 }
 
 /**
@@ -653,10 +798,21 @@ function buildScoreSummary(items: TenderScoringItem[]): TenderScoreSummary {
       deductedItems.push(issue)
     }
   })
+  const deductedTotal = roundScore(
+    [...deductedItems, ...rejectedItems].reduce(
+      (sum, item) => sum + getIssueLostScore(item),
+      0
+    )
+  )
+  const pendingTotal = roundScore(
+    pendingItems.reduce((sum, item) => sum + item.max, 0)
+  )
 
   return {
     maxTotal,
     earnedTotal,
+    deductedTotal,
+    pendingTotal,
     deductedItems,
     rejectedItems,
     pendingItems,
@@ -664,8 +820,7 @@ function buildScoreSummary(items: TenderScoringItem[]): TenderScoreSummary {
 }
 
 function toScoreIssue(item: TenderScoringItem): TenderScoreIssue {
-  const deduction =
-    item.score == null ? null : roundScore(Math.max(0, item.max - item.score))
+  const deduction = getItemDeduction(item)
   return {
     item: item.item,
     max: item.max,
@@ -675,6 +830,18 @@ function toScoreIssue(item: TenderScoringItem): TenderScoreIssue {
     basis: item.basis,
     scoreCategory: item.scoreCategory,
   }
+}
+
+function getItemDeduction(item: TenderScoringItem): number | null {
+  if (item.status === 'rejected' && item.score == null) return item.max
+  if (item.score == null) return null
+  return roundScore(Math.max(0, item.max - item.score))
+}
+
+function getIssueLostScore(item: TenderScoreIssue): number {
+  if (item.deduction != null) return item.deduction
+  if (item.status === 'rejected') return item.max
+  return 0
 }
 
 function findCriteriaItem(result: AuditResult | null | undefined, title: string) {
@@ -1002,6 +1169,20 @@ function getScoringStatus(status: string, score: number | null): ReviewItem['sta
   if (status === 'rejected' || status === 'failed') return 'fail'
   if (score == null) return 'warning'
   return 'pass'
+}
+
+function getEligibilityStatus(status: string): ReviewItem['status'] {
+  if (status === 'pass' || status === 'passed') return 'pass'
+  if (status === 'fail' || status === 'failed' || status === 'rejected') return 'fail'
+  return 'warning'
+}
+
+function eligibilityStatusLabel(status: string) {
+  if (status === 'pass' || status === 'passed') return '资格审查通过'
+  if (status === 'fail' || status === 'failed' || status === 'rejected') {
+    return '资格审查不通过'
+  }
+  return '资格审查需人工核验'
 }
 
 function getVerdictStatus(verdict?: string): ReviewItem['status'] {

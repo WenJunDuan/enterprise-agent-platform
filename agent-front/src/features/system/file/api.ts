@@ -1,48 +1,60 @@
-import type { ApiResult } from '@/types/api'
-import { apiClient } from '@/lib/http'
 import {
   type SysFile,
-  type SysFileQuery,
   type SysFilePage,
+  type SysFileQuery,
   normalizeSysFile,
 } from './model'
 
-function unwrapResult<T>(result: ApiResult<T>) {
-  return result.data
-}
+const localFiles = [
+  {
+    id: '1',
+    originalName: '系统菜单说明.pdf',
+    storageName: 'system-menu-guide.pdf',
+    filePath: '/local/system-menu-guide.pdf',
+    url: null,
+    size: 245760,
+    extension: 'pdf',
+    contentType: 'application/pdf',
+    md5: null,
+    storageType: 'local-json',
+    bucket: null,
+    bizType: 'attachment',
+    bizId: 'system',
+    uploadBy: '1',
+    uploadTime: '2026-06-25 00:00:00',
+    createTime: '2026-06-25 00:00:00',
+  },
+].map(normalizeSysFile)
 
-export async function fetchFilePage(query: SysFileQuery): Promise<SysFilePage> {
-  const response = await apiClient.get<ApiResult<Record<string, unknown>>>(
-    '/system/file/list',
-    {
-      params: {
-        pageNum: query.pageNum,
-        pageSize: query.pageSize,
-        originalName: query.originalName?.trim() || undefined,
-        extension: query.extension?.trim() || undefined,
-        bizType: query.bizType?.trim() || undefined,
-        uploadBy: query.uploadBy?.trim() || undefined,
-        beginTime: query.beginTime || undefined,
-        endTime: query.endTime || undefined,
-      },
-    }
-  )
-
-  const page = unwrapResult(response.data)
-  const records = Array.isArray(page.records) ? page.records : []
+function paginate(records: SysFile[], query: SysFileQuery): SysFilePage {
+  const pageNum = Math.max(query.pageNum, 1)
+  const pageSize = Math.max(query.pageSize, 1)
+  const start = (pageNum - 1) * pageSize
 
   return {
-    pageNum: Number(page.pageNum ?? 1),
-    pageSize: Number(page.pageSize ?? 10),
-    total: Number(page.total ?? 0),
-    pages: Number(page.pages ?? 0),
-    records: records.map(normalizeSysFile),
+    pageNum,
+    pageSize,
+    total: records.length,
+    pages: Math.max(Math.ceil(records.length / pageSize), 1),
+    records: records.slice(start, start + pageSize),
   }
 }
 
+export async function fetchFilePage(query: SysFileQuery): Promise<SysFilePage> {
+  const records = localFiles.filter(
+    (file) =>
+      (!query.originalName?.trim() ||
+        file.originalName.includes(query.originalName)) &&
+      (!query.extension?.trim() || file.extension.includes(query.extension)) &&
+      (!query.bizType?.trim() || file.bizType === query.bizType) &&
+      (!query.uploadBy?.trim() || file.uploadBy === query.uploadBy)
+  )
+
+  return paginate(records, query)
+}
+
 export async function fetchFileDetail(id: string): Promise<SysFile> {
-  const response = await apiClient.get<ApiResult<unknown>>(`/system/file/${id}`)
-  return normalizeSysFile(unwrapResult(response.data))
+  return localFiles.find((file) => file.id === id) ?? localFiles[0]
 }
 
 export type UploadFileParams = {
@@ -54,54 +66,41 @@ export type UploadFileParams = {
 }
 
 export async function uploadFile(params: UploadFileParams): Promise<SysFile> {
-  const form = new FormData()
-  form.append('file', params.file)
-  if (params.bizType) form.append('bizType', params.bizType)
-  if (params.bizId) form.append('bizId', params.bizId)
-  if (params.path) form.append('path', params.path)
-
-  const response = await apiClient.post<ApiResult<unknown>>(
-    '/system/file/upload',
-    form,
-    {
-      headers: { 'Content-Type': 'multipart/form-data' },
-      onUploadProgress: (event) => {
-        if (!params.onProgress || !event.total) return
-        params.onProgress(Math.round((event.loaded * 100) / event.total))
-      },
-    }
-  )
-
-  return normalizeSysFile(unwrapResult(response.data))
+  params.onProgress?.(100)
+  return normalizeSysFile({
+    id: String(localFiles.length + 1),
+    originalName: params.file.name,
+    storageName: params.file.name,
+    filePath: params.path || '/local',
+    size: params.file.size,
+    extension: params.file.name.split('.').pop() ?? '',
+    contentType: params.file.type || null,
+    storageType: 'local-json',
+    bizType: params.bizType ?? null,
+    bizId: params.bizId ?? null,
+    uploadBy: '1',
+    uploadTime: new Date().toLocaleString('zh-CN', { hour12: false }),
+    createTime: new Date().toLocaleString('zh-CN', { hour12: false }),
+  })
 }
 
 export async function deleteFiles(ids: string[]): Promise<number> {
-  if (ids.length === 0) return 0
-  const response = await apiClient.delete<ApiResult<number>>(
-    `/system/file/${ids.join(',')}`
-  )
-  return Number(unwrapResult(response.data) ?? 0)
-}
-
-function buildAuthorizedBlobUrl(id: string, endpoint: 'download' | 'preview') {
-  return `${apiClient.defaults.baseURL ?? ''}/system/file/${endpoint}/${id}`
+  return ids.length
 }
 
 export function getDownloadUrl(id: string) {
-  return buildAuthorizedBlobUrl(id, 'download')
+  return `local-json://${id}/download`
 }
 
 export function getPreviewUrl(id: string) {
-  return buildAuthorizedBlobUrl(id, 'preview')
+  return `local-json://${id}/preview`
 }
 
 export async function fetchBlob(
   id: string,
   endpoint: 'download' | 'preview' = 'download'
 ): Promise<Blob> {
-  const response = await apiClient.get<Blob>(
-    `/system/file/${endpoint}/${id}`,
-    { responseType: 'blob' }
-  )
-  return response.data
+  return new Blob([`local json ${endpoint}: ${id}`], {
+    type: 'text/plain;charset=utf-8',
+  })
 }
