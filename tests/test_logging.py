@@ -26,10 +26,10 @@ def _flush_root() -> None:
 
 
 def _day_dir(base):
-    """日志按日期目录分区：<base>/<YYYYMMDD>/（便于按日滚动删除）。"""
-    from datetime import datetime
+    """日志按年月日目录分区：<base>/<YYYY>/<MM>/<DD>/。"""
+    from server.platform.paths import dated_log_path
 
-    return base / datetime.now().strftime("%Y%m%d")
+    return dated_log_path(base, "app.log").parent
 
 
 def test_no_files_by_default(tmp_path, monkeypatch):
@@ -82,6 +82,19 @@ def test_rotation_produces_gzip_backups(tmp_path):
     assert backups, "expected at least one gzipped rotated backup"
     # 备份数受 backup_count 约束
     assert len(backups) <= 3
+
+
+def test_file_logs_use_year_month_day_directory(tmp_path):
+    configure_logging("INFO", "json", to_files=True, log_dir=tmp_path)
+    logging.getLogger("test.date").info("date-partitioned")
+    _flush_root()
+
+    app_log = _day_dir(tmp_path) / "app.log"
+    assert app_log.exists()
+    relative_parts = app_log.relative_to(tmp_path).parts
+    assert len(relative_parts) == 4
+    assert all(part.isdigit() for part in relative_parts[:3])
+    assert [len(part) for part in relative_parts[:3]] == [4, 2, 2]
 
 
 # ── uvicorn access log 噪音过滤（/health 健康探测刷屏）──────────────────────────

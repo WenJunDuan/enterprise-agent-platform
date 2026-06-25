@@ -396,7 +396,7 @@ Dockerfile      审核后端+前端运行时镜像（含 SDK 自带 claude CLI�
 docker-compose.yml / docker-entrypoint.sh / enterprise-agent.env.example   平台编排、入口与 env 模板（LiteLLM 由运维独立管理）
 server/         Python 服务外壳、CLI、平台层与 stores
 agent-front/    React 前端（npm run build → agent-front/dist）
-logs/           仅运行日志（gitignore）：app/{app,error}.log + runtime/app-server/
+logs/           仅运行日志（gitignore）：app/<YYYY>/<MM>/<DD>/{app,error}.log + runtime/app-server/<YYYY>/<MM>/<DD>/
 ```
 
 > 结构化输出由 SDK `output_format` + JSON Schema 强制约束；业务判断放在 `.claude/` 与 `knowledge/`，Python 不承载业务语义。

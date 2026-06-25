@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, Iterator, Literal
 
 from server.platform.config import _env_int
-from server.platform.paths import APP_LOG_DIR
+from server.platform.paths import APP_LOG_DIR, dated_log_path
 
 # 运行日志文件 appender 默认值（log4j2 RollingFile 等价）。环境变量可覆盖。
 _DEFAULT_MAX_BYTES = 50 * 1024 * 1024  # 单文件 50MB 触发滚动
@@ -175,10 +175,10 @@ def _gzip_namer(name: str) -> str:
 
 
 class _DateDirRotatingFileHandler(RotatingFileHandler):
-    """按日期目录分区 + 日内按大小滚动 gzip 的文件 appender。
+    """按年月日目录分区 + 日内按大小滚动 gzip 的文件 appender。
 
-    写 ``<base_dir>/<YYYYMMDD>/<filename>``（如 logs/app/20260622/app.log）；跨天 emit 时自动切到新
-    日期目录（便于按日滚动删除/归档整目录）。日内仍按 maxBytes 滚动并 gzip 旧段（app.log.1.gz 等留在
+    写 ``<base_dir>/<YYYY>/<MM>/<DD>/<filename>``；跨天 emit 时自动切到新日期目录（便于按日
+    滚动删除/归档整目录）。日内仍按 maxBytes 滚动并 gzip 旧段（app.log.1.gz 等留在
     当天目录内），避免单日文件无界增长。线程安全沿用父类 emit 的锁。
     """
 
@@ -187,23 +187,19 @@ class _DateDirRotatingFileHandler(RotatingFileHandler):
     ) -> None:
         self._base_dir = _Path(base_dir)
         self._log_name = filename
-        self._current_date = self._today()
+        self._current_dir = self._dated_path().parent
         dated = self._dated_path()
         dated.parent.mkdir(parents=True, exist_ok=True)
         super().__init__(str(dated), maxBytes=maxBytes, backupCount=backupCount, encoding="utf-8")
 
-    @staticmethod
-    def _today() -> str:
-        return datetime.now().strftime("%Y%m%d")
-
     def _dated_path(self) -> _Path:
-        return self._base_dir / self._current_date / self._log_name
+        return dated_log_path(self._base_dir, self._log_name)
 
     def emit(self, record: logging.LogRecord) -> None:
         # 跨天 → 切到新日期目录（重开 stream 指向 <新日期>/<name>）。
-        today = self._today()
-        if today != self._current_date:
-            self._current_date = today
+        dated = self._dated_path()
+        if dated.parent != self._current_dir:
+            self._current_dir = dated.parent
             new_path = self._dated_path()
             new_path.parent.mkdir(parents=True, exist_ok=True)
             self.baseFilename = str(new_path.resolve())
@@ -221,9 +217,9 @@ def _build_rotating_file_handler(
     backup_count: int,
     context_filter: logging.Filter,
 ) -> RotatingFileHandler:
-    """日期目录分区 + 日内 size-rolling + gzip 备份的文件 appender。
+    """年月日目录分区 + 日内 size-rolling + gzip 备份的文件 appender。
 
-    写 ``<base_dir>/<YYYYMMDD>/<filename>``（按日滚动删除友好），日内 size 滚动 gzip（log4j2 RollingFile）。
+    写 ``<base_dir>/<YYYY>/<MM>/<DD>/<filename>``，日内 size 滚动 gzip（log4j2 RollingFile）。
     """
     handler = _DateDirRotatingFileHandler(
         base_dir, filename, maxBytes=max_bytes, backupCount=backup_count
