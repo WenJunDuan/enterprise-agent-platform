@@ -61,6 +61,7 @@ class SessionLogger:
             session_id=session_id,
             request_id=request_id,
             timestamp=started_at,
+            tenant=tenant,
         )
         self._write(
             {

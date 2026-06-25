@@ -185,7 +185,8 @@ def start(
         raise typer.Exit(code=1)
 
     maintenance = run_maintenance()
-    # 日志按日期目录分区（便于按日滚动删除）：开进程时落到当天目录 logs/runtime/app-server/<YYYYMMDD>/。
+    # 日志按年月日目录分区（便于按日滚动删除）：开进程时落到当天目录
+    # logs/runtime/app-server/<YYYY>/<MM>/<DD>/。
     stdout_path = app_server_log_path(stderr=False)
     stderr_path = app_server_log_path(stderr=True)
     stdout_path.parent.mkdir(parents=True, exist_ok=True)
@@ -281,7 +282,7 @@ def logs(
     follow: bool = typer.Option(False, help="Follow the log until interrupted."),
 ) -> None:
     """Print runtime logs from the managed API process."""
-    # 读最新日期目录的日志（进程可能跨天写）；无日期目录回落 legacy 平铺路径。
+    # 读最新日期目录的日志；无日期目录回落 legacy YYYYMMDD/平铺路径。
     path = latest_app_server_log_path(stderr)
     if not path.exists():
         typer.echo(f"No log file yet: {path}")

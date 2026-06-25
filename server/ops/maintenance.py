@@ -187,8 +187,8 @@ def cleanup_orphan_submission_directories(days: int, now: str | None = None) -> 
 def run_maintenance() -> dict[str, Any]:
     """Run lightweight local maintenance tasks for long-running single-node usage."""
     settings = get_app_settings()
-    # 日志按日期目录分区后，app-server stdout/stderr 落在 <date>/ 子目录，子进程无午夜滚动 → 仍按
-    # 大小滚动「最新日期目录」的那份（防单日无界增长）；旧日期目录由按日删除清理。
+    # 日志按年月日目录分区后，app-server stdout/stderr 落在 <YYYY>/<MM>/<DD>/ 子目录，子进程无
+    # 午夜滚动 → 仍按大小滚动「最新日期目录」的那份（防单日无界增长）；旧日期目录由按日删除清理。
     stdout_log = latest_app_server_log_path(False)
     stderr_log = latest_app_server_log_path(True)
     rotated = {

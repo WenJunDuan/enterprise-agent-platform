@@ -57,6 +57,7 @@ RUN apt-get update \
       libgl1 \
       libglib2.0-0 \
       libgomp1 \
+    && if [ "$WITH_OCR" = "1" ]; then apt-get install -y --no-install-recommends catdoc; fi \
     && rm -rf /var/lib/apt/lists/*
 
 RUN groupadd --gid "${APP_GID}" app \

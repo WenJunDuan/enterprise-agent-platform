@@ -14,6 +14,7 @@ EXCEL_EXT = {".xlsx", ".xlsm", ".xls"}
 TEXT_EXT = {".txt", ".csv", ".md", ".json", ".tsv"}
 IMAGE_EXT = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp"}
 WORD_EXT = {".docx"}
+LEGACY_WORD_EXT = {".doc"}
 PDF_EXT = {".pdf"}
 
 # DOCX 判文本型：正文字符数低于此值且含嵌入图 → 视为图片/扫描型
@@ -95,6 +96,8 @@ def classify(path: Path) -> dict:
             if probe["has_text_layer"]
             else _route("word", "ocr", "word_scan", False, "图片/扫描型 Word，转 OCR")
         )
+    elif ext in LEGACY_WORD_EXT:
+        result = _route("word", "native", "legacy_word", True, "老 Word .doc 原生文本抽取")
     elif ext in PDF_EXT:
         probe = _probe_pdf(path.read_bytes())
         result = (

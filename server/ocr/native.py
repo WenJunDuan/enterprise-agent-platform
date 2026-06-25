@@ -9,6 +9,11 @@ from __future__ import annotations
 import importlib
 import logging
 import os
+import re
+import shutil
+import subprocess
+import sys
+import unicodedata
 from pathlib import Path
 
 from server.ocr import OcrDependencyError
@@ -18,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 EXCEL_EXT = {".xlsx", ".xlsm", ".xls"}
 WORD_EXT = {".docx"}
+LEGACY_WORD_EXT = {".doc"}
 PDF_EXT = {".pdf"}
 
 # 单 sheet 安全上限，防超大表撑爆下游上下文
@@ -71,6 +77,88 @@ def read_word(path: Path) -> dict:
     return {"kind": "word", "blocks": blocks, "tables": tables}
 
 
+def _clean_extracted_text(text: str) -> str:
+    """Normalize command/fallback text into non-empty, readable lines."""
+    text = text.replace("\x00", "")
+    lines = []
+    for line in text.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+        normalized = re.sub(r"[ \t\f\v]+", " ", line).strip()
+        if normalized:
+            lines.append(normalized)
+    return "\n".join(lines)
+
+
+def _run_text_converter(argv: list[str]) -> str | None:
+    """Run an external legacy Word converter and return cleaned stdout when useful."""
+    if not shutil.which(argv[0]):
+        return None
+    try:
+        completed = subprocess.run(
+            argv,
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="ignore",
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if completed.returncode != 0:
+        return None
+    cleaned = _clean_extracted_text(completed.stdout)
+    return cleaned or None
+
+
+def _read_legacy_word_utf16_fallback(path: Path) -> str:
+    """Best-effort fallback for old .doc files with an embedded UTF-16LE text layer."""
+    raw = path.read_bytes()
+    decoded = raw.decode("utf-16le", errors="ignore")
+    chars: list[str] = []
+    for ch in decoded:
+        if ch in {"\n", "\r", "\t"}:
+            chars.append(ch)
+            continue
+        category = unicodedata.category(ch)
+        if category[0] == "C":
+            chars.append("\n")
+            continue
+        if ch.isprintable():
+            chars.append(ch)
+    cleaned = _clean_extracted_text("".join(chars))
+    # Keep only lines with enough signal to avoid dumping binary noise into the prompt.
+    lines = [
+        line
+        for line in cleaned.splitlines()
+        if len(re.sub(r"\W+", "", line, flags=re.UNICODE)) >= 2
+    ]
+    return "\n".join(lines)
+
+
+def read_legacy_word(path: Path) -> dict:
+    """Read legacy binary ``.doc`` files through native text extractors before OCR.
+
+    Order matters for deployment:
+    - macOS: ``textutil`` preserves enough Word text without extra packages.
+    - Linux containers: ``catdoc`` first, then ``antiword``.
+    - Final fallback: extract embedded UTF-16LE text runs from the binary.
+    """
+    commands: list[list[str]] = []
+    if sys.platform == "darwin":
+        commands.append(["textutil", "-convert", "txt", "-stdout", str(path)])
+    commands.extend((["catdoc", str(path)], ["antiword", str(path)]))
+
+    text = None
+    for argv in commands:
+        text = _run_text_converter(argv)
+        if text:
+            break
+    if not text:
+        text = _read_legacy_word_utf16_fallback(path)
+    return {"kind": "word", "blocks": [text] if text else [], "tables": []}
+
+
 def read_pdf_text(path: Path) -> dict:
     """文本层 PDF 直读：pymupdf 阅读顺序文本 + ``find_tables`` 抽表。
 
@@ -120,6 +208,8 @@ def native_read(path: Path) -> dict:
         return read_excel(path)
     if ext in WORD_EXT:
         return read_word(path)
+    if ext in LEGACY_WORD_EXT:
+        return read_legacy_word(path)
     if ext in PDF_EXT:
         return read_pdf_text(path)
     return read_text(path)

@@ -103,6 +103,15 @@ def test_text_docx_routes_native(tmp_path):
     assert result["handler"] == "word"
 
 
+def test_legacy_doc_routes_native(tmp_path):
+    path = tmp_path / "公开招标文件.doc"
+    path.write_bytes("评分点名称\n价格分：30分".encode("utf-16le"))
+    result = classify(path)
+    assert result["route"] == "native"
+    assert result["handler"] == "legacy_word"
+    assert result["has_text_layer"] is True
+
+
 def test_scanned_docx_routes_ocr(tmp_path):
     # 正文近空 + 含嵌入图 → 图片/扫描型
     path = tmp_path / "scan.docx"

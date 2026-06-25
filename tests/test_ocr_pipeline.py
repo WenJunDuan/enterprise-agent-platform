@@ -88,6 +88,25 @@ def test_render_body_no_anchors_for_word_blocks():
     assert "段落一" in body and "段落二" in body
 
 
+def test_read_legacy_word_utf16_fallback_extracts_text(tmp_path, monkeypatch):
+    import server.ocr.native as native_mod
+
+    monkeypatch.setattr(native_mod, "_run_text_converter", lambda argv: None)
+    path = tmp_path / "公开招标文件.doc"
+    path.write_bytes(
+        b"\xd0\xcf\x11\xe0"
+        + "招标人ZJ网院直播间建设项目\n评分点名称\n价格分：30分".encode(
+            "utf-16le"
+        )
+    )
+
+    result = native_mod.read_legacy_word(path)
+    text = "\n".join(result["blocks"])
+    assert result["kind"] == "word"
+    assert "评分点名称" in text
+    assert "价格分：30分" in text
+
+
 def test_build_block_renders_excel_tables():
     results = [
         {

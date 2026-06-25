@@ -1,13 +1,15 @@
 """Project path layout for local storage and runtime assets.
 
 Two roots, cleanly separated:
-- ``logs/``  仅运行日志（operational）: app.log/error.log + 进程 runtime。
+- ``logs/``  仅运行日志（operational）: app/error + 进程 runtime，均按年月日目录分区。
 - ``data/``  全部业务数据: SQLite 统一单库 ``platform.sqlite3``（多表）+ 文件 blob
              （上传原件 / 会话 event 流 / 记忆产物）。
 """
 
 from __future__ import annotations
 
+import hashlib
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -42,6 +44,8 @@ MEMORY_INDEX_DB_FILE = PLATFORM_DB_FILE
 SUBMISSION_ROOT_DIR = DATA_ROOT / "submissions"  # 上传原件（ephemeral）
 SESSION_EVENT_DIR = DATA_ROOT / "sessions" / "events"  # 会话原始 event 流
 
+_SAFE_PATH_SEGMENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
+
 # ── 迁移用：旧 logs/ 位置（一次性 migrate_storage 读取，迁完可删）─────────────
 LEGACY_RESULT_DB_FILE = LOGS_ROOT / "results" / "index.sqlite3"
 LEGACY_SESSION_DB_FILE = LOGS_ROOT / "sessions" / "index.sqlite3"
@@ -68,40 +72,98 @@ def ensure_local_layout() -> None:
         path.mkdir(parents=True, exist_ok=True)
 
 
+def dated_log_dir(base_dir: Path, timestamp: str | None = None) -> Path:
+    """Return the year/month/day partition under a log base directory.
+
+    Runtime logs use ``logs/<area>/<YYYY>/<MM>/<DD>/...`` so every log area under
+    ``logs/`` follows the same date partitioning scheme.
+    """
+    moment = _coerce_timestamp(timestamp)
+    return base_dir / moment.strftime("%Y") / moment.strftime("%m") / moment.strftime("%d")
+
+
+def dated_log_path(base_dir: Path, filename: str, timestamp: str | None = None) -> Path:
+    """Return ``filename`` under the year/month/day partition for ``base_dir``."""
+    return dated_log_dir(base_dir, timestamp) / filename
+
+
+def latest_dated_log_path(base_dir: Path, filename: str) -> Path:
+    """Return the newest dated log path, with compatibility for old layouts.
+
+    Preferred layout:
+    ``<base>/<YYYY>/<MM>/<DD>/<filename>``.
+
+    Compatibility layouts:
+    ``<base>/<YYYYMMDD>/<filename>`` and ``<base>/<filename>``.
+    """
+    if base_dir.exists():
+        day_dirs = sorted(
+            (
+                d
+                for d in base_dir.glob("[0-9][0-9][0-9][0-9]/[0-9][0-9]/[0-9][0-9]")
+                if d.is_dir()
+            ),
+            reverse=True,
+        )
+        for day_dir in day_dirs:
+            candidate = day_dir / filename
+            if candidate.exists():
+                return candidate
+
+        legacy_day_dirs = sorted(
+            (
+                d
+                for d in base_dir.iterdir()
+                if d.is_dir() and len(d.name) == 8 and d.name.isdigit()
+            ),
+            reverse=True,
+        )
+        for day_dir in legacy_day_dirs:
+            candidate = day_dir / filename
+            if candidate.exists():
+                return candidate
+    return base_dir / filename
+
+
 def build_session_event_log_path(
     session_id: str,
     request_id: str,
     timestamp: str | None = None,
+    tenant: str | None = None,
 ) -> Path:
     """Build the raw event log path for one Claude session run."""
     moment = _coerce_timestamp(timestamp)
-    event_dir = SESSION_EVENT_DIR / moment.strftime("%Y") / moment.strftime("%m") / moment.strftime("%d")
+    event_dir = (
+        SESSION_EVENT_DIR
+        / _safe_tenant_segment(tenant)
+        / moment.strftime("%Y")
+        / moment.strftime("%m")
+        / moment.strftime("%d")
+    )
     filename = f"{moment.strftime('%H%M%S')}_{request_id}_{session_id[:8]}.jsonl"
     return event_dir / filename
 
 
+def _safe_tenant_segment(tenant: str | None) -> str:
+    """Return a path-safe tenant segment without allowing traversal via TENANT_KEYS."""
+    value = (tenant or "unknown").strip()
+    if _SAFE_PATH_SEGMENT.match(value):
+        return value
+    digest = hashlib.sha256(value.encode("utf-8")).hexdigest()[:12]
+    return f"tenant-{digest}"
+
+
 def app_server_log_path(stderr: bool = False) -> Path:
-    """托管 app-server 进程 stdout/stderr 日志（按日期目录分区，便于按日滚动删除）：
-    ``<APP_SERVER_DIR>/<YYYYMMDD>/<stdout|stderr>.log``。写入用：开进程时落到当天目录。"""
+    """托管 app-server 进程 stdout/stderr 日志（按年月日目录分区）：
+    ``<APP_SERVER_DIR>/<YYYY>/<MM>/<DD>/<stdout|stderr>.log``。"""
     name = "stderr.log" if stderr else "stdout.log"
-    day = datetime.now(timezone.utc).strftime("%Y%m%d")
-    return APP_SERVER_DIR / day / name
+    return dated_log_path(APP_SERVER_DIR, name)
 
 
 def latest_app_server_log_path(stderr: bool = False) -> Path:
-    """读取用：最新日期目录下的 app-server 日志（进程可能跨天写，取最新存在的）。无日期目录则回落
-    legacy 平铺路径（向后兼容旧日志）。"""
+    """读取用：最新日期目录下的 app-server 日志；兼容旧 ``YYYYMMDD`` 和平铺路径。"""
     name = "stderr.log" if stderr else "stdout.log"
-    if APP_SERVER_DIR.exists():
-        day_dirs = sorted(
-            (d for d in APP_SERVER_DIR.iterdir() if d.is_dir() and d.name.isdigit()),
-            reverse=True,
-        )
-        for day_dir in day_dirs:
-            candidate = day_dir / name
-            if candidate.exists():
-                return candidate
-    return APP_SERVER_DIR / name  # legacy 平铺路径回落
+    return latest_dated_log_path(APP_SERVER_DIR, name)
 
 
 def _coerce_timestamp(timestamp: str | None) -> datetime:
