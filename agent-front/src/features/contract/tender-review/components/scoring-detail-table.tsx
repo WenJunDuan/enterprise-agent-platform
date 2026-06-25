@@ -10,6 +10,7 @@ import {
 import type {
   ReviewBidder,
   TenderCompareScoreRow,
+  TenderReviewDimension,
   TenderScoreCategory,
   TenderScoreEvidence,
   TenderScoringItem,
@@ -193,12 +194,12 @@ export function CompareScoringDetailTable({
       </div>
       {groups.map((group) => (
         <details
-          key={group.category}
+          key={group.dimension}
           open
           className='group overflow-hidden rounded-xl border bg-card shadow-sm'
         >
           <summary className='flex cursor-pointer list-none items-center justify-between gap-3 bg-muted/40 px-4 py-3 text-sm font-semibold'>
-            <span>{getScoreCategoryLabel(group.category)}</span>
+            <span>{getReviewDimensionLabel(group.dimension)}</span>
             <ChevronDown className='size-4 text-muted-foreground transition-transform group-open:rotate-180' />
           </summary>
           <div className='overflow-x-auto'>
@@ -227,7 +228,14 @@ export function CompareScoringDetailTable({
                   style={gridStyle}
                   onClick={() => onRowClick(row)}
                 >
-                  <div className='font-medium text-foreground'>{row.item}</div>
+                  <div className='font-medium text-foreground'>
+                    {row.item}
+                    {row.reviewDimension === 'technical_subjective' ? (
+                      <div className='mt-1 text-xs font-normal text-amber-700'>
+                        初评建议，最终以评标委员会评分为准
+                      </div>
+                    ) : null}
+                  </div>
                   <div className='text-center text-muted-foreground'>
                     {formatScore(row.max)}
                   </div>
@@ -265,10 +273,17 @@ export function CompareScoreDetailSheet({
         <SheetHeader className='border-b'>
           <SheetTitle>{row?.item ?? '评标项目明细'}</SheetTitle>
           <SheetDescription>
-            {row ? `${getScoreCategoryLabel(row.scoreCategory)} · 满分 ${formatScore(row.max)}` : ''}
+            {row
+              ? `${getReviewDimensionLabel(row.reviewDimension)} · 满分 ${formatScore(row.max)}`
+              : ''}
           </SheetDescription>
         </SheetHeader>
         <div className='space-y-4 px-4 pb-6'>
+          {row?.reviewDimension === 'technical_subjective' ? (
+            <div className='rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300'>
+              初评建议，最终以评标委员会评分为准。优劣差异仅按分差和各家事实依据对照展示。
+            </div>
+          ) : null}
           {row?.cells.map((cell) => (
             <div key={cell.bidderId} className='rounded-lg border p-4'>
               <div className='flex items-start justify-between gap-3'>
@@ -290,6 +305,11 @@ export function CompareScoreDetailSheet({
               <EvidenceList evidence={cell.evidence} />
             </div>
           ))}
+          {row?.reviewDimension === 'technical_subjective' ? (
+            <div className='rounded-lg border bg-muted/40 p-3 text-sm leading-6 text-muted-foreground'>
+              优劣差异：{buildSubjectiveDifference(row)}
+            </div>
+          ) : null}
         </div>
       </SheetContent>
     </Sheet>
@@ -346,8 +366,8 @@ function groupScoringItems(items: TenderScoringItem[]) {
 }
 
 function groupCompareRows(rows: TenderCompareScoreRow[]) {
-  return groupByScoreCategory(rows, (row) => row.scoreCategory).map((group) => ({
-    category: group.category,
+  return groupByReviewDimension(rows, (row) => row.reviewDimension).map((group) => ({
+    dimension: group.dimension,
     rows: group.items,
   }))
 }
@@ -366,6 +386,40 @@ function groupByScoreCategory<T>(
 
 function getScoreCategoryLabel(category: TenderScoreCategory) {
   return category === 'business' ? '商务标' : '技术标'
+}
+
+function groupByReviewDimension<T>(
+  items: T[],
+  pickDimension: (item: T) => TenderReviewDimension
+) {
+  return (
+    ['price', 'business_objective', 'technical_subjective'] as const
+  )
+    .map((dimension) => ({
+      dimension,
+      items: items.filter((item) => pickDimension(item) === dimension),
+    }))
+    .filter((group) => group.items.length > 0)
+}
+
+function getReviewDimensionLabel(dimension: TenderReviewDimension) {
+  if (dimension === 'price') return '价格分'
+  if (dimension === 'technical_subjective') return '技术主观分'
+  return '商务客观分'
+}
+
+function buildSubjectiveDifference(row: TenderCompareScoreRow) {
+  const scored = row.cells.filter((cell) => cell.score != null)
+  if (scored.length < 2) {
+    return '分差暂无法计算，仅列示已返回的主观分与依据。'
+  }
+  const [left, right] = scored
+  const diff = Math.abs((left.score ?? 0) - (right.score ?? 0))
+  const scoreText =
+    diff === 0
+      ? `${left.bidderName}与${right.bidderName}分数相同`
+      : `${left.bidderName}与${right.bidderName}分差 ${formatScore(diff)} 分`
+  return `${scoreText}；依据对照：${left.bidderName}：${left.basis || '—'}；${right.bidderName}：${right.basis || '—'}。`
 }
 
 function getStatusLabel(status: string) {
