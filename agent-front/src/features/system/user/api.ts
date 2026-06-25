@@ -1,6 +1,4 @@
-import type { ApiResult } from '@/types/api'
-import { toId, toIdList } from '@/lib/ids'
-import { apiClient } from '@/lib/http'
+import { toId } from '@/lib/ids'
 import type {
   DeptTreeNode,
   PagedResult,
@@ -8,223 +6,172 @@ import type {
   UserEditDetail,
   UserRoleOption,
 } from './data/schema'
-import {
-  buildResetPasswordPayload,
-  buildUserCreatePayload,
-  buildUserListQuery,
-  buildUserStatusPayload,
-  buildUserUpdatePayload,
-  type ResetPasswordFormInput,
-  type UserCreateFormInput,
-  type UserManagementSearch,
-  type UserStatusUpdateInput,
-  type UserUpdateFormInput,
+import type {
+  ResetPasswordFormInput,
+  UserCreateFormInput,
+  UserManagementSearch,
+  UserStatusUpdateInput,
+  UserUpdateFormInput,
 } from './model'
 
-function unwrapResult<T>(result: ApiResult<T>) {
-  return result.data
-}
+const localUsers: UserEditDetail[] = [
+  {
+    id: '1',
+    version: '1',
+    username: 'admin',
+    nickname: '系统管理员',
+    deptId: '100',
+    deptName: '管理中心',
+    email: 'admin@example.com',
+    phone: '13800000000',
+    sex: 0,
+    status: 1,
+    loginIp: '127.0.0.1',
+    loginDate: '2026-06-25 09:00:00',
+    remark: '本地 JSON 数据',
+    createTime: '2026-06-25 00:00:00',
+  },
+  {
+    id: '2',
+    version: '1',
+    username: 'reviewer',
+    nickname: '评审人员',
+    deptId: '101',
+    deptName: '评审部',
+    email: 'reviewer@example.com',
+    phone: '13900000000',
+    sex: 0,
+    status: 1,
+    loginIp: null,
+    loginDate: null,
+    remark: '本地 JSON 数据',
+    createTime: '2026-06-25 00:00:00',
+  },
+]
 
-function getRecord(input: unknown) {
-  return (input && typeof input === 'object' ? input : {}) as Record<
-    string,
-    unknown
-  >
-}
+const localRoles: UserRoleOption[] = [
+  { id: '1', roleName: '管理员', roleKey: 'admin', status: 1 },
+  { id: '2', roleName: '评审员', roleKey: 'reviewer', status: 1 },
+]
 
-function normalizeNullableText(value: unknown) {
-  return typeof value === 'string' ? value : null
-}
+const localDeptTree: DeptTreeNode[] = [
+  {
+    id: '100',
+    label: '管理中心',
+    children: [
+      {
+        id: '101',
+        label: '评审部',
+        children: [],
+      },
+    ],
+  },
+]
 
-function normalizeUserStatus(value: unknown): 0 | 1 {
-  return Number(value ?? 1) === 0 ? 0 : 1
-}
-
-function normalizeUserSex(value: unknown): 0 | 1 | 2 {
-  const parsed = Number(value ?? 0)
-  if (parsed === 1 || parsed === 2) {
-    return parsed
+function toUser(detail: UserEditDetail): User {
+  return {
+    id: detail.id,
+    username: detail.username,
+    nickname: detail.nickname,
+    deptName: detail.deptName,
+    email: detail.email,
+    phone: detail.phone,
+    sex: detail.sex,
+    status: detail.status,
+    loginIp: detail.loginIp,
+    loginDate: detail.loginDate,
+    remark: detail.remark,
+    createTime: detail.createTime,
   }
-  return 0
 }
 
-function normalizeUser(input: unknown): User {
-  const record = getRecord(input)
+function paginate<T>(records: T[], page = 1, pageSize = 10): PagedResult<T> {
+  const safePage = Math.max(page, 1)
+  const safePageSize = Math.max(pageSize, 1)
+  const start = (safePage - 1) * safePageSize
 
   return {
-    id: toId(record.id),
-    username: String(record.username ?? ''),
-    nickname: String(record.nickname ?? ''),
-    deptName: normalizeNullableText(record.deptName),
-    email: normalizeNullableText(record.email),
-    phone: normalizeNullableText(record.phone),
-    sex: normalizeUserSex(record.sex),
-    status: normalizeUserStatus(record.status),
-    loginIp: normalizeNullableText(record.loginIp),
-    loginDate: normalizeNullableText(record.loginDate),
-    remark: normalizeNullableText(record.remark),
-    createTime: normalizeNullableText(record.createTime),
+    pageNum: safePage,
+    pageSize: safePageSize,
+    total: records.length,
+    pages: Math.max(Math.ceil(records.length / safePageSize), 1),
+    records: records.slice(start, start + safePageSize),
   }
 }
 
-function normalizeUserEditDetail(input: unknown): UserEditDetail {
-  const record = getRecord(input)
-
-  return {
-    id: toId(record.id),
-    version: toId(record.version),
-    username: String(record.username ?? ''),
-    nickname: String(record.nickname ?? ''),
-    email: normalizeNullableText(record.email),
-    phone: normalizeNullableText(record.phone),
-    sex: normalizeUserSex(record.sex),
-    deptId:
-      record.deptId === null || record.deptId === undefined
-        ? null
-        : toId(record.deptId),
-    deptName: normalizeNullableText(record.deptName),
-    status: normalizeUserStatus(record.status),
-    remark: normalizeNullableText(record.remark),
-    loginIp: normalizeNullableText(record.loginIp),
-    loginDate: normalizeNullableText(record.loginDate),
-    createTime: normalizeNullableText(record.createTime),
-  }
-}
-
-function normalizeRoleOption(input: unknown): UserRoleOption {
-  const record = getRecord(input)
-
-  return {
-    id: toId(record.id),
-    roleName: String(record.roleName ?? ''),
-    roleKey: String(record.roleKey ?? ''),
-    status: Number(record.status ?? 1),
-  }
-}
-
-function normalizeDeptTreeNode(
-  input: unknown,
-  seen: Set<string>,
-  parentId: string = '0'
-): DeptTreeNode[] {
-  const record = getRecord(input)
-  const deptId = toId(record.id ?? record.deptId)
-  const childrenSource = Array.isArray(record.children) ? record.children : []
-
-  if (!deptId || deptId === '0') {
-    return childrenSource.flatMap((child) =>
-      normalizeDeptTreeNode(child, seen, parentId)
-    )
-  }
-
-  if (seen.has(deptId)) {
-    return []
-  }
-
-  seen.add(deptId)
-
-  return [
-    {
-      id: deptId,
-      label: String(record.label ?? record.deptName ?? ''),
-      children: childrenSource.flatMap((child) =>
-        normalizeDeptTreeNode(child, seen, deptId)
-      ),
-    },
-  ]
+function includesText(value: string | null, keyword?: string) {
+  return !keyword?.trim() || value?.includes(keyword.trim())
 }
 
 export async function fetchUsers(search: Partial<UserManagementSearch>) {
-  const response = await apiClient.get<ApiResult<PagedResult<unknown>>>(
-    '/system/user/list',
-    {
-      params: buildUserListQuery(search),
-    }
-  )
+  const records = localUsers.map(toUser).filter((user) => {
+    const status = search.status?.[0]
+    const sex = search.sex?.[0]
 
-  const page = unwrapResult(response.data)
-  return {
-    pageNum: Number(page.pageNum ?? 1),
-    pageSize: Number(page.pageSize ?? 10),
-    total: Number(page.total ?? 0),
-    pages: Number(page.pages ?? 0),
-    records: (page.records ?? []).map(normalizeUser),
-  } satisfies PagedResult<User>
+    return (
+      includesText(user.username, search.username) &&
+      includesText(user.nickname, search.nickname) &&
+      includesText(user.email, search.email) &&
+      includesText(user.phone, search.phone) &&
+      (!status ||
+        (status === 'active' ? user.status === 1 : user.status === 0)) &&
+      (!sex || String(user.sex) === sex)
+    )
+  })
+
+  return paginate(records, search.page, search.pageSize)
 }
 
 export async function fetchUserRoleIds(userId: string) {
-  const response = await apiClient.get<ApiResult<unknown>>(
-    `/system/user/${userId}/roles`
-  )
-
-  return toIdList(unwrapResult(response.data))
+  return userId === '1' ? ['1'] : ['2']
 }
 
 export async function fetchUserDetail(userId: string) {
-  const response = await apiClient.get<ApiResult<unknown>>(
-    `/system/user/${userId}`
+  return (
+    localUsers.find((user) => user.id === userId) ??
+    localUsers[0] ?? {
+      id: toId(userId),
+      version: '1',
+      username: '',
+      nickname: '',
+      email: null,
+      phone: null,
+      sex: 0,
+      deptId: null,
+      deptName: null,
+      status: 1,
+      remark: null,
+      loginIp: null,
+      loginDate: null,
+      createTime: null,
+    }
   )
-
-  return normalizeUserEditDetail(unwrapResult(response.data))
 }
 
 export async function fetchAllRoles() {
-  const response = await apiClient.get<ApiResult<unknown[]>>('/system/role/all')
-
-  return unwrapResult(response.data).map(normalizeRoleOption)
+  return localRoles
 }
 
 export async function fetchDeptTree() {
-  const response = await apiClient.get<ApiResult<unknown[]>>(
-    '/system/dept/treeselect'
-  )
-
-  const seen = new Set<string>()
-  return unwrapResult(response.data).flatMap((node) =>
-    normalizeDeptTreeNode(node, seen)
-  )
+  return localDeptTree
 }
 
-export async function createUser(input: UserCreateFormInput) {
-  const response = await apiClient.post<ApiResult<number | string>>(
-    '/system/user',
-    buildUserCreatePayload(input)
-  )
-
-  return toId(unwrapResult(response.data))
+export async function createUser(_input: UserCreateFormInput) {
+  return String(localUsers.length + 1)
 }
 
-export async function updateUser(input: UserUpdateFormInput) {
-  const response = await apiClient.put<ApiResult<null>>(
-    '/system/user',
-    buildUserUpdatePayload(input)
-  )
-
-  return unwrapResult(response.data)
+export async function updateUser(_input: UserUpdateFormInput) {
+  return null
 }
 
-export async function deleteUsers(userIds: string[]) {
-  const response = await apiClient.delete<ApiResult<null>>(
-    `/system/user/${userIds.join(',')}`
-  )
-
-  return unwrapResult(response.data)
+export async function deleteUsers(_userIds: string[]) {
+  return null
 }
 
-export async function changeUserStatus(input: UserStatusUpdateInput) {
-  const response = await apiClient.put<ApiResult<null>>(
-    '/system/user/changeStatus',
-    buildUserStatusPayload(input)
-  )
-
-  return unwrapResult(response.data)
+export async function changeUserStatus(_input: UserStatusUpdateInput) {
+  return null
 }
 
-export async function resetUserPassword(input: ResetPasswordFormInput) {
-  const response = await apiClient.put<ApiResult<null>>(
-    '/system/user/resetPwd',
-    buildResetPasswordPayload(input)
-  )
-
-  return unwrapResult(response.data)
+export async function resetUserPassword(_input: ResetPasswordFormInput) {
+  return null
 }

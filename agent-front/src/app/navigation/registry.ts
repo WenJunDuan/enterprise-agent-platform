@@ -1,6 +1,10 @@
 import type { AuthUser } from '@/types/auth'
 import { ClipboardList, FileSearch, History, ScanText } from 'lucide-react'
 import type { NavGroup, NavItem } from '@/components/layout/types'
+import {
+  filterNavigationGroupsByVisibility,
+  type NavigationMenuVisibility,
+} from './menu-visibility'
 import { getBackendPageByPath } from './page-registry'
 import type { BackendMenuRouter, BreadcrumbConfig } from './types'
 
@@ -147,14 +151,22 @@ export function buildNavigationUser(user: AuthUser | null | undefined) {
   }
 }
 
-export function buildNavigationGroups(
-  _user: Pick<AuthUser, 'roles' | 'permissions'> | null | undefined,
-  _routers?: BackendMenuRouter[]
-) {
+export function getNavigationMenuDefinitions() {
   return MENU_GROUP_ORDER.map<NavGroup>((groupTitle) => ({
     title: groupTitle,
     items: DOMAIN_NAV_GROUPS[groupTitle],
   })).filter((group) => group.items.length > 0)
+}
+
+export function buildNavigationGroups(
+  _user: Pick<AuthUser, 'roles' | 'permissions'> | null | undefined,
+  _routers?: BackendMenuRouter[],
+  visibility?: NavigationMenuVisibility
+) {
+  return filterNavigationGroupsByVisibility(
+    getNavigationMenuDefinitions(),
+    visibility
+  )
 }
 
 export function getBreadcrumbsForPath(

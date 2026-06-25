@@ -16,6 +16,7 @@ import type {
   TenderCompareScoreRow,
   TenderReviewMockData,
   TenderReviewMode,
+  TenderScoreIssue,
 } from '../types'
 
 type AnalysisWorkbenchViewProps = {
@@ -191,20 +192,19 @@ function DetailWorkbench(props: AnalysisWorkbenchViewProps) {
             / {formatScoreValue(scoreSummary.maxTotal)} 分
           </div>
           <div className='mt-3 grid grid-cols-2 gap-2 text-left text-xs'>
-            <div className='rounded-lg bg-muted/50 p-2'>
-              <div className='text-muted-foreground'>扣分/未得分</div>
-              <div className='mt-1 font-semibold'>
-                {scoreSummary.deductedItems.length +
-                  scoreSummary.rejectedItems.length}{' '}
-                项
-              </div>
-            </div>
-            <div className='rounded-lg bg-muted/50 p-2'>
-              <div className='text-muted-foreground'>未计分项</div>
-              <div className='mt-1 font-semibold'>
-                {scoreSummary.pendingItems.length} 项
-              </div>
-            </div>
+            <ScoreSummaryMiniCard
+              label='扣分/未得分'
+              score={scoreSummary.deductedTotal}
+              items={[
+                ...scoreSummary.deductedItems,
+                ...scoreSummary.rejectedItems,
+              ]}
+            />
+            <ScoreSummaryMiniCard
+              label='未计分项'
+              score={scoreSummary.pendingTotal}
+              items={scoreSummary.pendingItems}
+            />
           </div>
           {props.data.resultVerdict !== 'rejected' ? (
             <Badge className='mt-3 bg-emerald-100 text-emerald-700 hover:bg-emerald-100 dark:bg-emerald-950/50 dark:text-emerald-300'>
@@ -678,9 +678,37 @@ const emptyBidder: ReviewBidder = {
 const emptyScoreSummary = {
   maxTotal: 0,
   earnedTotal: 0,
+  deductedTotal: 0,
+  pendingTotal: 0,
   deductedItems: [],
   rejectedItems: [],
   pendingItems: [],
+}
+
+function ScoreSummaryMiniCard({
+  label,
+  score,
+  items,
+}: {
+  label: string
+  score: number
+  items: TenderScoreIssue[]
+}) {
+  return (
+    <div className='min-w-0 rounded-lg bg-muted/50 p-2'>
+      <div className='text-muted-foreground'>{label}</div>
+      <div className='mt-1 font-semibold'>
+        {formatScoreValue(score)} 分 · {items.length} 项
+      </div>
+      {items.length > 0 ? (
+        <div className='mt-1 line-clamp-2 leading-4 text-muted-foreground'>
+          {items.map((item) => item.item).join('、')}
+        </div>
+      ) : (
+        <div className='mt-1 text-muted-foreground'>无</div>
+      )}
+    </div>
+  )
 }
 
 function getDeductionLabel(item: ReviewItem) {

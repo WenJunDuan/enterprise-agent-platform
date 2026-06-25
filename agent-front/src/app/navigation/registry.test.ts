@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { buildNavigationGroups, getBreadcrumbsForPath } from './registry'
+import {
+  buildNavigationGroups,
+  getBreadcrumbsForPath,
+  getNavigationMenuDefinitions,
+} from './registry'
 
 describe('navigation registry', () => {
   test('orders tender audit before reimbursement and OCR menus', () => {
@@ -48,6 +52,44 @@ describe('navigation registry', () => {
 
     expect(ocrGroup?.items.map((item) => item.title)).toEqual(['OCR 识别'])
     expect(ocrGroup?.items.map((item) => item.url)).toEqual(['/ocr'])
+  })
+
+  test('can hide an entire sidebar menu group', () => {
+    const groups = buildNavigationGroups(null, undefined, {
+      groups: {
+        '智能 OCR': false,
+      },
+      items: {},
+    })
+
+    expect(groups.map((group) => group.title)).toEqual([
+      '智能招投标审核',
+      '智能报销审核',
+    ])
+  })
+
+  test('can hide a single sidebar menu item', () => {
+    const groups = buildNavigationGroups(null, undefined, {
+      groups: {},
+      items: {
+        '智能招投标审核:/contracts/tender/history': false,
+      },
+    })
+    const tenderGroup = groups.find(
+      (group) => group.title === '智能招投标审核'
+    )
+
+    expect(tenderGroup?.items.map((item) => item.title)).toEqual(['评审列表'])
+  })
+
+  test('exposes the unfiltered sidebar menu definitions for management controls', () => {
+    const groups = getNavigationMenuDefinitions()
+
+    expect(groups.map((group) => group.title)).toEqual([
+      '智能招投标审核',
+      '智能报销审核',
+      '智能 OCR',
+    ])
   })
 
   test('uses tender breadcrumbs for tender routes', () => {

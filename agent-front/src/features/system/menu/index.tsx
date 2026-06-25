@@ -5,9 +5,20 @@ import { AxiosError } from 'axios'
 import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { FolderPlus, Save, Trash2 } from 'lucide-react'
+import { FolderPlus, RotateCcw, Save, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import {
+  getNavigationMenuDefinitions,
+} from '@/app/navigation/registry'
+import {
+  isNavigationMenuGroupVisible,
+  isNavigationMenuItemVisible,
+  resetNavigationMenuVisibility,
+  setNavigationMenuGroupVisible,
+  setNavigationMenuItemVisible,
+  useNavigationMenuVisibility,
+} from '@/app/navigation/menu-visibility'
 import type { ApiResult } from '@/types/api'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Header } from '@/components/layout/header'
@@ -22,6 +33,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import { Switch } from '@/components/ui/switch'
 import {
   Form,
   FormControl,
@@ -67,6 +79,97 @@ function RequiredFormLabel({ children }: { children: string }) {
       <span className='text-destructive'>*</span>
       <span>{children}</span>
     </FormLabel>
+  )
+}
+
+function SidebarVisibilityPanel() {
+  const menuVisibility = useNavigationMenuVisibility()
+  const sidebarGroups = getNavigationMenuDefinitions()
+  const visibleGroupCount = sidebarGroups.filter((group) =>
+    isNavigationMenuGroupVisible(menuVisibility, group.title)
+  ).length
+
+  return (
+    <Card className='py-0'>
+      <CardHeader className='border-b py-3'>
+        <div className='flex min-h-9 items-center justify-between gap-3'>
+          <div>
+            <CardTitle className='text-base'>侧边栏菜单显示</CardTitle>
+            <p className='text-xs text-muted-foreground'>
+              已显示 {visibleGroupCount} / {sidebarGroups.length} 组
+            </p>
+          </div>
+          <Button
+            type='button'
+            size='sm'
+            variant='ghost'
+            onClick={resetNavigationMenuVisibility}
+          >
+            <RotateCcw />
+            重置
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className='space-y-3 px-4 py-3'>
+        {sidebarGroups.map((group) => {
+          const groupVisible = isNavigationMenuGroupVisible(
+            menuVisibility,
+            group.title
+          )
+
+          return (
+            <div key={group.title} className='rounded-md border p-3'>
+              <div className='flex items-center justify-between gap-3'>
+                <div className='min-w-0'>
+                  <div className='truncate text-sm font-medium'>
+                    {group.title}
+                  </div>
+                  <div className='text-xs text-muted-foreground'>
+                    {groupVisible ? '分组显示' : '分组隐藏'}
+                  </div>
+                </div>
+                <Switch
+                  checked={groupVisible}
+                  onCheckedChange={(checked) =>
+                    setNavigationMenuGroupVisible(group.title, checked)
+                  }
+                  aria-label={`切换${group.title}分组显示`}
+                />
+              </div>
+
+              <div className='mt-3 space-y-2 border-t pt-3'>
+                {group.items.map((item) => {
+                  const itemVisible = isNavigationMenuItemVisible(
+                    menuVisibility,
+                    group.title,
+                    item
+                  )
+
+                  return (
+                    <div
+                      key={`${group.title}-${item.title}`}
+                      className='flex items-center justify-between gap-3'
+                    >
+                      <span className='min-w-0 truncate text-sm text-muted-foreground'>
+                        {item.title}
+                      </span>
+                      <Switch
+                        checked={itemVisible}
+                        disabled={!groupVisible}
+                        onCheckedChange={(checked) =>
+                          setNavigationMenuItemVisible(group.title, item, checked)
+                        }
+                        aria-label={`切换${item.title}菜单显示`}
+                      />
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )
+        })}
+      </CardContent>
+    </Card>
   )
 }
 
@@ -425,19 +528,22 @@ export function MenuManagementPage() {
         </div>
 
         <div className='grid gap-4 xl:grid-cols-[360px_minmax(0,1fr)]'>
-          <MenuTreePanel
-            tree={menuTree}
-            isPending={menuTreeQuery.isPending}
-            selectedMenuId={resolvedSelectedMenuId}
-            expandedMenuIds={effectiveExpandedMenuIds}
-            keyword={treeKeyword}
-            typeFilter={menuTypeFilter}
-            onKeywordChange={setTreeKeyword}
-            onTypeFilterChange={setMenuTypeFilter}
-            onSelectMenu={handleSelectMenu}
-            onDeleteMenu={handleDeleteMenuFromTree}
-            onToggleExpand={handleToggleExpand}
-          />
+          <div className='space-y-4'>
+            <SidebarVisibilityPanel />
+            <MenuTreePanel
+              tree={menuTree}
+              isPending={menuTreeQuery.isPending}
+              selectedMenuId={resolvedSelectedMenuId}
+              expandedMenuIds={effectiveExpandedMenuIds}
+              keyword={treeKeyword}
+              typeFilter={menuTypeFilter}
+              onKeywordChange={setTreeKeyword}
+              onTypeFilterChange={setMenuTypeFilter}
+              onSelectMenu={handleSelectMenu}
+              onDeleteMenu={handleDeleteMenuFromTree}
+              onToggleExpand={handleToggleExpand}
+            />
+          </div>
 
           <Card className='h-full py-0'>
             <CardHeader className='border-b py-3'>

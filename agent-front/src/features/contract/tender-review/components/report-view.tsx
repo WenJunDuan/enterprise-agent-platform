@@ -2,7 +2,7 @@ import { ArrowLeft, Printer } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { ScoringDetailTable } from './scoring-detail-table'
-import type { TenderReviewMockData } from '../types'
+import type { TenderReviewMockData, TenderScoreIssue } from '../types'
 
 type ReportViewProps = {
   data: TenderReviewMockData
@@ -143,7 +143,7 @@ function ResultSection({ data }: { data: TenderReviewMockData }) {
 
 function ScoreSummaryCard({ data }: { data: TenderReviewMockData }) {
   const summary = data.scoreSummary ?? emptyScoreSummary
-  const deductedCount = summary.deductedItems.length + summary.rejectedItems.length
+  const deductedItems = [...summary.deductedItems, ...summary.rejectedItems]
   const hasScoring = (data.scoringItems?.length ?? 0) > 0
 
   return (
@@ -152,8 +152,16 @@ function ScoreSummaryCard({ data }: { data: TenderReviewMockData }) {
       <div className='mt-3 grid grid-cols-2 gap-3'>
         <ScoreMetric label='满分合计' value={formatScore(summary.maxTotal)} />
         <ScoreMetric label='实得合计' value={formatScore(summary.earnedTotal)} />
-        <ScoreMetric label='扣分/未得分' value={`${deductedCount} 项`} />
-        <ScoreMetric label='未计分项' value={`${summary.pendingItems.length} 项`} />
+        <ScoreMetric
+          label='扣分/未得分'
+          value={`${formatScore(summary.deductedTotal)} 分 · ${deductedItems.length} 项`}
+          items={deductedItems}
+        />
+        <ScoreMetric
+          label='未计分项'
+          value={`${formatScore(summary.pendingTotal)} 分 · ${summary.pendingItems.length} 项`}
+          items={summary.pendingItems}
+        />
       </div>
       {!hasScoring ? (
         <div className='mt-3 rounded-md border border-dashed p-2 text-xs text-muted-foreground'>
@@ -161,18 +169,31 @@ function ScoreSummaryCard({ data }: { data: TenderReviewMockData }) {
         </div>
       ) : data.resultVerdict === 'rejected' ? (
         <div className='mt-3 rounded-md bg-red-50 p-2 text-xs leading-5 text-red-700'>
-          废标时实得分为 0；下方展示否决依据及判定说明。
+          综合意见按废标处理；下方评分明细仍完整展示，但不参与有效投标排序。
         </div>
       ) : null}
     </div>
   )
 }
 
-function ScoreMetric({ label, value }: { label: string; value: string }) {
+function ScoreMetric({
+  label,
+  value,
+  items = [],
+}: {
+  label: string
+  value: string
+  items?: TenderScoreIssue[]
+}) {
   return (
-    <div>
+    <div className='min-w-0'>
       <div className='text-xs text-muted-foreground'>{label}</div>
       <div className='mt-1 text-lg font-semibold'>{value}</div>
+      {items.length > 0 ? (
+        <div className='mt-1 text-xs leading-5 text-muted-foreground'>
+          {items.map((item) => item.item).join('、')}
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -330,12 +351,24 @@ function Conclusion({ data }: { data: TenderReviewMockData }) {
   const notice = data.compareNotice
   const second = data.reviewBidders[1]
   const third = data.reviewBidders[2]
+  const failedEligibility = (data.resultEligibilityChecks ?? []).filter(
+    (item) => item.status === 'fail' || item.status === 'failed'
+  )
   if (data.resultVerdict === 'rejected') {
     return (
       <section className='mt-8'>
         <ReportTitle>评标委员会意见</ReportTitle>
         <p className='mt-4 text-sm leading-8 text-muted-foreground'>
-          经评审，本投标文件不满足本项目实质性响应要求，按废标处理。
+          经评审，
+          {failedEligibility.length > 0 ? (
+            <>
+              本投标文件未通过资格审查（
+              {failedEligibility.map((item) => item.check).join('、')}），
+            </>
+          ) : (
+            <>本投标文件不满足本项目实质性响应要求，</>
+          )}
+          按废标处理。评分明细已继续逐项列示，仅作为过程记录，不参与有效投标排序。
           {data.resultExplanation ? (
             <>
               <br />
@@ -416,6 +449,8 @@ function getCandidateLabel(rank: number, provisional: boolean) {
 const emptyScoreSummary = {
   maxTotal: 0,
   earnedTotal: 0,
+  deductedTotal: 0,
+  pendingTotal: 0,
   deductedItems: [],
   rejectedItems: [],
   pendingItems: [],

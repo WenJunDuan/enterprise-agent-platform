@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { Separator } from '@/components/ui/separator'
 import { SidebarTrigger } from '@/components/ui/sidebar'
-import { ConfigDrawer } from '@/components/config-drawer'
 import { HeaderBreadcrumb } from './header-breadcrumb'
 
 type HeaderProps = React.HTMLAttributes<HTMLElement> & {
@@ -48,7 +47,6 @@ export function Header({ className, fixed, children, ...props }: HeaderProps) {
         <HeaderBreadcrumb />
         <div className='ms-auto flex items-center gap-2'>
           {children}
-          <ConfigDrawer />
         </div>
       </div>
     </header>

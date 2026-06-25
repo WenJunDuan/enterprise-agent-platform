@@ -18,6 +18,7 @@ export type TenderScoringStatus =
   | 'manual_review'
   | 'rejected'
   | string
+export type TenderEligibilityStatus = 'pass' | 'fail' | 'manual' | string
 export type TenderScoreCategory = 'business' | 'technical'
 
 export type TenderProject = {
@@ -111,6 +112,14 @@ export type TenderScoreEvidence = {
   points?: number | null
 }
 
+export type TenderEligibilityCheck = {
+  id: string
+  check: string
+  status: TenderEligibilityStatus
+  basis: string
+  evidence: TenderScoreEvidence[]
+}
+
 export type TenderScoreIssue = {
   item: string
   max: number
@@ -149,6 +158,8 @@ export type TenderPolicyRef = {
 export type TenderScoreSummary = {
   maxTotal: number
   earnedTotal: number
+  deductedTotal: number
+  pendingTotal: number
   deductedItems: TenderScoreIssue[]
   rejectedItems: TenderScoreIssue[]
   pendingItems: TenderScoreIssue[]
@@ -191,6 +202,7 @@ export type TenderReviewMockData = {
   resultExplanation?: string
   resultReasons?: string[]
   resultPolicyRefs?: TenderPolicyRef[]
+  resultEligibilityChecks?: TenderEligibilityCheck[]
   scoringItems?: TenderScoringItem[]
   scoreSummary?: TenderScoreSummary
   compareScoreRows?: TenderCompareScoreRow[]

@@ -16,7 +16,39 @@ This `.ai_state` tracks the migrated `agent-front` frontend. It was created by
 migrating frontend-relevant state from the parent
 `enterprise-agent-platform/.ai_state`.
 
-## Latest Update: 2026-06-24
+## Latest Update: 2026-06-25
+
+Active sprint remains `2026-06-19-contract-tender-review-mock`. The frontend
+shell now includes local system-management data and user-controlled sidebar menu
+visibility, while tender-review score display issues from live testing were
+repaired.
+
+- Tender score summary now exposes deducted / unearned points and pending
+  unscored points with the affected scoring item names, so report and analysis
+  views show both "how many points" and "which items".
+- Tender bidder score attribution was fixed for simultaneous reviews: each
+  bidder tab resolves its own score/result by request/task/claim identity
+  instead of leaking the first bidder score into another tab.
+- Tender ranking now sorts by descending comprehensive score, preserving stable
+  tie behavior.
+- Header settings were moved into the avatar menu. The left sidebar footer user
+  row now uses the same avatar dropdown, so the whole user row opens theme,
+  layout, personal profile, system-management entries, and logout.
+- System-management entries under the avatar menu are backed by local route
+  definitions instead of `/system/menu/getRouters`.
+- `菜单管理` now has a front-end sidebar visibility panel. It can hide/show a
+  whole business menu group and individual menu items, persisted in browser
+  localStorage.
+- `用户管理` / `角色管理` / `菜单管理` / `部门管理` / `字典管理` / `文件管理`
+  now use local JSON/local no-op data paths. They no longer call missing
+  `/system/*` backend APIs.
+- Verification for this state: `bun run lint`, `bun run test` (43 pass),
+  `bun run build`, HTTP checks for `/system/menu`, `/system/user`,
+  `/system/role`, `/system/dept`, `/system/dict`, and `/system/file`, and
+  `git diff --check -- agent-front` passed. Build still emits only the known
+  large-chunk warning.
+
+## Previous Update: 2026-06-24
 
 Active sprint remains `2026-06-19-contract-tender-review-mock`, but the tender
 review frontend has moved past the original mock route shape and now reflects

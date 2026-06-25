@@ -232,6 +232,18 @@ describe('contract tender review model', () => {
               },
             ],
           },
+          eligibility_checks: [
+            {
+              rule_id: 'q1',
+              check: '企业资质证书',
+              status: 'pass',
+              basis: '已提供有效企业资质证书。',
+              evidence: {
+                source: '投标文件 p.8',
+                quote: '建筑工程施工总承包一级',
+              },
+            },
+          ],
           scoring: [
             {
               item: '企业实力',
@@ -366,6 +378,10 @@ describe('contract tender review model', () => {
       ['中铁二局', 86],
     ])
     expect(data.categories[0]?.items[0]).toMatchObject({
+      title: '资格审查：企业资质证书',
+      status: 'pass',
+    })
+    expect(data.categories[0]?.items[1]).toMatchObject({
       title: '技术方案',
       got: 27,
       max: 30,
@@ -388,12 +404,29 @@ describe('contract tender review model', () => {
       deduction: null,
       basis: '需横比所有投标报价后计算价格分。',
     })
+    expect(data.scoreSummary).toMatchObject({
+      maxTotal: 76,
+      earnedTotal: 33,
+      deductedTotal: 3,
+      pendingTotal: 40,
+    })
+    expect(data.scoreSummary?.deductedItems.map((item) => item.item)).toEqual([
+      '技术方案',
+    ])
+    expect(data.scoreSummary?.pendingItems.map((item) => item.item)).toEqual([
+      '价格分',
+    ])
     expect(data.resultPolicyRefs?.[0]).toEqual({
       id: 'tender_evalmethod_004',
       name: '综合评估法',
       sourceText: '评标委员会应按招标文件规定的评标标准和方法评审。',
     })
-    expect(data.paragraphs[0]?.text).toContain('施工组织设计覆盖关键工序')
+    expect(data.resultEligibilityChecks?.[0]).toMatchObject({
+      check: '企业资质证书',
+      status: 'pass',
+    })
+    expect(data.paragraphs[0]?.text).toContain('建筑工程施工总承包一级')
+    expect(data.paragraphs[1]?.text).toContain('施工组织设计覆盖关键工序')
     expect(data.compareGroups[0]?.rows.map((row) => row.cells)).toEqual([
       [38, 36],
       [51, 50],
@@ -552,6 +585,109 @@ describe('contract tender review model', () => {
     ).toEqual(['投标人XH', '投标人YQ'])
     expect(data.paragraphs[0]).toMatchObject({
       label: '投标文件【第315页】',
+    })
+  })
+
+  test('buildTenderReviewData ranks bidder tabs by total score without compare', () => {
+    const data = buildTenderReviewData({
+      project: {
+        project_id: 'project-no-compare',
+        tender_no: 'TZ-2026-001',
+        title: '通州区建设项目',
+        tenderee: '通州城投',
+        method: '综合评估法',
+        control_price: '1000000',
+        funding_type: 'state_funded',
+        status: 'done',
+        created_at: '2026-06-24T02:30:00+08:00',
+        updated_at: '2026-06-24T03:30:00+08:00',
+        bidder_count: 2,
+        bids: [
+          {
+            request_id: 'req-a',
+            claim_id: '投标人TZ',
+            bidder_name: '投标人TZ',
+            status: 'completed',
+            verdict: 'manual_review',
+          },
+          {
+            request_id: 'req-b',
+            claim_id: '投标人TS',
+            bidder_name: '投标人TS',
+            status: 'completed',
+            verdict: 'manual_review',
+          },
+        ],
+        recommended_bidder: null,
+        compare_stale: false,
+      },
+      resultSummaries: [
+        {
+          request_id: 'req-a',
+          claim_id: '投标人TZ',
+          bidder_name: '投标人TZ',
+          verdict: 'manual_review',
+        },
+        {
+          request_id: 'req-b',
+          claim_id: '投标人TS',
+          bidder_name: '投标人TS',
+          verdict: 'manual_review',
+        },
+      ],
+      selectedResult: {
+        request_id: 'req-b',
+        claim_id: '投标人TS',
+        verdict: 'manual_review',
+        explanation: '第二家当前详情。',
+        extracted_data: {
+          scoring: [
+            {
+              item: '商务标',
+              max: 10,
+              score: 7.1,
+              status: 'scored',
+              basis: '第二家商务标得 7.1 分。',
+            },
+          ],
+        },
+      },
+      resultDetails: [
+        {
+          request_id: 'req-a',
+          claim_id: '投标人TZ',
+          verdict: 'manual_review',
+          explanation: '第一家详情。',
+          extracted_data: {
+            scoring: [
+              {
+                item: '商务标',
+                max: 5,
+                score: 5,
+                status: 'scored',
+                basis: '第一家商务标得 5 分。',
+              },
+            ],
+          },
+        },
+      ],
+      compare: null,
+    })
+
+    expect(
+      data.reviewBidders.map((bidder) => [
+        bidder.rank,
+        bidder.name,
+        bidder.total,
+      ])
+    ).toEqual([
+      [1, '投标人TS', 7.1],
+      [2, '投标人TZ', 5],
+    ])
+    expect(data.scoringItems?.[0]).toMatchObject({
+      item: '商务标',
+      score: 7.1,
+      basis: '第二家商务标得 7.1 分。',
     })
   })
 })

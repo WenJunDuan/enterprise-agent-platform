@@ -1,172 +1,128 @@
-import type { ApiResult } from '@/types/api'
-import { toId } from '@/lib/ids'
-import { apiClient } from '@/lib/http'
-import {
-  buildDictDataPayload,
-  buildDictTypePayload,
-  type DictData,
-  type DictDataFormInput,
-  type DictDataListQuery,
-  type DictDefaultFlag,
-  type DictStatus,
-  type DictType,
-  type DictTypeFormInput,
-  type DictTypeListQuery,
-  type PagedResult,
+import type {
+  DictData,
+  DictDataFormInput,
+  DictDataListQuery,
+  DictType,
+  DictTypeFormInput,
+  DictTypeListQuery,
+  PagedResult,
 } from './model'
 
-function unwrapResult<T>(result: ApiResult<T>) {
-  return result.data
-}
+const localDictTypes: DictType[] = [
+  {
+    id: '1',
+    dictName: '系统状态',
+    dictType: 'sys_normal_disable',
+    status: 1,
+    remark: '本地 JSON 数据',
+    createTime: '2026-06-25 00:00:00',
+  },
+  {
+    id: '2',
+    dictName: '用户性别',
+    dictType: 'sys_user_sex',
+    status: 1,
+    remark: '本地 JSON 数据',
+    createTime: '2026-06-25 00:00:00',
+  },
+]
 
-function getRecord(input: unknown) {
-  return (input && typeof input === 'object' ? input : {}) as Record<
-    string,
-    unknown
-  >
-}
+const localDictData: DictData[] = [
+  {
+    id: '1',
+    dictType: 'sys_normal_disable',
+    dictLabel: '正常',
+    dictValue: '1',
+    dictSort: 0,
+    cssClass: null,
+    listClass: 'success',
+    isDefault: 'Y',
+    status: 1,
+    remark: null,
+    createTime: '2026-06-25 00:00:00',
+  },
+  {
+    id: '2',
+    dictType: 'sys_normal_disable',
+    dictLabel: '停用',
+    dictValue: '0',
+    dictSort: 1,
+    cssClass: null,
+    listClass: 'danger',
+    isDefault: 'N',
+    status: 1,
+    remark: null,
+    createTime: '2026-06-25 00:00:00',
+  },
+  {
+    id: '3',
+    dictType: 'sys_user_sex',
+    dictLabel: '未知',
+    dictValue: '0',
+    dictSort: 0,
+    cssClass: null,
+    listClass: 'default',
+    isDefault: 'Y',
+    status: 1,
+    remark: null,
+    createTime: '2026-06-25 00:00:00',
+  },
+]
 
-function toNullableText(value: unknown) {
-  if (typeof value !== 'string') {
-    return null
-  }
-
-  const normalized = value.trim()
-  return normalized === '' ? null : normalized
-}
-
-function normalizeStatus(value: unknown): DictStatus {
-  return Number(value) === 0 ? 0 : 1
-}
-
-function normalizeDefaultFlag(value: unknown): DictDefaultFlag {
-  return value === 'Y' ? 'Y' : 'N'
-}
-
-function normalizeDictType(input: unknown): DictType {
-  const record = getRecord(input)
+function toPage<T>(records: T[]): PagedResult<T> {
   return {
-    id: toId(record.id),
-    dictName: String(record.dictName ?? ''),
-    dictType: String(record.dictType ?? ''),
-    status: normalizeStatus(record.status),
-    remark: toNullableText(record.remark),
-    createTime: toNullableText(record.createTime),
-  }
-}
-
-function normalizeDictData(input: unknown): DictData {
-  const record = getRecord(input)
-  return {
-    id: toId(record.id),
-    dictType: String(record.dictType ?? ''),
-    dictLabel: String(record.dictLabel ?? ''),
-    dictValue: String(record.dictValue ?? ''),
-    dictSort: Number(record.dictSort ?? 0),
-    cssClass: toNullableText(record.cssClass),
-    listClass: toNullableText(record.listClass),
-    isDefault: normalizeDefaultFlag(record.isDefault),
-    status: normalizeStatus(record.status),
-    remark: toNullableText(record.remark),
-    createTime: toNullableText(record.createTime),
+    pageNum: 1,
+    pageSize: 2000,
+    total: records.length,
+    pages: 1,
+    records,
   }
 }
 
 export async function fetchDictTypePage(query?: Partial<DictTypeListQuery>) {
-  const response = await apiClient.get<ApiResult<PagedResult<unknown>>>(
-    '/system/dict/type/list',
-    {
-      params: {
-        pageNum: 1,
-        pageSize: 2000,
-        dictName: query?.dictName?.trim() || undefined,
-        dictType: query?.dictType?.trim() || undefined,
-        status: query?.status,
-      },
-    }
+  const records = localDictTypes.filter(
+    (item) =>
+      (!query?.dictName?.trim() || item.dictName.includes(query.dictName)) &&
+      (!query?.dictType?.trim() || item.dictType.includes(query.dictType)) &&
+      (query?.status === undefined || item.status === query.status)
   )
 
-  const page = unwrapResult(response.data)
-  return {
-    pageNum: Number(page.pageNum ?? 1),
-    pageSize: Number(page.pageSize ?? 2000),
-    total: Number(page.total ?? 0),
-    pages: Number(page.pages ?? 0),
-    records: (page.records ?? []).map(normalizeDictType),
-  } satisfies PagedResult<DictType>
+  return toPage(records)
 }
 
-export async function createDictType(input: DictTypeFormInput) {
-  const response = await apiClient.post<ApiResult<number | string>>(
-    '/system/dict/type',
-    buildDictTypePayload(input)
-  )
-
-  return toId(unwrapResult(response.data))
+export async function createDictType(_input: DictTypeFormInput) {
+  return String(localDictTypes.length + 1)
 }
 
-export async function updateDictType(input: DictTypeFormInput) {
-  const response = await apiClient.put<ApiResult<null>>(
-    '/system/dict/type',
-    buildDictTypePayload(input)
-  )
-
-  return unwrapResult(response.data)
+export async function updateDictType(_input: DictTypeFormInput) {
+  return null
 }
 
-export async function deleteDictTypes(ids: string[]) {
-  const response = await apiClient.delete<ApiResult<null>>(
-    `/system/dict/type/${ids.join(',')}`
-  )
-
-  return unwrapResult(response.data)
+export async function deleteDictTypes(_ids: string[]) {
+  return null
 }
 
 export async function refreshDictCache() {
-  const response = await apiClient.delete<ApiResult<null>>(
-    '/system/dict/type/refreshCache'
-  )
-
-  return unwrapResult(response.data)
+  return null
 }
 
 export async function fetchDictDataList(query: DictDataListQuery) {
-  const response = await apiClient.get<ApiResult<unknown[]>>(
-    '/system/dict/data/list',
-    {
-      params: {
-        dictType: query.dictType,
-        dictLabel: query.dictLabel?.trim() || undefined,
-        status: query.status,
-      },
-    }
+  return localDictData.filter(
+    (item) =>
+      item.dictType === query.dictType &&
+      (!query.dictLabel?.trim() || item.dictLabel.includes(query.dictLabel)) &&
+      (query.status === undefined || item.status === query.status)
   )
-
-  return unwrapResult(response.data).map(normalizeDictData)
 }
 
-export async function createDictData(input: DictDataFormInput) {
-  const response = await apiClient.post<ApiResult<number | string>>(
-    '/system/dict/data',
-    buildDictDataPayload(input)
-  )
-
-  return toId(unwrapResult(response.data))
+export async function createDictData(_input: DictDataFormInput) {
+  return String(localDictData.length + 1)
 }
 
-export async function updateDictData(input: DictDataFormInput) {
-  const response = await apiClient.put<ApiResult<null>>(
-    '/system/dict/data',
-    buildDictDataPayload(input)
-  )
-
-  return unwrapResult(response.data)
+export async function updateDictData(_input: DictDataFormInput) {
+  return null
 }
 
-export async function deleteDictData(ids: string[]) {
-  const response = await apiClient.delete<ApiResult<null>>(
-    `/system/dict/data/${ids.join(',')}`
-  )
-
-  return unwrapResult(response.data)
+export async function deleteDictData(_ids: string[]) {
+  return null
 }
