@@ -18,7 +18,7 @@ allowed-tools: Read, Glob, Skill, Task
 - 本项目的资格审查规则和评分标准**就在它自己的招标文件里**。`Read` 招标文件，**定位其中规定资格审查、初步评审、评标办法/评分标准的部分**——标题与章节因标书而异（可能在正文某章、评标须知、前附表或附录；招标编号、章节号、标题写法各家不同），**以本招标文件实际结构为准，不要预设固定在"第三章"或某个固定标题**。必要时先读目录 / 浏览章节标题来定位。把定位到的项目规则**直读解析**为本项目 `criteria`，对齐 `.claude/contracts/tender/criteria.schema.json`：
   - `source_ref`（评标办法在本招标文件的**实际出处**：文件 + 章节/标题 + 页）、`method`（综合评估法 / 经评审的最低投标价法 / 其他）、`total_max`（满分合计）
   - `eligibility_rules[]`：资格审查/资格评审/初步评审规则，逐条提取 `{id, check, requirement, evidence_required, stage, priority:"highest", external_data, source_quote, source_ref}`。**这是与评分 `items[]` 并列的招标项，最高优先级，S3 必须先运行；不计入 `total_max`，不混成扣分项。**如规则依赖信用中国、主体库、动态监管等外部结果，标 `external_data:true`；上下文未提供外部结果时后续只能 `manual`，不得直接判 `fail`。
-  - `items[]`：每项除 `{item, max, scoring_rule 原文, source_ref, tag}` 外，**必须判定该项评分方式 `score_mode` 并按方式提取结构化细则**（对齐 criteria.schema v2）：
+  - `items[]`：每项除 `{item, max, scoring_rule 原文, source_ref, tag, category}` 外，**必须判定该项评分方式 `score_mode` 并按方式提取结构化细则**（对齐 criteria.schema）：
     - `deduction` 满分扣减 → `deductions[]`：逐条 `{condition 何情况扣, points 扣几分, unit(per_item/per_occurrence/per_percent), max_times 最多扣几次, max_deduct 封顶, source_quote 原文, source_ref}`。**这是"第一次读标书就把扣分项全摘出来"的落点**——招标文件列了几条扣分、每条扣几分/最多几次，逐条钉死，不留到 S3 临场猜。
     - `banded` 档次给分（如优10良7中4 等离散档，**不是从满分扣减**）→ `bands[]`：`{level, points, criteria 评定标准, source_quote}`。
     - `additive` 基础分+加分累计 → `base` + `awards[]`：`{condition, points, cap 封顶, source_quote}`（`max` 须为含加分封顶的最高分）。
@@ -28,6 +28,7 @@ allowed-tools: Read, Glob, Skill, Task
       - **MVP 边界**：本轮只对「固定限价比例差 / 多固定限价分项求和」自动算；含群体/现场/外部/复杂政策折扣的，结构化变量后仍 `manual_review`，不假装自动算。
     - `pass_fail` 客观通过得满分否则 0 / `manual` 主观/现场/外部不可判定。
     - `evaluator_type`：`objective`/`subjective`/`mixed`——主观档次项标 `subjective`（S3 给建议分+依据，留低置信人工复核，不冒充客观分）。
+    - `category`：该评分项在评标办法里的**所属类目/章节原名**，照标书原文填（如 商务标 / 技术标 / 价格 / 信用 / 服务 / 综合 等）。**标书分几类就标几类，不要套死成固定三类**；同一类目的多项填同一 `category` 名，便于报告按标书实际要素动态分栏。资格审查类目走 `eligibility_rules[]`、不在 items 里重复。仅供展示分组，不影响判分。
     - **复合评分行 → 拆成多条 items**：招标文件一个评分行含多个**独立子规则**（如「基础响应分 + ▲加分」「驻场人员计分 + 资格证书计分」「质量体系 + 服务承诺 + 培训」）时，**拆成多条 criteria items**、各自取最贴切的 `score_mode`，各 item `max` 之和 = 原行满分（契约一项只允许一种 `score_mode`，**不要把扣减与加分混进同一项**）。例：「运营平台 24 分 = 三平台功能响应 18 分（deduction：每缺一功能点扣 0.5、单平台封顶 6）+ ▲检测报告佐证加 6 分（additive：每▲项 +0.5、封顶 6）」→ 拆成两条 items。
   - **废标/否决条款 → 顶层 `rejection_rules[]`**（不是评分项，也不是资格审查清单本身）：逐条提取 `{id, condition 何情况废标/否决, source_quote 招标文件原文, source_ref}`，供 S3 走**独立 gate** 判定，与逐项评分解耦。资格审查的具体检查项优先进 `eligibility_rules[]`，不要只塞进 `rejection_rules[]`。
   - `tag` 标"可判定性"（与 `score_mode` 正交）：可依投标文件判定 → `scored`；命中 `requires_live_event`（现场答辩）/ `requires_external_data`（外部信用）/ `requires_cross_bid_comparison`（价格横比）→ 留待 S3 走 `manual_review`。
@@ -87,7 +88,7 @@ allowed-tools: Read, Glob, Skill, Task
   - 存在任一 `manual_review` 评分项（且确属上"总纲"客观算不出类），或关键证据缺失/规则缺口/证据冲突 → `manual_review`（填 `manual_review_reason`）
   - 全部评分项已按 `score_mode` 给分（`scored`/档次/加分/通过）且无确认否决项 → `approved`
 - **`verdict` 与 `scoring[]` 解耦**：`verdict` 是整单结论，`scoring[]` 是逐项满分扣减的明细。**即使 `verdict=rejected`（废标），`scoring[]` 仍应保留各项有扣有得的逐项打分**（让评审看到每项扣在哪、扣多少），并在 `explanation` 说明废标主因。不要因 `verdict=rejected` 就把逐项分清零。（满分/实得合计由前端从 `scoring[]` 汇总，无需本步另出汇总字段。）
-- **综合意见口径**：若资格审查确认不通过（如无所需资质/证书/负责人资格），`explanation` 开头直接写「资格审查不通过，按废标处理」，并说明后续评分明细已继续逐项列示、但不参与有效投标排序；若资格审查通过，再写已有分数项合计与需补充信息后确认的项。不要因为废标就停止后续明细核对；该得分就得分，该不得分就不得分。
+- **综合意见口径**：`explanation` 可按「资格审查 / 价格分 / 商务客观分 / 技术主观分」四类分述：资格审查先说明是否通过及废标主因；价格分说明是否需全部投标报价一起横比，单家不可判定时写“待全部投标报价一起计算”；商务客观分说明可量化项的得分、扣分与依据；技术主观分只能写“初评建议，最终以评标委员会评分为准”，并列事实依据，不写成客观终局判断。若资格审查确认不通过（如无所需资质/证书/负责人资格），`explanation` 开头直接写「资格审查不通过，按废标处理」，并说明后续评分明细已继续逐项列示、但不参与有效投标排序；若资格审查通过，再写已有分数项合计与需补充信息后确认的项。不要因为废标就停止后续明细核对；该得分就得分，该不得分就不得分。**不要要求或输出 `review_dimension` 字段**，展示维度由前端按 `criteria.items[]` 既有结构化字段派生。
 - **承重结论（`approved` / `rejected`）的 `policy_refs` 只引通则层真实 `rule_id`**（如 `tender_evalmethod_001` 评标依招标文件、`tender_evalmethod_003` / `tender_evalmethod_004` 综合评估法量化加权、`tender_evalmethod_005` / `tender_evalmethod_006` / `tender_evalmethod_008` 废标 / 资格否决）——这些才是平台真伪闸认可的法定依据。
 - **`policy_refs` 不得为空（任何 verdict，含 `manual_review`）**：至少引 `tender_evalmethod_001`（评标依招标文件）+ `tender_evalmethod_003`（综合评估法量化加权）作法定底座——空 `policy_refs` 使结论无法回溯法律依据（审计硬伤）。但**只引实际据以判断的 rule_id**：未实际命中的废标条款（005/006/008）**不要**列进来凑数（虚引会误导）。
 - **`criteria` 各评分项的具体标准与命中**（来自招标文件评标办法、无 knowledge `rule_id`）**写进 `evidence_chain`**（同时引招标文件评标办法出处页 + 投标文件页），**不要塞进 `policy_refs`**（会被真伪闸当编造 `rule_id` 拒掉）。

@@ -36,7 +36,7 @@ allowed-tools: Read, Glob
 - `method`：综合评估法 / 经评审的最低投标价法 / 其他。
 - `total_max`：满分合计。
 - `eligibility_rules[]`：资格审查/资格评审/初步评审规则，逐条提取 `{id, check, requirement, evidence_required, stage, priority:"highest", external_data, source_quote, source_ref}`。**这些规则与 `items[]` 并列，但不计入总分；后续评审必须先运行它们。**外部网站/主体库/动态监管等上下文缺失时只标 `external_data:true`，不得在抽取阶段判失败。
-- `items[]`：每项除 `{item, max, scoring_rule, source_ref, tag}` 外，**必须判定 `score_mode` 并提取对应结构化细则**：
+- `items[]`：每项除 `{item, max, scoring_rule, source_ref, tag, category}` 外，**必须判定 `score_mode` 并提取对应结构化细则**（`category` = 该项在评标办法里的所属类目/章节原名，照标书原文，如 商务标 / 技术标 / 价格 / 信用 / 服务；标书分几类标几类、不套死三类，资格审查走 `eligibility_rules[]` 不重复；仅供报告动态分栏，不影响判分）：
   - `deduction`（满分扣减）→ 逐条 `deductions[]`：`{condition, points, unit, max_times, max_deduct, source_quote, source_ref}`。**扣分项全摘，不留到评标临场猜。**
   - `banded`（档次给分）→ `bands[]`：`{level, points, criteria, source_quote}`。
   - `additive`（基础分+加分）→ `base` + `awards[]`：`{condition, points, cap, source_quote}`。
