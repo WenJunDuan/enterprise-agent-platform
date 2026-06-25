@@ -214,3 +214,7 @@ frontend shell on `main`.
   - the resolved tenant key is persisted as the local session credential
 - Keep current backend endpoint contracts stable unless backend changes are explicitly requested.
 - Run build verification after implementation and inspect UI render behavior in browser.
+
+
+## 历史
+- `2026-06-25 15:20:19`: stage=ship sprint=2026-06-19-contract-tender-review-mock turn-end

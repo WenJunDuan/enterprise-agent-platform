@@ -1,0 +1,24 @@
+items:
+  - id: D0
+    title: "修复 output_contracts 跨域回归：_finalize_user_explanation 限定 tender + 收窄兜底正则 + expense 回归测试"
+    status: done
+    priority: highest
+  - id: D1
+    title: "前端维度派生函数 deriveReviewDimension（结构化字段优先，名称兜底）+ 单测"
+    status: done
+  - id: D2
+    title: "前端报告五段式：资格审查→价格分→商务客观分→技术主观分→综合结论（含旧数据兜底）"
+    status: done
+  - id: D3
+    title: "价格分独立板块：单家显示待横比/非0，多家引 compare 计算过程完整展示"
+    status: done
+  - id: D4
+    title: "技术主观分两家对比（compare 视图，各家 score+basis 并排，缺数据降级不臆造）"
+    status: done
+  - id: D5
+    title: "tender-evaluate.md S4 综合意见分述四类 + 主观项标初评建议（不要求模型标维度）"
+    status: done
+  - id: D6
+    title: "报告类目按招标文件实际要素动态展示：S1 抽取 criteria.items[].category（标书原文类目名）+ criteria schema 加字段 + 前端按真实类目动态分栏（资格审查恒首位、缺的不显示、多于三类全显示、旧数据回退推断）"
+    status: done
+    note: "用户确认走完整方案(后端抽类目+前端动态)。资格审查仍来自 eligibility_checks。D6 真实类目需新评标才带 category，旧结果回退推断。"
