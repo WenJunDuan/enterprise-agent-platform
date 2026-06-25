@@ -298,8 +298,6 @@ def _sanitize_explanation_terms(text: str) -> str:
     for raw, replacement in _TECH_TERM_REPLACEMENTS:
         cleaned = cleaned.replace(raw, replacement)
     cleaned = cleaned.replace("公式含需要全部投标报价一起计算", "需要全部投标报价一起计算")
-    # Clean common snake_case leftovers that may appear when a model leaks internal field names.
-    cleaned = re.sub(r"\b[a-z]+(?:_[a-z0-9]+)+\b", "相关字段", cleaned)
     return cleaned.strip()
 
 
@@ -348,7 +346,21 @@ def _score_summary(extracted: Any) -> str | None:
     return summary
 
 
+def _is_tender_explanation_output(output: dict[str, Any]) -> bool:
+    """Tender-only guard for score-summary explanation rewriting.
+
+    The common audit-result contract is shared by expense and tender. Only tender results carry
+    scoring/eligibility structures that need server-side score recap normalization.
+    """
+    extracted = output.get("extracted_data")
+    return isinstance(extracted, dict) and (
+        "scoring" in extracted or "eligibility_checks" in extracted
+    )
+
+
 def _finalize_user_explanation(output: dict[str, Any]) -> None:
+    if not _is_tender_explanation_output(output):
+        return
     explanation = output.get("explanation")
     if not isinstance(explanation, str) or not explanation.strip():
         return
