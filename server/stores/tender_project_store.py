@@ -13,11 +13,10 @@ from __future__ import annotations
 import sqlite3
 import uuid
 from dataclasses import asdict, dataclass, fields
-from datetime import datetime, timezone
 from typing import Any
 
 from server.platform.paths import PLATFORM_DB_FILE, ensure_local_layout
-from server.platform.sqlite_store import connect_sqlite
+from server.platform.sqlite_store import connect_sqlite, utc_now
 
 ensure_local_layout()
 
@@ -43,10 +42,6 @@ class TenderProjectRecord:
 _FIELDS = [f.name for f in fields(TenderProjectRecord)]
 _COLUMNS = ", ".join(_FIELDS)
 _PLACEHOLDERS = ", ".join("?" for _ in _FIELDS)
-
-
-def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def new_project_id() -> str:
@@ -134,7 +129,7 @@ def get_or_create_project(
     # codex P1.2：空串 "" 非 NULL 会进部分唯一索引 `WHERE tender_no IS NOT NULL`，重复 "" 插入
     # 会冲突且绕过下面 `if tender_no` 的兜底 → 500。归一为 None，让空值走"匿名多条"分支。
     tender_no = (tender_no or "").strip() or None
-    now = _utc_now()
+    now = utc_now()
     record = TenderProjectRecord(
         project_id=new_project_id(),
         tenant=tenant,
@@ -193,7 +188,7 @@ def update_project_status(project_id: str, tenant: str, status: str) -> bool:
         cursor = connection.execute(
             "UPDATE tender_projects SET status = ?, updated_at = ? "
             "WHERE project_id = ? AND tenant = ?",
-            (status, _utc_now(), project_id, tenant),
+            (status, utc_now(), project_id, tenant),
         )
         return cursor.rowcount > 0
 
@@ -229,7 +224,7 @@ def update_project_fields_if_empty(
     if not candidates:
         return
     with connect_sqlite(PLATFORM_DB_FILE, immediate=True) as connection:
-        now = _utc_now()
+        now = utc_now()
         for col, val in candidates.items():
             # Per-column conditional update: only set when current value is NULL or ''.
             connection.execute(

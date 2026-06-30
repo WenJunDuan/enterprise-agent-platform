@@ -4,10 +4,15 @@ from __future__ import annotations
 
 import sqlite3
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
 from server.platform.storage import describe_storage_target
+
+
+def utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 @contextmanager
