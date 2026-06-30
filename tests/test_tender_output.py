@@ -6,10 +6,27 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
+
 import pytest
 
 from server.common.contract import JSONContractError
 from server.common import tender_output as to
+
+
+def test_tender_output_independently_importable():
+    """S4 review P2: 全新解释器里**首个** import server.common.tender_output 必须成功。
+
+    防 contract → output_contracts → tender_output → contract 的模块加载期环回归（本测试文件本身
+    先 import 了 contract，会 preload 安全顺序而掩盖该 bug，故用独立子进程在干净 sys.modules 下验证）。
+    """
+    result = subprocess.run(
+        [sys.executable, "-c", "import server.common.tender_output"],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 # ── tender-only guard：不误伤 expense ──────────────────────────────────────────────
