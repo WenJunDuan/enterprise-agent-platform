@@ -103,6 +103,9 @@ export function DashboardView({
   projects,
   onOpenProject,
   onCreateReview,
+  readOnly = false,
+  emptyMessage,
+  notice,
   onBatchDelete,
   onBatchRetry,
   onAppendBidder,
@@ -110,6 +113,9 @@ export function DashboardView({
   summary: DashboardSummary
   projects: TenderProject[]
   onOpenProject: (projectId: string) => void
+  readOnly?: boolean
+  emptyMessage?: string
+  notice?: string
   /** B③: 创建评审 按钮 callback */
   onCreateReview: () => void
   /** B⑤: batch delete selected project task ids */
@@ -129,6 +135,9 @@ export function DashboardView({
       <DashboardMetrics summary={summary} />
       <ProjectTable
         projects={projects}
+        readOnly={readOnly}
+        emptyMessage={emptyMessage}
+        notice={notice}
         onOpenProject={onOpenProject}
         onCreateReview={onCreateReview}
         onBatchDelete={onBatchDelete}
@@ -163,6 +172,9 @@ function ProjectTable({
   projects,
   onOpenProject,
   onCreateReview,
+  readOnly,
+  emptyMessage,
+  notice,
   onBatchDelete,
   onBatchRetry,
   onAppendBidder,
@@ -170,6 +182,9 @@ function ProjectTable({
   projects: TenderProject[]
   onOpenProject: (projectId: string) => void
   onCreateReview: () => void
+  readOnly: boolean
+  emptyMessage?: string
+  notice?: string
   onBatchDelete: (projectIds: string[]) => Promise<void>
   onBatchRetry: (projectIds: string[]) => Promise<void>
   onAppendBidder: (
@@ -413,45 +428,55 @@ function ProjectTable({
             </span>
           ) : null}
 
-          {/* B⑤: 批量删除 */}
-          <Button
-            variant='outline'
-            size='sm'
-            disabled={selectedProjects.length === 0 || isBatchAction}
-            onClick={handleBatchDelete}
-          >
-            <Trash2 className='size-4' />
-            删除
-          </Button>
+          {readOnly ? null : (
+            <>
+              <Button
+                variant='outline'
+                size='sm'
+                disabled={selectedProjects.length === 0 || isBatchAction}
+                onClick={handleBatchDelete}
+              >
+                <Trash2 className='size-4' />
+                删除
+              </Button>
 
-          {/* B④: 重新审核 */}
-          <Button
-            variant='outline'
-            size='sm'
-            disabled={selectedProjects.length === 0 || isBatchAction}
-            onClick={handleBatchRetry}
-          >
-            <RotateCcw className='size-4' />
-            重新审核
-          </Button>
+              <Button
+                variant='outline'
+                size='sm'
+                disabled={selectedProjects.length === 0 || isBatchAction}
+                onClick={handleBatchRetry}
+              >
+                <RotateCcw className='size-4' />
+                重新审核
+              </Button>
 
-          {/* B⑥: 追加公司审核（仅单选时出现） */}
-          {selectedProjects.length === 1 ? (
-            <AppendBidderDialog
-              projectId={selectedProjects[0]!.id}
-              onAppend={onAppendBidder}
-              onSuccess={() => setRowSelection({})}
-            />
-          ) : null}
+              {selectedProjects.length === 1 ? (
+                <AppendBidderDialog
+                  projectId={selectedProjects[0]!.id}
+                  onAppend={onAppendBidder}
+                  onSuccess={() => setRowSelection({})}
+                />
+              ) : null}
 
-          {/* B③: 创建评审 */}
-          <Button size='sm' onClick={onCreateReview}>
-            <Plus className='size-4' />
-            创建评审
-          </Button>
+              <Button size='sm' onClick={onCreateReview}>
+                <Plus className='size-4' />
+                创建评审
+              </Button>
+            </>
+          )}
         </div>
       </CardHeader>
       <CardContent className='space-y-4'>
+        {notice ? (
+          <div className='rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800'>
+            {notice}
+          </div>
+        ) : null}
+        {projects.length === 0 && emptyMessage ? (
+          <div className='rounded-md border border-dashed p-4 text-sm text-muted-foreground'>
+            {emptyMessage}
+          </div>
+        ) : null}
         <DataTableToolbar
           table={table}
           searches={[

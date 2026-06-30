@@ -1,11 +1,12 @@
 import { authHeaders, handleResponse, url } from '@/features/audit/api'
 import type { AuditResult, ReasonDetail, TaskStatus } from '@/features/audit/types'
-import type { TenderProjectStatus } from './types'
+import type { TenderProjectStatus, TenderScenario } from './types'
 
 const DEFAULT_POLL_INTERVAL_MS = 3000
 const DEFAULT_POLL_TIMEOUT_MS = 10 * 60 * 1000
 
 export type TenderProjectCreateRequest = {
+  scenario?: TenderScenario
   tender_no?: string | null
   title?: string | null
   tenderee?: string | null
@@ -16,6 +17,7 @@ export type TenderProjectCreateRequest = {
 
 export type TenderProjectResponse = {
   project_id: string
+  scenario: TenderScenario
   tender_no?: string | null
   title?: string | null
   tenderee?: string | null
@@ -137,11 +139,13 @@ export async function createTenderProject(
 
 export async function listTenderProjects(params?: {
   status?: TenderProjectStatus | string
+  scenario?: TenderScenario
   limit?: number
   offset?: number
 }): Promise<TenderProjectResponse[]> {
   const qs = new URLSearchParams()
   if (params?.status) qs.set('status', params.status)
+  if (params?.scenario) qs.set('scenario', params.scenario)
   if (params?.limit != null) qs.set('limit', String(params.limit))
   if (params?.offset != null) qs.set('offset', String(params.offset))
   const query = qs.toString() ? `?${qs.toString()}` : ''
