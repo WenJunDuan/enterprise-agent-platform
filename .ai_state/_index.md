@@ -67,7 +67,7 @@ pointers:
   latest_architecture_update: "2026-06-23T06:38:15.291Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "S1-S5 全部完成并 push main(38efb67)。CC×Codex 并行+双向交叉 review 模式成型：S1/S2(Codex)+S3(CC,OCR合并)已 push;S4(CC,output_contracts 930→474 抽 tender_output)+S5(Codex,专家侧风险提示/问题清单七类)本轮 push。两轮交叉 review 各抓到 1 个 CC 侧潜伏 bug(S3:is_ocr_text_valid 漏判全失败底稿;S4:tender_output 循环 import)均已修+回归。749 pytest 绿+前端 14+build。**S6 待起**(scenario 三场景拆分,Codex,前端+后端 scenario 列,建 S5 之上)——含开放决策'场景隔离强度'(阶段一 UI 过滤,硬隔离 RBAC 随 S8 推迟)。剩余:S6/S7(缺Flash ID)/S8(用户推迟)/S9/S10。"
+next_action: "S1-S6 全部完成并 push main。CC×Codex 并行+双向交叉 review：S1/S2(Codex)/S3(CC OCR合并)/S4(CC output_contracts抽tender_output)/S5(Codex 专家风险提示)/S6(Codex 三场景拆分 phase-1)。交叉 review 共抓 2 个 CC 侧潜伏 bug(S3 is_ocr_text_valid/S4 循环import)均已修+回归。整合 752 pytest 绿+前端26+lint+build+ruff。S6 phase-1 场景隔离仅 UI 层(硬隔离 RBAC 随 S8 推迟,已标注)。**剩余**:S7(缺 Flash 模型ID 阻塞)/S8(用户推迟安全/加密)/S9(KB+外部数据脚手架,依赖已就绪)/S10(概要分析checklist,与S5同源)。下一步待用户选 S9/S10 或给 Flash ID。"
 last_subagent: "codex-exec" # tender-report-dimensions D0-D5 headless (codex 0.142.1, gpt-5.5)；必须 env -u HTTP_PROXY -u HTTPS_PROXY 否则 streaming API 挂起，见 compound/2026-06-25-trick-codex-proxy-hangs-streaming.md
 last_subagent_at: "2026-06-25T00:00:00.000Z"
 active_worktrees: [] # git worktree list 仅 main；无其他分支/worktree(2026-06-23 复核确认)

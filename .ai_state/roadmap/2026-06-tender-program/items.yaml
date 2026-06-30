@@ -69,9 +69,10 @@ items:
     wave: 3
     redzone: agent-front
     depends_on: [S5]
-    status: pending
+    status: done
     note: "阶段一场景隔离=UI 层非 RBAC，须在交付标注。"
     refs: ["会议结论1", "会议结论3", "会议结论8", "待办5"]
+    done_note: "Codex 实施(feat/s6-scenario)：tender_projects 加 scenario 列(默认 expert_assist,ADD COLUMN 幂等,零行为变更)+API透传/过滤；前端三入口路由(self-check/expert/post-eval)+VITE_ENABLED_SCENARIOS 门控+复用 S5 风险提示+投标自查下载后确认销毁+评后监督只读；架构文档见 sprints/2026-06-26-s6-scenario/architecture.md。CC 复核=PASS(边界净;迁移零行为;独立跑 752 pytest+前端26+lint+build 绿)。phase-1 隔离仅 UI 层,硬隔离 RBAC 随 S8 推迟。已合 main+push。"
   - id: S7
     slug: model-eval-flash
     stream: infra
