@@ -13,11 +13,10 @@ import copy
 import hashlib
 import json
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from typing import Any
 
 from server.platform.paths import PLATFORM_DB_FILE, ensure_local_layout
-from server.platform.sqlite_store import connect_sqlite
+from server.platform.sqlite_store import connect_sqlite, utc_now
 
 ensure_local_layout()
 
@@ -28,10 +27,6 @@ class CompareSignature:
 
     input_result_ids: list[str]  # 参与的 completed request_id（排序）
     criteria_hash: str  # 各家 criteria 一致性指纹
-
-
-def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 # criteria 字段的已知默认值：显式写默认值与省略应得同一指纹（codex P2-6）。
@@ -137,7 +132,7 @@ def upsert_compare_result(
                 json.dumps(sorted(signature.input_result_ids), ensure_ascii=False),
                 signature.criteria_hash,
                 input_signature,
-                _utc_now(),
+                utc_now(),
             ),
         )
 
