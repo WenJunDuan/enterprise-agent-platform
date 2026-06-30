@@ -4,6 +4,10 @@ import {
   getBreadcrumbsForPath,
   getNavigationMenuDefinitions,
 } from './registry'
+import {
+  getEnabledTenderScenarios,
+  parseEnabledTenderScenarios,
+} from './tender-scenarios'
 
 describe('navigation registry', () => {
   test('orders tender audit before reimbursement and OCR menus', () => {
@@ -37,11 +41,40 @@ describe('navigation registry', () => {
     )
 
     expect(tenderGroup?.items.map((item) => item.title)).toEqual([
-      '评审列表',
+      '专家辅助',
       '历史评审',
     ])
     expect(tenderGroup?.items.map((item) => item.url)).toEqual([
       '/contracts/tender/list',
+      '/contracts/tender/history',
+    ])
+  })
+
+  test('defaults navigation scenarios to expert assist only', () => {
+    expect(parseEnabledTenderScenarios(undefined)).toEqual(['expert_assist'])
+    expect(getEnabledTenderScenarios({})).toEqual(['expert_assist'])
+  })
+
+  test('shows three tender scenario entries when enabled', () => {
+    const groups = buildNavigationGroups(null, undefined, undefined, [
+      'bidder_self_check',
+      'expert_assist',
+      'post_eval_monitor',
+    ])
+    const tenderGroup = groups.find(
+      (group) => group.title === '智能招投标审核'
+    )
+
+    expect(tenderGroup?.items.map((item) => item.title)).toEqual([
+      '投标自查',
+      '专家辅助',
+      '评后监督',
+      '历史评审',
+    ])
+    expect(tenderGroup?.items.map((item) => item.url)).toEqual([
+      '/contracts/tender/self-check',
+      '/contracts/tender/list',
+      '/contracts/tender/post-eval',
       '/contracts/tender/history',
     ])
   })
@@ -79,7 +112,7 @@ describe('navigation registry', () => {
       (group) => group.title === '智能招投标审核'
     )
 
-    expect(tenderGroup?.items.map((item) => item.title)).toEqual(['评审列表'])
+    expect(tenderGroup?.items.map((item) => item.title)).toEqual(['专家辅助'])
   })
 
   test('exposes the unfiltered sidebar menu definitions for management controls', () => {
@@ -99,7 +132,7 @@ describe('navigation registry', () => {
     ])
     expect(getBreadcrumbsForPath('/contracts/tender/list')).toEqual([
       { label: '智能招投标审核' },
-      { label: '评审列表' },
+      { label: '专家辅助' },
     ])
     expect(getBreadcrumbsForPath('/contracts/tender/history')).toEqual([
       { label: '智能招投标审核' },
@@ -107,7 +140,7 @@ describe('navigation registry', () => {
     ])
     expect(getBreadcrumbsForPath('/contracts/tender/detail')).toEqual([
       { label: '智能招投标审核' },
-      { label: '评审列表', href: '/contracts/tender/list' },
+      { label: '专家辅助', href: '/contracts/tender/list' },
       { label: '分析中心' },
     ])
   })
