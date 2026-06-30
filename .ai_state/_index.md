@@ -67,7 +67,7 @@ pointers:
   latest_architecture_update: "2026-06-23T06:38:15.291Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "路线图 2026-06-tender-program 已出(roadmap/2026-06-tender-program/{roadmap.md,items.yaml})：11-agent 规划 workflow+critic 综合成 9 sprint，3 流——技术债 S1 store-dry/S2 claude-cleanup/S3 OCR合并+分层(用户强调,合 ocr-consolidation+f1)/S4 output抽离；产品 S5 专家侧风险提示(本周优先)/S6 三场景；基础设施 S7 Flash评测(本周优先,缺模型ID阻塞)/S8 数据销毁脱敏/S9 知识库+外部数据脚手架。Wave1(并行):S1/S2/S5/S7。**待用户**：① 选先启动的 sprint；② 拍板 6 项决策(Flash模型ID/场景隔离强度/verdict展示/SQLite加密/KB范围/agent-front红区授权)。选定后该 sprint 出 design+TDD 再改。"
+next_action: "S1/S2/S3 已完成并合入 main(本地,未push)：CC×Codex 并行(Codex refactor/s1-s2-cleanup=S1 store _utc_now归一+S2' .claude S1去重+注释triage；CC refactor/s3-ocr-split=OCR合并进server/ocr/+tender.py 1370→899分层)，两 worktree 文件不重叠、无冲突，整合 733 pytest 绿+ruff clean。交叉 review：CC 已复核 Codex(注释纯改动/护栏保留=PASS)；Codex 复核 CC 的 S3 进行中(待 VERDICT)。**新增 S10**(用户2026-06-26需求)=详情页「概要分析」符合性 checklist(✓/✗/⏳+理由,无评分)排详细分析前,与S5同源、建议先于S5(见 sprints/2026-06-26-tender-overview-checklist/design.md)。下一步：① Codex S3 review 回 PASS 后 push S1-3；② 用户选下一 sprint(S10 或 S4/S5...)+拍板6决策。"
 last_subagent: "codex-exec" # tender-report-dimensions D0-D5 headless (codex 0.142.1, gpt-5.5)；必须 env -u HTTP_PROXY -u HTTPS_PROXY 否则 streaming API 挂起，见 compound/2026-06-25-trick-codex-proxy-hangs-streaming.md
 last_subagent_at: "2026-06-25T00:00:00.000Z"
 active_worktrees: [] # git worktree list 仅 main；无其他分支/worktree(2026-06-23 复核确认)
