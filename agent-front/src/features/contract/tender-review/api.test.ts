@@ -56,6 +56,7 @@ describe('contract tender review api', () => {
       calls.push({ input, init })
       return jsonResponse({
         project_id: 'project-1',
+        scenario: 'expert_assist',
         tender_no: 'WX-2026-001',
         title: '无锡项目',
         status: 'doing',
@@ -85,6 +86,38 @@ describe('contract tender review api', () => {
         method: '综合评估法',
         funding_type: 'unknown',
       })
+    )
+  })
+
+  test('createTenderProject and listTenderProjects pass scenario', async () => {
+    globalThis.fetch = (async (input, init) => {
+      calls.push({ input, init })
+      return jsonResponse(
+        String(input).includes('?')
+          ? []
+          : {
+              project_id: 'project-self-check',
+              scenario: 'bidder_self_check',
+              title: '投标自查',
+              status: 'doing',
+              created_at: '2026-06-20T00:00:00+00:00',
+              updated_at: '2026-06-20T00:00:00+00:00',
+            }
+      )
+    }) as typeof fetch
+
+    const project = await createTenderProject({
+      scenario: 'bidder_self_check',
+      title: '投标自查',
+    })
+    await listTenderProjects({ scenario: 'bidder_self_check', limit: 20 })
+
+    expect(project.scenario).toBe('bidder_self_check')
+    expect(JSON.parse(String(calls[0]?.init?.body)).scenario).toBe(
+      'bidder_self_check'
+    )
+    expect(calls[1]?.input).toBe(
+      '/tender/projects?scenario=bidder_self_check&limit=20'
     )
   })
 
