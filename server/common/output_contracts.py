@@ -38,7 +38,7 @@ _KNOWLEDGE_DIR = PROJECT_ROOT / "knowledge"
 
 
 def _rule_ref_check_enabled() -> bool:
-    """G1b-full 幻觉闸开关。**默认开**（hardening sprint H1）——空规则集自动跳过
+    """Rule-ref hallucination gate switch. **默认开**；空规则集自动跳过
     （见 ``_load_known_rule_ids``：无 gitignored ``knowledge/`` 的 CI/fixture 不会误挂），
     设 ``RULE_REF_CHECK=0`` 可关。"""
     return os.getenv("RULE_REF_CHECK", "1").strip().lower() in {"1", "true", "yes", "on"}
@@ -183,8 +183,8 @@ _UNCONFIRMED_TOKENS = {"false", "no", "0", "疑似", "待确认", "待核验", "
 def _hit_unconfirmed(hit: dict[str, Any]) -> bool:
     """该废标命中是否被模型**明确标为未确认**（疑似 / 读不清 / 待人工核验）→ 不应触发 rejected。
 
-    R2b（治 F01/F4：deepseek 把读不清的信用截图疑似信号写进 disqualification_hits、被门禁强制
-    rejected，与其自身"须人工核验、常规理解应属自证清白"分析自相矛盾→误废标合规投标人）：
+    读不清的信用截图等疑似信号若被写进 disqualification_hits、又被门禁强制 rejected，
+    会与"须人工核验"分析自相矛盾并误废标合规投标人：
     `confirmed:false`/`null`、或 `confirmed` 为疑似类字符串 → 未确认。**未带 `confirmed` 字段 →
     向后兼容视为已确认（旧行为不变）**——只把"模型自己都说没确认"的疑似命中挡在 rejected 之外。
     """
@@ -201,10 +201,10 @@ def _hit_unconfirmed(hit: dict[str, Any]) -> bool:
 def _meaningful_disqualification_hits(extracted: Any) -> bool:
     """``disqualification_hits`` 是否为【非空 list 且含至少一个有内容、**且未被标为未确认**的 dict】。
 
-    extracted_data 内部无 schema 形校验（codex R2 P1）：模型可能写 ``"无"``（中文"没有"，truthy
+    extracted_data 内部无 schema 形校验：模型可能写 ``"无"``（中文"没有"，truthy
     字符串！）/ ``{}`` / ``[{}]`` / ``[]`` 等假值——朴素 ``bool(...)`` 会把 ``"无"`` 当命中→误判
     rejected。故收窄为"非空 list + 至少一项是有内容的 dict"，把这些假值挡在外面。
-    R2b：再排除模型**明确标为未确认**（疑似/读不清）的命中——它们不该强制 rejected（见 _hit_unconfirmed）。
+    再排除模型**明确标为未确认**（疑似/读不清）的命中——它们不该强制 rejected（见 _hit_unconfirmed）。
     """
     hits = extracted.get("disqualification_hits") if isinstance(extracted, dict) else None
     return isinstance(hits, list) and any(
@@ -218,7 +218,7 @@ def _has_hard_disqualification(extracted: Any) -> bool:
 
     命令 S4：有意义的 ``disqualification_hits``，或任一 ``eligibility_checks.status == 'fail'`` →
     整单废标/资格否决（独立 gate）。仅 tender 评标会带这些字段；expense 审核 extracted_data 无此
-    结构，恒 False，故对 expense 无影响。status 比较做大小写/空白容错（codex R2 P2）。
+    结构，恒 False，故对 expense 无影响。status 比较做大小写/空白容错。
     """
     if not isinstance(extracted, dict):
         return False
@@ -406,7 +406,7 @@ def _strip_unknown_policy_refs(output: dict[str, Any]) -> None:
     """剥 policy_refs 里非真实 rule_id 的项（模型偶把废标原因句子/描述当 rule_id 塞进来）。
 
     防幻觉初衷不变（编造引用不入库），但改「剥」而非「任一未知即整单拒」：保留真实 rule_id；若剥后
-    承重结论(approved/rejected) 无任何真实依据 → 由 _validate_audit_result 的 G1b 闸照常拒（触发重试，
+    承重结论(approved/rejected) 无任何真实依据 → 由 _validate_audit_result 的承重依据闸照常拒（触发重试，
     正确）。比整单拒省重试——混了真+假引用的结论保住真引用直接过（实测 deepseek 把废标描述当 ref）。
     仅 rule-ref check 开 + 加载到规则时生效（与校验闸同门，向后兼容）。
     """
@@ -422,7 +422,7 @@ def _strip_unknown_policy_refs(output: dict[str, Any]) -> None:
 
 
 def _normalize_optional_plan(output: dict[str, Any]) -> None:
-    """extracted_data.plan 是【可选】结构化计划（G2，非承重）：形不对就丢，而非整单评标契约失败重试。
+    """extracted_data.plan 是【可选】结构化计划（非承重）：形不对就丢，而非整单评标契约失败重试。
 
     实测 glm 全量评标因 plan 节点不符 plan 契约 → 整单拒重跑 ~290s。plan 仅审计/未来并行用，丢之
     无损结论（散文计划/内联流本就不产 plan）。
@@ -486,7 +486,7 @@ def _validate_audit_result(structured_output: StructuredJSON) -> None:
                 "audit result with verdict=manual_review must include a valid manual_review_reason."
             )
 
-    # G1b（round4 F1 幻觉闸）：approved/rejected 是承重结论，必须至少引一条规则依据。
+    # 承重依据闸：approved/rejected 是承重结论，必须至少引一条规则依据。
     # 空 policy_refs 的"通过/拒绝"是无依据判决——schema 只能要求字段存在(可空)，这里补语义闸。
     if verdict in {"approved", "rejected"}:
         policy_refs = structured_output.get("policy_refs")
@@ -494,7 +494,7 @@ def _validate_audit_result(structured_output: StructuredJSON) -> None:
             raise JSONContractError(
                 f"audit result with verdict={verdict} must cite at least one policy_ref."
             )
-        # G1b-full（env-gated）：policy_refs 必须是真实存在的 rule_id，防模型编造规则号。
+        # 规则引用真伪闸（env-gated）：policy_refs 必须是真实存在的 rule_id，防模型编造规则号。
         # 这是「验证而非判断」——只查引用真伪，verdict 仍由 Claude 判。默认开(见 _rule_ref_check_enabled)。
         if _rule_ref_check_enabled():
             known = _load_known_rule_ids()
@@ -512,7 +512,7 @@ def _validate_audit_result(structured_output: StructuredJSON) -> None:
 
 
 def _verify_plan_shape(structured_output: dict[str, Any]) -> None:
-    """G2：若命令把 S1 计划升级为结构化 ``extracted_data.plan``，校验其满足 plan 契约。
+    """若命令把 S1 计划升级为结构化 ``extracted_data.plan``，校验其满足 plan 契约。
 
     可选——未产出 plan（散文计划/内联单 agent 流）则跳过；产出了就必须类型正确
     （每节点 step/intent + 可选 reads/tools/produces/tag）。
@@ -530,7 +530,7 @@ def _verify_plan_shape(structured_output: dict[str, Any]) -> None:
 
 
 def _verify_scoring_consistency(structured_output: dict[str, Any]) -> None:
-    """G1c（round4 验证非判断）：评分项内部算术一致性——每项 0 ≤ score ≤ max。
+    """评分项内部算术一致性——每项 0 ≤ score ≤ max。
 
     不替模型判分，只拒"给了超出量纲的分"这类自相矛盾输出（如 max=10 却给 15）。
     仅在 ``extracted_data.scoring`` 存在时触发；``score=null``（不可判定/manual_review 项）跳过。
@@ -575,8 +575,8 @@ def _sum_hit_field(hits: Any, field: str) -> float | None:
 def _verify_score_mode_consistency(structured_output: dict[str, Any]) -> None:
     """按 criteria 各项 score_mode 校验 scoring 算术自洽，不一致记 warning（不阻断）。
 
-    反馈子系统（tender-harness 第1轮）：deduction 项 score=max−Σ扣、banded 项 score=选档分、
-    additive 项 score=base+Σ加。**仅**校验 status=scored 且有对应明细的项；
+    deduction 项 score=max−Σ扣、banded 项 score=选档分、additive 项 score=base+Σ加。
+    **仅**校验 status=scored 且有对应明细的项；
     null/manual_review/无明细/formula/pass_fail 一律跳过（防档次分等被当扣分误报）。
     不一致 → append ``extracted_data.validation_warnings``（{code,item,detail}）交人工复核，
     绝不打回重评（尊重"靠大模型判断"与区间打分制）。
@@ -587,10 +587,10 @@ def _verify_score_mode_consistency(structured_output: dict[str, Any]) -> None:
     scoring = extracted.get("scoring")
     if not isinstance(scoring, list):
         return
-    # 整单是否实质性不响应/投错标（codex P1-1：只在此情形对"无依据 0"硬降级，避免误伤正常客观 0
+    # 整单是否实质性不响应/投错标：只在此情形对"无依据 0"硬降级，避免误伤正常客观 0
     # ——如 additive「提供才加分」确认没加分内容、规则「未提供不得分」确认缺失，这些 0 是合理的）。
-    # 用 _meaningful_disqualification_hits 防 "无"/[{}] 假值误触（codex R2 P1）。**故意只看
-    # disqualification_hits、不含 eligibility_checks**（与 verdict 纠偏的更宽口径不同，codex R2 P2）：
+    # 用 _meaningful_disqualification_hits 防 "无"/[{}] 假值误触。**故意只看
+    # disqualification_hits、不含 eligibility_checks**（与 verdict 纠偏的更宽口径不同）：
     # 本降级针对"投错标/无可评事实"，而资格不符(eligibility fail)的投标往往仍有可评的业绩/方案，
     # 不应把其逐项分降级 manual_review。
     has_disqualification = _meaningful_disqualification_hits(extracted)
@@ -602,7 +602,7 @@ def _verify_score_mode_consistency(structured_output: dict[str, Any]) -> None:
             if isinstance(citem, dict) and isinstance(citem.get("item"), str):
                 criteria_items[citem["item"]] = citem
     warnings: list[dict[str, Any]] = []
-    # criteria 完整性（codex P1-5）+ score_mode 缺失兜底告警（codex P1-4）：遍历 criteria 各项，
+    # criteria 完整性 + score_mode 缺失兜底告警：遍历 criteria 各项，
     # 缺 score_mode → 告警(校验按 deduction 兜底)；score_mode 与容器不匹配(deduction 无 deductions
     # 等) → 告警。均软提示不阻断。
     _CONTAINER_BY_MODE = {"deduction": "deductions", "banded": "bands", "additive": "awards"}
@@ -636,7 +636,7 @@ def _verify_score_mode_consistency(structured_output: dict[str, Any]) -> None:
         if not _is_real_number(score) or not _is_real_number(max_score):
             continue
         citem = criteria_items.get(item.get("item")) or {}
-        # mode 缺失默认 deduction 兜底（codex P1-4）；下面仅在有对应明细时才实际校验，无明细不误报。
+        # mode 缺失默认 deduction 兜底；下面仅在有对应明细时才实际校验，无明细不误报。
         mode = citem.get("score_mode") or item.get("score_mode") or "deduction"
         expected: float | None = None
         detail = ""
@@ -646,7 +646,7 @@ def _verify_score_mode_consistency(structured_output: dict[str, Any]) -> None:
                 expected = max_score - total
                 detail = f"满分{max_score}−扣{total}"
             elif _SCORE_MODE_TOLERANCE < score < max_score and not item.get("deduction_hits"):
-                # R4 明细完整性：部分扣分(0<score<max)却无 deduction_hits 逐条明细 = 笼统扣X分
+                # 明细完整性：部分扣分(0<score<max)却无 deduction_hits 逐条明细 = 笼统扣X分
                 # （违 tender-evaluate.md「禁止笼统扣X分」）。score==0 由下方 absence 兜底覆盖，不重复。
                 warnings.append(
                     {
@@ -668,7 +668,7 @@ def _verify_score_mode_consistency(structured_output: dict[str, Any]) -> None:
                 expected = base + total
                 detail = f"基础{base}+加{total}"
             elif _is_real_number(base) and score > base and not item.get("award_hits"):
-                # R4 明细完整性：加了分(score>base)却无 award_hits 明细 → 笼统加分。
+                # 明细完整性：加了分(score>base)却无 award_hits 明细 → 笼统加分。
                 warnings.append(
                     {
                         "code": "additive_scored_no_awards",
@@ -678,7 +678,7 @@ def _verify_score_mode_consistency(structured_output: dict[str, Any]) -> None:
                     }
                 )
         elif mode == "formula":
-            # G5 兜底（codex P1-3）：formula 判了 scored，但 criteria 项缺结构化 formula_spec 或含
+            # Formula 兜底：formula 判了 scored，但 criteria 项缺结构化 formula_spec 或含
             # 不可闭合变量（cross_bid/external_data/live_event/derived）→ 本不该单家自动算，warning
             # 提示人工（防 prompt 不可靠时模型 fallback 临场心算）。不硬降级（限价类可能确实算对了）。
             spec = citem.get("formula_spec")
@@ -704,7 +704,7 @@ def _verify_score_mode_consistency(structured_output: dict[str, Any]) -> None:
                     }
                 )
             elif any(isinstance(v, dict) and v.get("value") is None for v in spec_vars):
-                # codex P1-1：source 全可闭合，但有变量未填 value（限价/本家报价没抽到）→ 无法确定性
+                # source 全可闭合，但有变量未填 value（限价/本家报价没抽到）→ 无法确定性
                 # 代入，判了 scored 必是临场心算。warning 提示人工（不硬降级，prompt 已要求此情形 manual）。
                 warnings.append(
                     {
@@ -722,7 +722,7 @@ def _verify_score_mode_consistency(structured_output: dict[str, Any]) -> None:
                     "detail": f"score={score} 与「{detail}={expected}」不一致，请人工复核",
                 }
             )
-        # A（absence-is-not-zero 兜底，dogfood 实测证明 prompt 强化不可靠：模型反复把"投标无对应内容"
+        # absence-is-not-zero 兜底：模型反复把"投标无对应内容"
         # 判 0 分 scored）：实得 0 分却标 scored 但【无评分依据明细】→ 降级 manual_review（无依据的 0 =
         # 无法判定，不是客观得 0）。**保留**：deduction 真扣减到 0（有 deduction_hits）、pass_fail
         # （客观"未满足"是有依据的 0）。
@@ -748,7 +748,7 @@ def _verify_score_mode_consistency(structured_output: dict[str, Any]) -> None:
                 )
             elif not justified:
                 # 正常案例：实得 0 但无明细，可能是合理客观 0（招标规则"提供才加分/不满足不得分"且
-                # 确认缺失），也可能漏判 → 仅告警、不强改判断（codex P1-1：避免误伤客观 0）。
+                # 确认缺失），也可能漏判 → 仅告警、不强改判断，避免误伤客观 0。
                 warnings.append(
                     {
                         "code": "scored_zero_suspect",
@@ -799,7 +799,7 @@ def _validate_init_rules_report(structured_output: StructuredJSON) -> None:
 
 
 # 服务端权威元数据：reviewed_by/timestamp 模型不该(也不可靠地)产出；claim_id 缺失时回落任务 request_id。
-# 在 G1 硬校验前盖章，避免把"服务端该填的字段"当成模型 bug 反复重试至失败（live eval 实测 [1M] 常漏这些）。
+# 在硬校验前盖章，避免把"服务端该填的字段"当成模型 bug 反复重试至失败。
 _DEFAULT_REVIEWED_BY = "expense-auditor"
 
 # audit-result.schema.json 顶层声明的字段（顶层 additionalProperties:false）。normalize 剥离此集合外
@@ -833,7 +833,7 @@ def _stamp_server_metadata(output: dict[str, Any], request_id: str | None) -> No
     output.setdefault("extracted_data", {})
     # 信封类必填字段兜底（多模型可靠性）：模型偶尔漏给这些 schema required 字段——实测 deepseek
     # 全量评标漏 `reasons` 致整单契约失败重试至失败。空默认安全：①不掩盖承重决策（verdict/explanation
-    # 仍必填非空；approved/rejected 的 policy_refs 即便默认 [] 也会被 G1b 闸要求非空 → 正确触发重试，
+    # 仍必填非空；approved/rejected 的 policy_refs 即便默认 [] 也会被承重依据闸要求非空 → 正确触发重试，
     # 不会放过无依据判决）；②risk_score 缺省给中性 50（不触发高风险复审，不伪造高危）。
     output.setdefault("reasons", [])
     output.setdefault("policy_refs", [])
@@ -844,7 +844,7 @@ def _stamp_server_metadata(output: dict[str, Any], request_id: str | None) -> No
 def normalize_audit_result(
     structured_output: StructuredJSON, request_id: str | None = None
 ) -> StructuredJSON:
-    """G1 前置规整：盖 server 元数据 + 拍平 envelope 格式，使硬 schema 校验只挡真问题。
+    """前置规整：盖 server 元数据 + 拍平 envelope 格式，使硬 schema 校验只挡真问题。
 
     1. 元数据：claim_id(缺→request_id)/reviewed_by/timestamp/extracted_data 默认值。
     2. reasons/policy_refs：对象→字符串（防前端崩 + 满足 string[] 契约）。
@@ -856,7 +856,7 @@ def normalize_audit_result(
     if not isinstance(structured_output, dict):
         return structured_output
     _stamp_server_metadata(structured_output, request_id)
-    # 承重 verdict 一致性（R2）：废标/资格否决独立 gate 优先级最高——extracted_data.disqualification_hits
+    # 承重 verdict 一致性：废标/资格否决独立 gate 优先级最高——extracted_data.disqualification_hits
     # 非空，或任一 eligibility_checks.status=fail（命中硬废标/资格否决）→ verdict 必须 rejected
     # （命令 S4 法定规则）。模型偶把"投错标/实质性未响应"判成 manual_review（S4 在"废标→rejected"
     # 与"有 manual_review 项→manual_review"间优先级含糊，模型择后者，与其自己标的 disqualification_hits
@@ -894,12 +894,12 @@ def normalize_audit_result(
     # qwen/deepseek 评标 `evidence_chain/N` 反复挂 rule_ref/relevance）。剥到契约允许的
     # {source,finding,conclusion} + 补缺省，使其稳过校验，不因展示字段拖垮整单评标。
     _normalize_evidence_chain(structured_output)
-    # 降评标重试（D，零成本提速）：可选 plan 形不对 → 丢（非承重）；policy_refs 里编造的 rule_id → 剥
-    # （留真实引用，承重无依据仍由 G1b 拒）。两者原本任一不合即整单契约失败、重跑整个 ~290s 评标。
+    # 降评标重试：可选 plan 形不对 → 丢（非承重）；policy_refs 里编造的 rule_id → 剥
+    # （留真实引用，承重无依据仍由承重依据闸拒）。两者原本任一不合即整单契约失败、重跑整个 ~290s 评标。
     _normalize_optional_plan(structured_output)
     _strip_unknown_policy_refs(structured_output)
-    # result/conclusion 是服务端从 verdict 派生的【决策】字段（enrich 后才有）；模型【自报】它们＝
-    # 篡改决策（H1 反幻觉），必须拒、绝不静默剥离。
+    # result/conclusion 是服务端从 verdict 派生的【决策】字段（enrich 后才有）；
+    # 模型【自报】它们＝篡改决策，必须拒、绝不静默剥离。
     for forbidden in ("result", "conclusion"):
         if forbidden in structured_output:
             raise JSONContractError(
@@ -920,7 +920,7 @@ register_schema_processor(
     normalize=normalize_audit_result,
     validate=_validate_audit_result,
     enrich=enrich_audit_decision,
-    # R1：拿到本案底稿时回查结论里每条出处真伪（仅 tender_worker 透传 evidence_source 才触发；
+    # 拿到本案底稿时回查结论里每条出处真伪（仅 tender_worker 透传 evidence_source 才触发；
     # audit/expense 不透传 → 跳过，零影响）。
     resolve=resolve_audit_evidence,
 )

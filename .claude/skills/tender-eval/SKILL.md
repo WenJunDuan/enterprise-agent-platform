@@ -11,14 +11,14 @@ description: Use when 评标、招投标评分、投标文件合规审查，需�
   - `knowledge/tender/evalmethod.rules.json` ←《评标委员会和评标方法暂行规定》（发改委12号令）
   - `knowledge/tender/regulation.rules.json` ←《招标投标法实施条例》
   - 由 `/init-rules <法规源文件> tender` 生成；管废标 / 资格 / 一致性 / 程序的法定依据，**不含**具体项目的分值权重。
-- **会话项目规则（criteria）**（每标一份，**不预建**）：本项目资格审查规则与评分项 / 满分 / 评分规则就在**它自己的招标文件载明的资格审查、初步评审和评标办法**里（标题与章节位置因标书而异，不预设第三章），评标时由 `/tender-evaluate` 在 S1 **定位并直读招标文件**解析为 `extracted_data.criteria`（`eligibility_rules[]` + 评分 `items[]`，对齐 `.claude/contracts/tender/criteria.schema.json`），随结论持久化作本次会话规则。资格审查是与评分项并列的最高优先级招标项，先于评分运行，不计入满分。
+- **会话项目规则（criteria）**（每标一份，**不预建**）：本项目资格审查规则与评分项 / 满分 / 评分规则就在**它自己的招标文件载明的资格审查、初步评审和评标办法**里，评标时由 `/tender-evaluate` 在 S1 按 `references/s1-locate-criteria.md` **定位并直读招标文件**解析为 `extracted_data.criteria`（`eligibility_rules[]` + 评分 `items[]`，对齐 `.claude/contracts/tender/criteria.schema.json`），随结论持久化作本次会话规则。资格审查是与评分项并列的最高优先级招标项，先于评分运行，不计入满分。
 
 > 通则层 `rule_id` 形如 `tender_evalmethod_001` / `tender_regulation_003`（下划线连接），可作 `policy_refs`。criteria 来自招标文件评标办法、**无 `rule_id`**，其标准与命中写入 `evidence_chain`。
 
 ## 执行顺序（一次性，少往返）
 
 1. 优先消费 `tender-extractor` 输出的结构化事实；若当前只有原始材料，不要直接猜字段，先回到提取阶段。
-2. `Read` 招标文件、**定位其中的资格审查/初步评审与评标办法（评分标准）**（标题 / 章节以实际标书为准，不预设第三章）直读解析为 `extracted_data.criteria`（招标文件**没写的标准不臆造补充**）；并读通则层 `evalmethod` / `regulation` 法规作法律底座，读取顶层 `source_path` / `source_version` 作为追溯。
+2. `Read` 招标文件，按 `references/s1-locate-criteria.md` **定位其中的资格审查/初步评审与评标办法（评分标准）**，直读解析为 `extracted_data.criteria`（招标文件**没写的标准不臆造补充**）；并读通则层 `evalmethod` / `regulation` 法规作法律底座，读取顶层 `source_path` / `source_version` 作为追溯。
 3. 读取 `knowledge/memory/tender/` 中的相似案例 / 异常记忆作为 `memory:` 辅助证据（不能替代结构化规则）。
 4. **先对照 `criteria.eligibility_rules[]` 运行资格审查**，写入 `extracted_data.eligibility_checks`；再对照 `criteria.items[]` 逐评分项判定，写入 `extracted_data.scoring`，每项 `{item, max, score, status, basis}`。承重 `policy_refs` 只引通则层真实 `rule_id`，criteria 命中写 `evidence_chain`；一次产出契约结果。
 
