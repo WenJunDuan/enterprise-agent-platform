@@ -11,21 +11,16 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
 from typing import Any
 
 from server.platform.paths import PLATFORM_DB_FILE, ensure_local_layout
-from server.platform.sqlite_store import connect_sqlite
+from server.platform.sqlite_store import connect_sqlite, utc_now
 
 ensure_local_layout()
 
 # OCR 状态合法值（不做运行时强制，仅文档约定）
 # pending → running → ready | failed
 OCR_STATUSES = {"pending", "running", "ready", "failed"}
-
-
-def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def new_bid_id() -> str:
@@ -128,7 +123,7 @@ def upsert_project_doc(
         criteria_status: R1 info-extraction state: pending/running/ready/failed.
         tender_info: R1 JSON-encoded tender metadata extracted from the OCR text.
     """
-    now = _utc_now()
+    now = utc_now()
     with connect_sqlite(PLATFORM_DB_FILE, immediate=True) as conn:
         existing = conn.execute(
             "SELECT created_at FROM tender_project_docs WHERE project_id = ?",
@@ -189,7 +184,7 @@ def update_project_doc_ocr(
             SET ocr_text = ?, ocr_clarity = ?, ocr_status = ?, updated_at = ?
             WHERE project_id = ? AND tenant = ?
             """,
-            (ocr_text, ocr_clarity, status, _utc_now(), project_id, tenant),
+            (ocr_text, ocr_clarity, status, utc_now(), project_id, tenant),
         )
 
 
@@ -205,7 +200,7 @@ def update_project_doc_criteria(project_id: str, tenant: str, criteria_json: str
         conn.execute(
             "UPDATE tender_project_docs SET criteria = ?, criteria_status = 'ready', updated_at = ? "
             "WHERE project_id = ? AND tenant = ?",
-            (criteria_json, _utc_now(), project_id, tenant),
+            (criteria_json, utc_now(), project_id, tenant),
         )
 
 
@@ -236,7 +231,7 @@ def update_project_doc_criteria_extracted(
             SET criteria = ?, tender_info = ?, criteria_status = ?, updated_at = ?
             WHERE project_id = ? AND tenant = ?
             """,
-            (criteria_json, tender_info_json, status, _utc_now(), project_id, tenant),
+            (criteria_json, tender_info_json, status, utc_now(), project_id, tenant),
         )
 
 
@@ -266,7 +261,7 @@ def upsert_bid_doc(
         ocr_text: Full OCR text blob (None until OCR completes).
         extracted: JSON-encoded extracted fields (None until evaluation).
     """
-    now = _utc_now()
+    now = utc_now()
     with connect_sqlite(PLATFORM_DB_FILE, immediate=True) as conn:
         existing = conn.execute(
             "SELECT created_at FROM tender_bid_docs WHERE project_id = ? AND bid_id = ?",
@@ -343,7 +338,7 @@ def update_bid_doc_ocr(
             SET ocr_text = ?, ocr_status = ?, updated_at = ?
             WHERE project_id = ? AND bid_id = ? AND tenant = ?
             """,
-            (ocr_text, status, _utc_now(), project_id, bid_id, tenant),
+            (ocr_text, status, utc_now(), project_id, bid_id, tenant),
         )
 
 
@@ -363,5 +358,5 @@ def update_bid_doc_extracted(project_id: str, bid_id: str, tenant: str, extracte
             SET extracted = ?, updated_at = ?
             WHERE project_id = ? AND bid_id = ? AND tenant = ?
             """,
-            (extracted_json, _utc_now(), project_id, bid_id, tenant),
+            (extracted_json, utc_now(), project_id, bid_id, tenant),
         )

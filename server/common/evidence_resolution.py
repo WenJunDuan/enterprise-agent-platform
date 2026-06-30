@@ -27,7 +27,7 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-# ── 配置（运行时动态读 env，便于 dogfood 灰度调参，对齐 tender_worker 既有 env 模式）──────
+# ── 配置（运行时动态读 env，便于灰度调参，对齐 tender_worker 既有 env 模式）──────
 
 
 def _enabled() -> bool:
@@ -38,13 +38,13 @@ def _enabled() -> bool:
 def _downgrade_enabled() -> bool:
     """是否对 unresolved 承重项降级 + 升 verdict（``EVIDENCE_RESOLUTION_DOWNGRADE``, default on）。
 
-    首轮 dogfood 可设 0 看纯标注命中率/假阴性率，调好阈值再开降级。
+    灰度阶段可设 0 看纯标注命中率/假阴性率，调好阈值再开降级。
     """
     return os.getenv("EVIDENCE_RESOLUTION_DOWNGRADE", "1").lower() in {"1", "true", "yes"}
 
 
 def _annotate_resolved() -> bool:
-    """resolved 项是否也写 ``resolution`` 标注（默认开，便于 dogfood 统计；0 = 只标异常）。"""
+    """resolved 项是否也写 ``resolution`` 标注（默认开，便于统计；0 = 只标异常）。"""
     return os.getenv("RESOLUTION_ANNOTATE_RESOLVED", "1").lower() in {"1", "true", "yes"}
 
 
@@ -127,14 +127,14 @@ def normalize_text(text: str) -> str:
 
 
 # 文件头切分：纯文件名 = 首个 ``(kind=`` 或 **已知方括号标记** 之前。只在 ``[检出印章`` /
-# ``[⚠清晰度`` / ``[清晰度`` 处切，**不切文件名里的普通 ``[``**（如 file[1].pdf，reviewer F2）。
+# ``[⚠清晰度`` / ``[清晰度`` 处切，**不切文件名里的普通 ``[``**（如 file[1].pdf）。
 _FILE_HEAD_SPLIT_RE = re.compile(r"\s*\(kind=|\s*\[(?:检出印章|⚠?清晰度)")
 
 
 def _parse_file_head(head: str) -> tuple[str, str]:
     """从 ``### 文件:`` 头串解析 (纯文件名, clarity)。
 
-    clarity: ``[⚠清晰度低`` → low；``[清晰度未知`` → unknown；否则 clear（R3 confidence 消费）。
+    clarity: ``[⚠清晰度低`` → low；``[清晰度未知`` → unknown；否则 clear（供置信度消费）。
     """
     clarity = "low" if "清晰度低" in head else ("unknown" if "清晰度未知" in head else "clear")
     name = _FILE_HEAD_SPLIT_RE.split(head, maxsplit=1)[0].strip()
@@ -142,7 +142,7 @@ def _parse_file_head(head: str) -> tuple[str, str]:
 
 
 def _normalize_filename(s: str) -> str:
-    """文件名规范化：basename + NFKC + lower + 去路径分隔（codex#4，供 source 点名匹配）。"""
+    """文件名规范化：basename + NFKC + lower + 去路径分隔，供 source 点名匹配。"""
     s = unicodedata.normalize("NFKC", s or "").lower()
     s = s.replace("\\", "/")
     return s.rsplit("/", 1)[-1].strip()
@@ -153,7 +153,7 @@ def parse_corpus(evidence_source: str) -> list[dict[str, Any]]:
 
     两态统一处理：有 ``=== …底稿 ===`` 外层标记（doc-layer）按它定 tier；无标记（inline OCR）
     按每个 ``### 文件:`` 文件名推断 tier。再在每文件块内按 ``【第 N 页】`` 切页。
-    每段带所属文件 clarity（R3：low/unknown/clear，供 confidence 消费）。
+    每段带所属文件 clarity（low/unknown/clear，供 confidence 消费）。
     """
     segments: list[dict[str, Any]] = []
     cur_tier: str | None = None  # None = 隐式（由文件名推断）
@@ -210,7 +210,7 @@ class CorpusIndex:
     def __init__(self, segments: list[dict[str, Any]]):
         # tier -> file -> page(int, None→0) -> 规范化页文本
         self.tier_files: dict[str, dict[str, dict[int, str]]] = {}
-        # R3：规范化文件名 → clarity（low/unknown/clear），供 confidence 消费
+        # 规范化文件名 → clarity（low/unknown/clear），供 confidence 消费
         self.clarity_map: dict[str, str] = {}
         parts: dict[str, list[str]] = {}
         for seg in segments:
@@ -310,7 +310,7 @@ def page_status(index: CorpusIndex, tier: str, page: int | None, norm_quote: str
     files = index.tier_files.get(tier)
     if files is None:
         # tier 不可定 / whole 无独立 key（doclayer 只有 tender/bid）→ 跨全部 tier 找
-        # （与 corpus_for('whole') 用全量语料对称，reviewer F3：避免 whole 恒判 page_mismatch）
+        # （与 corpus_for('whole') 用全量语料对称，避免 whole 恒判 page_mismatch）
         files = {f: pg for t in index.tier_files.values() for f, pg in t.items()}
     hits: list[str] = []
     for fname, pages in (files or {}).items():
@@ -420,8 +420,8 @@ def _check_hits(
 ) -> bool:
     """回查一个评分项的 ``deduction_hits``/``award_hits``；任一**带非零分**命中 unresolved → True（触发降级）。
 
-    子项级：得 0 分的命中（无得分主张）出处 unresolved 不触发降级——避免有检测报告支撑的有分子项
-    被同项里的 0 分未核实子项连带 manual（F02：技术参数「无偏离」常规子项拖累性能参数 21 分）。
+    子项级：得 0 分的命中（无得分主张）出处 unresolved 不触发降级，避免有检测报告支撑的有分子项
+    被同项里的 0 分未核实子项连带 manual。
     """
     has_unresolved = False
     hits = sitem.get(hits_key)
@@ -459,7 +459,7 @@ def _downgrade_scoring_item(
 ) -> bool:
     """scored → manual_review（仅迁移一次，幂等）。返回 True 当且仅当本次发生真实状态迁移。
 
-    R1（unresolved）与 R3（low_clarity）共用，保证同项双触发不重复降级 / 不重复 basis（codex#3）。
+    unresolved 与 low_clarity 共用，保证同项双触发不重复降级 / 不重复 basis。
     """
     cur_basis = str(sitem.get("basis") or "")
     if sitem.get("status") == "scored":
@@ -469,7 +469,7 @@ def _downgrade_scoring_item(
         sitem["resolution"] = {"status": resolution_status}
         summary["downgraded_items"].append(sitem.get("item"))
         return True
-    # 已非 scored（如 R1 先降）：仅补本 note（不重复），不算新迁移
+    # 已非 scored（如 unresolved 先降）：仅补本 note（不重复），不算新迁移
     if note.strip() not in cur_basis:
         sitem["basis"] = cur_basis + note
     return False
@@ -477,7 +477,7 @@ def _downgrade_scoring_item(
 
 def _flag_low_clarity_sources(sitem: dict[str, Any], index: CorpusIndex) -> str | None:
     """扫 scoring 项的 evidence 命中 source + basis，是否点名某 low 文件；命中则给该 evidence 标
-    独立字段 ``clarity_flag``（不碰 R1 的 resolution，codex#2），返回被点名的文件名或 None。"""
+    独立字段 ``clarity_flag``（不碰 resolution），返回被点名的文件名或 None。"""
     named: str | None = None
     for hits_key in ("deduction_hits", "award_hits"):
         hits = sitem.get(hits_key)
@@ -525,7 +525,7 @@ def resolve_audit_evidence(structured_output: Any, evidence_source: str) -> Any:
             "downgraded_items": [],
             "high_severity_unresolved": [],
             "unresolved_refs": [],
-            "low_clarity_files": index.low_clarity_files(),  # R3 可见性 emit
+            "low_clarity_files": index.low_clarity_files(),  # 低置信文件可见性 emit
         }
         downgrade = _downgrade_enabled()
         any_new_manual = False
@@ -558,9 +558,9 @@ def resolve_audit_evidence(structured_output: Any, evidence_source: str) -> Any:
                     has_structured_quote = bool(
                         sitem.get("deduction_hits") or sitem.get("award_hits")
                     )
-                    # R3：是否点名 low 文件（同时给 evidence 打 clarity_flag）
+                    # 是否点名 low 文件（同时给 evidence 打 clarity_flag）
                     low_clarity_named = _flag_low_clarity_sources(sitem, index)
-                    # R3 G3 兜底触发：scored 且 score==0（"读不清却判 0"嫌疑）且点名 low 文件
+                    # 低置信兜底触发：scored 且 score==0（"读不清却判 0"嫌疑）且点名 low 文件
                     g3_hit = (
                         low_clarity_named is not None
                         and sitem.get("status") == "scored"
@@ -585,12 +585,12 @@ def resolve_audit_evidence(structured_output: Any, evidence_source: str) -> Any:
                         "manual_review",
                         "rejected",
                     }:
-                        # banded/formula/pass_fail 项无离散逐字 quote → 只标 loc_only（不谎称已核实，
-                        # 不降级；codex P1：不宣称已覆盖全部承重依据）。
+                        # banded/formula/pass_fail 项无离散逐字 quote → 只标 loc_only；
+                        # 不谎称已核实，也不宣称已覆盖全部承重依据。
                         sitem.setdefault("resolution", {"status": "loc_only"})
                         summary["loc_only"] += 1
-                    # R1+R3 同项双触发：R1(unresolved) 已降级走上面 if 分支、R3 elif 被跳过 → 此处补
-                    # R3 低置信 note，保证降级原因完整不丢（reviewer F4）。
+                    # unresolved + low_clarity 同项双触发：unresolved 已降级走上面 if 分支、
+                    # low_clarity elif 被跳过，此处补低置信 note，保证降级原因完整不丢。
                     if (
                         downgrade
                         and unresolved
@@ -619,7 +619,7 @@ def resolve_audit_evidence(structured_output: Any, evidence_source: str) -> Any:
                             high_severity=True,
                         )
 
-        # 4. verdict/result 一致性回填（codex P1）：降级新引入 manual_review 项 → 顶层须一致
+        # 4. verdict/result 一致性回填：降级新引入 manual_review 项 → 顶层须一致
         if any_new_manual and downgrade:
             verdict = structured_output.get("verdict")
             if verdict == "approved":
@@ -633,7 +633,7 @@ def resolve_audit_evidence(structured_output: Any, evidence_source: str) -> Any:
                 structured_output.setdefault("manual_review_reason", "insufficient_evidence")
             # verdict == "rejected"：终局更强，不因单项未核实翻盘
 
-        # 5. 摘要（有回查 或 有低置信文件即写——codex#1：勿因无 quote 吞掉 low_clarity_files）
+        # 5. 摘要（有回查 或 有低置信文件即写，勿因无 quote 吞掉 low_clarity_files）
         if isinstance(extracted, dict) and (summary["checked"] > 0 or summary["low_clarity_files"]):
             extracted["evidence_resolution"] = summary
         return structured_output
