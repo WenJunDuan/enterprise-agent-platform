@@ -322,10 +322,15 @@ def test_p12_start_project_ocr_uses_strong_ref(monkeypatch):
     )
 
 
-def test_p12_default_prewarm_max_is_2():
-    """OCR_PREWARM_MAX default value is 2."""
-    cap = int(os.getenv("OCR_PREWARM_MAX", "2"))
-    assert cap == 2
+def test_p12_default_prewarm_max_is_4():
+    """上传 OCR 并发默认上限 = 4（scheduler 权威常量；OCR_PREWARM_MAX env 可覆盖）。
+
+    S3 后默认值随调度器下沉到 server.ocr.prewarm_scheduler；旧测试读 env 自带默认 "2"，
+    既不查实际生产默认(4)也不查迁移后的模块 → 改为断言权威常量。
+    """
+    from server.ocr.prewarm_scheduler import _DEFAULT_UPLOAD_OCR_CONCURRENCY
+
+    assert _DEFAULT_UPLOAD_OCR_CONCURRENCY == 4
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -443,6 +448,80 @@ def test_p13_bid_doc_ocr_task_function_exists():
     assert asyncio.iscoroutinefunction(pipeline.run_bid_doc_ocr), (
         "run_bid_doc_ocr must be a coroutine function"
     )
+
+
+def test_p13_project_doc_ocr_writes_failed_on_rendered_error_block(monkeypatch):
+    """S3 review P1: prewarm_and_text 返回**渲染后的全失败底稿**（`### 文件:` 头 + `[识别失败]` 正文）
+    时，project doc 必须 ocr_status=failed —— is_ocr_text_valid 不能被文件头骗过（旧 startswith 会漏判）。"""
+    monkeypatch.setattr("server.routes.deps.TENANT_KEYS", {"default": _TOKEN})
+    import server.api as api_module
+    import server.routes.deps as deps_module
+    from server.stores.tender_doc_store import get_project_doc, upsert_project_doc
+
+    monkeypatch.setattr(deps_module, "tenant_keys_are_default", lambda: False)
+    monkeypatch.setenv("ALLOW_INSECURE_DEFAULT_TENANT_KEY", "")
+    monkeypatch.setattr(
+        "server.routes.tender.schedule_tender_evaluation_task", lambda **kwargs: None
+    )
+
+    import server.routes.tender_doc_pipeline as pipeline
+
+    error_block = "### 文件: bad.pdf (kind=pdf, route=ocr)\n[识别失败] OCR engine down"
+    monkeypatch.setattr(
+        "server.routes.tender_doc_pipeline.prewarm_and_text", lambda *a, **kw: error_block
+    )
+
+    client = TestClient(api_module.app)
+    pid = _make_project(client)
+    upsert_project_doc(project_id=pid, tenant="default", tender_files="[]", ocr_status="running")
+
+    asyncio.run(pipeline.run_project_doc_ocr(pid, "/fake/case", tenant="default", purpose=None))
+
+    row = get_project_doc(pid, "default")
+    assert row is not None
+    assert row["ocr_status"] == "failed", "rendered all-error block must yield ocr_status=failed"
+    assert row["criteria_status"] == "failed"
+
+
+def test_p13_bid_doc_ocr_writes_failed_on_rendered_error_block(monkeypatch):
+    """同上（投标文档）：渲染后的全失败底稿 → bid ocr_status=failed。"""
+    monkeypatch.setattr("server.routes.deps.TENANT_KEYS", {"default": _TOKEN})
+    import server.api as api_module
+    import server.routes.deps as deps_module
+    from server.stores.tender_doc_store import get_bid_doc, upsert_bid_doc
+
+    monkeypatch.setattr(deps_module, "tenant_keys_are_default", lambda: False)
+    monkeypatch.setenv("ALLOW_INSECURE_DEFAULT_TENANT_KEY", "")
+    monkeypatch.setattr(
+        "server.routes.tender.schedule_tender_evaluation_task", lambda **kwargs: None
+    )
+
+    import server.routes.tender_doc_pipeline as pipeline
+
+    error_block = "### 文件: bid.pdf (kind=pdf, route=ocr)\n[识别失败] OCR engine down"
+    monkeypatch.setattr(
+        "server.routes.tender_doc_pipeline.prewarm_and_text", lambda *a, **kw: error_block
+    )
+
+    client = TestClient(api_module.app)
+    pid = _make_project(client)
+    bid_id = f"bd-{uuid.uuid4().hex[:16]}"
+    upsert_bid_doc(
+        project_id=pid,
+        bid_id=bid_id,
+        tenant="default",
+        bidder_name="测试投标人",
+        bid_files="[]",
+        ocr_status="running",
+    )
+
+    asyncio.run(
+        pipeline.run_bid_doc_ocr(pid, bid_id, "/fake/case", tenant="default", purpose=None)
+    )
+
+    row = get_bid_doc(pid, bid_id, "default")
+    assert row is not None
+    assert row["ocr_status"] == "failed"
 
 
 # ═══════════════════════════════════════════════════════════════════════════

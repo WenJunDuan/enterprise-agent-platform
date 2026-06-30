@@ -21,7 +21,10 @@ _PROJECT_OCR_TASKS: dict[str, set[asyncio.Task[None]]] = {}
 # P1-2: 上传即 OCR 并发上限（云 OCR 有限流；本地并行也消耗内存）；OCR_PREWARM_MAX env 可调。
 # R4-B 提速：默认 2→4（招标 + 多投标同时 OCR，多家上传不再串行排队）。云 PaddleOCR(aistudio) 限流时
 # 可经 .env 调回/再调高（实测云端并发上限后定值）。
-_UPLOAD_OCR_SEMAPHORE = asyncio.Semaphore(int(os.getenv("OCR_PREWARM_MAX", "4")))
+_DEFAULT_UPLOAD_OCR_CONCURRENCY = 4
+_UPLOAD_OCR_SEMAPHORE = asyncio.Semaphore(
+    int(os.getenv("OCR_PREWARM_MAX", str(_DEFAULT_UPLOAD_OCR_CONCURRENCY)))
+)
 
 
 def get_upload_ocr_semaphore() -> asyncio.Semaphore:
