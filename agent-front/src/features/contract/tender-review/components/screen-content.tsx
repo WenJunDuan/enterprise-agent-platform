@@ -15,6 +15,13 @@ export function ScreenContent({ page }: { page: TenderReviewPageState }) {
         <DashboardView
           summary={page.viewModel.summary}
           projects={page.viewModel.data.projects}
+          readOnly={page.isPostEvalMonitor}
+          emptyMessage={
+            page.isPostEvalMonitor
+              ? '暂无已完成的专家辅助项目可供监督复核。'
+              : undefined
+          }
+          notice={page.destroyNotice}
           onOpenProject={(projectId) => page.resumeOrOpenProject(projectId)}
           onCreateReview={() => page.setScreen('create')}
           onBatchDelete={page.batchDeleteProjects}
@@ -25,6 +32,7 @@ export function ScreenContent({ page }: { page: TenderReviewPageState }) {
     case 'create':
       return (
         <CreateReviewView
+          scenario={page.scenario}
           projectForm={page.projectForm}
           tenderFiles={page.tenderFiles}
           uploadBidders={page.uploadBidders}
@@ -99,7 +107,9 @@ export function ScreenContent({ page }: { page: TenderReviewPageState }) {
       return (
         <ReportView
           data={page.viewModel.data}
+          scenario={page.scenario}
           onBack={() => page.openAnalysis('compare')}
+          onConfirmDownloaded={page.confirmSelfCheckReportDownloaded}
         />
       )
   }
