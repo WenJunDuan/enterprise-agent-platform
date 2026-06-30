@@ -67,7 +67,7 @@ pointers:
   latest_architecture_update: "2026-06-23T06:38:15.291Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "S1/S2/S3 已完成并合入 main(本地,未push)：CC×Codex 并行(Codex refactor/s1-s2-cleanup=S1 store _utc_now归一+S2' .claude S1去重+注释triage；CC refactor/s3-ocr-split=OCR合并进server/ocr/+tender.py 1370→899分层)，两 worktree 文件不重叠、无冲突，整合 733 pytest 绿+ruff clean。交叉 review 完成：CC 复核 Codex=PASS(注释纯改动/护栏保留)；Codex 复核 S3=REWORK→已修(P1 is_ocr_text_valid 漏判全失败底稿=先于S3的潜伏bug,已在 pipeline 修复+回归 commit 11c3426；P2 测试硬化)，739 pytest 绿。**新增 S10**(用户2026-06-26需求)=详情页「概要分析」符合性 checklist(✓/✗/⏳+理由,无评分)排详细分析前,与S5同源、建议先于S5(见 sprints/2026-06-26-tender-overview-checklist/design.md)。下一步：① Codex S3 review 回 PASS 后 push S1-3；② 用户选下一 sprint(S10 或 S4/S5...)+拍板6决策。"
+next_action: "S1-S5 全部完成并 push main(38efb67)。CC×Codex 并行+双向交叉 review 模式成型：S1/S2(Codex)+S3(CC,OCR合并)已 push;S4(CC,output_contracts 930→474 抽 tender_output)+S5(Codex,专家侧风险提示/问题清单七类)本轮 push。两轮交叉 review 各抓到 1 个 CC 侧潜伏 bug(S3:is_ocr_text_valid 漏判全失败底稿;S4:tender_output 循环 import)均已修+回归。749 pytest 绿+前端 14+build。**S6 待起**(scenario 三场景拆分,Codex,前端+后端 scenario 列,建 S5 之上)——含开放决策'场景隔离强度'(阶段一 UI 过滤,硬隔离 RBAC 随 S8 推迟)。剩余:S6/S7(缺Flash ID)/S8(用户推迟)/S9/S10。"
 last_subagent: "codex-exec" # tender-report-dimensions D0-D5 headless (codex 0.142.1, gpt-5.5)；必须 env -u HTTP_PROXY -u HTTPS_PROXY 否则 streaming API 挂起，见 compound/2026-06-25-trick-codex-proxy-hangs-streaming.md
 last_subagent_at: "2026-06-25T00:00:00.000Z"
 active_worktrees: [] # git worktree list 仅 main；无其他分支/worktree(2026-06-23 复核确认)
