@@ -15,7 +15,10 @@ from typing import Any
 
 import jsonschema
 
-from server.common.contract import JSONContractError, load_output_schema
+# 不在模块顶层 import server.common.contract：会形成
+# contract → output_contracts → tender_output → contract 的**加载期**环——当 tender_output 被最先
+# import 时，contract 末尾回头 import output_contracts，而 output_contracts 又来 import 本模块尚未
+# 定义的函数 → ImportError（S4 交叉 review P1）。改在用到的函数内惰性 import，彻底断开模块加载期的环。
 
 PLAN_SCHEMA_NAME = "common/plan.schema.json"
 
@@ -219,6 +222,8 @@ def _normalize_optional_plan(output: dict[str, Any]) -> None:
     实测 glm 全量评标因 plan 节点不符 plan 契约 → 整单拒重跑 ~290s。plan 仅审计/未来并行用，丢之
     无损结论（散文计划/内联流本就不产 plan）。
     """
+    from server.common.contract import load_output_schema  # 惰性 import，断模块加载期环
+
     extracted = output.get("extracted_data")
     if not isinstance(extracted, dict):
         return
@@ -236,6 +241,8 @@ def _verify_plan_shape(structured_output: dict[str, Any]) -> None:
     可选——未产出 plan（散文计划/内联单 agent 流）则跳过；产出了就必须类型正确
     （每节点 step/intent + 可选 reads/tools/produces/tag）。
     """
+    from server.common.contract import JSONContractError, load_output_schema  # 惰性，断加载环
+
     extracted = structured_output.get("extracted_data")
     if not isinstance(extracted, dict):
         return
@@ -278,6 +285,8 @@ def _verify_scoring_consistency(structured_output: dict[str, Any]) -> None:
     不替模型判分，只拒"给了超出量纲的分"这类自相矛盾输出（如 max=10 却给 15）。
     仅在 ``extracted_data.scoring`` 存在时触发；``score=null``（不可判定/manual_review 项）跳过。
     """
+    from server.common.contract import JSONContractError  # 惰性 import，断模块加载期环
+
     extracted = structured_output.get("extracted_data")
     if not isinstance(extracted, dict):
         return
