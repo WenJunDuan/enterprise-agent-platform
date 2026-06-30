@@ -294,16 +294,33 @@ def _page_anchor(page_no: int) -> str:
     return f"【第 {page_no} 页】\n"
 
 
-# 识别失败标记前缀：extract_one/prewarm_and_text 失败时 _render_body 在文本开头打此前缀。
+# 识别失败标记前缀：识别失败时 _render_body 以此前缀打头该文件正文。
 # 公开常量 + is_ocr_text_valid 是 OCR 域唯一权威，消费方（评标上传 OCR 编排）据此判文本有效性，
 # 不要在调用层各自硬编码该字符串（S3 消重：原 routes/tender.py 重复定义了一份）。
 OCR_ERROR_PREFIX = "[识别失败]"
+# build_extraction_block 每个文件以此为头、空目录回退此占位（is_ocr_text_valid 据此剔除非内容行）。
+_FILE_HEADER_PREFIX = "### 文件:"
+_EMPTY_BLOCK_MARKER = "（无识别内容）"
 
 
 def is_ocr_text_valid(text: str) -> bool:
-    """Return False if text is empty or is an error marker from the OCR pipeline."""
+    """True iff the rendered OCR block contains at least one line of real recognized content.
+
+    ``prewarm_and_text``→``build_extraction_block`` 把每个文件渲染成 ``### 文件: …`` 头 + 正文；
+    识别失败的文件正文以 ``OCR_ERROR_PREFIX`` 打头，空目录回退 ``_EMPTY_BLOCK_MARKER``。
+    **不能只看整体 startswith(prefix)**——文件头在最前，全失败时整体不以 prefix 开头会被误判有效
+    （后台 OCR 会把失败件写成 ocr_status=ready）。逐行剔除文件头/失败行/空行/空占位后，只要还剩
+    任一真实内容行即有效（多文件部分成功也算有效）。
+    """
     stripped = text.strip()
-    return bool(stripped) and not stripped.startswith(OCR_ERROR_PREFIX)
+    if not stripped or stripped == _EMPTY_BLOCK_MARKER:
+        return False
+    for line in stripped.splitlines():
+        s = line.strip()
+        if not s or s.startswith(_FILE_HEADER_PREFIX) or s.startswith(OCR_ERROR_PREFIX):
+            continue
+        return True
+    return False
 
 
 def _render_body(result: dict) -> str:
@@ -404,7 +421,7 @@ def build_extraction_block(results: list[dict]) -> str:
     parts: list[str] = []
     for result in results:
         name = Path(result.get("path", "?")).name
-        head = f"### 文件: {name} (kind={result.get('kind')}, route={result.get('route')})"
+        head = f"{_FILE_HEADER_PREFIX} {name} (kind={result.get('kind')}, route={result.get('route')})"
         full_body = _render_body(result)
         if len(full_body) > MAX_FILE_BLOCK_CHARS:
             summary = (
@@ -422,7 +439,7 @@ def build_extraction_block(results: list[dict]) -> str:
             head += f" [检出印章 {len(seals)} 枚]"
         head += _CLARITY_NOTE.get(file_clarity(result), "")
         parts.append(f"{head}\n{body}".rstrip())
-    return "\n\n".join(parts) or "（无识别内容）"
+    return "\n\n".join(parts) or _EMPTY_BLOCK_MARKER
 
 
 def prewarm_and_text(case_dir: str, *, purpose: str | None = None) -> str:
