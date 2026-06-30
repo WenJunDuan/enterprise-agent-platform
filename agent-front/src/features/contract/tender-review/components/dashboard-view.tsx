@@ -277,12 +277,12 @@ function ProjectTable({
         meta: { label: '进度' },
       },
       {
-        accessorKey: 'score',
-        header: '得分',
+        accessorKey: 'riskCount',
+        header: '待复核',
         cell: ({ row }) => (
-          <span className='font-semibold'>{row.original.score}</span>
+          <span className='font-semibold'>{row.original.riskCount} 项</span>
         ),
-        meta: { label: '得分' },
+        meta: { label: '待复核' },
       },
       {
         accessorKey: 'date',

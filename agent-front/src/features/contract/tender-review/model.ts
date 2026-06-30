@@ -10,6 +10,8 @@ import type {
   DashboardSummary,
   DocumentParagraph,
   HistoryFilters,
+  IssueCategory,
+  IssueItem,
   ProjectInfo,
   ReviewBidder,
   ReviewCategory,
@@ -204,6 +206,7 @@ export function buildTenderReviewData({
     scoringResults
   )
   const scoringItems = buildScoringItems(selectedResult)
+  const issueList = buildIssueList(selectedResult)
 
   return {
     projects: projectData
@@ -227,6 +230,7 @@ export function buildTenderReviewData({
     resultEligibilityChecks: buildEligibilityChecks(selectedResult),
     scoringItems,
     scoreSummary: buildScoreSummary(scoringItems),
+    issueList,
     compareScoreRows: buildCompareScoreRows(scoringResults, reviewBidders),
     comparePriceDetail: buildComparePriceDetail(compare, reviewBidders),
     compareNotice: buildCompareNotice(activeProject, compare),
@@ -701,7 +705,7 @@ function buildCompareNotice(
     warnings: result?.warnings ?? [],
     explanation:
       result?.explanation ||
-      (stale ? '投标人有变化，请重新横比后再展示推荐结论。' : ''),
+      (stale ? '投标人有变化，请重新横比后再展示横比结果。' : ''),
   }
 }
 
@@ -809,6 +813,247 @@ function buildEligibilityReviewItems(
     aiNote: item.basis,
     status: getEligibilityStatus(item.status),
   }))
+}
+
+export function buildIssueList(result?: AuditResult | null): IssueItem[] {
+  const issues: IssueItem[] = []
+  const pushIssue = (issue: Omit<IssueItem, 'id'>) => {
+    issues.push({
+      ...issue,
+      id: `issue-${issues.length}`,
+    })
+  }
+
+  getDisqualificationHitRecords(result).forEach((hit, index) => {
+    const evidence = getIssueEvidence(hit)
+    const text = collectIssueText(hit)
+    const pending = isUnconfirmedDisqualification(hit) || isPendingSignal(text)
+    pushIssue({
+      category: pending ? 'pending_verification' : 'disqualification_risk',
+      status: pending ? 'pending' : 'risk',
+      title: pending ? '否决风险待核验' : '废标风险',
+      itemName:
+        toText(hit.item) ||
+        toText(hit.condition) ||
+        toText(hit.check) ||
+        toText(hit.finding) ||
+        toText(hit.rule_id) ||
+        `否决条款 ${index + 1}`,
+      basis:
+        toText(hit.finding) ||
+        toText(hit.basis) ||
+        toText(hit.reason) ||
+        '命中招标文件否决性条款。',
+      quote: evidence.quote,
+      source: evidence.source,
+    })
+  })
+
+  getEligibilityCheckRecords(result).forEach((item, index) => {
+    const status = toText(item.status)
+    const text = collectIssueText(item)
+    const pending =
+      status === 'manual' ||
+      status === 'manual_review' ||
+      status === 'pending' ||
+      isPendingSignal(text)
+    const failed =
+      status === 'fail' || status === 'failed' || status === 'rejected'
+    if (!pending && !failed) return
+
+    const evidence = getIssueEvidence(item)
+    pushIssue({
+      category: pending ? 'pending_verification' : 'eligibility_mismatch',
+      status: pending ? 'pending' : 'risk',
+      title: pending ? '资格项待核验' : '资格不符',
+      itemName: toText(item.check) || `资格审查 ${index + 1}`,
+      basis:
+        toText(item.basis) ||
+        toText(item.finding) ||
+        (pending
+          ? '该资格项需要人工核验。'
+          : '该资格项未满足招标文件要求。'),
+      quote: evidence.quote,
+      source: evidence.source,
+    })
+  })
+
+  getScoringItems(result).forEach((item, index) => {
+    const title = toText(item.item) || `评分项 ${index + 1}`
+    const max = toNumber(item.max) ?? 0
+    const score = toNumber(item.score)
+    const status = toText(item.status)
+    const basis =
+      toText(item.basis) ||
+      toText(item.manual_review_reason) ||
+      '按招标文件评分标准判定。'
+    const text = collectIssueText(item, [title, basis])
+    const pending =
+      status === 'manual_review' ||
+      score == null ||
+      isPendingSignal(text)
+    const rejected = status === 'rejected' || status === 'failed'
+    const deductionHits = parseScoreHits(item.deduction_hits) ?? []
+
+    if (pending) {
+      const evidence = getIssueEvidence(item)
+      pushIssue({
+        category: 'pending_verification',
+        status: 'pending',
+        title: '待核验清单',
+        itemName: title,
+        basis,
+        quote: evidence.quote,
+        source: evidence.source,
+      })
+      return
+    }
+
+    if (deductionHits.length > 0) {
+      deductionHits.forEach((hit) => {
+        const hitText = [title, basis, hit.condition, hit.quote, hit.source]
+          .filter(Boolean)
+          .join(' ')
+        const category = classifyIssueCategory(hitText)
+        pushIssue({
+          category,
+          status: category === 'score_deduction' ? 'warning' : 'risk',
+          title: getIssueTitle(category),
+          itemName: title,
+          basis: hit.condition || basis,
+          quote: hit.quote,
+          source: hit.source,
+          points: hit.points,
+        })
+      })
+      return
+    }
+
+    if (rejected || (score != null && max > 0 && score < max)) {
+      const evidence = getIssueEvidence(item)
+      const category = classifyIssueCategory(text)
+      pushIssue({
+        category,
+        status: category === 'score_deduction' ? 'warning' : 'risk',
+        title: getIssueTitle(category),
+        itemName: title,
+        basis,
+        quote: evidence.quote,
+        source: evidence.source,
+        points: score == null ? null : roundScore(Math.max(0, max - score)),
+      })
+    }
+  })
+
+  return issues
+}
+
+export function getAdvisoryLabel(issueList: IssueItem[]) {
+  if (issueList.some((issue) => issue.category === 'disqualification_risk')) {
+    return '存在废标风险'
+  }
+  if (issueList.length > 0) return '较多待确认项'
+  return '暂未发现明显问题'
+}
+
+function getDisqualificationHitRecords(
+  result?: AuditResult | null
+): UnknownRecord[] {
+  const hits = result?.extracted_data?.disqualification_hits
+  if (!Array.isArray(hits)) return []
+  return hits.filter(isRecord).filter(hasMeaningfulIssueRecord)
+}
+
+function hasMeaningfulIssueRecord(record: UnknownRecord) {
+  const text = collectIssueText(record)
+  if (!text) return false
+  return !/^(无|暂无|没有|none|n\/a|null)$/iu.test(text)
+}
+
+function isUnconfirmedDisqualification(hit: UnknownRecord) {
+  if (!Object.prototype.hasOwnProperty.call(hit, 'confirmed')) return false
+  return hit.confirmed !== true
+}
+
+function classifyIssueCategory(text: string): IssueCategory {
+  if (isPendingSignal(text)) return 'pending_verification'
+  if (/投标函|签字|盖章|签章|印章|密封|装订|格式|骑缝章/u.test(text)) {
+    return 'formality_issue'
+  }
+  if (/未提供|未提交|未附|缺失|遗漏|材料不全|证明材料不全/u.test(text)) {
+    return 'missing_material'
+  }
+  if (/偏离|正偏离|负偏离|参数|技术响应|响应偏差/u.test(text)) {
+    return 'parameter_deviation'
+  }
+  return 'score_deduction'
+}
+
+function getIssueTitle(category: IssueCategory) {
+  const titles: Record<IssueCategory, string> = {
+    disqualification_risk: '废标风险',
+    eligibility_mismatch: '资格不符',
+    score_deduction: '扣分点',
+    formality_issue: '形式问题',
+    missing_material: '材料缺失',
+    parameter_deviation: '参数正负偏离',
+    pending_verification: '待核验清单',
+  }
+  return titles[category]
+}
+
+function isPendingSignal(text: string) {
+  return /疑似|待核验|需核验|待人工|人工核验|需复核|未核实|无法确认|不能确认|证据不足|读不清|看不清|不清晰|模糊|低置信|出处未核实|insufficient_evidence|data_conflict|unclear|unreadable|unresolved|manual_review|low_clarity/iu.test(
+    text
+  )
+}
+
+function getIssueEvidence(record: UnknownRecord) {
+  const evidence = isRecord(record.evidence) ? record.evidence : null
+  return {
+    quote:
+      toText(evidence?.quote) ||
+      toText(record.quote) ||
+      toText(record.source_text) ||
+      undefined,
+    source:
+      toText(evidence?.source) ||
+      toText(record.source) ||
+      toText(record.source_ref) ||
+      undefined,
+  }
+}
+
+function collectIssueText(record: UnknownRecord, extra: string[] = []) {
+  const parts = [
+    ...extra,
+    toText(record.rule_id),
+    toText(record.id),
+    toText(record.item),
+    toText(record.check),
+    toText(record.title),
+    toText(record.condition),
+    toText(record.finding),
+    toText(record.basis),
+    toText(record.reason),
+    toText(record.message),
+    toText(record.manual_review_reason),
+    toText(record.status),
+  ]
+  const evidence = isRecord(record.evidence) ? record.evidence : null
+  if (evidence) {
+    parts.push(
+      toText(evidence.quote),
+      toText(evidence.source),
+      toText(evidence.finding),
+      toText(evidence.conclusion)
+    )
+  }
+  const selectedBand = isRecord(record.selected_band) ? record.selected_band : null
+  if (selectedBand) {
+    parts.push(toText(selectedBand.level), toText(selectedBand.reason))
+  }
+  return parts.filter(Boolean).join(' ')
 }
 
 function buildEligibilityEvidence(raw: UnknownRecord): TenderScoreEvidence[] {
