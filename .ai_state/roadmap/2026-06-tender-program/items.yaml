@@ -47,7 +47,7 @@ items:
     depends_on: [S3]
     status: done
     refs: ["audit F2"]
-    done_note: "CC 实施(refactor/s4-output-split)：output_contracts 930→474，tender 专属(废标/资格gate+评分一致性+解释规范化)抽到 server/common/tender_output.py，单向 import 无环，expense 零变更。748 pytest 绿。Codex 交叉 review 中。已合 main(未push)。"
+    done_note: "CC 实施(refactor/s4-output-split)：output_contracts 930→474，tender 专属(废标/资格gate+评分一致性+解释规范化)抽到 server/common/tender_output.py，expense 零变更。Codex 交叉 review=REWORK(P1 tender_output 顶层 import contract 致模块加载期环、非独立可导入,潜伏bug)→已修(惰性 import+子进程回归 commit)；P2 测试硬化。749 绿,已 push main(38efb67)。"
   - id: S5
     slug: expert-advisory-repositioning
     stream: product
