@@ -67,7 +67,7 @@ pointers:
   latest_architecture_update: "2026-06-23T06:38:15.291Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "S1/S2/S3 已完成并合入 main(本地,未push)：CC×Codex 并行(Codex refactor/s1-s2-cleanup=S1 store _utc_now归一+S2' .claude S1去重+注释triage；CC refactor/s3-ocr-split=OCR合并进server/ocr/+tender.py 1370→899分层)，两 worktree 文件不重叠、无冲突，整合 733 pytest 绿+ruff clean。交叉 review：CC 已复核 Codex(注释纯改动/护栏保留=PASS)；Codex 复核 CC 的 S3 进行中(待 VERDICT)。**新增 S10**(用户2026-06-26需求)=详情页「概要分析」符合性 checklist(✓/✗/⏳+理由,无评分)排详细分析前,与S5同源、建议先于S5(见 sprints/2026-06-26-tender-overview-checklist/design.md)。下一步：① Codex S3 review 回 PASS 后 push S1-3；② 用户选下一 sprint(S10 或 S4/S5...)+拍板6决策。"
+next_action: "S1/S2/S3 已完成并合入 main(本地,未push)：CC×Codex 并行(Codex refactor/s1-s2-cleanup=S1 store _utc_now归一+S2' .claude S1去重+注释triage；CC refactor/s3-ocr-split=OCR合并进server/ocr/+tender.py 1370→899分层)，两 worktree 文件不重叠、无冲突，整合 733 pytest 绿+ruff clean。交叉 review 完成：CC 复核 Codex=PASS(注释纯改动/护栏保留)；Codex 复核 S3=REWORK→已修(P1 is_ocr_text_valid 漏判全失败底稿=先于S3的潜伏bug,已在 pipeline 修复+回归 commit 11c3426；P2 测试硬化)，739 pytest 绿。**新增 S10**(用户2026-06-26需求)=详情页「概要分析」符合性 checklist(✓/✗/⏳+理由,无评分)排详细分析前,与S5同源、建议先于S5(见 sprints/2026-06-26-tender-overview-checklist/design.md)。下一步：① Codex S3 review 回 PASS 后 push S1-3；② 用户选下一 sprint(S10 或 S4/S5...)+拍板6决策。"
 last_subagent: "codex-exec" # tender-report-dimensions D0-D5 headless (codex 0.142.1, gpt-5.5)；必须 env -u HTTP_PROXY -u HTTPS_PROXY 否则 streaming API 挂起，见 compound/2026-06-25-trick-codex-proxy-hangs-streaming.md
 last_subagent_at: "2026-06-25T00:00:00.000Z"
 active_worktrees: [] # git worktree list 仅 main；无其他分支/worktree(2026-06-23 复核确认)
