@@ -32,6 +32,8 @@ import { Route as AuthenticatedErrorsErrorRouteImport } from './routes/_authenti
 import { Route as AuthenticatedContractsTenderRouteImport } from './routes/_authenticated/contracts/tender'
 import { Route as AuthenticatedAuditSubmitRouteImport } from './routes/_authenticated/audit/submit'
 import { Route as AuthenticatedSectionPageRouteImport } from './routes/_authenticated/$section/$page'
+import { Route as AuthenticatedContractsTenderSelfCheckRouteImport } from './routes/_authenticated/contracts/tender/self-check'
+import { Route as AuthenticatedContractsTenderPostEvalRouteImport } from './routes/_authenticated/contracts/tender/post-eval'
 import { Route as AuthenticatedContractsTenderListRouteImport } from './routes/_authenticated/contracts/tender/list'
 import { Route as AuthenticatedContractsTenderHistoryRouteImport } from './routes/_authenticated/contracts/tender/history'
 import { Route as AuthenticatedContractsTenderDetailRouteImport } from './routes/_authenticated/contracts/tender/detail'
@@ -162,6 +164,18 @@ const AuthenticatedSectionPageRoute =
     path: '/$section/$page',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedContractsTenderSelfCheckRoute =
+  AuthenticatedContractsTenderSelfCheckRouteImport.update({
+    id: '/self-check',
+    path: '/self-check',
+    getParentRoute: () => AuthenticatedContractsTenderRoute,
+  } as any)
+const AuthenticatedContractsTenderPostEvalRoute =
+  AuthenticatedContractsTenderPostEvalRouteImport.update({
+    id: '/post-eval',
+    path: '/post-eval',
+    getParentRoute: () => AuthenticatedContractsTenderRoute,
+  } as any)
 const AuthenticatedContractsTenderListRoute =
   AuthenticatedContractsTenderListRouteImport.update({
     id: '/list',
@@ -214,6 +228,8 @@ export interface FileRoutesByFullPath {
   '/contracts/tender/detail': typeof AuthenticatedContractsTenderDetailRoute
   '/contracts/tender/history': typeof AuthenticatedContractsTenderHistoryRoute
   '/contracts/tender/list': typeof AuthenticatedContractsTenderListRoute
+  '/contracts/tender/post-eval': typeof AuthenticatedContractsTenderPostEvalRoute
+  '/contracts/tender/self-check': typeof AuthenticatedContractsTenderSelfCheckRoute
 }
 export interface FileRoutesByTo {
   '/otp': typeof authOtpRoute
@@ -239,6 +255,8 @@ export interface FileRoutesByTo {
   '/contracts/tender/detail': typeof AuthenticatedContractsTenderDetailRoute
   '/contracts/tender/history': typeof AuthenticatedContractsTenderHistoryRoute
   '/contracts/tender/list': typeof AuthenticatedContractsTenderListRoute
+  '/contracts/tender/post-eval': typeof AuthenticatedContractsTenderPostEvalRoute
+  '/contracts/tender/self-check': typeof AuthenticatedContractsTenderSelfCheckRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -269,6 +287,8 @@ export interface FileRoutesById {
   '/_authenticated/contracts/tender/detail': typeof AuthenticatedContractsTenderDetailRoute
   '/_authenticated/contracts/tender/history': typeof AuthenticatedContractsTenderHistoryRoute
   '/_authenticated/contracts/tender/list': typeof AuthenticatedContractsTenderListRoute
+  '/_authenticated/contracts/tender/post-eval': typeof AuthenticatedContractsTenderPostEvalRoute
+  '/_authenticated/contracts/tender/self-check': typeof AuthenticatedContractsTenderSelfCheckRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -299,6 +319,8 @@ export interface FileRouteTypes {
     | '/contracts/tender/detail'
     | '/contracts/tender/history'
     | '/contracts/tender/list'
+    | '/contracts/tender/post-eval'
+    | '/contracts/tender/self-check'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/otp'
@@ -324,6 +346,8 @@ export interface FileRouteTypes {
     | '/contracts/tender/detail'
     | '/contracts/tender/history'
     | '/contracts/tender/list'
+    | '/contracts/tender/post-eval'
+    | '/contracts/tender/self-check'
   id:
     | '__root__'
     | '/_authenticated'
@@ -353,6 +377,8 @@ export interface FileRouteTypes {
     | '/_authenticated/contracts/tender/detail'
     | '/_authenticated/contracts/tender/history'
     | '/_authenticated/contracts/tender/list'
+    | '/_authenticated/contracts/tender/post-eval'
+    | '/_authenticated/contracts/tender/self-check'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -528,6 +554,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSectionPageRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/contracts/tender/self-check': {
+      id: '/_authenticated/contracts/tender/self-check'
+      path: '/self-check'
+      fullPath: '/contracts/tender/self-check'
+      preLoaderRoute: typeof AuthenticatedContractsTenderSelfCheckRouteImport
+      parentRoute: typeof AuthenticatedContractsTenderRoute
+    }
+    '/_authenticated/contracts/tender/post-eval': {
+      id: '/_authenticated/contracts/tender/post-eval'
+      path: '/post-eval'
+      fullPath: '/contracts/tender/post-eval'
+      preLoaderRoute: typeof AuthenticatedContractsTenderPostEvalRouteImport
+      parentRoute: typeof AuthenticatedContractsTenderRoute
+    }
     '/_authenticated/contracts/tender/list': {
       id: '/_authenticated/contracts/tender/list'
       path: '/list'
@@ -601,6 +641,8 @@ interface AuthenticatedContractsTenderRouteChildren {
   AuthenticatedContractsTenderDetailRoute: typeof AuthenticatedContractsTenderDetailRoute
   AuthenticatedContractsTenderHistoryRoute: typeof AuthenticatedContractsTenderHistoryRoute
   AuthenticatedContractsTenderListRoute: typeof AuthenticatedContractsTenderListRoute
+  AuthenticatedContractsTenderPostEvalRoute: typeof AuthenticatedContractsTenderPostEvalRoute
+  AuthenticatedContractsTenderSelfCheckRoute: typeof AuthenticatedContractsTenderSelfCheckRoute
 }
 
 const AuthenticatedContractsTenderRouteChildren: AuthenticatedContractsTenderRouteChildren =
@@ -611,6 +653,10 @@ const AuthenticatedContractsTenderRouteChildren: AuthenticatedContractsTenderRou
       AuthenticatedContractsTenderHistoryRoute,
     AuthenticatedContractsTenderListRoute:
       AuthenticatedContractsTenderListRoute,
+    AuthenticatedContractsTenderPostEvalRoute:
+      AuthenticatedContractsTenderPostEvalRoute,
+    AuthenticatedContractsTenderSelfCheckRoute:
+      AuthenticatedContractsTenderSelfCheckRoute,
   }
 
 const AuthenticatedContractsTenderRouteWithChildren =

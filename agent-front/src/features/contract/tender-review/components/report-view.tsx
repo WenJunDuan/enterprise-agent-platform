@@ -11,14 +11,23 @@ import type {
   TenderScoreEvidence,
   TenderScoreIssue,
   TenderScoringItem,
+  TenderScenario,
 } from '../types'
 
 type ReportViewProps = {
   data: TenderReviewMockData
+  scenario?: TenderScenario
   onBack: () => void
+  onConfirmDownloaded?: () => Promise<void> | void
 }
 
-export function ReportView({ data, onBack }: ReportViewProps) {
+export function ReportView({
+  data,
+  scenario = 'expert_assist',
+  onBack,
+  onConfirmDownloaded,
+}: ReportViewProps) {
+  const isSelfCheck = scenario === 'bidder_self_check'
   return (
     <div className='tender-report-shell rounded-xl bg-muted/60 p-4 md:p-8'>
       <div className='tender-report-actions mb-4 flex items-center justify-between gap-3'>
@@ -30,9 +39,16 @@ export function ReportView({ data, onBack }: ReportViewProps) {
             <ArrowLeft className='size-4' />
             返回详情
           </Button>
-          <Button type='button' size='sm' onClick={() => window.print()}>
+          <Button
+            type='button'
+            size='sm'
+            onClick={() => {
+              if (isSelfCheck) void onConfirmDownloaded?.()
+              else window.print()
+            }}
+          >
             <Printer className='size-4' />
-            导出 PDF
+            {isSelfCheck ? '下载并销毁' : '导出 PDF'}
           </Button>
         </div>
       </div>
@@ -54,7 +70,7 @@ export function ReportView({ data, onBack }: ReportViewProps) {
         <PriceScoreSection data={data} />
         <BusinessObjectiveSection data={data} />
         <TechnicalSubjectiveSection data={data} />
-        <ResultSection data={data} />
+        <ResultSection data={data} scenario={scenario} />
 
         <footer className='mt-10 flex items-end justify-between border-t pt-6'>
           <div className='text-xs leading-6 text-muted-foreground'>
@@ -77,16 +93,25 @@ export function ReportView({ data, onBack }: ReportViewProps) {
   )
 }
 
-function ResultSection({ data }: { data: TenderReviewMockData }) {
+function ResultSection({
+  data,
+  scenario,
+}: {
+  data: TenderReviewMockData
+  scenario: TenderScenario
+}) {
   const policyRefs = data.resultPolicyRefs ?? []
   const issues = data.issueList ?? []
+  const isSelfCheck = scenario === 'bidder_self_check'
 
   return (
     <section className='mt-8'>
-      <ReportTitle>辅助评审与风险提示</ReportTitle>
+      <ReportTitle>
+        {isSelfCheck ? '自查风险、扣分点与修改建议' : '辅助评审与风险提示'}
+      </ReportTitle>
       <div className='mt-4 space-y-4'>
         <ScoreSummaryCard data={data} />
-        <IssueSummaryCard issues={issues} />
+        <IssueSummaryCard issues={issues} scenario={scenario} />
         <div className='rounded-lg border p-4'>
           {policyRefs.length > 0 ? (
             <div>
@@ -122,7 +147,14 @@ function ResultSection({ data }: { data: TenderReviewMockData }) {
   )
 }
 
-function IssueSummaryCard({ issues }: { issues: IssueItem[] }) {
+function IssueSummaryCard({
+  issues,
+  scenario,
+}: {
+  issues: IssueItem[]
+  scenario: TenderScenario
+}) {
+  const isSelfCheck = scenario === 'bidder_self_check'
   const grouped = issueCategoryOrder
     .map((category) => ({
       category,
@@ -135,7 +167,9 @@ function IssueSummaryCard({ issues }: { issues: IssueItem[] }) {
     <div className='rounded-lg border bg-muted/30 p-4'>
       <div className='flex flex-wrap items-center justify-between gap-3'>
         <div>
-          <div className='text-sm font-semibold'>问题清单摘要</div>
+          <div className='text-sm font-semibold'>
+            {isSelfCheck ? '自查问题与修改建议' : '问题清单摘要'}
+          </div>
           <div className='mt-1 text-xs text-muted-foreground'>
             {getAdvisoryLabel(issues)}
           </div>

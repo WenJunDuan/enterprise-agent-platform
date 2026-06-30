@@ -6,6 +6,7 @@ import {
   useQueryClient,
 } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
+import { toast } from 'sonner'
 import type { AuditResult } from '@/features/audit/types'
 import {
   createTenderProject,
@@ -39,6 +40,7 @@ import type {
   TenderFile,
   TenderReviewScreen,
   TenderReviewMode,
+  TenderScenario,
   UploadBidder,
 } from './types'
 
@@ -132,7 +134,8 @@ function hasNativeFile(file: TenderFile): file is TenderFile & { file: File } {
 }
 
 export function useTenderReviewPage(
-  initialScreen: TenderReviewScreen = 'dashboard'
+  initialScreen: TenderReviewScreen = 'dashboard',
+  scenario: TenderScenario = 'expert_assist'
 ) {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
@@ -166,6 +169,7 @@ export function useTenderReviewPage(
   }
   const [uploadError, setUploadError] = useState(false)
   const [submitError, setSubmitError] = useState('')
+  const [destroyNotice, setDestroyNotice] = useState('')
   const [tenderFiles, setTenderFiles] = useState<TenderFile[]>([])
   const [uploadBidders, setUploadBidders] = useState<UploadBidder[]>([
     DEFAULT_UPLOAD_BIDDER,
@@ -195,6 +199,10 @@ export function useTenderReviewPage(
   const [projectForm, setProjectForm] = useState<ProjectFormData>(
     createDefaultProjectForm
   )
+  const isSelfCheck = scenario === 'bidder_self_check'
+  const isPostEvalMonitor = scenario === 'post_eval_monitor'
+  const projectListScenario = isPostEvalMonitor ? 'expert_assist' : scenario
+  const projectListStatus = isPostEvalMonitor ? 'done' : undefined
 
   function selectProject(projectId: string | null) {
     setSelectedProjectId(projectId)
@@ -202,8 +210,18 @@ export function useTenderReviewPage(
   }
 
   const projectsQuery = useQuery({
-    queryKey: TENDER_PROJECTS_QUERY_KEY,
-    queryFn: () => listTenderProjects({ limit: 100 }),
+    queryKey: [
+      ...TENDER_PROJECTS_QUERY_KEY,
+      scenario,
+      projectListScenario,
+      projectListStatus,
+    ],
+    queryFn: () =>
+      listTenderProjects({
+        scenario: projectListScenario,
+        status: projectListStatus,
+        limit: 100,
+      }),
   })
 
   const selectedProjectIdForQuery =
@@ -522,7 +540,7 @@ export function useTenderReviewPage(
         setScreen('analysis')
         void navigate({
           to: '/contracts/tender/detail',
-          search: { view: 'analysis' },
+          search: { view: 'analysis', scenario },
         })
       }
     }
@@ -548,7 +566,7 @@ export function useTenderReviewPage(
     setScreen('analysis')
     void navigate({
       to: '/contracts/tender/detail',
-      search: { view: 'analysis' },
+      search: { view: 'analysis', scenario },
     })
   }
 
@@ -591,7 +609,7 @@ export function useTenderReviewPage(
         setScreen('analyzing')
         void navigate({
           to: '/contracts/tender/detail',
-          search: { view: 'analysis' },
+          search: { view: 'analysis', scenario },
         })
         return
       }
@@ -611,7 +629,7 @@ export function useTenderReviewPage(
     setScreen('report')
     void navigate({
       to: '/contracts/tender/detail',
-      search: { view: 'report' },
+      search: { view: 'report', scenario },
     })
   }
 
@@ -641,6 +659,7 @@ export function useTenderReviewPage(
    * 招标层一份：已上传(uploadProjectId 非空)或上传中则忽略后续添加（该区锁定，要改→取消重来）。
    */
   async function addTenderFile(files: FileList | null) {
+    if (isPostEvalMonitor) return
     const nextFiles = toTenderFiles(files)
     if (nextFiles.length === 0) return
     if (uploadProjectId || uploadingTender || creatingProjectRef.current) return
@@ -656,7 +675,7 @@ export function useTenderReviewPage(
     const promise = (async (): Promise<string | null> => {
       try {
         const project = await createTenderProject(
-          buildCreateProjectBody(projectForm, natives[0])
+          buildCreateProjectBody(projectForm, natives[0], scenario)
         )
         await uploadTenderDoc(project.project_id, natives) // 触发后台 OCR
         setUploadProjectId(project.project_id)
@@ -712,6 +731,7 @@ export function useTenderReviewPage(
   }
 
   function addBidder() {
+    if (isSelfCheck || isPostEvalMonitor) return
     const id = nextBidderId
     setUploadBidders((current) => [
       ...current,
@@ -725,6 +745,7 @@ export function useTenderReviewPage(
   }
 
   function removeBidder(id: number) {
+    if (isSelfCheck && uploadBidders.length <= 1) return
     setUploadBidders((current) => current.filter((bidder) => bidder.id !== id))
     // A：删除投标单位时解锁（从已上传集移除；其 bid 在后端由删项目级联清，新建流程不影响）
     setUploadedBidderIds((prev) => {
@@ -745,6 +766,7 @@ export function useTenderReviewPage(
    * 招标先传约束：无 uploadProjectId（招标未传）则拒并提示。每家一个 bid：已上传则锁定（要改→删该家重加）。
    */
   async function addBidderFile(id: number, files: FileList | null) {
+    if (isPostEvalMonitor) return
     const nextFiles = toTenderFiles(files)
     if (nextFiles.length === 0) return
     if (!uploadProjectId) {
@@ -813,6 +835,7 @@ export function useTenderReviewPage(
    * 保留 A+B 解耦：submitReview 只做提交（不 await 评标），由 analyzing 独立轮询恢复。
    */
   function startReview() {
+    if (isPostEvalMonitor) return
     if (startReviewMutation.isPending) return
     if (!canStartReview) {
       setUploadError(true)
@@ -855,7 +878,7 @@ export function useTenderReviewPage(
       inflightProjectId ??
       (
         await createTenderProject(
-          buildCreateProjectBody(projectForm, nativeTenderFiles[0])
+          buildCreateProjectBody(projectForm, nativeTenderFiles[0], scenario)
         )
       ).project_id
 
@@ -919,6 +942,7 @@ export function useTenderReviewPage(
 
   /** B⑤: Batch delete — 删整个招标项目（后端级联删投标任务/结论/横比），空项目也能删。 */
   async function batchDeleteProjects(projectIds: string[]) {
+    if (isPostEvalMonitor) return
     if (projectIds.length === 0) return
     const results = await Promise.allSettled(
       projectIds.map((id) => deleteTenderProject(id))
@@ -929,6 +953,7 @@ export function useTenderReviewPage(
 
   /** B⑤: Batch retry — re-run every bid task under each selected project. */
   async function batchRetryProjects(projectIds: string[]) {
+    if (isPostEvalMonitor) return
     const requestIds = await collectBidRequestIds(projectIds)
     if (requestIds.length === 0) return
     const results = await Promise.allSettled(
@@ -948,6 +973,7 @@ export function useTenderReviewPage(
     tenderFiles: File[],
     bidderFiles: File[]
   ) {
+    if (isPostEvalMonitor) return
     await evaluateTenderProjectUpload(projectId, {
       bidderName,
       tenderFiles,
@@ -957,6 +983,23 @@ export function useTenderReviewPage(
     await queryClient.invalidateQueries({
       queryKey: ['tender-project', projectId],
     })
+  }
+
+  async function confirmSelfCheckReportDownloaded() {
+    if (!isSelfCheck || !selectedProjectIdForQuery) return
+    window.print()
+    const confirmed = window.confirm('报告已下载后，将销毁服务器上的项目文件。确认继续？')
+    if (!confirmed) return
+    try {
+      await deleteTenderProject(selectedProjectIdForQuery)
+      setDestroyNotice('文件已从服务器销毁')
+      setActiveEval(null)
+      selectProject(null)
+      await queryClient.invalidateQueries({ queryKey: TENDER_PROJECTS_QUERY_KEY })
+      setScreen('dashboard')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '文件销毁失败，请稍后重试。')
+    }
   }
 
   // 思考流式：多投标人并行时按序号分段拼接各家进度，单家直接显示（codex r4 P1：防并发覆盖）。
@@ -1024,6 +1067,11 @@ export function useTenderReviewPage(
     batchDeleteProjects,
     batchRetryProjects,
     appendBidder,
+    confirmSelfCheckReportDownloaded,
+    destroyNotice,
+    scenario,
+    isSelfCheck,
+    isPostEvalMonitor,
     viewModel: {
       summary,
       history,
@@ -1046,7 +1094,8 @@ export function useTenderReviewPage(
  */
 function buildCreateProjectBody(
   form: ProjectFormData,
-  firstTenderFile: File
+  firstTenderFile: File,
+  scenario: TenderScenario = 'expert_assist'
 ): TenderProjectCreateRequest {
   const title =
     form.title?.trim() ||
@@ -1055,6 +1104,7 @@ function buildCreateProjectBody(
   const tender_no =
     form.tender_no?.trim() || deriveTenderNo(firstTenderFile.name)
   return {
+    scenario,
     tender_no,
     title,
     tenderee: form.tenderee?.trim() || undefined,

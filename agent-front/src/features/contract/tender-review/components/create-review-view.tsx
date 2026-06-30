@@ -25,7 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import type { TenderFile, UploadBidder } from '../types'
+import type { TenderFile, TenderScenario, UploadBidder } from '../types'
 import type { DocsStatusResponse, TenderProjectCreateRequest } from '../api'
 
 const ACCEPTED_REVIEW_FILE_TYPES = [
@@ -63,6 +63,7 @@ export type ProjectFormData = Pick<
 >
 
 type CreateReviewViewProps = {
+  scenario: TenderScenario
   projectForm: ProjectFormData
   tenderFiles: TenderFile[]
   uploadBidders: UploadBidder[]
@@ -141,7 +142,7 @@ export function CreateReviewView(props: CreateReviewViewProps) {
           ) : (
             <>
               <Play className='size-4' />
-              开始分析
+              {props.scenario === 'bidder_self_check' ? '开始自查' : '开始分析'}
             </>
           )}
         </Button>
@@ -332,13 +333,16 @@ function UploadFilesCard(props: CreateReviewViewProps) {
   // A 上传即 OCR：招标区选文件即自动上传，传后锁定（要改→取消重来）。投标区在招标上传前禁用
   // （强制招标先传），招标上传后解锁，每家传后单独锁定。
   const tenderLocked = props.uploadingTender || props.hasUploaded || props.isAnalyzing
+  const isSelfCheck = props.scenario === 'bidder_self_check'
   return (
     <Card>
       <CardHeader className='gap-2 md:flex-row md:items-center md:justify-between'>
         <div>
-          <CardTitle>文件上传</CardTitle>
+          <CardTitle>{isSelfCheck ? '自查文件上传' : '文件上传'}</CardTitle>
           <CardDescription>
-            选择文件即自动上传并识别（OCR），无需手动操作。请先上传招标文件，再上传各投标单位文件。
+            {isSelfCheck
+              ? '上传投标文件和对应招标文件，输出自查风险、扣分点与修改建议。'
+              : '选择文件即自动上传并识别（OCR），无需手动操作。请先上传招标文件，再上传各投标单位文件。'}
           </CardDescription>
         </div>
       </CardHeader>
@@ -427,6 +431,7 @@ function BidderFilesSection(props: CreateReviewViewProps) {
   // A 招标先传约束：招标未上传(hasUploaded=false)→整个投标区禁用 + 提示。
   const tenderReady = props.hasUploaded
   const sectionLocked = props.isAnalyzing
+  const isSelfCheck = props.scenario === 'bidder_self_check'
   return (
     <section className='space-y-3'>
       <div className='flex flex-wrap items-center gap-3'>
@@ -436,7 +441,7 @@ function BidderFilesSection(props: CreateReviewViewProps) {
           desc='每家投标单位单独管理，选择后自动上传识别'
         />
         <div className='flex-1' />
-        {!sectionLocked ? (
+        {!sectionLocked && !isSelfCheck ? (
           <Button
             type='button'
             size='sm'
@@ -446,6 +451,11 @@ function BidderFilesSection(props: CreateReviewViewProps) {
             <Plus className='size-4' />
             添加投标单位
           </Button>
+        ) : null}
+        {isSelfCheck ? (
+          <span className='rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground'>
+            单家自查
+          </span>
         ) : null}
       </div>
 
@@ -475,6 +485,7 @@ function BidderFilesSection(props: CreateReviewViewProps) {
               onUpdateName={(name) => props.onUpdateBidderName(bidder.id, name)}
               onAddFile={(files) => props.onAddBidderFile(bidder.id, files)}
               onRemove={() => props.onRemoveBidder(bidder.id)}
+              removable={!isSelfCheck}
               onRemoveFile={(fileIndex) =>
                 props.onRemoveBidderFile(bidder.id, fileIndex)
               }
@@ -495,6 +506,7 @@ function BidderCard({
   onUpdateName,
   onAddFile,
   onRemove,
+  removable,
   onRemoveFile,
 }: {
   bidder: UploadBidder
@@ -505,6 +517,7 @@ function BidderCard({
   onUpdateName: (name: string) => void
   onAddFile: (files: FileList | null) => void
   onRemove: () => void
+  removable?: boolean
   onRemoveFile: (index: number) => void
 }) {
   const tag = '甲乙丙丁戊己庚辛壬癸'[index] ?? String(index + 1)
@@ -526,7 +539,7 @@ function BidderCard({
           {uploaded ? '已上传 · 识别中' : `${bidder.files.length} 个文件`}
         </span>
         {/* 允许删除（含已上传）→ 删该家重选即可改文件（uploading 中不删，防竞态） */}
-        {!uploading ? (
+        {!uploading && removable !== false ? (
           <Button
             type='button'
             variant='ghost'
