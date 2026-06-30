@@ -67,7 +67,7 @@ export function ScoringDetailTable({
             <span>
               {getScoreCategoryLabel(group.category)}
               <span className='ml-2 text-xs font-normal text-muted-foreground'>
-                {formatNullableScore(group.score)} / {formatScore(group.max)} 分
+                {group.items.length} 项
               </span>
             </span>
             <ChevronDown className='size-4 text-muted-foreground transition-transform group-open:rotate-180' />
@@ -89,9 +89,9 @@ function CompactScoringRows({ items }: { items: TenderScoringItem[] }) {
       <div className='min-w-[620px]'>
         <div className='grid h-10 grid-cols-[minmax(140px,1.2fr)_56px_56px_68px_minmax(220px,1.6fr)] items-center border-b px-3 text-xs font-semibold text-muted-foreground'>
           <div>评标项目</div>
-          <div className='text-center'>得分</div>
+          <div className='text-center'>结果</div>
           <div className='text-center'>满分</div>
-          <div className='text-center'>状态</div>
+          <div className='text-center'>处理</div>
           <div>依据</div>
         </div>
         {items.map((item, index) => (
@@ -106,7 +106,7 @@ function CompactScoringRows({ items }: { items: TenderScoringItem[] }) {
               {item.item}
             </div>
             <div className='text-center font-semibold'>
-              {formatNullableScore(item.score)}
+              {getStatusLabel(item.status)}
             </div>
             <div className='text-center text-muted-foreground'>
               {formatScore(item.max)}
@@ -131,8 +131,8 @@ function FullScoringRows({ items }: { items: TenderScoringItem[] }) {
         <div className='grid grid-cols-[minmax(180px,1.2fr)_80px_90px_100px_minmax(260px,1.5fr)] border-b px-3 py-2 text-xs font-semibold text-muted-foreground'>
           <div>评标项目</div>
           <div className='text-center'>满分</div>
-          <div className='text-center'>实际得分</div>
-          <div className='text-center'>扣减</div>
+          <div className='text-center'>状态</div>
+          <div className='text-center'>关注点</div>
           <div>判定依据</div>
         </div>
         {items.map((item, index) => (
@@ -148,10 +148,12 @@ function FullScoringRows({ items }: { items: TenderScoringItem[] }) {
               {formatScore(item.max)}
             </div>
             <div className='text-center font-semibold'>
-              {formatNullableScore(item.score)}
+              {getStatusLabel(item.status)}
             </div>
             <div className='text-center text-muted-foreground'>
-              {getDeductionLabel(item)}
+              {item.score == null || item.status === 'manual_review'
+                ? '待核验'
+                : '已记录'}
             </div>
             <div className='leading-6 text-muted-foreground'>{item.basis || '—'}</div>
           </div>
@@ -245,10 +247,10 @@ export function CompareScoringDetailTable({
                       className='text-center'
                     >
                       <div className='font-semibold'>
-                        {formatNullableScore(cell.score)}
+                        {getStatusLabel(cell.status)}
                       </div>
                       <div className='text-xs text-muted-foreground'>
-                        扣减 {formatNullableScore(cell.deduction)}
+                        {cell.score == null ? '待核验' : '已记录'}
                       </div>
                     </div>
                   ))}
@@ -281,7 +283,7 @@ export function CompareScoreDetailSheet({
         <div className='space-y-4 px-4 pb-6'>
           {row?.reviewDimension === 'technical_subjective' ? (
             <div className='rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300'>
-              初评建议，最终以评标委员会评分为准。优劣差异仅按分差和各家事实依据对照展示。
+              初评建议，最终以评标委员会评分为准。此处仅按各家事实依据对照展示。
             </div>
           ) : null}
           {row?.cells.map((cell) => (
@@ -290,9 +292,8 @@ export function CompareScoreDetailSheet({
                 <div className='min-w-0'>
                   <div className='font-semibold'>{cell.bidderName}</div>
                   <div className='mt-1 text-xs text-muted-foreground'>
-                    实际得分 {formatNullableScore(cell.score)} / {formatScore(cell.max)}
-                    {' · '}
-                    扣减 {formatNullableScore(cell.deduction)}
+                    {getReviewDimensionLabel(row.reviewDimension)} ·
+                    {getStatusLabel(cell.status)}
                   </div>
                 </div>
                 <span className='rounded-md bg-muted px-2 py-1 text-xs font-semibold text-muted-foreground'>
@@ -307,7 +308,7 @@ export function CompareScoreDetailSheet({
           ))}
           {row?.reviewDimension === 'technical_subjective' ? (
             <div className='rounded-lg border bg-muted/40 p-3 text-sm leading-6 text-muted-foreground'>
-              优劣差异：{buildSubjectiveDifference(row)}
+              事实对照：{buildSubjectiveDifference(row)}
             </div>
           ) : null}
         </div>
@@ -409,37 +410,18 @@ function getReviewDimensionLabel(dimension: TenderReviewDimension) {
 }
 
 function buildSubjectiveDifference(row: TenderCompareScoreRow) {
-  const scored = row.cells.filter((cell) => cell.score != null)
-  if (scored.length < 2) {
-    return '分差暂无法计算，仅列示已返回的主观分与依据。'
-  }
-  const [left, right] = scored
-  const diff = Math.abs((left.score ?? 0) - (right.score ?? 0))
-  const scoreText =
-    diff === 0
-      ? `${left.bidderName}与${right.bidderName}分数相同`
-      : `${left.bidderName}与${right.bidderName}分差 ${formatScore(diff)} 分`
-  return `${scoreText}；依据对照：${left.bidderName}：${left.basis || '—'}；${right.bidderName}：${right.basis || '—'}。`
+  const cells = row.cells.filter((cell) => cell.basis.trim())
+  if (cells.length === 0) return '暂无可展示的事实依据。'
+  return cells
+    .map((cell) => `${cell.bidderName}：${cell.basis || '—'}`)
+    .join('；')
 }
 
 function getStatusLabel(status: string) {
-  if (status === 'scored') return '已评分'
-  if (status === 'rejected' || status === 'failed') return '未得分'
+  if (status === 'scored') return '已记录'
+  if (status === 'rejected' || status === 'failed') return '存在问题'
   if (status === 'manual_review' || status.includes('待')) return '—'
   return status || '—'
-}
-
-function getDeductionLabel(item: TenderScoringItem) {
-  if (item.score == null) return '—'
-  const deduction = formatScore(Math.max(0, item.max - item.score))
-  if (item.scoreMode === 'banded') return `${deduction}（档次）`
-  if (item.scoreMode === 'additive') return `${deduction}（加分）`
-  if (item.scoreMode === 'formula') return `${deduction}（公式）`
-  return deduction
-}
-
-function formatNullableScore(score: number | null | undefined) {
-  return score == null ? '—' : formatScore(score)
 }
 
 function formatScore(score: number) {

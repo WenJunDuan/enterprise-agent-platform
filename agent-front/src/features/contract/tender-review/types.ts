@@ -31,6 +31,15 @@ export type TenderReviewDimension =
   | 'price'
   | 'business_objective'
   | 'technical_subjective'
+export type IssueCategory =
+  | 'disqualification_risk'
+  | 'eligibility_mismatch'
+  | 'score_deduction'
+  | 'formality_issue'
+  | 'missing_material'
+  | 'parameter_deviation'
+  | 'pending_verification'
+export type IssueStatus = 'risk' | 'warning' | 'pending'
 
 export type TenderProject = {
   id: string
@@ -121,6 +130,18 @@ export type TenderScoreEvidence = {
   finding?: string
   conclusion?: string
   condition?: string
+  points?: number | null
+}
+
+export type IssueItem = {
+  id: string
+  category: IssueCategory
+  status: IssueStatus
+  title: string
+  itemName: string
+  basis: string
+  quote?: string
+  source?: string
   points?: number | null
 }
 
@@ -232,6 +253,7 @@ export type TenderReviewMockData = {
   resultReasons?: string[]
   resultPolicyRefs?: TenderPolicyRef[]
   resultEligibilityChecks?: TenderEligibilityCheck[]
+  issueList?: IssueItem[]
   scoringItems?: TenderScoringItem[]
   scoreSummary?: TenderScoreSummary
   compareScoreRows?: TenderCompareScoreRow[]
