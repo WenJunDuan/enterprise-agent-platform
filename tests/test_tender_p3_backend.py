@@ -289,9 +289,9 @@ def test_remove_project_submission_dir_rejects_traversal():
 def test_sanitize_tender_info_strips_unknown_keeps_known():
     """未知字段（如 bid_deadline）剥掉但不丢整对象——根因：schema additionalProperties:false
     下旧 validate 遇任一多余字段即抛错丢掉整份 tender_info → 区1 空白。"""
-    from server.routes.tender import _sanitize_tender_info
+    from server.routes.tender_doc_pipeline import sanitize_tender_info
 
-    out = _sanitize_tender_info(
+    out = sanitize_tender_info(
         {
             "project_name": "  某市智慧平台  ",
             "tenderee": "某局",
@@ -315,13 +315,13 @@ def test_sanitize_tender_info_strips_unknown_keeps_known():
 
 def test_sanitize_tender_info_drops_empty_and_nonstring():
     """空串/非 string/None 字段跳过；无任何可用字段或非 dict 入参 → None。"""
-    from server.routes.tender import _sanitize_tender_info
+    from server.routes.tender_doc_pipeline import sanitize_tender_info
 
-    assert _sanitize_tender_info(None) is None
-    assert _sanitize_tender_info("nope") is None
-    assert _sanitize_tender_info({"project_name": "  ", "control_price": 1500}) is None
+    assert sanitize_tender_info(None) is None
+    assert sanitize_tender_info("nope") is None
+    assert sanitize_tender_info({"project_name": "  ", "control_price": 1500}) is None
     # 部分有效：保留有效 string，跳过非 string / 空
-    assert _sanitize_tender_info({"project_name": "X", "tenderee": "  ", "method": 9}) == {
+    assert sanitize_tender_info({"project_name": "X", "tenderee": "  ", "method": 9}) == {
         "project_name": "X"
     }
 
@@ -330,7 +330,8 @@ def test_sanitize_tender_info_drops_empty_and_nonstring():
 
 
 def test_cancel_project_ocr_tasks_cancels_tracked_running_task():
-    import server.routes.tender as tender_mod
+    # S3: OCR 任务追踪/取消下沉到 server.ocr.prewarm_scheduler（tender 仅消费）。
+    import server.ocr.prewarm_scheduler as sched
 
     async def _run() -> None:
         pid = _pid()
@@ -341,21 +342,21 @@ def test_cancel_project_ocr_tasks_cancels_tracked_running_task():
             await asyncio.sleep(60)
 
         task = asyncio.create_task(_long())
-        tender_mod._track_upload_ocr_task(task, pid)
+        sched.track_upload_ocr_task(task, pid)
         await started.wait()
-        assert pid in tender_mod._PROJECT_OCR_TASKS
+        assert pid in sched._PROJECT_OCR_TASKS
 
-        cancelled = tender_mod._cancel_project_ocr_tasks(pid)
+        cancelled = sched.cancel_project_ocr_tasks(pid)
         assert cancelled == 1
         with pytest.raises(asyncio.CancelledError):
             await task
         await asyncio.sleep(0)  # 让 done 回调跑完（桶自清）
-        assert pid not in tender_mod._PROJECT_OCR_TASKS
+        assert pid not in sched._PROJECT_OCR_TASKS
 
     asyncio.run(_run())
 
 
 def test_cancel_project_ocr_tasks_noop_when_no_tasks():
-    import server.routes.tender as tender_mod
+    import server.ocr.prewarm_scheduler as sched
 
-    assert tender_mod._cancel_project_ocr_tasks("tp-nonexistent-r7") == 0
+    assert sched.cancel_project_ocr_tasks("tp-nonexistent-r7") == 0
