@@ -2,11 +2,14 @@ import { describe, expect, test } from 'bun:test'
 import { tenderReviewMockData } from './mock-data'
 import {
   buildDashboardSummary,
+  buildIssueList,
   buildTenderReviewData,
   deriveReviewDimension,
   filterReviewHistory,
+  getAdvisoryLabel,
   mapTenderProject,
 } from './model'
+import type { AuditResult } from '@/features/audit/types'
 import type { TenderReviewMockData } from './types'
 
 describe('contract tender review model', () => {
@@ -777,5 +780,213 @@ describe('contract tender review model', () => {
       score: 7.1,
       basis: '第二家商务标得 7.1 分。',
     })
+  })
+
+  test('buildIssueList derives all seven expert advisory categories from extracted data', () => {
+    const result: AuditResult = {
+      verdict: 'manual_review',
+      extracted_data: {
+        disqualification_hits: [
+          {
+            rule_id: 'DQ-1',
+            item: '投标保证金',
+            finding: '未按招标文件提交投标保证金。',
+            confirmed: true,
+            evidence: {
+              source: '投标文件 p.3',
+              quote: '未见投标保证金凭证',
+            },
+          },
+        ],
+        eligibility_checks: [
+          {
+            rule_id: 'EL-1',
+            check: '企业资质',
+            status: 'fail',
+            basis: '资质等级不满足招标文件要求。',
+            evidence: {
+              source: '投标文件 p.8',
+              quote: '市政公用工程施工总承包三级',
+            },
+          },
+          {
+            rule_id: 'EL-2',
+            check: '信用中国查询',
+            status: 'manual',
+            basis: '截图时间不完整，需人工核验。',
+          },
+        ],
+        scoring: [
+          {
+            item: '企业业绩',
+            max: 10,
+            score: 8,
+            status: 'scored',
+            basis: '仅提供 2 个有效业绩。',
+            deduction_hits: [
+              {
+                condition: '每缺少一个同类业绩扣 2 分',
+                deducted: 2,
+                evidence: {
+                  source: '投标文件 p.22',
+                  quote: '提供同类业绩 2 项',
+                },
+              },
+            ],
+          },
+          {
+            item: '投标函签字盖章',
+            max: 5,
+            score: 0,
+            status: 'scored',
+            basis: '投标函法定代表人未签字。',
+          },
+          {
+            item: '项目负责人证书',
+            max: 5,
+            score: 0,
+            status: 'scored',
+            basis: '未提供项目负责人安全 B 证。',
+          },
+          {
+            item: '技术参数响应',
+            max: 20,
+            score: 15,
+            status: 'scored',
+            basis: '主要参数存在负偏离。',
+          },
+          {
+            item: '价格分',
+            max: 40,
+            score: null,
+            status: 'manual_review',
+            basis: '需全部报价横比后计算。',
+          },
+        ],
+      },
+    }
+
+    expect(buildIssueList(result).map((item) => item.category)).toEqual([
+      'disqualification_risk',
+      'eligibility_mismatch',
+      'pending_verification',
+      'score_deduction',
+      'formality_issue',
+      'missing_material',
+      'parameter_deviation',
+      'pending_verification',
+    ])
+    expect(buildIssueList(result)[0]).toMatchObject({
+      title: '废标风险',
+      itemName: '投标保证金',
+      quote: '未见投标保证金凭证',
+      source: '投标文件 p.3',
+    })
+  })
+
+  test('buildIssueList keeps uncertain disqualification, manual eligibility, and unreadable wording pending', () => {
+    const result: AuditResult = {
+      verdict: 'manual_review',
+      extracted_data: {
+        disqualification_hits: [
+          {
+            rule_id: 'DQ-uncertain',
+            finding: '信用中国截图疑似失信，页面读不清。',
+            confirmed: false,
+          },
+          {
+            rule_id: 'DQ-null',
+            finding: '投标文件盖章处模糊，待确认。',
+            confirmed: null,
+          },
+          {
+            rule_id: 'DQ-old',
+            finding: '投标人名称与投标文件不一致。',
+          },
+          {
+            rule_id: 'DQ-unclear-old',
+            finding: '截图无法识别，疑似失信。',
+          },
+        ],
+        eligibility_checks: [
+          {
+            rule_id: 'EL-manual',
+            check: '外部信用查询',
+            status: 'manual',
+            basis: '截图无法识别，需人工核验。',
+          },
+        ],
+        scoring: [
+          {
+            item: '客观评分',
+            max: 10,
+            score: null,
+            status: 'scored',
+            basis: '缺少证据，读不清，不应按 0 分处理。',
+          },
+        ],
+      },
+    }
+
+    const issues = buildIssueList(result)
+    expect(
+      issues
+        .filter((item) => item.itemName !== '投标人名称与投标文件不一致。')
+        .map((item) => item.category)
+    ).toEqual([
+      'pending_verification',
+      'pending_verification',
+      'pending_verification',
+      'pending_verification',
+      'pending_verification',
+    ])
+    expect(
+      issues.find(
+        (item) => item.itemName === '投标人名称与投标文件不一致。'
+      )?.category
+    ).toBe('disqualification_risk')
+  })
+
+  test('buildIssueList tolerates old data and buildTenderReviewData exposes advisory label inputs', () => {
+    expect(buildIssueList({ extracted_data: {} })).toEqual([])
+    expect(buildIssueList(null)).toEqual([])
+
+    const data = buildTenderReviewData({
+      selectedResult: {
+        verdict: 'manual_review',
+        extracted_data: {
+          scoring: [
+            {
+              item: '价格分',
+              max: 40,
+              score: null,
+              status: 'manual_review',
+              basis: '需横比全部投标报价。',
+            },
+          ],
+        },
+      },
+    })
+
+    expect(data.issueList).toHaveLength(1)
+    expect(data.issueList?.[0]).toMatchObject({
+      category: 'pending_verification',
+      title: '待核验清单',
+      itemName: '价格分',
+    })
+    expect(getAdvisoryLabel(data.issueList)).toBe('较多待确认项')
+    expect(getAdvisoryLabel([])).toBe('暂未发现明显问题')
+    expect(
+      getAdvisoryLabel([
+        {
+          id: 'issue-risk',
+          category: 'disqualification_risk',
+          status: 'risk',
+          title: '废标风险',
+          itemName: '投标保证金',
+          basis: '已确认命中否决性条款。',
+        },
+      ])
+    ).toBe('存在废标风险')
   })
 })
