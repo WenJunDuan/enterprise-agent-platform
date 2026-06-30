@@ -14,8 +14,9 @@ items:
     effort: S
     wave: 1
     depends_on: []
-    status: pending
+    status: done
     refs: ["audit F3"]
+    done_note: "Codex 实施(refactor/s1-s2-cleanup)；_utc_now 归一 sqlite_store；已合 main，整合 733 pytest 绿。"
   - id: S2
     slug: tender-claude-cleanup
     stream: refactor
@@ -23,8 +24,9 @@ items:
     effort: S
     wave: 1
     depends_on: []
-    status: pending
+    status: done
     refs: ["audit F4", "audit F5"]
+    done_note: "Codex 实施；S1 定位逻辑抽到 references/s1-locate-criteria.md 单一权威；output_contracts/evidence_resolution 注释 triage 已验证为纯注释改动(零逻辑)。"
   - id: S3
     slug: tender-doc-layer-split
     stream: refactor
@@ -32,9 +34,10 @@ items:
     effort: L
     wave: 2
     depends_on: [S1, S2]
-    status: pending
-    note: "用户强调的 OCR 合并(不重复定义实现)。合并原 ocr-consolidation+f1，同 worktree 顺序做。is_ocr_text_valid 归 server/ocr/pipeline.py。"
+    status: done
+    note: "用户强调的 OCR 合并(不重复定义实现)。合并原 ocr-consolidation+f1。is_ocr_text_valid 归 server/ocr/pipeline.py。"
     refs: ["audit F1", "用户 OCR 合并指令"]
+    done_note: "CC 实施(refactor/s3-ocr-split)：is_ocr_text_valid+OCR_ERROR_PREFIX 入 pipeline；新 server/ocr/prewarm_scheduler.py(并发闸/任务追踪)；新 server/routes/tender_doc_pipeline.py(摄取编排,routes 层非 ops——ops 禁 import ocr)；tender.py 1370→899。Codex 交叉 review 中。"
   - id: S4
     slug: tender-output-split
     stream: refactor
@@ -97,6 +100,17 @@ items:
     depends_on: [S3, S4]
     status: pending
     refs: ["会议结论6", "会议结论7", "待办7", "待办8"]
+  - id: S10
+    slug: tender-overview-checklist
+    stream: product
+    title: "详情页新增「概要分析」: 符合性 checklist(✓达到/✗未达到/⏳待核验+理由,无评分),排详细分析之前"
+    effort: M
+    wave: 2
+    redzone: agent-front
+    depends_on: []
+    status: pending
+    note: "用户 2026-06-26 新需求。与 S5 同源(都把专家侧转向符合性/风险);建议先于 S5,共享 buildOverviewChecklist/buildIssueList 底层派生。confirmed:false/manual→待核验不打叉(R2b)。前端从既有 extracted_data 派生,后端尽量零改。见 sprints/2026-06-26-tender-overview-checklist/design.md。"
+    refs: ["用户 2026-06-26 需求", "会议结论1", "会议结论2"]
 
 backlog:
   - "审计 F3 余量：_initialize_schema×10 合并 + tender_task_store 并入"
