@@ -37,7 +37,7 @@ items:
     status: done
     note: "用户强调的 OCR 合并(不重复定义实现)。合并原 ocr-consolidation+f1。is_ocr_text_valid 归 server/ocr/pipeline.py。"
     refs: ["audit F1", "用户 OCR 合并指令"]
-    done_note: "CC 实施(refactor/s3-ocr-split)：is_ocr_text_valid+OCR_ERROR_PREFIX 入 pipeline；新 server/ocr/prewarm_scheduler.py(并发闸/任务追踪)；新 server/routes/tender_doc_pipeline.py(摄取编排,routes 层非 ops——ops 禁 import ocr)；tender.py 1370→899。Codex 交叉 review 中。"
+    done_note: "CC 实施(refactor/s3-ocr-split)：is_ocr_text_valid+OCR_ERROR_PREFIX 入 pipeline；新 server/ocr/prewarm_scheduler.py(并发闸/任务追踪)；新 server/routes/tender_doc_pipeline.py(摄取编排,routes 层非 ops——ops 禁 import ocr)；tender.py 1370→899。Codex 交叉 review=REWORK(P1 is_ocr_text_valid 被文件头骗过漏判全失败底稿,实为先于S3的潜伏bug,consolidation 后由 pipeline 修复+回归;P2 测试硬化)→已全部修(commit 11c3426)，739 pytest 绿。"
   - id: S4
     slug: tender-output-split
     stream: refactor
