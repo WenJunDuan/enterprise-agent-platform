@@ -64,6 +64,7 @@ from server.stores.tender_doc_store import (
     upsert_project_doc,
 )
 from server.stores.tender_project_store import (
+    DEFAULT_PROJECT_SCENARIO,
     count_active_bids,
     delete_project_cascade,
     get_or_create_project,
@@ -86,6 +87,7 @@ logger = logging.getLogger(__name__)
 # 本路由模块仅做 HTTP 编排，调用上述模块的公开函数（顶部以旧私有名 import alias 保兼容）。
 
 router = APIRouter(tags=["tender"])
+TenderScenario = Literal["bidder_self_check", "expert_assist", "post_eval_monitor"]
 
 
 class DirectoryTenderSubmitRequest(BaseModel):
@@ -132,6 +134,7 @@ def _public_tender_task(record: dict[str, Any]) -> TenderTaskStatusResponse:
 
 
 class TenderProjectCreateRequest(BaseModel):
+    scenario: TenderScenario = DEFAULT_PROJECT_SCENARIO
     tender_no: str | None = None
     title: str | None = None
     tenderee: str | None = None
@@ -142,6 +145,7 @@ class TenderProjectCreateRequest(BaseModel):
 
 class TenderProjectResponse(BaseModel):
     project_id: str
+    scenario: TenderScenario
     tender_no: str | None = None
     title: str | None = None
     tenderee: str | None = None
@@ -170,6 +174,7 @@ class TenderProjectDetailResponse(TenderProjectResponse):
 def _public_project(record: dict[str, Any]) -> TenderProjectResponse:
     return TenderProjectResponse(
         project_id=str(record["project_id"]),
+        scenario=record.get("scenario") or DEFAULT_PROJECT_SCENARIO,
         tender_no=record.get("tender_no"),
         title=record.get("title"),
         tenderee=record.get("tenderee"),
@@ -446,6 +451,7 @@ async def create_tender_project(
     record = await asyncio.to_thread(
         get_or_create_project,
         tenant=tenant,
+        scenario=body.scenario,
         tender_no=body.tender_no,
         title=body.title,
         tenderee=body.tenderee,
@@ -460,11 +466,18 @@ async def create_tender_project(
 async def list_tender_projects_endpoint(
     authorization: str | None = Header(None),
     status: str | None = Query(None),
+    scenario: TenderScenario | None = Query(None),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
 ) -> list[TenderProjectResponse]:
     tenant = verify_tenant(authorization)
-    records = list_projects(tenant, status=status, limit=limit, offset=offset)
+    records = list_projects(
+        tenant,
+        status=status,
+        scenario=scenario,
+        limit=limit,
+        offset=offset,
+    )
     return [_public_project(r) for r in records]
 
 

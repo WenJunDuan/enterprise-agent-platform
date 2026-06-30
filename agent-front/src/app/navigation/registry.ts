@@ -6,7 +6,9 @@ import {
   type NavigationMenuVisibility,
 } from './menu-visibility'
 import { getBackendPageByPath } from './page-registry'
+import { getEnabledTenderScenarios } from './tender-scenarios'
 import type { BackendMenuRouter, BreadcrumbConfig } from './types'
+import type { TenderScenario } from '@/features/contract/tender-review/types'
 
 const DEFAULT_AVATAR = '/avatars/01.png'
 
@@ -24,11 +26,19 @@ const STATIC_BREADCRUMBS: Record<string, BreadcrumbConfig[]> = {
   '/contracts': [{ label: '智能招投标审核' }, { label: '评审列表' }],
   '/contracts/tender/list': [
     { label: '智能招投标审核' },
-    { label: '评审列表' },
+    { label: '专家辅助' },
+  ],
+  '/contracts/tender/self-check': [
+    { label: '智能招投标审核' },
+    { label: '投标自查' },
+  ],
+  '/contracts/tender/post-eval': [
+    { label: '智能招投标审核' },
+    { label: '评后监督' },
   ],
   '/contracts/tender/detail': [
     { label: '智能招投标审核' },
-    { label: '评审列表', href: '/contracts/tender/list' },
+    { label: '专家辅助', href: '/contracts/tender/list' },
     { label: '分析中心' },
   ],
   '/contracts/tender/history': [
@@ -38,8 +48,36 @@ const STATIC_BREADCRUMBS: Record<string, BreadcrumbConfig[]> = {
   '/settings': [{ label: '系统管理' }, { label: '个人资料' }],
 }
 
-const DOMAIN_NAV_GROUPS: Record<(typeof MENU_GROUP_ORDER)[number], NavItem[]> =
-  {
+function buildTenderScenarioItems(enabledScenarios: TenderScenario[]): NavItem[] {
+  const items: NavItem[] = []
+  if (enabledScenarios.includes('bidder_self_check')) {
+    items.push({
+      title: '投标自查',
+      url: '/contracts/tender/self-check',
+      icon: FileSearch,
+    })
+  }
+  if (enabledScenarios.includes('expert_assist')) {
+    items.push({
+      title: '专家辅助',
+      url: '/contracts/tender/list',
+      icon: FileSearch,
+    })
+  }
+  if (enabledScenarios.includes('post_eval_monitor')) {
+    items.push({
+      title: '评后监督',
+      url: '/contracts/tender/post-eval',
+      icon: FileSearch,
+    })
+  }
+  return items
+}
+
+function getDomainNavGroups(
+  enabledScenarios: TenderScenario[]
+): Record<(typeof MENU_GROUP_ORDER)[number], NavItem[]> {
+  return {
     智能报销审核: [
       {
         title: '报销审核',
@@ -55,11 +93,7 @@ const DOMAIN_NAV_GROUPS: Record<(typeof MENU_GROUP_ORDER)[number], NavItem[]> =
       },
     ],
     智能招投标审核: [
-      {
-        title: '评审列表',
-        url: '/contracts/tender/list',
-        icon: FileSearch,
-      },
+      ...buildTenderScenarioItems(enabledScenarios),
       {
         title: '历史评审',
         url: '/contracts/tender/history',
@@ -67,6 +101,7 @@ const DOMAIN_NAV_GROUPS: Record<(typeof MENU_GROUP_ORDER)[number], NavItem[]> =
       },
     ],
   }
+}
 
 type BackendMenuMatch = {
   breadcrumbs: BreadcrumbConfig[]
@@ -151,20 +186,24 @@ export function buildNavigationUser(user: AuthUser | null | undefined) {
   }
 }
 
-export function getNavigationMenuDefinitions() {
+export function getNavigationMenuDefinitions(
+  enabledScenarios: TenderScenario[] = getEnabledTenderScenarios()
+) {
+  const domainNavGroups = getDomainNavGroups(enabledScenarios)
   return MENU_GROUP_ORDER.map<NavGroup>((groupTitle) => ({
     title: groupTitle,
-    items: DOMAIN_NAV_GROUPS[groupTitle],
+    items: domainNavGroups[groupTitle],
   })).filter((group) => group.items.length > 0)
 }
 
 export function buildNavigationGroups(
   _user: Pick<AuthUser, 'roles' | 'permissions'> | null | undefined,
   _routers?: BackendMenuRouter[],
-  visibility?: NavigationMenuVisibility
+  visibility?: NavigationMenuVisibility,
+  enabledScenarios: TenderScenario[] = getEnabledTenderScenarios()
 ) {
   return filterNavigationGroupsByVisibility(
-    getNavigationMenuDefinitions(),
+    getNavigationMenuDefinitions(enabledScenarios),
     visibility
   )
 }

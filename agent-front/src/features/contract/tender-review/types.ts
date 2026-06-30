@@ -1,4 +1,8 @@
 export type TenderProjectStatus = 'doing' | 'review' | 'done' | 'archived'
+export type TenderScenario =
+  | 'bidder_self_check'
+  | 'expert_assist'
+  | 'post_eval_monitor'
 /** Per-file OCR processing status in the two-step upload flow (P3). */
 export type OcrFileStatus = 'uploading' | 'running' | 'ready' | 'failed'
 export type HistoryTimeRange = 'all' | 'week' | 'month'

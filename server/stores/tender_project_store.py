@@ -22,12 +22,15 @@ ensure_local_layout()
 
 # 招标项目生命周期状态（对齐前端 TenderProject.status）。
 VALID_PROJECT_STATUS = {"doing", "review", "done", "archived"}
+VALID_PROJECT_SCENARIO = {"bidder_self_check", "expert_assist", "post_eval_monitor"}
+DEFAULT_PROJECT_SCENARIO = "expert_assist"
 
 
 @dataclass(slots=True)
 class TenderProjectRecord:
     project_id: str
     tenant: str
+    scenario: str = DEFAULT_PROJECT_SCENARIO
     tender_no: str | None = None  # 招标编号（前端 code）
     title: str | None = None  # 项目名（前端 name）
     tenderee: str | None = None  # 招标人
@@ -55,6 +58,7 @@ def _initialize_schema() -> None:
             CREATE TABLE IF NOT EXISTS tender_projects (
                 project_id TEXT PRIMARY KEY,
                 tenant TEXT NOT NULL,
+                scenario TEXT NOT NULL DEFAULT 'expert_assist',
                 tender_no TEXT,
                 title TEXT,
                 tenderee TEXT,
@@ -74,12 +78,22 @@ def _initialize_schema() -> None:
         }
         if "funding_type" not in existing_columns:
             connection.execute("ALTER TABLE tender_projects ADD COLUMN funding_type TEXT")
+        if "scenario" not in existing_columns:
+            connection.execute(
+                "ALTER TABLE tender_projects "
+                "ADD COLUMN scenario TEXT NOT NULL DEFAULT 'expert_assist'"
+            )
         connection.executescript(
             """
             CREATE INDEX IF NOT EXISTS idx_tender_projects_tenant
                 ON tender_projects (tenant, created_at DESC);
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_tender_projects_tenant_no
-                ON tender_projects (tenant, tender_no) WHERE tender_no IS NOT NULL;
+            """
+        )
+        connection.execute("DROP INDEX IF EXISTS idx_tender_projects_tenant_no")
+        connection.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_tender_projects_tenant_scenario_no
+                ON tender_projects (tenant, scenario, tender_no) WHERE tender_no IS NOT NULL;
             """
         )
 
@@ -102,11 +116,11 @@ def get_project(project_id: str, tenant: str) -> dict[str, Any] | None:
 
 
 def _get_by_tender_no(
-    connection: sqlite3.Connection, tenant: str, tender_no: str
+    connection: sqlite3.Connection, tenant: str, scenario: str, tender_no: str
 ) -> dict[str, Any] | None:
     row = connection.execute(
-        "SELECT * FROM tender_projects WHERE tenant = ? AND tender_no = ?",
-        (tenant, tender_no),
+        "SELECT * FROM tender_projects WHERE tenant = ? AND scenario = ? AND tender_no = ?",
+        (tenant, scenario, tender_no),
     ).fetchone()
     return dict(row) if row else None
 
@@ -114,6 +128,7 @@ def _get_by_tender_no(
 def get_or_create_project(
     *,
     tenant: str,
+    scenario: str = DEFAULT_PROJECT_SCENARIO,
     tender_no: str | None = None,
     title: str | None = None,
     tenderee: str | None = None,
@@ -129,10 +144,13 @@ def get_or_create_project(
     # codex P1.2：空串 "" 非 NULL 会进部分唯一索引 `WHERE tender_no IS NOT NULL`，重复 "" 插入
     # 会冲突且绕过下面 `if tender_no` 的兜底 → 500。归一为 None，让空值走"匿名多条"分支。
     tender_no = (tender_no or "").strip() or None
+    if scenario not in VALID_PROJECT_SCENARIO:
+        raise ValueError(f"invalid project scenario: {scenario!r}")
     now = utc_now()
     record = TenderProjectRecord(
         project_id=new_project_id(),
         tenant=tenant,
+        scenario=scenario,
         tender_no=tender_no,
         title=title,
         tenderee=tenderee,
@@ -145,7 +163,7 @@ def get_or_create_project(
     )
     with connect_sqlite(PLATFORM_DB_FILE, immediate=True) as connection:
         if tender_no:
-            existing = _get_by_tender_no(connection, tenant, tender_no)
+            existing = _get_by_tender_no(connection, tenant, scenario, tender_no)
             if existing:
                 return existing
         try:
@@ -154,9 +172,9 @@ def get_or_create_project(
                 _record_values(record),
             )
         except sqlite3.IntegrityError:
-            # 并发抢建：UNIQUE(tenant, tender_no) 部分索引拦下，回读现有。
+            # 并发抢建：UNIQUE(tenant, scenario, tender_no) 部分索引拦下，回读现有。
             if tender_no:
-                existing = _get_by_tender_no(connection, tenant, tender_no)
+                existing = _get_by_tender_no(connection, tenant, scenario, tender_no)
                 if existing:
                     return existing
             raise
@@ -166,6 +184,7 @@ def get_or_create_project(
 def list_projects(
     tenant: str,
     status: str | None = None,
+    scenario: str | None = None,
     limit: int = 20,
     offset: int = 0,
 ) -> list[dict[str, Any]]:
@@ -174,6 +193,9 @@ def list_projects(
     if status:
         query += " AND status = ?"
         params.append(status)
+    if scenario:
+        query += " AND scenario = ?"
+        params.append(scenario)
     query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
     params.extend([limit, offset])
     with connect_sqlite(PLATFORM_DB_FILE) as connection:

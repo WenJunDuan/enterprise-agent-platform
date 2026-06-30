@@ -9,6 +9,7 @@ interface ImportMetaEnv {
   readonly VITE_AUDIT_API_PROXY_TARGET?: string
   readonly VITE_ADMIN_API_PROXY_TARGET?: string
   readonly VITE_TENANT_PIN_KEYS?: string
+  readonly VITE_ENABLED_SCENARIOS?: string
 }
 
 interface ImportMeta {
