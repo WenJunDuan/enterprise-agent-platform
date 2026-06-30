@@ -1,0 +1,114 @@
+# Tender 域路线图 items — 由规划 workflow(wf_9eade0e9-475)+critic 综合
+# status: pending | in_progress | done | blocked
+slug: "2026-06-tender-program"
+source:
+  audit: "sprints/2026-06-26-tender-domain-cleanup/audit.md"
+  meeting: "2026-06-29 招投标 agent 会议纪要"
+  workflow: "wf_9eade0e9-475 (11 agents)"
+
+items:
+  - id: S1
+    slug: tender-store-dry
+    stream: refactor
+    title: "stores _utc_now 归一到 platform"
+    effort: S
+    wave: 1
+    depends_on: []
+    status: pending
+    refs: ["audit F3"]
+  - id: S2
+    slug: tender-claude-cleanup
+    stream: refactor
+    title: ".claude S1 去重(单一权威) + 27 处注释 triage"
+    effort: S
+    wave: 1
+    depends_on: []
+    status: pending
+    refs: ["audit F4", "audit F5"]
+  - id: S3
+    slug: tender-doc-layer-split
+    stream: refactor
+    title: "OCR 编排合并进 server/ocr/ + criteria ops 下沉 server/ops/ + tender.py 瘦身"
+    effort: L
+    wave: 2
+    depends_on: [S1, S2]
+    status: pending
+    note: "用户强调的 OCR 合并(不重复定义实现)。合并原 ocr-consolidation+f1，同 worktree 顺序做。is_ocr_text_valid 归 server/ocr/pipeline.py。"
+    refs: ["audit F1", "用户 OCR 合并指令"]
+  - id: S4
+    slug: tender-output-split
+    stream: refactor
+    title: "output_contracts tender 专属抽离 server/common/tender_output.py"
+    effort: M
+    wave: 2
+    depends_on: [S3]
+    status: pending
+    refs: ["audit F2"]
+  - id: S5
+    slug: expert-advisory-repositioning
+    stream: product
+    title: "专家侧改辅助评审/风险提示(七类问题清单，隐藏终局 verdict/总分)"
+    effort: M
+    wave: 1
+    priority: this_week
+    redzone: agent-front
+    depends_on: []
+    status: pending
+    note: "confirmed:false 归待核验非废标风险(R2b 纪律)。后端字段不删。"
+    refs: ["会议结论1", "会议结论2", "待办1", "待办2"]
+  - id: S6
+    slug: scenario-split
+    stream: product
+    title: "三场景划分(投标自查/专家辅助/评后监督)+架构文档"
+    effort: L
+    wave: 3
+    redzone: agent-front
+    depends_on: [S5]
+    status: pending
+    note: "阶段一场景隔离=UI 层非 RBAC，须在交付标注。"
+    refs: ["会议结论1", "会议结论3", "会议结论8", "待办5"]
+  - id: S7
+    slug: model-eval-flash
+    stream: infra
+    title: "Flash vs V4Pro 评测脚手架 + 上下文截断防护"
+    effort: M
+    wave: 1
+    priority: this_week
+    depends_on: []
+    status: pending
+    blocker: "需用户给 Flash 模型 ID + 端点"
+    refs: ["会议结论5", "待办3"]
+  - id: S8
+    slug: security-data-lifecycle
+    stream: infra
+    title: "任务完成销毁+OCR文本清零+日志脱敏+容器加固+RBAC/可信数据空间 ADR"
+    effort: M
+    wave: 3
+    depends_on: []
+    status: pending
+    note: "保留招标 project_doc.ocr_text 至全部家评完(行为变更红线)。backend 端点可独立先做。"
+    refs: ["会议结论3", "会议结论4"]
+  - id: S9
+    slug: kb-and-external
+    stream: infra
+    title: "知识库补全 + 外部数据适配脚手架(只建脚手架不接真实接口)"
+    effort: L
+    wave: 4
+    depends_on: [S3, S4]
+    status: pending
+    refs: ["会议结论6", "会议结论7", "待办7", "待办8"]
+
+backlog:
+  - "审计 F3 余量：_initialize_schema×10 合并 + tender_task_store 并入"
+  - "容器运行时隔离实落(TEE/机密容器)"
+  - "可信数据空间具体实现(依赖方案团队)"
+  - "外部数据真实接口联调(依赖采购/函件)"
+  - "RBAC 实现(S8 只出 ADR)"
+
+decisions_needed:
+  - "S7: Flash 模型 ID + 端点(阻塞 S7)"
+  - "S6: 场景隔离强度(UI 过滤 vs 多 tenant token/独立部署)"
+  - "S5/S6: 专家侧 verdict 完全隐藏 vs 通过(供参考); 监督场景同页 role vs 独立路由"
+  - "S8: SQLite at-rest 加密是否纳入; session JSONL 删除天数"
+  - "S9: KB 范围 + 外部数据采购优先级"
+  - "S5/S6: agent-front 红区授权(需明确同意 + worktree)"
