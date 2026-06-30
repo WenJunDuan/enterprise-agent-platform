@@ -142,7 +142,7 @@ function HistoryHeader() {
       <div className='px-5 py-3 text-center'>项目名称 / 编号</div>
       <div className='px-3 py-3 text-center'>评标办法</div>
       <div className='px-3 py-3 text-center'>投标方</div>
-      <div className='px-3 py-3 text-center'>中标得分</div>
+      <div className='px-3 py-3 text-center'>待复核</div>
       <div className='px-3 py-3 text-center'>完成日期</div>
       <div className='px-3 py-3 text-center'>状态</div>
       <div className='px-4 py-3 text-center'>操作</div>
@@ -177,7 +177,9 @@ function HistoryRow({
         {item.method}
       </div>
       <div className='px-3 py-4 text-center'>{item.bidderCount}</div>
-      <div className='px-3 py-4 text-center font-semibold'>{item.score}</div>
+      <div className='px-3 py-4 text-center font-semibold'>
+        {item.riskCount} 项
+      </div>
       <div className='px-3 py-4 text-center text-muted-foreground'>
         {item.date}
       </div>
