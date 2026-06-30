@@ -4,10 +4,10 @@
 version: "9.6.4"
 
 # === PACE 路由状态 ===
-path: "Feature" # 评标报告三维度展示优化：资格审查、价格分、商务客观分、技术主观分、综合结论
-stage: "ship" # D0-D6 完成并验全绿(727/ruff/前端11+build+lint)+真实UI跑通；commit 分逻辑后 push main；见 sprints/2026-06-25-tender-report-dimensions/{design.md,runtime-verify.md}
-current_sprint_slug: "2026-06-25-tender-report-dimensions"
-current_roadmap_slug: "" # 跨切面 goal，非单一 roadmap item
+path: "Refactor" # tender 域整理：tender.py 拆分(F1)/output_contracts tender 抽离(F2)/store DRY(F3)/.claude S1 去重(F4)
+stage: "design" # tender-domain-cleanup 深度审计完成(audit.md F1-F6)，待用户选批次 A-D → 逐批出 design+TDD 再改；上一 sprint 2026-06-25-tender-report-dimensions 已 ship
+current_sprint_slug: "2026-06-26-tender-domain-cleanup"
+current_roadmap_slug: "2026-06-tender-program" # 9 sprint 路线图(技术债 S1-S4 + 产品 S5-S6 + 基础设施 S7-S9)，见 roadmap/2026-06-tender-program/
 skip_polish: false
 skip_architecture_check: false
 
@@ -67,7 +67,7 @@ pointers:
   latest_architecture_update: "2026-06-23T06:38:15.291Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "Sprint 2026-06-25-tender-report-dimensions 已 ship：D0-D6 用户确认后分 4 逻辑提交并 push origin/main（fix(tender) D0 + feat(tender) 后端 category/prompt + feat(tender-ui) 动态类目 + docs(state)）。门禁全绿(727/ruff/前端11+build+lint)，真实评标跑通(deepseek)。本地服务与 codex 进程已全部停。worktree 仅 main、无多余。下一步=用户重新部署手测；如需正式 Feature 交叉复审(reviewer+spec+evaluator)可另起。"
+next_action: "路线图 2026-06-tender-program 已出(roadmap/2026-06-tender-program/{roadmap.md,items.yaml})：11-agent 规划 workflow+critic 综合成 9 sprint，3 流——技术债 S1 store-dry/S2 claude-cleanup/S3 OCR合并+分层(用户强调,合 ocr-consolidation+f1)/S4 output抽离；产品 S5 专家侧风险提示(本周优先)/S6 三场景；基础设施 S7 Flash评测(本周优先,缺模型ID阻塞)/S8 数据销毁脱敏/S9 知识库+外部数据脚手架。Wave1(并行):S1/S2/S5/S7。**待用户**：① 选先启动的 sprint；② 拍板 6 项决策(Flash模型ID/场景隔离强度/verdict展示/SQLite加密/KB范围/agent-front红区授权)。选定后该 sprint 出 design+TDD 再改。"
 last_subagent: "codex-exec" # tender-report-dimensions D0-D5 headless (codex 0.142.1, gpt-5.5)；必须 env -u HTTP_PROXY -u HTTPS_PROXY 否则 streaming API 挂起，见 compound/2026-06-25-trick-codex-proxy-hangs-streaming.md
 last_subagent_at: "2026-06-25T00:00:00.000Z"
 active_worktrees: [] # git worktree list 仅 main；无其他分支/worktree(2026-06-23 复核确认)
@@ -393,6 +393,8 @@ slug 拆分为独立 sprint 目录；`lessons.md` 整体保留为
 - `docs/` — 项目参考文档 (开发指南 / 前端对接 / audit-skills)，非状态机文件
 
 ## 历史 (由 pace-continuator hook 自动追加, 最多保留近 10 条)
+- `2026-06-29 07:51:02`: stage=design sprint=2026-06-26-tender-domain-cleanup turn-end
+- `2026-06-25 16:05:57`: stage=ship sprint=2026-06-25-tender-report-dimensions turn-end
 - `2026-06-25 14:31:20`: stage=impl sprint=2026-06-25-tender-report-dimensions turn-end
 - `2026-06-25 09:46:58`: stage=design sprint=2026-06-25-tender-report-dimensions turn-end
 - `2026-06-23 15:40:09`: stage=ship sprint=2026-06-23-tender-judgment-discipline turn-end
@@ -401,8 +403,6 @@ slug 拆分为独立 sprint 目录；`lessons.md` 整体保留为
 - `2026-06-21 15:37:29`: stage=ship sprint=2026-06-22-multimodel-tender-optimization turn-end
 - `2026-06-21 08:11:37`: stage=ship sprint=2026-06-21-tender-harness-redesign turn-end
 - `2026-06-20 13:56:20`: stage=ship sprint=2026-06-20-external-source-mode turn-end
-- `2026-06-20 10:49:49`: stage=ship sprint=2026-06-20-tender-data-model turn-end
-- `2026-06-20 08:32:52`: stage=impl sprint=2026-06-20-tender-data-model turn-end
 
 
 - 2026-06-02 [migrate] v9.6.2(legacy flat) → v9.6.4. 备份见 `.ai_state.backup-*`。
