@@ -18,6 +18,7 @@ from server.common.command_adapter import run_command_json
 from server.common.contract import DEFAULT_OUTPUT_SCHEMA_NAME
 from server.ocr.pipeline import ocr_preprocess_block
 from server.platform.logging_setup import logging_context
+from server.routes.tender_doc_pipeline import TENDER_OCR_PURPOSE
 from server.stores.request_store import utc_now
 from server.stores.session_store import new_conversation_id
 from server.stores.tender_doc_store import (
@@ -73,14 +74,7 @@ _PROGRESS_LOG_EVERY = int(os.getenv("TENDER_PROGRESS_LOG_EVERY", "800"))
 # 不走全局 build_options 默认 → 不拖慢 audit，codex r4 P1）；env 可调或设非法值走端点默认。
 _TENDER_EFFORT = os.getenv("TENDER_REASONING_EFFORT", "xhigh")
 
-# 评标场景 OCR 目的（治"OCR 无目的性"）：让 OCR 引擎在通用文本提取之外，重点完整、结构化地
-# 还原评分标准/评标办法/扣分细则/废标条款等【表格】——评分表是评标命脉，通用提取易丢表格行列
-# 致扣分项缺失。仅 OpenAI-compatible OCR 路径注入生效（云/本地 pipeline 为固定 OCR，见 engine）。
-TENDER_OCR_PURPOSE = (
-    "本批为招投标评标材料。请在完整提取文本之外，特别完整、结构化地还原"
-    "【评分标准/评标办法/评分细则/扣分细则/加分项/废标与资格条款】等表格："
-    "保留表格的行列结构与每一行的分值数字，不要合并或省略任何评分/扣分行。"
-)
+# TENDER_OCR_PURPOSE 已统一定义在 server.routes.tender_doc_pipeline（S3 消重），此处 import 复用。
 
 # round4 F5：裸 asyncio.create_task 不留引用 → 待定任务可被 GC 静默回收。留强引用集，完成即
 # 自清；集合大小兼作"在途任务数"供准入闸用。

@@ -287,39 +287,38 @@ def test_p11_bid_id_passed_through_schedule_to_worker(monkeypatch):
 
 
 def test_p12_upload_ocr_tasks_strong_ref_set_exists():
-    """_UPLOAD_OCR_TASKS strong-ref set must exist in tender.py."""
-    import server.routes.tender as tender_module
+    """_UPLOAD_OCR_TASKS strong-ref set must exist in ocr.prewarm_scheduler (S3 下沉)."""
+    import server.ocr.prewarm_scheduler as sched
 
-    assert hasattr(tender_module, "_UPLOAD_OCR_TASKS"), (
-        "_UPLOAD_OCR_TASKS strong-ref set must exist in server/routes/tender.py"
+    assert hasattr(sched, "_UPLOAD_OCR_TASKS"), (
+        "_UPLOAD_OCR_TASKS strong-ref set must exist in server/ocr/prewarm_scheduler.py"
     )
-    assert isinstance(getattr(tender_module, "_UPLOAD_OCR_TASKS"), set)
+    assert isinstance(getattr(sched, "_UPLOAD_OCR_TASKS"), set)
 
 
 def test_p12_upload_ocr_semaphore_exists():
-    """_UPLOAD_OCR_SEMAPHORE must exist in tender.py."""
-    import server.routes.tender as tender_module
+    """_UPLOAD_OCR_SEMAPHORE must exist in ocr.prewarm_scheduler (S3 下沉)."""
+    import server.ocr.prewarm_scheduler as sched
 
-    assert hasattr(tender_module, "_UPLOAD_OCR_SEMAPHORE"), (
-        "_UPLOAD_OCR_SEMAPHORE must exist in server/routes/tender.py"
+    assert hasattr(sched, "_UPLOAD_OCR_SEMAPHORE"), (
+        "_UPLOAD_OCR_SEMAPHORE must exist in server/ocr/prewarm_scheduler.py"
     )
 
 
 def test_p12_start_project_ocr_uses_strong_ref(monkeypatch):
-    """_start_project_doc_ocr_task must track the created task in _UPLOAD_OCR_TASKS."""
-    import server.routes.tender as tender_module
-
-    # Verify the OCR task helpers use _UPLOAD_OCR_TASKS / _track_upload_ocr_task
+    """start_*_doc_ocr_task must register the created task via track_upload_ocr_task (防 GC)."""
     import inspect
 
-    src_proj = inspect.getsource(tender_module._start_project_doc_ocr_task)
-    src_bid = inspect.getsource(tender_module._start_bid_doc_ocr_task)
+    import server.routes.tender_doc_pipeline as pipeline
 
-    assert "_UPLOAD_OCR_TASKS" in src_proj or "_track_upload_ocr_task" in src_proj, (
-        "_start_project_doc_ocr_task must register task in _UPLOAD_OCR_TASKS"
+    src_proj = inspect.getsource(pipeline.start_project_doc_ocr_task)
+    src_bid = inspect.getsource(pipeline.start_bid_doc_ocr_task)
+
+    assert "track_upload_ocr_task" in src_proj, (
+        "start_project_doc_ocr_task must register task via track_upload_ocr_task"
     )
-    assert "_UPLOAD_OCR_TASKS" in src_bid or "_track_upload_ocr_task" in src_bid, (
-        "_start_bid_doc_ocr_task must register task in _UPLOAD_OCR_TASKS"
+    assert "track_upload_ocr_task" in src_bid, (
+        "start_bid_doc_ocr_task must register task via track_upload_ocr_task"
     )
 
 
@@ -339,7 +338,6 @@ def test_p13_project_doc_ocr_writes_failed_on_exception(monkeypatch):
     monkeypatch.setattr("server.routes.deps.TENANT_KEYS", {"default": _TOKEN})
     import server.api as api_module
     import server.routes.deps as deps_module
-    import server.routes.tender as tender_module
     from server.stores.tender_doc_store import get_project_doc
 
     monkeypatch.setattr(deps_module, "tenant_keys_are_default", lambda: False)
@@ -351,7 +349,10 @@ def test_p13_project_doc_ocr_writes_failed_on_exception(monkeypatch):
     def _raise(*args, **kwargs):
         raise RuntimeError("OCR engine down")
 
-    monkeypatch.setattr("server.routes.tender.prewarm_and_text", _raise)
+    # S3: OCR 编排下沉 server.routes.tender_doc_pipeline；prewarm_and_text 在该模块导入。
+    import server.routes.tender_doc_pipeline as pipeline
+
+    monkeypatch.setattr("server.routes.tender_doc_pipeline.prewarm_and_text", _raise)
 
     client = TestClient(api_module.app)
     pid = _make_project(client)
@@ -361,7 +362,7 @@ def test_p13_project_doc_ocr_writes_failed_on_exception(monkeypatch):
     upsert_project_doc(project_id=pid, tenant="default", tender_files="[]", ocr_status="running")
 
     async def _run():
-        await tender_module._run_project_doc_ocr(pid, "/fake/case", tenant="default", purpose=None)
+        await pipeline.run_project_doc_ocr(pid, "/fake/case", tenant="default", purpose=None)
 
     asyncio.run(_run())
 
@@ -377,7 +378,6 @@ def test_p13_bid_doc_ocr_writes_failed_on_exception(monkeypatch):
     monkeypatch.setattr("server.routes.deps.TENANT_KEYS", {"default": _TOKEN})
     import server.api as api_module
     import server.routes.deps as deps_module
-    import server.routes.tender as tender_module
     from server.stores.tender_doc_store import get_bid_doc, upsert_bid_doc
 
     monkeypatch.setattr(deps_module, "tenant_keys_are_default", lambda: False)
@@ -389,7 +389,9 @@ def test_p13_bid_doc_ocr_writes_failed_on_exception(monkeypatch):
     def _raise(*args, **kwargs):
         raise RuntimeError("OCR engine down")
 
-    monkeypatch.setattr("server.routes.tender.prewarm_and_text", _raise)
+    import server.routes.tender_doc_pipeline as pipeline
+
+    monkeypatch.setattr("server.routes.tender_doc_pipeline.prewarm_and_text", _raise)
 
     client = TestClient(api_module.app)
     pid = _make_project(client)
@@ -404,7 +406,7 @@ def test_p13_bid_doc_ocr_writes_failed_on_exception(monkeypatch):
     )
 
     async def _run():
-        await tender_module._run_bid_doc_ocr(
+        await pipeline.run_bid_doc_ocr(
             pid, bid_id, "/fake/case", tenant="default", purpose=None
         )
 
@@ -416,28 +418,30 @@ def test_p13_bid_doc_ocr_writes_failed_on_exception(monkeypatch):
 
 
 def test_p13_project_doc_ocr_task_function_exists():
-    """tender.py must expose _run_project_doc_ocr as an async helper (testable, not inline)."""
-    import server.routes.tender as tender_module
+    """run_project_doc_ocr is an importable coroutine in tender_doc_pipeline (S3 下沉)."""
     import asyncio
 
-    assert hasattr(tender_module, "_run_project_doc_ocr"), (
-        "_run_project_doc_ocr must be an importable coroutine function in tender.py"
+    import server.routes.tender_doc_pipeline as pipeline
+
+    assert hasattr(pipeline, "run_project_doc_ocr"), (
+        "run_project_doc_ocr must be an importable coroutine in server/routes/tender_doc_pipeline.py"
     )
-    assert asyncio.iscoroutinefunction(tender_module._run_project_doc_ocr), (
-        "_run_project_doc_ocr must be a coroutine function"
+    assert asyncio.iscoroutinefunction(pipeline.run_project_doc_ocr), (
+        "run_project_doc_ocr must be a coroutine function"
     )
 
 
 def test_p13_bid_doc_ocr_task_function_exists():
-    """tender.py must expose _run_bid_doc_ocr as an async helper."""
-    import server.routes.tender as tender_module
+    """run_bid_doc_ocr is an importable coroutine in tender_doc_pipeline (S3 下沉)."""
     import asyncio
 
-    assert hasattr(tender_module, "_run_bid_doc_ocr"), (
-        "_run_bid_doc_ocr must be an importable coroutine function in tender.py"
+    import server.routes.tender_doc_pipeline as pipeline
+
+    assert hasattr(pipeline, "run_bid_doc_ocr"), (
+        "run_bid_doc_ocr must be an importable coroutine in server/routes/tender_doc_pipeline.py"
     )
-    assert asyncio.iscoroutinefunction(tender_module._run_bid_doc_ocr), (
-        "_run_bid_doc_ocr must be a coroutine function"
+    assert asyncio.iscoroutinefunction(pipeline.run_bid_doc_ocr), (
+        "run_bid_doc_ocr must be a coroutine function"
     )
 
 
