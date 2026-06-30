@@ -294,9 +294,21 @@ def _page_anchor(page_no: int) -> str:
     return f"【第 {page_no} 页】\n"
 
 
+# 识别失败标记前缀：extract_one/prewarm_and_text 失败时 _render_body 在文本开头打此前缀。
+# 公开常量 + is_ocr_text_valid 是 OCR 域唯一权威，消费方（评标上传 OCR 编排）据此判文本有效性，
+# 不要在调用层各自硬编码该字符串（S3 消重：原 routes/tender.py 重复定义了一份）。
+OCR_ERROR_PREFIX = "[识别失败]"
+
+
+def is_ocr_text_valid(text: str) -> bool:
+    """Return False if text is empty or is an error marker from the OCR pipeline."""
+    stripped = text.strip()
+    return bool(stripped) and not stripped.startswith(OCR_ERROR_PREFIX)
+
+
 def _render_body(result: dict) -> str:
     if result.get("error"):
-        return f"[识别失败] {result['error']}"
+        return f"{OCR_ERROR_PREFIX} {result['error']}"
     # pages 仅指 OCR 引擎产物（list[每页 {markdown}]）；native 文件的页数在 page_count，
     # 不在此。isinstance 守卫防止把页数整数误当列表迭代。
     pages = result.get("pages")
