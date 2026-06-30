@@ -45,8 +45,9 @@ items:
     effort: M
     wave: 2
     depends_on: [S3]
-    status: pending
+    status: done
     refs: ["audit F2"]
+    done_note: "CC 实施(refactor/s4-output-split)：output_contracts 930→474，tender 专属(废标/资格gate+评分一致性+解释规范化)抽到 server/common/tender_output.py，单向 import 无环，expense 零变更。748 pytest 绿。Codex 交叉 review 中。已合 main(未push)。"
   - id: S5
     slug: expert-advisory-repositioning
     stream: product
@@ -56,9 +57,10 @@ items:
     priority: this_week
     redzone: agent-front
     depends_on: []
-    status: pending
+    status: done
     note: "confirmed:false 归待核验非废标风险(R2b 纪律)。后端字段不删。"
     refs: ["会议结论1", "会议结论2", "待办1", "待办2"]
+    done_note: "Codex 实施(feat/s5-advisory)：buildIssueList 七类(含 pending_verification)+getAdvisoryLabel；隐藏 earnedTotal/总分/排名/verdict badge/推荐措辞。CC 复核=PASS(独立跑 bun test 14/lint/build 绿;R2b 守住;顺修了 main 上缺 react-day-picker 致 build 坏的潜伏问题)。已合 main(未push)。"
   - id: S6
     slug: scenario-split
     stream: product
