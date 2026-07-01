@@ -119,8 +119,9 @@ items:
     wave: 2
     redzone: agent-front
     depends_on: []
-    status: pending
-    note: "用户 2026-06-26 新需求。与 S5 同源(都把专家侧转向符合性/风险);建议先于 S5,共享 buildOverviewChecklist/buildIssueList 底层派生。confirmed:false/manual→待核验不打叉(R2b)。前端从既有 extracted_data 派生,后端尽量零改。见 sprints/2026-06-26-tender-overview-checklist/design.md。"
+    status: done
+    note: "用户 2026-06-26 新需求。S5 已 ship,S10 复用其 buildIssueList 派生底层(非先于 S5)。confirmed:false/manual→待核验不打叉(R2b)。前端从既有 extracted_data 派生,后端零改。见 sprints/2026-06-26-tender-overview-checklist/design.md。"
+    done_note: "CC 实施(worktree feat/s10-overview-checklist,用户授权红区)：model.buildOverviewChecklist 复用 S5 同套源 getter+pending 谓词(资格/否决/pass_fail硬性响应/rejected必交材料,程度项排除);ChecklistItem 类型无 score 字段+stripScoreMentions 文本层防泄漏;新组件 overview-checklist-view(图标+文字标签双通道 a11y);单投标人首屏默认落概要。3 轮 CC×Codex 交叉 review 闭环(round1 CC reviewer+spec-compliance+evaluator=PASS 提 4 项;round2/3 Codex 对抗实跑再挖 P1-a/b/c 分数文本泄漏等,全修+9 回归测试)。66 前端测试绿/tsc build 绿/eslint 绿/后端零改。见 reviews/sprint-10.md。可接受残留:unknown-status 资格项概要显 pending 但不进 S5 issueList(两视图目的不同,仅 off-spec 触发)。"
     refs: ["用户 2026-06-26 需求", "会议结论1", "会议结论2"]
 
 backlog:
