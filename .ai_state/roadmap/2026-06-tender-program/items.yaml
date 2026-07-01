@@ -85,7 +85,8 @@ items:
     blocker_resolved: "用户 2026-07-01 在 .env 配 Flash：MODEL_NAME=deepseek-v4-flash + 端点 https://api.deepseek.com/anthropic（V4Pro=deepseek-v4-pro[1M] 同网关注释切换）。Flash 现为平台默认模型。"
     progress:
       - "[done] 上下文截断防护：config.resolve_model_context_window(env MODEL_CONTEXT_WINDOW,opt-in) + agent_bridge.warn_if_context_may_truncate(预估输入 token+预留输出>窗口即 WARNING),接入 run_agent + run_agent_json 两条 funnel(覆盖 audit 流式 + tender 结构化)。TDD 10 用例,762 pytest 绿。.env 加注释提示。"
-      - "[done] Flash 评标压测(2026-07-01,harness logs/s7-flash-stress/run_stress.py 复用 _run_evaluation,2 真实标书×3):完成率6/6(含重试;首过~5/6)、时延110-461s、成本~$2.9/次。**关键问题**:①同标书评分严重不一致(案例B实得合计[40,66,9]/7倍漂移,Flash随机punt成manual);②policy_refs 4/6为空(违硬规则);③大案例契约flaky(漏manual_review_reason/非法JSON,靠重试兜);④两案例run3崩塌(只评1-2项)疑似截断(MODEL_CONTEXT_WINDOW未设,guard未触发)。报告见 logs/s7-flash-stress/REPORT.md + compound/2026-07-01-learning-flash-tender-eval-inconsistency.md。待:填窗口重跑验证截断+跑V4Pro对照。"
+      - "[done] Flash 评标压测(2026-07-01,harness logs/s7-flash-stress/run_stress.py):首轮暴露 Flash 同标书评分严重不一致(实得合计[40,66,9]/7倍漂移)+policy_refs频繁空+run3崩塌疑似截断。"
+      - "[done] Flash vs V4Pro 详细对照压测(2026-07-01,harness logs/s7-model-compare/run_compare.py,2标书×2模型×3=12次,细粒度计时/发现点/一致性,报告 logs/s7-model-compare/REPORT.md)。**结论**:时延 Flash~135s vs V4Pro~276s(2×慢);成本 Flash$2.68 vs V4Pro$3.44/次(贵28%);一致性 V4Pro更稳(案例A跨度9% vs Flash42%,V4Pro案例A实得项数恒7)但案例B两者都抖;policy_refs空 Flash4/6 vs V4Pro1/6(V4Pro完胜);契约本轮Flash0重试/V4Pro2重试(flaky非确定性);6/6全manual_review(价格横比单家算不出,正常)。**底稿32万token远超128K,压成本/提稳的杠杆是精简/分片底稿,不是换模型**。建议:关键路径用V4Pro+多次投票,Flash仅预筛;设MODEL_CONTEXT_WINDOW重测验证截断。"
     remaining:
       - "tests/eval_tender.py(复用 server/audit/eval.py 骨架,换成评标路径)"
       - "tender_golden_manifest.json(仿 tests/eval_fixtures/golden_manifest.json)"
