@@ -5,7 +5,7 @@ version: "9.6.4"
 
 # === PACE 路由状态 ===
 path: "Refactor" # tender 域路线图 2026-06-tender-program 执行中：S1-S6 已 ship，S7-S10 待办
-stage: "ship" # S1-S6 全部 impl+双向交叉review+merge+push main(HEAD f0b7dd4,与 origin 同步)，752 pytest 绿；roadmap 中途，无 in-flight sprint，待用户选下一个
+stage: "ship" # S1-S6 全 ship;S7 阻塞已解(用户配 Flash)+首切片 truncation guard 已交付(commit 5b5b819 本地未push)，762 pytest 绿；roadmap 中途，待用户填 MODEL_CONTEXT_WINDOW / 选 S7 剩余 or S9/S10
 current_sprint_slug: "2026-06-tender-program"
 current_roadmap_slug: "2026-06-tender-program" # 9 sprint 路线图(技术债 S1-S4 + 产品 S5-S6 + 基础设施 S7-S9)，见 roadmap/2026-06-tender-program/
 skip_polish: false
@@ -67,7 +67,7 @@ pointers:
   latest_architecture_update: "2026-06-23T06:38:15.291Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "【新 session 从这读起】tender 路线图 2026-06-tender-program：S1-S6 全部 ship(见 roadmap/items.yaml)。本次 checkpoint 已核实仓库干净：HEAD f0b7dd4、main 与 origin 同步、仅 main 分支、无 worktree/后台进程、752 pytest 绿。CC×Codex 并行+双向交叉 review：S1/S2(Codex)/S3(CC OCR合并进 server/ocr/,tender.py 1370→899)/S4(CC output_contracts 930→474 抽 server/common/tender_output.py)/S5(Codex 专家侧风险提示七类)/S6(Codex 三场景拆分 phase-1,隔离仅 UI 层,硬隔离 RBAC 随 S8 推迟)。交叉 review 抓 2 个潜伏 bug(S3 is_ocr_text_valid 漏判 rendered-all-error/S4 循环 import)均已修+回归(见 compound/2026-06-26-learning-cross-review-catches-latent-bugs.md)。**剩余 4**：S7(Flash评测,阻塞=缺 Flash 模型ID+端点)/S8(数据安全,用户明确推迟到业务做完)/S9(KB+外部数据脚手架,依赖 S3/S4 已就绪可起)/S10(详情页概要分析 checklist,与 S5 同源、前端红区需授权,见 sprints/2026-06-26-tender-overview-checklist/design.md)。下一步待用户：选 S9/S10 起、或给 Flash ID 起 S7。铁律护栏(每 sprint)：招标文件 criteria 唯一权威/不可判定不判0/重构零行为变更/pytest 全绿/agent-front 红区 worktree+授权。"
+next_action: "【新 session 从这读起】tender 路线图 2026-06-tender-program：S1-S6 全部 ship(见 roadmap/items.yaml)。本次 checkpoint 已核实仓库干净：HEAD f0b7dd4、main 与 origin 同步、仅 main 分支、无 worktree/后台进程、752 pytest 绿。CC×Codex 并行+双向交叉 review：S1/S2(Codex)/S3(CC OCR合并进 server/ocr/,tender.py 1370→899)/S4(CC output_contracts 930→474 抽 server/common/tender_output.py)/S5(Codex 专家侧风险提示七类)/S6(Codex 三场景拆分 phase-1,隔离仅 UI 层,硬隔离 RBAC 随 S8 推迟)。交叉 review 抓 2 个潜伏 bug(S3 is_ocr_text_valid 漏判 rendered-all-error/S4 循环 import)均已修+回归(见 compound/2026-06-26-learning-cross-review-catches-latent-bugs.md)。**剩余 4**：S7(in_progress,阻塞已解)/S8(数据安全,用户明确推迟到业务做完)/S9(KB+外部数据脚手架,依赖 S3/S4 已就绪可起)/S10(详情页概要分析 checklist,与 S5 同源、前端红区需授权,见 sprints/2026-06-26-tender-overview-checklist/design.md)。**2026-07-01 更新**：用户在 .env 把平台默认模型切成 Flash(deepseek-v4-flash,同 deepseek 网关,V4Pro=deepseek-v4-pro[1M] 注释切换)——S7 阻塞(缺 Flash ID+端点)已解。已交付 S7 首个切片=上下文截断防护(commit 5b5b819,本地未push)：config.resolve_model_context_window(MODEL_CONTEXT_WINDOW,opt-in)+agent_bridge.warn_if_context_may_truncate(预估输入token+预留输出>窗口即WARNING),接 run_agent+run_agent_json 两funnel;762 pytest 绿。**待用户**：(a)在 .env 填 MODEL_CONTEXT_WINDOW=Flash真实窗口(guard opt-in,不填不生效;当前注释占位65536需核实);(b)选是否接着做 S7 剩余评测脚手架(eval_tender.py+manifest+get_flash_model_config+TENDER_EVAL_MODEL,均新增不改判分)或转 S9/S10。铁律护栏(每 sprint)：招标文件 criteria 唯一权威/不可判定不判0/重构零行为变更/pytest 全绿/agent-front 红区 worktree+授权。"
 last_subagent: "codex-exec" # tender-report-dimensions D0-D5 headless (codex 0.142.1, gpt-5.5)；必须 env -u HTTP_PROXY -u HTTPS_PROXY 否则 streaming API 挂起，见 compound/2026-06-25-trick-codex-proxy-hangs-streaming.md
 last_subagent_at: "2026-06-25T00:00:00.000Z"
 active_worktrees: [] # git worktree list 仅 main；无其他分支/worktree(2026-06-23 复核确认)
@@ -393,6 +393,7 @@ slug 拆分为独立 sprint 目录；`lessons.md` 整体保留为
 - `docs/` — 项目参考文档 (开发指南 / 前端对接 / audit-skills)，非状态机文件
 
 ## 历史 (由 pace-continuator hook 自动追加, 最多保留近 10 条)
+- `2026-07-01 04:52:37`: stage=ship sprint=2026-06-tender-program turn-end
 - `2026-06-29 07:51:02`: stage=design sprint=2026-06-26-tender-domain-cleanup turn-end
 - `2026-06-25 16:05:57`: stage=ship sprint=2026-06-25-tender-report-dimensions turn-end
 - `2026-06-25 14:31:20`: stage=impl sprint=2026-06-25-tender-report-dimensions turn-end
@@ -402,7 +403,6 @@ slug 拆分为独立 sprint 目录；`lessons.md` 整体保留为
 - `2026-06-22 03:11:05`: stage=design sprint=2026-06-22-tender-evidence-accuracy-hardening turn-end
 - `2026-06-21 15:37:29`: stage=ship sprint=2026-06-22-multimodel-tender-optimization turn-end
 - `2026-06-21 08:11:37`: stage=ship sprint=2026-06-21-tender-harness-redesign turn-end
-- `2026-06-20 13:56:20`: stage=ship sprint=2026-06-20-external-source-mode turn-end
 
 
 - 2026-06-02 [migrate] v9.6.2(legacy flat) → v9.6.4. 备份见 `.ai_state.backup-*`。
