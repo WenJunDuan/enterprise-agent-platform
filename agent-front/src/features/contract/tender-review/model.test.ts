@@ -1286,14 +1286,20 @@ describe('contract tender review model', () => {
             status: 'rejected',
             basis: '缺授权书（5/10），排名第3。',
           },
+          {
+            item: '数字在后项',
+            max: 5,
+            score: 0,
+            status: 'rejected',
+            basis: '未响应，得分为0，总分80。',
+          },
         ],
       },
     })
     expect(checklist.length).toBeGreaterThan(0)
     for (const item of checklist) {
-      expect(item.reason).not.toMatch(/\d+\s*分/u)
-      expect(item.reason).not.toMatch(/排名\s*第?\s*\d/u)
-      expect(item.reason).not.toMatch(/第\s*\d+\s*名/u)
+      // 任意"数字±分/得分/总分/分值"两序、排名/名次数字都不得残留
+      expect(item.reason).not.toMatch(/\d/u)
     }
     // 定性理由须保留
     expect(
