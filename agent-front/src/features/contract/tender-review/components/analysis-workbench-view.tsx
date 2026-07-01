@@ -254,9 +254,6 @@ function DetailWorkbench(props: AnalysisWorkbenchViewProps) {
             <FileText className='size-4 text-violet-600' />
             证据与底稿
           </div>
-          <div className='mt-1 text-xs text-muted-foreground'>
-            {selectedBidder.name} · 点击左侧要点自动定位依据
-          </div>
         </div>
         <div className='min-h-0 flex-1 space-y-3 overflow-y-auto p-5'>
           {props.data.paragraphs.map((paragraph) => {
@@ -469,8 +466,7 @@ function CompareWorkbench({ data }: { data: TenderReviewMockData }) {
   return (
     <div className='space-y-4 bg-muted/20 p-6'>
       <div className='text-sm text-muted-foreground'>
-        {data.reviewBidders.length} 家投标方 · {data.projectInfo.method} ·
-        综合对比（符合性 checklist + 评分）
+        {data.reviewBidders.length} 家投标方 · {data.projectInfo.method} · 综合对比
       </div>
       <BidderCompareCards cards={cards} />
     </div>
