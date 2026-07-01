@@ -38,22 +38,50 @@
 - **不纳入 checklist**：档次/扣减/加分等"程度"评分项（非二元达成）→ 仍在「详细分析」展示。
 - 资格审查恒置 checklist 首组（最高优先级），与现有报告分段一致。
 
-## 设计方案
+## 设计方案（2026-07-01 定稿 — S5 已 ship，S10 复用其派生底层，不再"先于 S5"）
 
-### 后端（优先零改动）
-- 概要 checklist 完全可由前端从 `extracted_data.{eligibility_checks,disqualification_hits,scoring}` 派生，
-  **首选不改后端**。
-- 仅当需要统一"达成判定"口径供多端复用时，再在 server 侧加**纯展示派生** helper（不碰判分、不改 schema）；
-  本 Sprint 默认不走这条，列为可选。
+> 现状核实：S5 已交付 `buildIssueList`（model.ts:818，问题导向：只列 issue/risk/pending，**跳过达标项**
+> `if (!pending && !failed) return`）+ 详情页 mode 切换 `detail`(详细分析)/`compare`(风险对比)
+> (analysis-workbench-view.tsx)。S10 概要 checklist 是**符合性导向**（每条要求都出一行，含 ✓ 达标），
+> 必须复用 S5 的**同一套源 getter + pending/failed 判定谓词**，保证两视图永不打架
+> （issueList 里 pending 的项，checklist 必 ⏳，绝不 ✗）。
 
-### 前端（agent-front，红区）
-- 详情页导航/标签顺序改为：**概要分析（新，首位）→ 详细分析 → 评分对比 → 报告**。
-- `model.ts` 新增 `buildOverviewChecklist(result): ChecklistItem[]`（与 S5 `buildIssueList` 共享底层派生，
-  避免两套口径）。`ChecklistItem = { group, requirement, status: met|unmet|pending, reason, evidence[] }`。
-- 新组件 `OverviewChecklist`：按组（资格审查 / 否决条款 / 硬性响应 / 材料形式）渲染，每行
-  [✓/✗/⏳ 图标 + 颜色] + 要求名 + 理由（默认折叠，展开看 evidence 出处页）。
-- `types.ts` 增 `ChecklistItem` / `ChecklistStatus`。
-- 兼容旧结果：无 eligibility_checks/disqualification_hits 的旧数据 → checklist 退化为可派生项，不崩。
+### 后端（零改动，已确认可行）
+- checklist 完全由前端从 `selectedResult.extracted_data.{eligibility_checks,disqualification_hits,scoring}`
+  派生。**本 Sprint 不改后端**（不碰判分/schema）。
+
+### 前端（agent-front，红区）改动清单
+1. `types.ts`：加 `ChecklistStatus = 'met'|'unmet'|'pending'`、`ChecklistItem`；
+   `TenderReviewMode` 加 `'overview'`；`TenderReviewMockData` 加 `overviewChecklist?: ChecklistItem[]`。
+   `ChecklistItem = { id, group, requirement, status, reason, evidence: TenderScoreEvidence[] }`
+   —— **刻意不含 score/points/max 字段**（编译期保证无分数泄漏）。
+2. `model.ts`：新增 `buildOverviewChecklist(result)`，接进 `buildTenderReviewData`
+   (`overviewChecklist: buildOverviewChecklist(selectedResult)`)。**复用现有私有 helper**：
+   `getEligibilityCheckRecords` / `getDisqualificationHitRecords` / `getScoringItems` /
+   `isPendingSignal` / `isUnconfirmedDisqualification` / `getEligibilityStatus` / `getIssueEvidence` /
+   `collectIssueText`（不新造第二套口径）。
+3. 新组件 `components/overview-checklist-view.tsx`：按组渲染（资格审查 → 否决条款 → 硬性响应/材料），
+   每行 [✓ emerald / ✗ red / ⏳ muted 图标+**文字标签**（不靠颜色单独传达，守 a11y P0）] + 要求名 +
+   理由；evidence 出处默认折叠、可展开。沿用 `IssueListPanel` 视觉惯例。
+4. `analysis-workbench-view.tsx`：ModeButton 增「概要分析」**置首** → [概要分析, 详细分析, 风险对比]；
+   `BidderTabs` 展示条件 `mode === 'detail'` 放宽为 `mode !== 'compare'`（概要也是按选中投标人）；
+   body 增 `mode === 'overview' → <OverviewChecklist>`。
+5. `use-tender-review-page.ts`：**单投标人首屏 landing 由 'detail' 改 'overview'**（概览在前，见待定 Q1）；
+   compare（≥2 家）landing 不变。
+
+### buildOverviewChecklist 派生规则（三组，逐条要求 → met/unmet/pending）
+| 组 | 源 | ✓ met | ✗ unmet | ⏳ pending |
+|---|---|---|---|---|
+| 资格审查 | `eligibility_checks[]` | status=pass | fail/failed/rejected | manual/manual_review/pending/pendingSignal |
+| 否决条款 | `disqualification_hits[]`(仅有意义命中) | —（无全量条款清单，不合成 met 行） | confirmed 命中 | isUnconfirmedDisqualification/pendingSignal |
+| 硬性响应/材料 | `scoring[]` 中 `score_mode==='pass_fail'` **或** `status==='rejected'`（按 id 去重；程度项 banded/deduction/additive/formula 一律排除） | score≥max | rejected/failed 或 score<max | manual_review/score==null/pendingSignal |
+
+- reason = 各项 `basis`；evidence = `getIssueEvidence`（文件+第N页+quote）。
+- **不纳入**：档次/扣减/加分等"程度"项 → 仍只在「详细分析」展示（塞进二元 checklist 是范畴错误）。
+
+## 待用户拍板（启动前）
+- **Q1 单投标人首屏默认落在「概要分析」还是维持「详细分析」？** 建议落「概要分析」（符合"概览在前"原意）。
+- **Q2 红区授权 + 流水线确认**：worktree 隔离 → TDD 实施 → CC×Codex 多轮交叉 review → 清 worktree 合 main → 全量测 → 用户手检。
 
 ## 验收标准
 - 详情页「概要分析」排在详细分析之前，纯 checklist、无任何分数。
