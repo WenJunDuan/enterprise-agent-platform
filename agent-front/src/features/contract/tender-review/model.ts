@@ -6,6 +6,7 @@ import type {
   TenderProjectResultSummary,
 } from './api'
 import type {
+  BidderCard,
   ChecklistItem,
   CompareGroup,
   DashboardSummary,
@@ -209,6 +210,7 @@ export function buildTenderReviewData({
   const scoringItems = buildScoringItems(selectedResult)
   const issueList = buildIssueList(selectedResult)
   const overviewChecklist = buildOverviewChecklist(selectedResult)
+  const bidderCards = buildBidderCards(reviewBidders, scoringResults)
 
   return {
     projects: projectData
@@ -231,6 +233,7 @@ export function buildTenderReviewData({
     resultPolicyRefs: normalizePolicyRefs(selectedResult),
     resultEligibilityChecks: buildEligibilityChecks(selectedResult),
     overviewChecklist,
+    bidderCards,
     scoringItems,
     scoreSummary: buildScoreSummary(scoringItems),
     issueList,
@@ -1077,12 +1080,13 @@ export function buildOverviewChecklist(
     const score = toNumber(item.score)
     const rawBasis = toText(item.basis) || toText(item.manual_review_reason)
     const text = collectIssueText(item, [title, rawBasis])
-    // manual / manual_review / score 缺失 / 读不清信号 → 待核验（绝不判未达到，守 R2b）。
+    // manual / manual_review / 读不清信号 → 待核验（守 R2b）。score==null 仅在非 rejected 时算待核验：
+    // rejected(必交材料缺失/硬否决)是确定的未达到,不能因缺 score 字段被误判成待核验(codex r2 P1)。
     const pending =
       status === 'manual' ||
       status === 'manual_review' ||
-      score == null ||
-      isPendingSignal(text)
+      isPendingSignal(text) ||
+      (score == null && !isRejected)
     // pass_fail 满足=满分；max 缺失(=0)时退而据 score>0 判达标，避免漏填 max 把达标项误判未达到。
     const met =
       !pending &&
@@ -1300,6 +1304,8 @@ function buildScoringItems(result?: AuditResult | null): TenderScoringItem[] {
       reviewDimension,
       scoreMode:
         toText(item.score_mode) || toText(criteria?.score_mode) || undefined,
+      // 逐条扣分命中(条件 + 触发原文 quote + 出处页)——供详细分析「扣分明细」显示可追溯依据。
+      deductionHits: parseScoreHits(item.deduction_hits),
       evidence: buildScoringEvidence(item, result, title),
     }
   })
@@ -1320,10 +1326,11 @@ function buildScoreSummary(items: TenderScoringItem[]): TenderScoreSummary {
 
   items.forEach((item) => {
     const issue = toScoreIssue(item)
-    if (item.status === 'manual_review' || item.score == null) {
-      pendingItems.push({ ...issue, deduction: null })
-    } else if (item.status === 'rejected') {
+    // rejected 优先于 score==null：必交材料缺失判 0 可能不带 score 字段，应归失分项(该项判0)而非待核验。
+    if (item.status === 'rejected') {
       rejectedItems.push(issue)
+    } else if (item.status === 'manual_review' || item.score == null) {
+      pendingItems.push({ ...issue, deduction: null })
     } else if (item.status === 'scored' && item.score < item.max) {
       deductedItems.push(issue)
     }
@@ -1347,6 +1354,33 @@ function buildScoreSummary(items: TenderScoringItem[]): TenderScoreSummary {
     rejectedItems,
     pendingItems,
   }
+}
+
+/**
+ * 风险对比"每家一卡"：为每个投标人派生 符合性 checklist + 评分总览 + 关键风险。
+ * 按 claim_id 匹配 resultDetails 里各家完整结果;无匹配则给空卡(不崩)。复用 S10/S5 既有派生,不另造口径。
+ */
+export function buildBidderCards(
+  reviewBidders: ReviewBidder[],
+  resultDetails: AuditResult[] = []
+): BidderCard[] {
+  return reviewBidders.map((bidder) => {
+    // bidder.id 可能是 claim_id / request_id / task_id（buildReviewBidders 的兜底口径），
+    // 与 normalizeResultDetails 同款多键匹配，避免 request_id-only 结果匹配不上出空卡（codex P1-1）。
+    const result =
+      resultDetails.find(
+        (item) =>
+          toText(item.claim_id) === bidder.id ||
+          toText(item.request_id) === bidder.id ||
+          toText(item.task_id) === bidder.id
+      ) ?? null
+    return {
+      ...bidder,
+      score: buildScoreSummary(buildScoringItems(result)),
+      checklist: buildOverviewChecklist(result),
+      topIssues: buildIssueList(result),
+    }
+  })
 }
 
 function toScoreIssue(item: TenderScoringItem): TenderScoreIssue {
