@@ -146,7 +146,8 @@ export function useTenderReviewPage(
   const [screen, setScreen] = useState<TenderReviewScreen>(() =>
     resumableActiveEval ? 'analyzing' : initialScreen
   )
-  const [reviewMode, setReviewMode] = useState<TenderReviewMode>('detail')
+  // S10：单投标人首屏落「概要分析」（概览在前）；多投标人有横比时仍先落「风险对比」。
+  const [reviewMode, setReviewMode] = useState<TenderReviewMode>('overview')
   const [category, setCategory] = useState<ReviewCategory>('qual')
   // 恢复：若 localStorage 有进行中评标，selectedProjectId 直接指向该项目（不落到列表[0]，codex r5 P1）。
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
@@ -457,7 +458,7 @@ export function useTenderReviewPage(
     onSuccess: ({ projectId, requestIds, hasCompare }) => {
       // 解耦：提交成功即把进行中评标交给 analyzing 独立轮询（不阻塞、不超时掉回）。
       selectProject(projectId)
-      setReviewMode(hasCompare ? 'compare' : 'detail')
+      setReviewMode(hasCompare ? 'compare' : 'overview')
       setProgressByRid({})
       setProgress(30)
       setActiveEval({ projectId, requestIds, hasCompare })
@@ -536,7 +537,7 @@ export function useTenderReviewPage(
         queryKey: ['tender-project-results', projectId],
       })
       if (screen === 'analyzing') {
-        setReviewMode(hasCompare ? 'compare' : 'detail')
+        setReviewMode(hasCompare ? 'compare' : 'overview')
         setScreen('analysis')
         void navigate({
           to: '/contracts/tender/detail',
@@ -558,7 +559,7 @@ export function useTenderReviewPage(
   }
 
   function openAnalysis(
-    mode: TenderReviewMode = 'detail',
+    mode: TenderReviewMode = 'overview',
     projectId = selectedProjectIdForQuery
   ) {
     if (projectId) selectProject(projectId)
@@ -605,7 +606,7 @@ export function useTenderReviewPage(
           requestIds: inProgress.map((bid) => bid.request_id),
           hasCompare: bids.length >= 2,
         })
-        setReviewMode(bids.length >= 2 ? 'compare' : 'detail')
+        setReviewMode(bids.length >= 2 ? 'compare' : 'overview')
         setScreen('analyzing')
         void navigate({
           to: '/contracts/tender/detail',
@@ -616,7 +617,7 @@ export function useTenderReviewPage(
     } catch {
       // 详情拉取失败 → 回退分析中心（不阻断用户打开项目）
     }
-    openAnalysis('detail', projectId)
+    openAnalysis('overview', projectId)
   }
 
   function openReport(projectId?: string) {

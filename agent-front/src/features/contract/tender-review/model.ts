@@ -6,6 +6,7 @@ import type {
   TenderProjectResultSummary,
 } from './api'
 import type {
+  ChecklistItem,
   CompareGroup,
   DashboardSummary,
   DocumentParagraph,
@@ -207,6 +208,7 @@ export function buildTenderReviewData({
   )
   const scoringItems = buildScoringItems(selectedResult)
   const issueList = buildIssueList(selectedResult)
+  const overviewChecklist = buildOverviewChecklist(selectedResult)
 
   return {
     projects: projectData
@@ -228,6 +230,7 @@ export function buildTenderReviewData({
     resultReasons: normalizeDisplayList(selectedResult?.reasons),
     resultPolicyRefs: normalizePolicyRefs(selectedResult),
     resultEligibilityChecks: buildEligibilityChecks(selectedResult),
+    overviewChecklist,
     scoringItems,
     scoreSummary: buildScoreSummary(scoringItems),
     issueList,
@@ -946,6 +949,113 @@ export function buildIssueList(result?: AuditResult | null): IssueItem[] {
   })
 
   return issues
+}
+
+// S10 概要分析：只识别真正二元的评分项——pass_fail 硬性响应，或 status=rejected 的硬否决/必交材料缺失。
+const BINARY_SCORE_MODES = new Set(['pass_fail'])
+
+/** 把一条记录的出处（文件+页+quote）收成 checklist 用的 evidence 数组；与 issueList 共用同一提取口径。 */
+function checklistEvidence(record: UnknownRecord): TenderScoreEvidence[] {
+  const { source, quote } = getIssueEvidence(record)
+  if (!source && !quote) return []
+  return [{ source, quote }]
+}
+
+/**
+ * 概要分析 checklist：把每条招标要求判成 met/unmet/pending（符合性导向），
+ * 与 buildIssueList（问题导向）互补且**共享同一套源 getter + pending 谓词**，
+ * 保证两视图口径一致（issueList 里 pending 的项，此处必 pending，绝不 ✗）。
+ *
+ * 只纳入二元达成项：资格审查 / 否决命中 / pass_fail 硬性响应 / rejected 必交材料。
+ * 档次/扣减/加分/公式等"程度"项一律排除（塞进二元 checklist 是范畴错误，仍在「详细分析」展示）。
+ * 概要不含任何分数——ChecklistItem 类型层面即不带 score/points/max。
+ */
+export function buildOverviewChecklist(
+  result?: AuditResult | null
+): ChecklistItem[] {
+  const items: ChecklistItem[] = []
+  const push = (row: Omit<ChecklistItem, 'id'>) => {
+    items.push({ ...row, id: `checklist-${items.length}` })
+  }
+
+  // 1) 资格审查：pass→met，fail/failed/rejected→unmet，manual/pending/读不清→pending。
+  getEligibilityCheckRecords(result).forEach((item, index) => {
+    const status = toText(item.status)
+    const text = collectIssueText(item)
+    const pending =
+      status === 'manual' ||
+      status === 'manual_review' ||
+      status === 'pending' ||
+      isPendingSignal(text)
+    const unmet =
+      !pending &&
+      (status === 'fail' || status === 'failed' || status === 'rejected')
+    push({
+      group: '资格审查',
+      requirement: toText(item.check) || `资格审查 ${index + 1}`,
+      status: pending ? 'pending' : unmet ? 'unmet' : 'met',
+      reason:
+        toText(item.basis) ||
+        toText(item.finding) ||
+        '按招标文件资格审查要求核验。',
+      evidence: checklistEvidence(item),
+    })
+  })
+
+  // 2) 否决条款：命中即"未达到"；confirmed:false 疑似 / 读不清 → pending（绝不打叉，守 R2b）。
+  //    只拿到"命中"记录、没有全量条款清单，故不合成 met 行。
+  getDisqualificationHitRecords(result).forEach((hit, index) => {
+    const text = collectIssueText(hit)
+    const pending = isUnconfirmedDisqualification(hit) || isPendingSignal(text)
+    push({
+      group: '否决条款',
+      requirement:
+        toText(hit.item) ||
+        toText(hit.condition) ||
+        toText(hit.check) ||
+        toText(hit.finding) ||
+        toText(hit.rule_id) ||
+        `否决条款 ${index + 1}`,
+      status: pending ? 'pending' : 'unmet',
+      reason:
+        toText(hit.finding) ||
+        toText(hit.basis) ||
+        toText(hit.reason) ||
+        '命中招标文件否决性条款。',
+      evidence: checklistEvidence(hit),
+    })
+  })
+
+  // 3) 硬性响应/必交材料：只纳入 pass_fail 或 status=rejected 的二元项，程度项排除。
+  //    score≥max→met，rejected/失败/score<max→unmet，manual_review/score==null/读不清→pending。
+  getScoringItems(result).forEach((item, index) => {
+    const status = toText(item.status)
+    const isRejected = status === 'rejected' || status === 'failed'
+    const isBinary = BINARY_SCORE_MODES.has(toText(item.score_mode)) || isRejected
+    if (!isBinary) return
+
+    const title = toText(item.item) || `硬性响应 ${index + 1}`
+    const max = toNumber(item.max) ?? 0
+    const score = toNumber(item.score)
+    const basis =
+      toText(item.basis) ||
+      toText(item.manual_review_reason) ||
+      '按招标文件硬性响应要求判定。'
+    const text = collectIssueText(item, [title, basis])
+    const pending =
+      status === 'manual_review' || score == null || isPendingSignal(text)
+    const met =
+      !pending && !isRejected && score != null && max > 0 && score >= max
+    push({
+      group: '硬性响应',
+      requirement: title,
+      status: pending ? 'pending' : met ? 'met' : 'unmet',
+      reason: basis,
+      evidence: checklistEvidence(item),
+    })
+  })
+
+  return items
 }
 
 export function getAdvisoryLabel(issueList: IssueItem[]) {
