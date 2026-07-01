@@ -10,6 +10,7 @@ import type {
   TenderReviewMockData,
   TenderReviewMode,
 } from '../types'
+import { formatScore } from '../format'
 import { OverviewChecklistView } from './overview-checklist-view'
 import { ScoringOverviewPanel } from './scoring-overview-panel'
 import { BidderCompareCards } from './bidder-compare-cards'
@@ -108,10 +109,6 @@ function selectedBidderName(props: AnalysisWorkbenchViewProps): string {
       (item) => item.id === props.selectedBidderId
     ) ?? props.data.reviewBidders[0]
   return bidder?.name ?? '当前投标人'
-}
-
-function formatScore(score: number): string {
-  return Number.isInteger(score) ? String(score) : score.toFixed(1)
 }
 
 function ModeButton({

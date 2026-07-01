@@ -1,5 +1,6 @@
 import { CheckCircle2, Clock, Trophy, XCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { formatScore } from '../format'
 import type { BidderCard, ChecklistStatus, IssueItem } from '../types'
 
 type BidderCompareCardsProps = {
@@ -16,10 +17,6 @@ const statusMeta: Record<
 }
 
 const statusOrder: ChecklistStatus[] = ['met', 'unmet', 'pending']
-
-function fmt(n: number): string {
-  return Number.isInteger(n) ? String(n) : n.toFixed(1)
-}
 
 /** 风险对比「每家一卡」：符合性 checklist + 评分总分/实得 + 关键风险，横向并排多家。 */
 export function BidderCompareCards({ cards }: BidderCompareCardsProps) {
@@ -72,14 +69,14 @@ function BidderCardView({ card }: { card: BidderCard }) {
         </div>
         <div className='mt-3 flex items-end gap-2'>
           <span className='text-2xl font-semibold tracking-tight text-primary'>
-            {fmt(card.score.earnedTotal)}
+            {formatScore(card.score.earnedTotal)}
           </span>
           <span className='mb-0.5 text-sm text-muted-foreground'>
-            / {fmt(card.score.maxTotal)} 分
+            / {formatScore(card.score.maxTotal)} 分
           </span>
           {card.score.pendingTotal > 0 ? (
             <span className='mb-0.5 ml-auto text-xs text-amber-700 dark:text-amber-300'>
-              待核验 {fmt(card.score.pendingTotal)} 分
+              待核验 {formatScore(card.score.pendingTotal)} 分
             </span>
           ) : null}
         </div>
@@ -104,7 +101,11 @@ function BidderCardView({ card }: { card: BidderCard }) {
             </div>
           ))}
         </div>
-        {attention.length > 0 ? (
+        {card.checklist.length === 0 ? (
+          <p className='mt-3 text-xs text-muted-foreground'>
+            暂无可派生的符合性项（该家尚未产出资格 / 否决 / 硬性响应）。
+          </p>
+        ) : attention.length > 0 ? (
           <div className='mt-3 space-y-1.5'>
             {attention.map((item) => {
               const meta = statusMeta[item.status]

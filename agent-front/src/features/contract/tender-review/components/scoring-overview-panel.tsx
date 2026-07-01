@@ -1,5 +1,12 @@
-import { AlertTriangle, Building2, ClipboardList, MinusCircle } from 'lucide-react'
+import {
+  AlertTriangle,
+  Building2,
+  ClipboardList,
+  MapPin,
+  MinusCircle,
+} from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { formatScore } from '../format'
 import type {
   ProjectInfo,
   TenderScoreCategory,
@@ -25,11 +32,18 @@ const EMPTY_SUMMARY: TenderScoreSummary = {
   pendingItems: [],
 }
 
-function fmt(n: number): string {
-  return Number.isInteger(n) ? String(n) : n.toFixed(1)
+// 扣分明细一行：逐条扣分命中(带原文/出处) 或 整项失分/判0 的汇总行。
+type LossEntry = {
+  key: string
+  item: string
+  label: string
+  reject: boolean
+  detail?: string
+  quote?: string
+  source?: string
 }
 
-/** 详细分析左侧「评分总览」：招标项目 + 分数卡 + 类目合计 + 扣分/失分清单（显真实分数）。 */
+/** 详细分析左侧「评分总览」：招标项目 + 分数卡 + 类目合计 + 扣分明细(逐条带出处) + 待核验。 */
 export function ScoringOverviewPanel({
   projectInfo,
   bidderName,
@@ -39,7 +53,7 @@ export function ScoringOverviewPanel({
 }: ScoringOverviewPanelProps) {
   const s = scoreSummary ?? EMPTY_SUMMARY
   const categories = summarizeByCategory(scoringItems)
-  const lostItems = [...s.deductedItems, ...s.rejectedItems]
+  const losses = buildLossEntries(scoringItems)
 
   return (
     <aside
@@ -72,10 +86,10 @@ export function ScoringOverviewPanel({
           评分总览
         </div>
         <div className='mt-3 grid grid-cols-2 gap-2'>
-          <Stat label='实际得分' value={fmt(s.earnedTotal)} tone='primary' big />
-          <Stat label='总分' value={fmt(s.maxTotal)} />
-          <Stat label='已扣分' value={fmt(s.deductedTotal)} tone='red' />
-          <Stat label='待核验' value={fmt(s.pendingTotal)} tone='amber' />
+          <Stat label='实际得分' value={formatScore(s.earnedTotal)} tone='primary' big />
+          <Stat label='总分' value={formatScore(s.maxTotal)} />
+          <Stat label='已扣分' value={formatScore(s.deductedTotal)} tone='red' />
+          <Stat label='待核验' value={formatScore(s.pendingTotal)} tone='amber' />
         </div>
         {categories.length > 0 ? (
           <div className='mt-3 space-y-1.5 border-t pt-3'>
@@ -86,7 +100,7 @@ export function ScoringOverviewPanel({
               >
                 <span className='text-muted-foreground'>{categoryLabel(c.category)}</span>
                 <span className='font-medium'>
-                  {fmt(c.earned)} / {fmt(c.max)}
+                  {formatScore(c.earned)} / {formatScore(c.max)}
                 </span>
               </div>
             ))}
@@ -99,32 +113,43 @@ export function ScoringOverviewPanel({
         ) : null}
       </div>
 
-      {/* 扣分 / 失分清单 */}
+      {/* 扣分明细（逐条带出处） */}
       <div className='rounded-xl border bg-card p-4 shadow-sm'>
         <div className='flex items-center gap-2 text-sm font-semibold'>
           <MinusCircle className='size-4 text-red-600' />
           扣分明细
           <span className='ml-auto rounded-full bg-muted px-2 py-0.5 text-xs font-normal text-muted-foreground'>
-            {lostItems.length} 项
+            {losses.length} 条
           </span>
         </div>
-        {lostItems.length === 0 ? (
+        {losses.length === 0 ? (
           <p className='mt-2 text-sm leading-6 text-muted-foreground'>
             暂无扣分 / 失分项；各评分项均按满分或规则计分。
           </p>
         ) : (
           <div className='mt-3 space-y-2'>
-            {lostItems.map((item, index) => (
-              <div key={`${item.item}-${index}`} className='rounded-lg bg-muted/40 p-2.5 text-xs'>
+            {losses.map((loss) => (
+              <div key={loss.key} className='rounded-lg bg-muted/40 p-2.5 text-xs'>
                 <div className='flex items-start justify-between gap-2'>
-                  <span className='font-medium text-foreground'>{item.item}</span>
+                  <span className='font-medium text-foreground'>{loss.item}</span>
                   <span className='shrink-0 font-semibold text-red-600 dark:text-red-300'>
-                    {item.status === 'rejected'
-                      ? '该项判 0'
-                      : `-${fmt(item.deduction ?? 0)} 分`}
+                    {loss.reject ? '该项判 0' : loss.label}
                   </span>
                 </div>
-                <div className='mt-1 leading-5 text-muted-foreground'>{item.basis || '—'}</div>
+                {loss.detail ? (
+                  <div className='mt-1 leading-5 text-muted-foreground'>{loss.detail}</div>
+                ) : null}
+                {loss.quote ? (
+                  <div className='mt-1 border-l-2 border-l-amber-300 pl-2 leading-5 text-muted-foreground italic'>
+                    「{loss.quote}」
+                  </div>
+                ) : null}
+                {loss.source ? (
+                  <div className='mt-1 flex items-center gap-1 font-medium text-primary'>
+                    <MapPin className='size-3 shrink-0' />
+                    {loss.source}
+                  </div>
+                ) : null}
               </div>
             ))}
           </div>
@@ -147,7 +172,7 @@ export function ScoringOverviewPanel({
                 <div className='flex items-start justify-between gap-2'>
                   <span className='font-medium text-foreground'>{item.item}</span>
                   <span className='shrink-0 font-semibold text-amber-700 dark:text-amber-300'>
-                    满分 {fmt(item.max)} · 待核验
+                    满分 {formatScore(item.max)} · 待核验
                   </span>
                 </div>
                 <div className='mt-1 leading-5 text-muted-foreground'>{item.basis || '—'}</div>
@@ -198,6 +223,48 @@ function Stat({
       </div>
     </div>
   )
+}
+
+// 从评分项派生扣分明细：优先逐条扣分命中(带原文/出处)，无命中则给整项失分/判0 汇总行。
+function buildLossEntries(items: TenderScoringItem[]): LossEntry[] {
+  const entries: LossEntry[] = []
+  items.forEach((item) => {
+    if (item.status === 'rejected') {
+      entries.push({
+        key: item.id,
+        item: item.item,
+        label: '该项判 0',
+        reject: true,
+        detail: item.basis,
+      })
+      return
+    }
+    if (item.deductionHits && item.deductionHits.length > 0) {
+      item.deductionHits.forEach((hit, index) => {
+        entries.push({
+          key: `${item.id}-${index}`,
+          item: item.item,
+          label: hit.points != null ? `-${formatScore(hit.points)} 分` : '扣分',
+          reject: false,
+          detail: hit.condition,
+          quote: hit.quote,
+          source: hit.source,
+        })
+      })
+      return
+    }
+    // 无逐条命中但确有失分(如 pass_fail 得 0 / 客观项未满足) → 汇总一行。
+    if (item.status === 'scored' && item.score != null && item.score < item.max) {
+      entries.push({
+        key: item.id,
+        item: item.item,
+        label: `-${formatScore(item.max - item.score)} 分`,
+        reject: false,
+        detail: item.basis,
+      })
+    }
+  })
+  return entries
 }
 
 function summarizeByCategory(items: TenderScoringItem[]) {

@@ -1428,4 +1428,75 @@ describe('contract tender review model', () => {
     expect(Array.isArray(data.bidderCards)).toBe(true)
     expect((data.bidderCards ?? []).length).toBeGreaterThanOrEqual(2)
   })
+
+  // ── 交叉 review 补漏（CC + Codex 一致 finding）──
+
+  test('buildScoreSummary classifies rejected+score:null as 失分 not 待核验 (CC F1)', () => {
+    const cards = buildBidderCards(
+      [{ id: 'CLAIM-R', tag: '甲', name: 'R 公司', short: 'R', total: 0, rank: 1 }],
+      [
+        {
+          claim_id: 'CLAIM-R',
+          verdict: 'rejected',
+          extracted_data: {
+            scoring: [
+              { item: '必交资料', max: 5, score: null, status: 'rejected', basis: '缺授权书。' },
+            ],
+          },
+        },
+      ]
+    )
+    const s = cards[0].score
+    expect(s.rejectedItems.map((i) => i.item)).toContain('必交资料')
+    expect(s.pendingItems.map((i) => i.item)).not.toContain('必交资料')
+    expect(s.deductedTotal).toBe(5)
+  })
+
+  test('buildBidderCards matches result by request_id when claim_id absent (Codex P1-1)', () => {
+    const cards = buildBidderCards(
+      [{ id: 'req-a', tag: '甲', name: 'A 公司', short: 'A', total: 9, rank: 1 }],
+      [
+        {
+          request_id: 'req-a',
+          verdict: 'manual_review',
+          extracted_data: {
+            eligibility_checks: [{ check: '营业执照', status: 'pass' }],
+            scoring: [{ item: '业绩', max: 10, score: 9, status: 'scored' }],
+          },
+        },
+      ]
+    )
+    expect(cards[0].score.earnedTotal).toBe(9)
+    expect(cards[0].checklist.length).toBeGreaterThan(0)
+  })
+
+  test('scoringItems carry deductionHits (quote/出处) for 扣分明细 (spec M1)', () => {
+    const data = buildTenderReviewData({
+      selectedResult: {
+        verdict: 'manual_review',
+        extracted_data: {
+          scoring: [
+            {
+              item: '业绩',
+              max: 10,
+              score: 8,
+              status: 'scored',
+              score_mode: 'deduction',
+              deduction_hits: [
+                {
+                  condition: '每缺1个同类业绩扣2分',
+                  deducted: 2,
+                  evidence: { source: '投标文件 p.5', quote: '仅提供 2 个业绩' },
+                },
+              ],
+            },
+          ],
+        },
+      },
+    })
+    const hit = (data.scoringItems ?? [])[0]?.deductionHits?.[0]
+    expect(hit?.quote).toBe('仅提供 2 个业绩')
+    expect(hit?.source).toBe('投标文件 p.5')
+    expect(hit?.points).toBe(2)
+  })
 })
