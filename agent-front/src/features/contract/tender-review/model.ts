@@ -1080,12 +1080,13 @@ export function buildOverviewChecklist(
     const score = toNumber(item.score)
     const rawBasis = toText(item.basis) || toText(item.manual_review_reason)
     const text = collectIssueText(item, [title, rawBasis])
-    // manual / manual_review / score 缺失 / 读不清信号 → 待核验（绝不判未达到，守 R2b）。
+    // manual / manual_review / 读不清信号 → 待核验（守 R2b）。score==null 仅在非 rejected 时算待核验：
+    // rejected(必交材料缺失/硬否决)是确定的未达到,不能因缺 score 字段被误判成待核验(codex r2 P1)。
     const pending =
       status === 'manual' ||
       status === 'manual_review' ||
-      score == null ||
-      isPendingSignal(text)
+      isPendingSignal(text) ||
+      (score == null && !isRejected)
     // pass_fail 满足=满分；max 缺失(=0)时退而据 score>0 判达标，避免漏填 max 把达标项误判未达到。
     const met =
       !pending &&

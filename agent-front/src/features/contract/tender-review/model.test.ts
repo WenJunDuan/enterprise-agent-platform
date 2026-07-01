@@ -1499,4 +1499,15 @@ describe('contract tender review model', () => {
     expect(hit?.source).toBe('投标文件 p.5')
     expect(hit?.points).toBe(2)
   })
+
+  test('buildOverviewChecklist marks rejected+score:null as unmet not pending (Codex r2 P1)', () => {
+    const checklist = buildOverviewChecklist({
+      extracted_data: {
+        scoring: [
+          { item: '必交材料', max: 5, score: null, status: 'rejected', basis: '缺授权书。' },
+        ],
+      },
+    })
+    expect(checklist.find((i) => i.requirement === '必交材料')?.status).toBe('unmet')
+  })
 })

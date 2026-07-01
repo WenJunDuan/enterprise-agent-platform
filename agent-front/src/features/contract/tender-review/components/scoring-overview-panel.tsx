@@ -229,28 +229,28 @@ function Stat({
 function buildLossEntries(items: TenderScoringItem[]): LossEntry[] {
   const entries: LossEntry[] = []
   items.forEach((item) => {
-    if (item.status === 'rejected') {
-      entries.push({
-        key: item.id,
-        item: item.item,
-        label: '该项判 0',
-        reject: true,
-        detail: item.basis,
-      })
-      return
-    }
+    const reject = item.status === 'rejected'
+    // 逐条扣分命中优先：带触发原文 quote + 出处页(rejected 项若有命中也保留出处，codex r2 P2)。
     if (item.deductionHits && item.deductionHits.length > 0) {
       item.deductionHits.forEach((hit, index) => {
         entries.push({
           key: `${item.id}-${index}`,
           item: item.item,
-          label: hit.points != null ? `-${formatScore(hit.points)} 分` : '扣分',
-          reject: false,
+          label: reject
+            ? '该项判 0'
+            : hit.points != null
+              ? `-${formatScore(hit.points)} 分`
+              : '扣分',
+          reject,
           detail: hit.condition,
           quote: hit.quote,
           source: hit.source,
         })
       })
+      return
+    }
+    if (reject) {
+      entries.push({ key: item.id, item: item.item, label: '该项判 0', reject: true, detail: item.basis })
       return
     }
     // 无逐条命中但确有失分(如 pass_fail 得 0 / 客观项未满足) → 汇总一行。
