@@ -1,0 +1,14 @@
+sprint_slug: 2026-06-tender-program
+collected_evidence:
+  - tool_use_id: "toolu_01MgiAPrtWBgiw98SL8Fyb3T"
+    tool: "Edit"
+    file: "/Users/mi_manchi/workspace/enterprise-agent-platform/.ai_state/_index.md"
+    timestamp: "2026-07-01T04:50:58.768Z"
+  - tool_use_id: "toolu_01Lueu4ggjYXm5oRamhNkA7M"
+    tool: "Edit"
+    file: "/Users/mi_manchi/workspace/enterprise-agent-platform/.ai_state/_index.md"
+    timestamp: "2026-07-01T04:51:11.749Z"
+  - tool_use_id: "toolu_015is2vkzNVrYSNozqML7mpH"
+    tool: "Edit"
+    file: "/Users/mi_manchi/workspace/enterprise-agent-platform/.ai_state/_index.md"
+    timestamp: "2026-07-01T04:51:37.396Z"
