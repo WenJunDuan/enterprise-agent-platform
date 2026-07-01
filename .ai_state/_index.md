@@ -49,7 +49,7 @@ counts:
   issues_count: 0
   refactors_count: 0
   systems_count: 6
-  reviews_count: 53
+  reviews_count: 54
   cleanup_count: 1
   compound:
     learning: 9
