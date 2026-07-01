@@ -5,7 +5,7 @@ version: "9.6.4"
 
 # === PACE 路由状态 ===
 path: "Refactor" # tender 域路线图 2026-06-tender-program 执行中：S1-S6 已 ship，S7-S10 待办
-stage: "ship" # S1-S6+S10 全 ship(S10=概要checklist,merge bfa6cfa);S7 阻塞解+截断防护切片已交付;66前端+762pytest+build+lint 绿；本地未push;待用户手检S10 UI/填MODEL_CONTEXT_WINDOW/选S7剩余or S9
+stage: "ship" # S1-S6+S10+详情页显分重构 全 ship;S7 阻塞解+截断防护切片+Flash-vs-V4Pro压测完成;73前端+762pytest+build+lint 绿；已 push origin(ea7a1ef)；两 dev server 在跑(9999 Flash/9998 V4Pro)供手测
 current_sprint_slug: "2026-06-tender-program"
 current_roadmap_slug: "2026-06-tender-program" # 9 sprint 路线图(技术债 S1-S4 + 产品 S5-S6 + 基础设施 S7-S9)，见 roadmap/2026-06-tender-program/
 skip_polish: false
@@ -49,7 +49,7 @@ counts:
   issues_count: 0
   refactors_count: 0
   systems_count: 6
-  reviews_count: 54
+  reviews_count: 55
   cleanup_count: 1
   compound:
     learning: 9
@@ -67,7 +67,7 @@ pointers:
   latest_architecture_update: "2026-06-23T06:38:15.291Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "【新 session 从这读起】tender 路线图 2026-06-tender-program：S1-S6 全部 ship(见 roadmap/items.yaml)。本次 checkpoint 已核实仓库干净：HEAD f0b7dd4、main 与 origin 同步、仅 main 分支、无 worktree/后台进程、752 pytest 绿。CC×Codex 并行+双向交叉 review：S1/S2(Codex)/S3(CC OCR合并进 server/ocr/,tender.py 1370→899)/S4(CC output_contracts 930→474 抽 server/common/tender_output.py)/S5(Codex 专家侧风险提示七类)/S6(Codex 三场景拆分 phase-1,隔离仅 UI 层,硬隔离 RBAC 随 S8 推迟)。交叉 review 抓 2 个潜伏 bug(S3 is_ocr_text_valid 漏判 rendered-all-error/S4 循环 import)均已修+回归(见 compound/2026-06-26-learning-cross-review-catches-latent-bugs.md)。**剩余 2**：S8(数据安全,用户推迟到业务做完)/S9(KB+外部数据脚手架,依赖已就绪可起)。**S7 in_progress**(截断防护切片已交付,评测脚手架待做)。**2026-07-01 进展**：(1)Flash 切默认模型 → S7 阻塞解,交付截断防护切片(commit 5b5b819,MODEL_CONTEXT_WINDOW opt-in,762 绿)——待用户填真实窗口 + 选做 S7 剩余评测脚手架 or 转 S9。(2)**S10 已 ship**(merge bfa6cfa,HEAD,本地未push):agent-front 红区 worktree 隔离(用户授权),详情页新增「概要分析」符合性 checklist(✓/✗/⏳+理由,无分数,置首,单投标人首屏默认落此),纯前端派生、后端零改;3 轮 CC×Codex 交叉 review 全闭环(round1 reviewer+spec-compliance+evaluator=PASS+4 finding;round2/3 Codex 对抗实跑挖出分数文本泄漏 P1-c/程度项 criteria fallback/manual 漏判 3 项全修+9 回归测试),66 前端测试+762 pytest+build+lint 全绿,worktree 已清+branch 已删。**待用户手检 S10 UI + 决定是否 push(S7+S10 共 6 commit 均本地未 push)**。铁律护栏(每 sprint)：招标文件 criteria 唯一权威/不可判定不判0/重构零行为变更/pytest 全绿/agent-front 红区 worktree+授权。"
+next_action: "【新 session 从这读起 · 2026-07-01 checkpoint】仓库干净:仅 main、无 worktree、无 un-merged 分支;已 push origin(HEAD=ea7a1ef,与 origin 同步);73 前端测试+762 pytest+build+lint 全绿。**两 dev server 在后台跑供用户手测**(9999=Flash deepseek-v4-flash / 9998=V4Pro deepseek-v4-pro[1M],均后端单端口自服务前端 dist;CC 内启动必须 env -u ANTHROPIC_BASE_URL 等否则撞内网 offline_guard;要停 lsof -ti:9999,9998|xargs kill)。**tender 路线图 2026-06-tender-program 状态**:S1-S6 早 ship;**S10 概要分析 checklist ship**(merge bfa6cfa,✓/✗/⏳无分数,置首);**详情页显分重构 ship**(merge 807b732+ea7a1ef,详细分析左侧改评分总览[招标项目+总分/实得/已扣/待核验+类目合计+扣分明细逐条带出处]+评审卡显得分,风险对比改每家一卡[checklist+总分/实得+关键风险],撤销 S5 分值隐藏[用户拍板所有场景显分],概要分析保持无分数;3轮 CC×Codex review 闭环,见 sprints/2026-07-01-tender-detail-scoring-redesign/)。**S7 in_progress**:Flash 切默认模型(阻塞解)+截断防护切片(commit 5b5b819,config.resolve_model_context_window+agent_bridge.warn_if_context_may_truncate,opt-in)+**Flash-vs-V4Pro 详细对照压测完成**(harness logs/s7-model-compare/run_compare.py,报告 logs/s7-model-compare/REPORT.md;结论:V4Pro 一致性/policy_refs合规更好但2×慢+28%贵,Flash更快省但同标书评分漂移大,底稿32万token远超128K,压成本/提稳杠杆在精简底稿非换模型;见 compound/2026-07-01-learning-flash-tender-eval-inconsistency.md)。S7 剩余=eval_tender.py 正式化(harness 已是种子)。**剩余待办**:S8(数据安全,用户推迟到业务做完)/S9(KB+外部数据脚手架,依赖已就绪可起)/S7 评测脚手架正式化 + 用户填 MODEL_CONTEXT_WINDOW 真实窗口重测验证截断。铁律护栏(每 sprint):招标文件 criteria 唯一权威/不可判定不判0/重构零行为变更/pytest 全绿/agent-front 红区 worktree+授权。"
 last_subagent: "codex-exec" # tender-report-dimensions D0-D5 headless (codex 0.142.1, gpt-5.5)；必须 env -u HTTP_PROXY -u HTTPS_PROXY 否则 streaming API 挂起，见 compound/2026-06-25-trick-codex-proxy-hangs-streaming.md
 last_subagent_at: "2026-06-25T00:00:00.000Z"
 active_worktrees: [] # git worktree list 仅 main；无其他分支/worktree(2026-06-23 复核确认)
