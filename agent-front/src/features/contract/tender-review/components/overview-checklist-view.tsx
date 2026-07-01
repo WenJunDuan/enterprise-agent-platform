@@ -64,7 +64,7 @@ export function OverviewChecklistView({
     return (
       <div className='p-6'>
         <div className='rounded-xl border bg-card p-6 text-sm text-muted-foreground'>
-          暂无可派生的符合性 checklist；该结果尚未产出资格审查 / 否决 / 硬性响应项，
+          暂无可派生的概览项；该结果尚未产出资格审查 / 否决 / 硬性响应项，
           请查看「详细分析」。
         </div>
       </div>
@@ -81,10 +81,7 @@ export function OverviewChecklistView({
   return (
     <div className='space-y-5 bg-muted/20 p-6'>
       <div className='rounded-xl border bg-card p-5 shadow-sm'>
-        <div className='text-sm font-semibold'>
-          概要分析 · 符合性 checklist
-        </div>
-        <p className='mt-1 text-xs text-muted-foreground'>
+        <p className='text-xs text-muted-foreground'>
           {bidderName} 对招标要求的达成概览（不含分数）；待核验项需人工结合出处页复核，不作未达到处理。
         </p>
         <div className='mt-4 grid grid-cols-3 gap-2'>
