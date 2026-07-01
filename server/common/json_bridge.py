@@ -23,6 +23,7 @@ from server.common.agent_bridge import (
     _extract_system_session_id,
     _resolve_session_ids,
     build_options,
+    warn_if_context_may_truncate,
 )
 from server.common.contract import (
     DEFAULT_OUTPUT_SCHEMA_NAME,
@@ -163,6 +164,7 @@ async def run_agent_json(
         conversation_id, resume_session_id, fork_from_session_id, continue_recent, tenant
     )
     session_logger = SessionLogger(current_session_id, request_id, prompt, started_at, tenant)
+    warn_if_context_may_truncate(prompt)
     output_opts = {"output_format": build_output_format(schema_name)} if structured else {}
     options = build_options(**output_opts, **opts)
     cli_stderr: list[str] = []
