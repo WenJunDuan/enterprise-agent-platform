@@ -4,9 +4,9 @@
 version: "9.6.4"
 
 # === PACE 路由状态 ===
-path: "Refactor" # tender 域整理：tender.py 拆分(F1)/output_contracts tender 抽离(F2)/store DRY(F3)/.claude S1 去重(F4)
-stage: "design" # tender-domain-cleanup 深度审计完成(audit.md F1-F6)，待用户选批次 A-D → 逐批出 design+TDD 再改；上一 sprint 2026-06-25-tender-report-dimensions 已 ship
-current_sprint_slug: "2026-06-26-tender-domain-cleanup"
+path: "Refactor" # tender 域路线图 2026-06-tender-program 执行中：S1-S6 已 ship，S7-S10 待办
+stage: "ship" # S1-S6 全部 impl+双向交叉review+merge+push main(HEAD f0b7dd4,与 origin 同步)，752 pytest 绿；roadmap 中途，无 in-flight sprint，待用户选下一个
+current_sprint_slug: "2026-06-tender-program"
 current_roadmap_slug: "2026-06-tender-program" # 9 sprint 路线图(技术债 S1-S4 + 产品 S5-S6 + 基础设施 S7-S9)，见 roadmap/2026-06-tender-program/
 skip_polish: false
 skip_architecture_check: false
@@ -52,22 +52,22 @@ counts:
   reviews_count: 52
   cleanup_count: 1
   compound:
-    learning: 6
+    learning: 7
     trick: 1
     decision: 3
     explore: 0
 # === Pointers (指向最新相关文件) ===
 pointers:
-  latest_design: "sprints/2026-06-25-tender-report-dimensions/design.md"
+  latest_design: "roadmap/2026-06-tender-program/roadmap.md"
   latest_review: "sprints/2026-06-23-tender-judgment-discipline/design.md" # 本 sprint 用 workflow(5 finder)发现 41 残留项替代正式 review；R8 e2e(deepseek+glm)验收见 design.md「实施与验收结论」
   latest_cleanup: "sprints/2026-06-19-contract-audit-feature/cleanup-pass.md"
   latest_brainstorm: ""
   latest_decisions: ["compound/2026-06-20-decision-verification-gate-and-scaffolding.md", "compound/2026-06-19-decision-ops-below-routes-layering.md", "compound/2026-06-19-decision-agent-front-cc-out-of-scope.md"]
-  latest_lessons: ["compound/2026-06-23-learning-gate-rescues-not-creates.md", "compound/2026-06-22-learning-jsonschema-too-brittle-for-llm-output.md", "compound/2026-06-18-learning-absence-is-not-zero.md", "compound/2026-06-17-learning-cross-review-and-soft-timeout.md", "compound/2026-06-17-learning-classify-fix-exposes-latent-bug.md"]
+  latest_lessons: ["compound/2026-06-26-learning-cross-review-catches-latent-bugs.md", "compound/2026-06-23-learning-gate-rescues-not-creates.md", "compound/2026-06-22-learning-jsonschema-too-brittle-for-llm-output.md", "compound/2026-06-18-learning-absence-is-not-zero.md", "compound/2026-06-17-learning-cross-review-and-soft-timeout.md"]
   latest_architecture_update: "2026-06-23T06:38:15.291Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "S1-S6 全部完成并 push main。CC×Codex 并行+双向交叉 review：S1/S2(Codex)/S3(CC OCR合并)/S4(CC output_contracts抽tender_output)/S5(Codex 专家风险提示)/S6(Codex 三场景拆分 phase-1)。交叉 review 共抓 2 个 CC 侧潜伏 bug(S3 is_ocr_text_valid/S4 循环import)均已修+回归。整合 752 pytest 绿+前端26+lint+build+ruff。S6 phase-1 场景隔离仅 UI 层(硬隔离 RBAC 随 S8 推迟,已标注)。**剩余**:S7(缺 Flash 模型ID 阻塞)/S8(用户推迟安全/加密)/S9(KB+外部数据脚手架,依赖已就绪)/S10(概要分析checklist,与S5同源)。下一步待用户选 S9/S10 或给 Flash ID。"
+next_action: "【新 session 从这读起】tender 路线图 2026-06-tender-program：S1-S6 全部 ship(见 roadmap/items.yaml)。本次 checkpoint 已核实仓库干净：HEAD f0b7dd4、main 与 origin 同步、仅 main 分支、无 worktree/后台进程、752 pytest 绿。CC×Codex 并行+双向交叉 review：S1/S2(Codex)/S3(CC OCR合并进 server/ocr/,tender.py 1370→899)/S4(CC output_contracts 930→474 抽 server/common/tender_output.py)/S5(Codex 专家侧风险提示七类)/S6(Codex 三场景拆分 phase-1,隔离仅 UI 层,硬隔离 RBAC 随 S8 推迟)。交叉 review 抓 2 个潜伏 bug(S3 is_ocr_text_valid 漏判 rendered-all-error/S4 循环 import)均已修+回归(见 compound/2026-06-26-learning-cross-review-catches-latent-bugs.md)。**剩余 4**：S7(Flash评测,阻塞=缺 Flash 模型ID+端点)/S8(数据安全,用户明确推迟到业务做完)/S9(KB+外部数据脚手架,依赖 S3/S4 已就绪可起)/S10(详情页概要分析 checklist,与 S5 同源、前端红区需授权,见 sprints/2026-06-26-tender-overview-checklist/design.md)。下一步待用户：选 S9/S10 起、或给 Flash ID 起 S7。铁律护栏(每 sprint)：招标文件 criteria 唯一权威/不可判定不判0/重构零行为变更/pytest 全绿/agent-front 红区 worktree+授权。"
 last_subagent: "codex-exec" # tender-report-dimensions D0-D5 headless (codex 0.142.1, gpt-5.5)；必须 env -u HTTP_PROXY -u HTTPS_PROXY 否则 streaming API 挂起，见 compound/2026-06-25-trick-codex-proxy-hangs-streaming.md
 last_subagent_at: "2026-06-25T00:00:00.000Z"
 active_worktrees: [] # git worktree list 仅 main；无其他分支/worktree(2026-06-23 复核确认)
