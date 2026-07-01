@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { tenderReviewMockData } from './mock-data'
 import {
+  buildBidderCards,
   buildDashboardSummary,
   buildIssueList,
   buildOverviewChecklist,
@@ -11,7 +12,7 @@ import {
   mapTenderProject,
 } from './model'
 import type { AuditResult } from '@/features/audit/types'
-import type { ChecklistItem, TenderReviewMockData } from './types'
+import type { ChecklistItem, ReviewBidder, TenderReviewMockData } from './types'
 
 describe('contract tender review model', () => {
   test('deriveReviewDimension prioritizes structured price signals', () => {
@@ -1352,5 +1353,79 @@ describe('contract tender review model', () => {
       checklist.find((item) => item.requirement === name)?.status
     expect(statusOf('现场演示')).toBe('pending')
     expect(statusOf('扫描证书')).toBe('pending')
+  })
+
+  // ── 风险对比"每家一卡"：buildBidderCards 多家派生 ──
+
+  const bidders: ReviewBidder[] = [
+    { id: 'CLAIM-A', tag: '甲', name: 'A 公司', short: 'A', total: 80, rank: 1 },
+    { id: 'CLAIM-B', tag: '乙', name: 'B 公司', short: 'B', total: 60, rank: 2 },
+  ]
+  const details: AuditResult[] = [
+    {
+      claim_id: 'CLAIM-A',
+      verdict: 'manual_review',
+      extracted_data: {
+        eligibility_checks: [{ check: '营业执照', status: 'pass', basis: '有效。' }],
+        scoring: [
+          { item: '业绩', max: 10, score: 8, status: 'scored', basis: '缺1个业绩。' },
+          { item: '价格分', max: 40, score: null, status: 'manual_review', basis: '需横比。' },
+        ],
+      },
+    },
+    {
+      claim_id: 'CLAIM-B',
+      verdict: 'rejected',
+      extracted_data: {
+        eligibility_checks: [
+          { check: '企业资质', status: 'fail', basis: '资质等级不符。' },
+        ],
+        scoring: [{ item: '业绩', max: 10, score: 4, status: 'scored', basis: '仅1个业绩。' }],
+      },
+    },
+  ]
+
+  test('buildBidderCards derives per-bidder checklist + score summary matched by claim_id', () => {
+    const cards = buildBidderCards(bidders, details)
+    expect(cards.map((c) => c.id)).toEqual(['CLAIM-A', 'CLAIM-B'])
+    // 保留投标人元信息(名/tag/总分/排名)
+    expect(cards[0]).toMatchObject({ name: 'A 公司', total: 80, rank: 1 })
+    // A：业绩8/10 计入实得,价格分 manual 不计入
+    expect(cards[0].score.maxTotal).toBe(50)
+    expect(cards[0].score.earnedTotal).toBe(8)
+    expect(cards[0].score.pendingTotal).toBe(40)
+    // checklist 各家独立派生
+    expect(
+      cards[0].checklist.find((i) => i.requirement === '营业执照')?.status
+    ).toBe('met')
+    expect(
+      cards[1].checklist.find((i) => i.requirement === '企业资质')?.status
+    ).toBe('unmet')
+    // topIssues 来自各家 issueList
+    expect(Array.isArray(cards[0].topIssues)).toBe(true)
+  })
+
+  test('buildBidderCards tolerates bidder without matching result (空数据兜底)', () => {
+    const cards = buildBidderCards(
+      [{ id: 'CLAIM-X', tag: '甲', name: 'X', short: 'X', total: 0, rank: 1 }],
+      details
+    )
+    expect(cards).toHaveLength(1)
+    expect(cards[0].score.maxTotal).toBe(0)
+    expect(cards[0].checklist).toEqual([])
+    expect(cards[0].topIssues).toEqual([])
+  })
+
+  test('buildTenderReviewData exposes bidderCards for all result details', () => {
+    const data = buildTenderReviewData({
+      resultDetails: details,
+      selectedResult: details[0],
+      resultSummaries: [
+        { request_id: 'r1', claim_id: 'CLAIM-A', bidder_name: 'A 公司', verdict: 'manual_review' },
+        { request_id: 'r2', claim_id: 'CLAIM-B', bidder_name: 'B 公司', verdict: 'rejected' },
+      ],
+    })
+    expect(Array.isArray(data.bidderCards)).toBe(true)
+    expect((data.bidderCards ?? []).length).toBeGreaterThanOrEqual(2)
   })
 })

@@ -6,6 +6,7 @@ import type {
   TenderProjectResultSummary,
 } from './api'
 import type {
+  BidderCard,
   ChecklistItem,
   CompareGroup,
   DashboardSummary,
@@ -209,6 +210,7 @@ export function buildTenderReviewData({
   const scoringItems = buildScoringItems(selectedResult)
   const issueList = buildIssueList(selectedResult)
   const overviewChecklist = buildOverviewChecklist(selectedResult)
+  const bidderCards = buildBidderCards(reviewBidders, scoringResults)
 
   return {
     projects: projectData
@@ -231,6 +233,7 @@ export function buildTenderReviewData({
     resultPolicyRefs: normalizePolicyRefs(selectedResult),
     resultEligibilityChecks: buildEligibilityChecks(selectedResult),
     overviewChecklist,
+    bidderCards,
     scoringItems,
     scoreSummary: buildScoreSummary(scoringItems),
     issueList,
@@ -1347,6 +1350,26 @@ function buildScoreSummary(items: TenderScoringItem[]): TenderScoreSummary {
     rejectedItems,
     pendingItems,
   }
+}
+
+/**
+ * 风险对比"每家一卡"：为每个投标人派生 符合性 checklist + 评分总览 + 关键风险。
+ * 按 claim_id 匹配 resultDetails 里各家完整结果;无匹配则给空卡(不崩)。复用 S10/S5 既有派生,不另造口径。
+ */
+export function buildBidderCards(
+  reviewBidders: ReviewBidder[],
+  resultDetails: AuditResult[] = []
+): BidderCard[] {
+  return reviewBidders.map((bidder) => {
+    const result =
+      resultDetails.find((item) => toText(item.claim_id) === bidder.id) ?? null
+    return {
+      ...bidder,
+      score: buildScoreSummary(buildScoringItems(result)),
+      checklist: buildOverviewChecklist(result),
+      topIssues: buildIssueList(result),
+    }
+  })
 }
 
 function toScoreIssue(item: TenderScoringItem): TenderScoreIssue {
