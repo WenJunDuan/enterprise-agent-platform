@@ -234,6 +234,19 @@ export type TenderScoreSummary = {
   pendingItems: TenderScoreIssue[]
 }
 
+// 风险对比"每家一卡"综合视图：一个投标人的符合性 checklist + 评分总览 + 关键风险。
+export type BidderCard = {
+  id: string
+  tag: string
+  name: string
+  short: string
+  total: number
+  rank: number
+  score: TenderScoreSummary
+  checklist: ChecklistItem[]
+  topIssues: IssueItem[]
+}
+
 export type DocumentParagraph = {
   loc: number
   label: string
@@ -274,6 +287,7 @@ export type TenderReviewMockData = {
   resultEligibilityChecks?: TenderEligibilityCheck[]
   overviewChecklist?: ChecklistItem[]
   issueList?: IssueItem[]
+  bidderCards?: BidderCard[]
   scoringItems?: TenderScoringItem[]
   scoreSummary?: TenderScoreSummary
   compareScoreRows?: TenderCompareScoreRow[]
