@@ -13,7 +13,7 @@ export type TenderReviewScreen =
   | 'history'
   | 'analysis'
   | 'report'
-export type TenderReviewMode = 'detail' | 'compare'
+export type TenderReviewMode = 'overview' | 'detail' | 'compare'
 // 'qual'=资格审查（固定类目，来自 eligibility_checks）。其余为招标文件评标办法的
 // 实际类目原名（动态字符串，criteria.items[].category）；'tech'/'comm' 仅作旧数据
 // （无 category）的推断兜底键。(string & {}) 保留字面量补全又允许任意标书类目名。
@@ -44,6 +44,10 @@ export type IssueCategory =
   | 'parameter_deviation'
   | 'pending_verification'
 export type IssueStatus = 'risk' | 'warning' | 'pending'
+
+// S10 概要分析 checklist：符合性三态（达到 / 未达到 / 待核验）。
+// pending 专收 confirmed:false 疑似 / manual 资格 / 读不清项——绝不当作 unmet（守 R2b + 不可判定不判 0）。
+export type ChecklistStatus = 'met' | 'unmet' | 'pending'
 
 export type TenderProject = {
   id: string
@@ -157,6 +161,17 @@ export type TenderEligibilityCheck = {
   evidence: TenderScoreEvidence[]
 }
 
+// S10 概要分析：一条招标要求的符合性判定。**刻意不含 score/points/max**——概要只做二元/三态，
+// 编译期即杜绝分数泄漏；程度评分项不进本表（仍在「详细分析」）。
+export type ChecklistItem = {
+  id: string
+  group: string
+  requirement: string
+  status: ChecklistStatus
+  reason: string
+  evidence: TenderScoreEvidence[]
+}
+
 export type TenderScoreIssue = {
   item: string
   max: number
@@ -257,6 +272,7 @@ export type TenderReviewMockData = {
   resultReasons?: string[]
   resultPolicyRefs?: TenderPolicyRef[]
   resultEligibilityChecks?: TenderEligibilityCheck[]
+  overviewChecklist?: ChecklistItem[]
   issueList?: IssueItem[]
   scoringItems?: TenderScoringItem[]
   scoreSummary?: TenderScoreSummary

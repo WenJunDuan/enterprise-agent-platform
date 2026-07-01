@@ -6,6 +6,7 @@ import type {
   TenderProjectResultSummary,
 } from './api'
 import type {
+  ChecklistItem,
   CompareGroup,
   DashboardSummary,
   DocumentParagraph,
@@ -207,6 +208,7 @@ export function buildTenderReviewData({
   )
   const scoringItems = buildScoringItems(selectedResult)
   const issueList = buildIssueList(selectedResult)
+  const overviewChecklist = buildOverviewChecklist(selectedResult)
 
   return {
     projects: projectData
@@ -228,6 +230,7 @@ export function buildTenderReviewData({
     resultReasons: normalizeDisplayList(selectedResult?.reasons),
     resultPolicyRefs: normalizePolicyRefs(selectedResult),
     resultEligibilityChecks: buildEligibilityChecks(selectedResult),
+    overviewChecklist,
     scoringItems,
     scoreSummary: buildScoreSummary(scoringItems),
     issueList,
@@ -948,6 +951,156 @@ export function buildIssueList(result?: AuditResult | null): IssueItem[] {
   return issues
 }
 
+// S10 概要分析：只识别真正二元的评分项——pass_fail 硬性响应，或 status=rejected 的硬否决/必交材料缺失。
+const BINARY_SCORE_MODES = new Set(['pass_fail'])
+// "程度"评分项（档次/扣减/加分/公式）——概要 checklist 一律排除（即便被标 rejected），留给「详细分析」。
+const DEGREE_SCORE_MODES = new Set(['banded', 'deduction', 'additive', 'formula'])
+
+/** 把一条记录的出处（文件+页+quote）收成 checklist 用的 evidence 数组；与 issueList 共用同一提取口径。 */
+function checklistEvidence(record: UnknownRecord): TenderScoreEvidence[] {
+  const { source, quote } = getIssueEvidence(record)
+  if (!source && !quote) return []
+  return [{ source, quote }]
+}
+
+// 概要"不展示评分"须防到文本层：模型的 basis 常含"扣5分/得10分/0分/得分为0/总分80/(5/10)/
+// 排名第N"等，直接塞进 reason 会在标称无分数的概要页泄漏分值。这里覆盖"数字在前(N分)"与
+// "数字在后(得分为N)"两序，抹掉分值表述，只留定性理由（守不可违反原则 #1，不展示评分）。
+function stripScoreMentions(text: string): string {
+  return text
+    // (5/10)、（5 / 10 分）等占比/得分括注
+    .replace(/[（(]\s*\d+(?:\.\d+)?\s*[/／]\s*\d+(?:\.\d+)?\s*分?\s*[)）]/gu, '')
+    // 分数关键词 + (为/是/等于/:) + 数字（数字在后）：得分为0 / 总分80 / 分值：5
+    .replace(
+      /(?:满分|总分|得分|分值|评分|计分|积分|分数)\s*(?:为|是|达|等于|计|=|：|:)?\s*\d+(?:\.\d+)?\s*分?/gu,
+      ''
+    )
+    // 数字 + 分（数字在前）：得5分 / 扣10分 / 0分（"分母/分子/分项"等非分值不误伤）
+    .replace(/(?:得|扣|加|计|共|减|判|给|获|再|拿)?\s*\d+(?:\.\d+)?\s*分(?![母子项数值制])/gu, '')
+    // 排名第 N / 第 N 名
+    .replace(/排名\s*第?\s*\d+|第\s*\d+\s*名/gu, '')
+    .replace(/\s{2,}/gu, ' ')
+    // 清理抹除后遗留的孤立/首尾标点（如"投标函未签字，。"→"投标函未签字"）
+    .replace(/[，,、；;]\s*(?=[，,、；;。])/gu, '')
+    .replace(/^[，,、；;。/／\s]+|[，,、；;、/／\s]+$/gu, '')
+    .trim()
+}
+
+/** 概要理由：抹掉分数表述后若为空，退回定性兜底（不留空行）。 */
+function checklistReason(text: string, fallback: string): string {
+  const cleaned = stripScoreMentions(text)
+  return cleaned || fallback
+}
+
+/**
+ * 概要分析 checklist：把每条招标要求判成 met/unmet/pending（符合性导向），
+ * 与 buildIssueList（问题导向）互补且**共享同一套源 getter + pending 谓词**，
+ * 保证两视图口径一致（issueList 里 pending 的项，此处必 pending，绝不 ✗）。
+ *
+ * 只纳入二元达成项：资格审查 / 否决命中 / pass_fail 硬性响应 / rejected 必交材料。
+ * 档次/扣减/加分/公式等"程度"项一律排除（塞进二元 checklist 是范畴错误，仍在「详细分析」展示）。
+ * 概要不含任何分数——ChecklistItem 类型层面即不带 score/points/max。
+ */
+export function buildOverviewChecklist(
+  result?: AuditResult | null
+): ChecklistItem[] {
+  const items: ChecklistItem[] = []
+  const push = (row: Omit<ChecklistItem, 'id'>) => {
+    items.push({ ...row, id: `checklist-${items.length}` })
+  }
+
+  // 1) 资格审查：pass→met，fail/failed/rejected→unmet，manual/pending/读不清→pending。
+  getEligibilityCheckRecords(result).forEach((item, index) => {
+    const status = toText(item.status)
+    const text = collectIssueText(item)
+    const pending =
+      status === 'manual' ||
+      status === 'manual_review' ||
+      status === 'pending' ||
+      isPendingSignal(text)
+    const unmet =
+      !pending &&
+      (status === 'fail' || status === 'failed' || status === 'rejected')
+    // 仅明确 pass 记 met；status 缺失 / 未知 / 枚举漂移一律降 pending，绝不当"达到"（守 R2b + 不可判定不判 0）。
+    const met = !pending && (status === 'pass' || status === 'passed')
+    push({
+      group: '资格审查',
+      requirement: toText(item.check) || `资格审查 ${index + 1}`,
+      status: pending ? 'pending' : unmet ? 'unmet' : met ? 'met' : 'pending',
+      reason: checklistReason(
+        toText(item.basis) || toText(item.finding),
+        '按招标文件资格审查要求核验。'
+      ),
+      evidence: checklistEvidence(item),
+    })
+  })
+
+  // 2) 否决条款：命中即"未达到"；confirmed:false 疑似 / 读不清 → pending（绝不打叉，守 R2b）。
+  //    只拿到"命中"记录、没有全量条款清单，故不合成 met 行。
+  getDisqualificationHitRecords(result).forEach((hit, index) => {
+    const text = collectIssueText(hit)
+    const pending = isUnconfirmedDisqualification(hit) || isPendingSignal(text)
+    push({
+      group: '否决条款',
+      requirement:
+        toText(hit.item) ||
+        toText(hit.condition) ||
+        toText(hit.check) ||
+        toText(hit.finding) ||
+        toText(hit.rule_id) ||
+        `否决条款 ${index + 1}`,
+      status: pending ? 'pending' : 'unmet',
+      reason: checklistReason(
+        toText(hit.finding) || toText(hit.basis) || toText(hit.reason),
+        '命中招标文件否决性条款。'
+      ),
+      evidence: checklistEvidence(hit),
+    })
+  })
+
+  // 3) 硬性响应/必交材料：只纳入 pass_fail 或 status=rejected 的二元项，程度项排除。
+  //    score≥max→met，rejected/失败/score<max→unmet，manual_review/score==null/读不清→pending。
+  getScoringItems(result).forEach((item, index) => {
+    const title = toText(item.item) || `硬性响应 ${index + 1}`
+    // score_mode 与 buildScoringItems 同口径：raw 缺省时回退 criteria，避免漏填 mode 绕过程度项排除。
+    const scoreMode =
+      toText(item.score_mode) || toText(findCriteriaItem(result, title)?.score_mode)
+    const status = toText(item.status)
+    const isRejected = status === 'rejected' || status === 'failed'
+    // 只收 pass_fail，或"非程度项"的 rejected（必交材料缺失/硬否决）；程度项即便 rejected 也排除。
+    const isBinary =
+      BINARY_SCORE_MODES.has(scoreMode) ||
+      (isRejected && !DEGREE_SCORE_MODES.has(scoreMode))
+    if (!isBinary) return
+
+    const max = toNumber(item.max) ?? 0
+    const score = toNumber(item.score)
+    const rawBasis = toText(item.basis) || toText(item.manual_review_reason)
+    const text = collectIssueText(item, [title, rawBasis])
+    // manual / manual_review / score 缺失 / 读不清信号 → 待核验（绝不判未达到，守 R2b）。
+    const pending =
+      status === 'manual' ||
+      status === 'manual_review' ||
+      score == null ||
+      isPendingSignal(text)
+    // pass_fail 满足=满分；max 缺失(=0)时退而据 score>0 判达标，避免漏填 max 把达标项误判未达到。
+    const met =
+      !pending &&
+      !isRejected &&
+      score != null &&
+      (max > 0 ? score >= max : score > 0)
+    push({
+      group: '硬性响应',
+      requirement: title,
+      status: pending ? 'pending' : met ? 'met' : 'unmet',
+      reason: checklistReason(rawBasis, '按招标文件硬性响应要求判定。'),
+      evidence: checklistEvidence(item),
+    })
+  })
+
+  return items
+}
+
 export function getAdvisoryLabel(issueList: IssueItem[]) {
   if (issueList.some((issue) => issue.category === 'disqualification_risk')) {
     return '存在废标风险'
@@ -1003,7 +1156,7 @@ function getIssueTitle(category: IssueCategory) {
 }
 
 function isPendingSignal(text: string) {
-  return /疑似|待核验|需核验|待人工|人工核验|需复核|未核实|无法确认|不能确认|证据不足|读不清|看不清|不清晰|模糊|低置信|出处未核实|insufficient_evidence|data_conflict|unclear|unreadable|unresolved|manual_review|low_clarity/iu.test(
+  return /疑似|待核验|需核验|待人工|人工核验|需复核|未核实|无法确认|不能确认|证据不足|读不清|看不清|不清晰|不可读|无法识别|未能识别|未还原|未清晰还原|模糊|低置信|出处未核实|insufficient_evidence|data_conflict|unclear|unreadable|unresolved|manual_review|low_clarity/iu.test(
     text
   )
 }

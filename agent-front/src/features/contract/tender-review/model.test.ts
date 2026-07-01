@@ -3,6 +3,7 @@ import { tenderReviewMockData } from './mock-data'
 import {
   buildDashboardSummary,
   buildIssueList,
+  buildOverviewChecklist,
   buildTenderReviewData,
   deriveReviewDimension,
   filterReviewHistory,
@@ -10,7 +11,7 @@ import {
   mapTenderProject,
 } from './model'
 import type { AuditResult } from '@/features/audit/types'
-import type { TenderReviewMockData } from './types'
+import type { ChecklistItem, TenderReviewMockData } from './types'
 
 describe('contract tender review model', () => {
   test('deriveReviewDimension prioritizes structured price signals', () => {
@@ -988,5 +989,368 @@ describe('contract tender review model', () => {
         },
       ])
     ).toBe('存在废标风险')
+  })
+
+  // ── S10 概要分析 checklist：符合性三态派生（复用 S5 同一套源 getter + pending 谓词）──
+
+  const s10Fixture: AuditResult = {
+    verdict: 'manual_review',
+    extracted_data: {
+      eligibility_checks: [
+        {
+          rule_id: 'EL-pass',
+          check: '营业执照',
+          status: 'pass',
+          basis: '执照在有效期内。',
+          evidence: { source: '投标文件 p.2', quote: '统一社会信用代码 91...' },
+        },
+        {
+          rule_id: 'EL-fail',
+          check: '企业资质',
+          status: 'fail',
+          basis: '资质等级不满足招标文件要求。',
+        },
+        {
+          rule_id: 'EL-manual',
+          check: '信用中国查询',
+          status: 'manual',
+          basis: '截图时间不完整，需人工核验。',
+        },
+      ],
+      disqualification_hits: [
+        {
+          rule_id: 'DQ-confirmed',
+          item: '投标保证金',
+          finding: '未按招标文件提交投标保证金。',
+          confirmed: true,
+        },
+        {
+          rule_id: 'DQ-uncertain',
+          item: '信用记录',
+          finding: '信用中国截图疑似失信，页面读不清。',
+          confirmed: false,
+        },
+      ],
+      scoring: [
+        {
+          item: '投标函签字盖章',
+          max: 5,
+          score: 5,
+          status: 'scored',
+          score_mode: 'pass_fail',
+          basis: '投标函法定代表人签字盖章齐全。',
+        },
+        {
+          item: '项目负责人证书',
+          max: 5,
+          score: 0,
+          status: 'scored',
+          score_mode: 'pass_fail',
+          basis: '未提供项目负责人安全 B 证。',
+        },
+        {
+          item: '关键岗位证书',
+          max: 5,
+          score: null,
+          status: 'manual_review',
+          score_mode: 'pass_fail',
+          basis: '证书扫描件读不清，待人工核验。',
+        },
+        {
+          item: '必交材料清单',
+          max: 3,
+          score: 0,
+          status: 'rejected',
+          basis: '缺少法定代表人授权委托书。',
+        },
+        {
+          item: '技术方案档次',
+          max: 20,
+          score: 15,
+          status: 'scored',
+          score_mode: 'banded',
+          basis: '技术方案处于良好档。',
+        },
+        {
+          item: '业绩扣分',
+          max: 10,
+          score: 8,
+          status: 'scored',
+          score_mode: 'deduction',
+          basis: '每缺一个同类业绩扣 2 分。',
+        },
+        {
+          item: '价格分',
+          max: 40,
+          score: null,
+          status: 'manual_review',
+          score_mode: 'formula',
+          basis: '需横比全部报价后计算。',
+        },
+      ],
+    },
+  }
+
+  test('buildOverviewChecklist maps every requirement to met/unmet/pending by group', () => {
+    const checklist = buildOverviewChecklist(s10Fixture)
+    const byName = (name: string) =>
+      checklist.find((item) => item.requirement === name)
+
+    // 资格审查组：pass→met, fail→unmet, manual→pending
+    expect(byName('营业执照')).toMatchObject({ group: '资格审查', status: 'met' })
+    expect(byName('企业资质')).toMatchObject({ group: '资格审查', status: 'unmet' })
+    expect(byName('信用中国查询')).toMatchObject({
+      group: '资格审查',
+      status: 'pending',
+    })
+
+    // 否决条款组：confirmed→unmet, confirmed:false→pending
+    expect(byName('投标保证金')).toMatchObject({ group: '否决条款', status: 'unmet' })
+    expect(byName('信用记录')).toMatchObject({ group: '否决条款', status: 'pending' })
+
+    // 硬性响应组：pass_fail score≥max→met, score<max→unmet, manual_review→pending, rejected→unmet
+    expect(byName('投标函签字盖章')).toMatchObject({
+      group: '硬性响应',
+      status: 'met',
+    })
+    expect(byName('项目负责人证书')).toMatchObject({
+      group: '硬性响应',
+      status: 'unmet',
+    })
+    expect(byName('关键岗位证书')).toMatchObject({
+      group: '硬性响应',
+      status: 'pending',
+    })
+    expect(byName('必交材料清单')).toMatchObject({
+      group: '硬性响应',
+      status: 'unmet',
+    })
+  })
+
+  test('buildOverviewChecklist excludes 程度/formula scoring items (范畴错误防护)', () => {
+    const names = buildOverviewChecklist(s10Fixture).map((item) => item.requirement)
+    expect(names).not.toContain('技术方案档次') // banded 档次
+    expect(names).not.toContain('业绩扣分') // deduction 扣减
+    expect(names).not.toContain('价格分') // formula 横比价格
+  })
+
+  test('buildOverviewChecklist never marks confirmed:false / manual / unreadable as unmet (R2b)', () => {
+    const checklist = buildOverviewChecklist(s10Fixture)
+    const pendingNames = checklist
+      .filter((item) => item.status === 'pending')
+      .map((item) => item.requirement)
+    expect(pendingNames).toEqual(
+      expect.arrayContaining(['信用中国查询', '信用记录', '关键岗位证书'])
+    )
+    // 三者绝不出现在 unmet 里
+    const unmetNames = checklist
+      .filter((item) => item.status === 'unmet')
+      .map((item) => item.requirement)
+    for (const name of ['信用中国查询', '信用记录', '关键岗位证书']) {
+      expect(unmetNames).not.toContain(name)
+    }
+  })
+
+  test('buildOverviewChecklist output carries no numeric score/points/max fields (无分数泄漏)', () => {
+    const checklist = buildOverviewChecklist(s10Fixture)
+    expect(checklist.length).toBeGreaterThan(0)
+    for (const item of checklist) {
+      expect(item).not.toHaveProperty('score')
+      expect(item).not.toHaveProperty('points')
+      expect(item).not.toHaveProperty('max')
+      // 每行须有理由；出处 evidence 为数组（可空）
+      expect(typeof item.reason).toBe('string')
+      expect(Array.isArray(item.evidence)).toBe(true)
+    }
+  })
+
+  test('buildOverviewChecklist met/unmet consistent with buildIssueList pending set', () => {
+    // issueList 里 pending 的项，checklist 对应项不得是 unmet（两视图口径一致）
+    const issuePendingNames = new Set(
+      buildIssueList(s10Fixture)
+        .filter((issue) => issue.status === 'pending')
+        .map((issue) => issue.itemName)
+    )
+    const checklist = buildOverviewChecklist(s10Fixture)
+    for (const item of checklist) {
+      if (issuePendingNames.has(item.requirement)) {
+        expect(item.status).toBe('pending')
+      }
+    }
+  })
+
+  test('buildOverviewChecklist carries evidence source/quote through', () => {
+    const checklist = buildOverviewChecklist(s10Fixture)
+    const licence = checklist.find((item) => item.requirement === '营业执照')
+    expect(licence?.evidence?.[0]).toMatchObject({
+      source: '投标文件 p.2',
+      quote: '统一社会信用代码 91...',
+    })
+  })
+
+  test('buildOverviewChecklist tolerates old / empty data', () => {
+    expect(buildOverviewChecklist({ extracted_data: {} })).toEqual([])
+    expect(buildOverviewChecklist(null)).toEqual([])
+    expect(buildOverviewChecklist(undefined)).toEqual([])
+    // 仅有可派生项的旧数据不崩、只出可派生行
+    const partial = buildOverviewChecklist({
+      extracted_data: {
+        eligibility_checks: [{ check: '仅资格', status: 'pass' }],
+      },
+    })
+    expect(partial).toHaveLength(1)
+    expect(partial[0]).toMatchObject({ group: '资格审查', status: 'met' })
+  })
+
+  test('buildTenderReviewData exposes overviewChecklist derived from selectedResult', () => {
+    const data = buildTenderReviewData({ selectedResult: s10Fixture })
+    expect(Array.isArray(data.overviewChecklist)).toBe(true)
+    const checklist = data.overviewChecklist as ChecklistItem[]
+    expect(checklist.some((item) => item.requirement === '营业执照')).toBe(true)
+  })
+
+  // ── 交叉 review 补漏（CC+Codex 一致 finding）──
+
+  test('buildOverviewChecklist maps unknown / missing eligibility status to pending, not met', () => {
+    const checklist = buildOverviewChecklist({
+      extracted_data: {
+        eligibility_checks: [
+          { check: '状态缺失项' }, // 无 status
+          { check: '枚举漂移项', status: 'reviewing' }, // 未知枚举
+          { check: '明确通过项', status: 'pass' },
+        ],
+      },
+    })
+    const statusOf = (name: string) =>
+      checklist.find((item) => item.requirement === name)?.status
+    expect(statusOf('状态缺失项')).toBe('pending')
+    expect(statusOf('枚举漂移项')).toBe('pending')
+    expect(statusOf('明确通过项')).toBe('met')
+  })
+
+  test('buildOverviewChecklist excludes degree-mode scoring items even when status=rejected', () => {
+    const names = buildOverviewChecklist({
+      extracted_data: {
+        scoring: [
+          { item: '档次项被否', max: 10, score: 0, status: 'rejected', score_mode: 'banded' },
+          { item: '扣减项被否', max: 10, score: 0, status: 'rejected', score_mode: 'deduction' },
+          { item: '加分项被否', max: 10, score: 0, status: 'rejected', score_mode: 'additive' },
+          { item: '公式项被否', max: 10, score: null, status: 'rejected', score_mode: 'formula' },
+          { item: '必交材料被否', max: 3, score: 0, status: 'rejected' }, // 无 score_mode → 保留
+        ],
+      },
+    }).map((item) => item.requirement)
+    expect(names).not.toContain('档次项被否')
+    expect(names).not.toContain('扣减项被否')
+    expect(names).not.toContain('加分项被否')
+    expect(names).not.toContain('公式项被否')
+    expect(names).toContain('必交材料被否')
+  })
+
+  test('buildOverviewChecklist treats pass_fail with score>0 but missing max as met (缺 max 兜底)', () => {
+    const checklist = buildOverviewChecklist({
+      extracted_data: {
+        scoring: [
+          { item: '响应达标无max', score: 5, status: 'scored', score_mode: 'pass_fail' },
+          { item: '响应为零无max', score: 0, status: 'scored', score_mode: 'pass_fail' },
+        ],
+      },
+    })
+    const statusOf = (name: string) =>
+      checklist.find((item) => item.requirement === name)?.status
+    expect(statusOf('响应达标无max')).toBe('met')
+    expect(statusOf('响应为零无max')).toBe('unmet')
+  })
+
+  // ── 交叉 review 第二轮补漏（Codex 对抗性实跑 finding）──
+
+  test('buildOverviewChecklist strips numeric score mentions from reason (P1-c 文本层防泄漏)', () => {
+    const checklist = buildOverviewChecklist({
+      extracted_data: {
+        eligibility_checks: [
+          { check: '资格分项', status: 'fail', basis: '资质不符，扣5分。' },
+        ],
+        scoring: [
+          {
+            item: '签字项',
+            max: 5,
+            score: 0,
+            status: 'scored',
+            score_mode: 'pass_fail',
+            basis: '投标函未签字，得0分。',
+          },
+          {
+            item: '材料项',
+            max: 3,
+            score: 0,
+            status: 'rejected',
+            basis: '缺授权书（5/10），排名第3。',
+          },
+          {
+            item: '数字在后项',
+            max: 5,
+            score: 0,
+            status: 'rejected',
+            basis: '未响应，得分为0，总分80。',
+          },
+        ],
+      },
+    })
+    expect(checklist.length).toBeGreaterThan(0)
+    for (const item of checklist) {
+      // 任意"数字±分/得分/总分/分值"两序、排名/名次数字都不得残留
+      expect(item.reason).not.toMatch(/\d/u)
+    }
+    // 定性理由须保留
+    expect(
+      checklist.find((item) => item.requirement === '签字项')?.reason
+    ).toContain('投标函未签字')
+  })
+
+  test('buildOverviewChecklist excludes degree item whose score_mode is only in criteria (P1-b)', () => {
+    const names = buildOverviewChecklist({
+      extracted_data: {
+        criteria: { items: [{ item: '技术方案档次', max: 20, score_mode: 'banded' }] },
+        scoring: [
+          {
+            item: '技术方案档次',
+            max: 20,
+            score: 0,
+            status: 'rejected',
+            basis: '整单废标残留',
+          },
+        ],
+      },
+    }).map((item) => item.requirement)
+    expect(names).not.toContain('技术方案档次')
+  })
+
+  test('buildOverviewChecklist treats pass_fail status=manual / unreadable basis as pending (P1-a)', () => {
+    const checklist = buildOverviewChecklist({
+      extracted_data: {
+        scoring: [
+          {
+            item: '现场演示',
+            max: 5,
+            score: 0,
+            status: 'manual',
+            score_mode: 'pass_fail',
+            basis: '需现场演示记录。',
+          },
+          {
+            item: '扫描证书',
+            max: 5,
+            score: 0,
+            status: 'scored',
+            score_mode: 'pass_fail',
+            basis: '证书扫描件不可读。',
+          },
+        ],
+      },
+    })
+    const statusOf = (name: string) =>
+      checklist.find((item) => item.requirement === name)?.status
+    expect(statusOf('现场演示')).toBe('pending')
+    expect(statusOf('扫描证书')).toBe('pending')
   })
 })
