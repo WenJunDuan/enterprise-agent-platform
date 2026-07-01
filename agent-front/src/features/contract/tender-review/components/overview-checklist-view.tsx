@@ -89,9 +89,17 @@ export function OverviewChecklistView({
         </p>
         <div className='mt-4 grid grid-cols-3 gap-2'>
           {counts.map(({ status, meta, count }) => (
-            <div key={status} className='rounded-lg bg-muted/50 p-3'>
+            <div
+              key={status}
+              className='rounded-lg bg-muted/50 p-3'
+              role='group'
+              aria-label={`${meta.label} ${count} 项`}
+            >
               <div className='flex items-center gap-1.5 text-xs text-muted-foreground'>
-                <meta.Icon className={cn('size-3.5', meta.iconClassName)} />
+                <meta.Icon
+                  className={cn('size-3.5', meta.iconClassName)}
+                  aria-hidden
+                />
                 {meta.label}
               </div>
               <div className='mt-1 text-xl font-semibold'>{count}</div>

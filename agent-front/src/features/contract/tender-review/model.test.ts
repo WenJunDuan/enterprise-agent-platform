@@ -1208,4 +1208,57 @@ describe('contract tender review model', () => {
     const checklist = data.overviewChecklist as ChecklistItem[]
     expect(checklist.some((item) => item.requirement === '营业执照')).toBe(true)
   })
+
+  // ── 交叉 review 补漏（CC+Codex 一致 finding）──
+
+  test('buildOverviewChecklist maps unknown / missing eligibility status to pending, not met', () => {
+    const checklist = buildOverviewChecklist({
+      extracted_data: {
+        eligibility_checks: [
+          { check: '状态缺失项' }, // 无 status
+          { check: '枚举漂移项', status: 'reviewing' }, // 未知枚举
+          { check: '明确通过项', status: 'pass' },
+        ],
+      },
+    })
+    const statusOf = (name: string) =>
+      checklist.find((item) => item.requirement === name)?.status
+    expect(statusOf('状态缺失项')).toBe('pending')
+    expect(statusOf('枚举漂移项')).toBe('pending')
+    expect(statusOf('明确通过项')).toBe('met')
+  })
+
+  test('buildOverviewChecklist excludes degree-mode scoring items even when status=rejected', () => {
+    const names = buildOverviewChecklist({
+      extracted_data: {
+        scoring: [
+          { item: '档次项被否', max: 10, score: 0, status: 'rejected', score_mode: 'banded' },
+          { item: '扣减项被否', max: 10, score: 0, status: 'rejected', score_mode: 'deduction' },
+          { item: '加分项被否', max: 10, score: 0, status: 'rejected', score_mode: 'additive' },
+          { item: '公式项被否', max: 10, score: null, status: 'rejected', score_mode: 'formula' },
+          { item: '必交材料被否', max: 3, score: 0, status: 'rejected' }, // 无 score_mode → 保留
+        ],
+      },
+    }).map((item) => item.requirement)
+    expect(names).not.toContain('档次项被否')
+    expect(names).not.toContain('扣减项被否')
+    expect(names).not.toContain('加分项被否')
+    expect(names).not.toContain('公式项被否')
+    expect(names).toContain('必交材料被否')
+  })
+
+  test('buildOverviewChecklist treats pass_fail with score>0 but missing max as met (缺 max 兜底)', () => {
+    const checklist = buildOverviewChecklist({
+      extracted_data: {
+        scoring: [
+          { item: '响应达标无max', score: 5, status: 'scored', score_mode: 'pass_fail' },
+          { item: '响应为零无max', score: 0, status: 'scored', score_mode: 'pass_fail' },
+        ],
+      },
+    })
+    const statusOf = (name: string) =>
+      checklist.find((item) => item.requirement === name)?.status
+    expect(statusOf('响应达标无max')).toBe('met')
+    expect(statusOf('响应为零无max')).toBe('unmet')
+  })
 })
