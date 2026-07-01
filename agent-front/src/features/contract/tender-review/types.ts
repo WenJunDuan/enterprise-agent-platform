@@ -129,6 +129,8 @@ export type TenderScoringItem = {
   scoreCategory: TenderScoreCategory
   reviewDimension: TenderReviewDimension
   scoreMode?: string
+  /** 逐条扣分命中（条件 + 触发原文 quote + 出处页），供扣分明细展示可追溯依据。 */
+  deductionHits?: ScoreHit[]
   evidence: TenderScoreEvidence[]
 }
 

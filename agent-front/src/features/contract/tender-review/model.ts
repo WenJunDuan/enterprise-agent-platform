@@ -1303,6 +1303,8 @@ function buildScoringItems(result?: AuditResult | null): TenderScoringItem[] {
       reviewDimension,
       scoreMode:
         toText(item.score_mode) || toText(criteria?.score_mode) || undefined,
+      // 逐条扣分命中(条件 + 触发原文 quote + 出处页)——供详细分析「扣分明细」显示可追溯依据。
+      deductionHits: parseScoreHits(item.deduction_hits),
       evidence: buildScoringEvidence(item, result, title),
     }
   })
@@ -1323,10 +1325,11 @@ function buildScoreSummary(items: TenderScoringItem[]): TenderScoreSummary {
 
   items.forEach((item) => {
     const issue = toScoreIssue(item)
-    if (item.status === 'manual_review' || item.score == null) {
-      pendingItems.push({ ...issue, deduction: null })
-    } else if (item.status === 'rejected') {
+    // rejected 优先于 score==null：必交材料缺失判 0 可能不带 score 字段，应归失分项(该项判0)而非待核验。
+    if (item.status === 'rejected') {
       rejectedItems.push(issue)
+    } else if (item.status === 'manual_review' || item.score == null) {
+      pendingItems.push({ ...issue, deduction: null })
     } else if (item.status === 'scored' && item.score < item.max) {
       deductedItems.push(issue)
     }
@@ -1361,8 +1364,15 @@ export function buildBidderCards(
   resultDetails: AuditResult[] = []
 ): BidderCard[] {
   return reviewBidders.map((bidder) => {
+    // bidder.id 可能是 claim_id / request_id / task_id（buildReviewBidders 的兜底口径），
+    // 与 normalizeResultDetails 同款多键匹配，避免 request_id-only 结果匹配不上出空卡（codex P1-1）。
     const result =
-      resultDetails.find((item) => toText(item.claim_id) === bidder.id) ?? null
+      resultDetails.find(
+        (item) =>
+          toText(item.claim_id) === bidder.id ||
+          toText(item.request_id) === bidder.id ||
+          toText(item.task_id) === bidder.id
+      ) ?? null
     return {
       ...bidder,
       score: buildScoreSummary(buildScoringItems(result)),
