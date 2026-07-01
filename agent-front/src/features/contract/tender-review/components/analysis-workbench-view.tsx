@@ -14,6 +14,7 @@ import type {
   TenderReviewMockData,
   TenderReviewMode,
 } from '../types'
+import { OverviewChecklistView } from './overview-checklist-view'
 
 type AnalysisWorkbenchViewProps = {
   data: TenderReviewMockData
@@ -29,8 +30,14 @@ type AnalysisWorkbenchViewProps = {
   onReport: () => void
 }
 
+const viewLabels: Record<TenderReviewMode, string> = {
+  overview: '概要分析',
+  detail: '辅助评审',
+  compare: '风险对比',
+}
+
 export function AnalysisWorkbenchView(props: AnalysisWorkbenchViewProps) {
-  const viewLabel = props.mode === 'compare' ? '风险对比' : '辅助评审'
+  const viewLabel = viewLabels[props.mode] ?? '辅助评审'
 
   return (
     <div className='overflow-hidden rounded-xl border bg-background'>
@@ -55,6 +62,12 @@ export function AnalysisWorkbenchView(props: AnalysisWorkbenchViewProps) {
           <div className='flex shrink-0 items-center gap-2'>
             <div className='flex rounded-lg bg-muted p-1'>
               <ModeButton
+                active={props.mode === 'overview'}
+                onClick={() => props.onMode('overview')}
+              >
+                概要分析
+              </ModeButton>
+              <ModeButton
                 active={props.mode === 'detail'}
                 onClick={() => props.onMode('detail')}
               >
@@ -73,16 +86,30 @@ export function AnalysisWorkbenchView(props: AnalysisWorkbenchViewProps) {
             </Button>
           </div>
         </div>
-        {props.mode === 'detail' ? <BidderTabs {...props} /> : null}
+        {props.mode !== 'compare' ? <BidderTabs {...props} /> : null}
       </div>
 
-      {props.mode === 'detail' ? (
+      {props.mode === 'overview' ? (
+        <OverviewChecklistView
+          checklist={props.data.overviewChecklist ?? []}
+          bidderName={selectedBidderName(props)}
+        />
+      ) : props.mode === 'detail' ? (
         <DetailWorkbench {...props} />
       ) : (
         <CompareWorkbench data={props.data} />
       )}
     </div>
   )
+}
+
+/** 概要/详细共用：取当前选中投标人名（无则兜底首个 / 占位）。 */
+function selectedBidderName(props: AnalysisWorkbenchViewProps): string {
+  const bidder =
+    props.data.reviewBidders.find(
+      (item) => item.id === props.selectedBidderId
+    ) ?? props.data.reviewBidders[0]
+  return bidder?.name ?? '当前投标人'
 }
 
 function ModeButton({
