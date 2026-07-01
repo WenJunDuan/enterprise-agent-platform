@@ -953,6 +953,8 @@ export function buildIssueList(result?: AuditResult | null): IssueItem[] {
 
 // S10 概要分析：只识别真正二元的评分项——pass_fail 硬性响应，或 status=rejected 的硬否决/必交材料缺失。
 const BINARY_SCORE_MODES = new Set(['pass_fail'])
+// "程度"评分项（档次/扣减/加分/公式）——概要 checklist 一律排除（即便被标 rejected），留给「详细分析」。
+const DEGREE_SCORE_MODES = new Set(['banded', 'deduction', 'additive', 'formula'])
 
 /** 把一条记录的出处（文件+页+quote）收成 checklist 用的 evidence 数组；与 issueList 共用同一提取口径。 */
 function checklistEvidence(record: UnknownRecord): TenderScoreEvidence[] {
@@ -990,10 +992,12 @@ export function buildOverviewChecklist(
     const unmet =
       !pending &&
       (status === 'fail' || status === 'failed' || status === 'rejected')
+    // 仅明确 pass 记 met；status 缺失 / 未知 / 枚举漂移一律降 pending，绝不当"达到"（守 R2b + 不可判定不判 0）。
+    const met = !pending && (status === 'pass' || status === 'passed')
     push({
       group: '资格审查',
       requirement: toText(item.check) || `资格审查 ${index + 1}`,
-      status: pending ? 'pending' : unmet ? 'unmet' : 'met',
+      status: pending ? 'pending' : unmet ? 'unmet' : met ? 'met' : 'pending',
       reason:
         toText(item.basis) ||
         toText(item.finding) ||
@@ -1029,9 +1033,13 @@ export function buildOverviewChecklist(
   // 3) 硬性响应/必交材料：只纳入 pass_fail 或 status=rejected 的二元项，程度项排除。
   //    score≥max→met，rejected/失败/score<max→unmet，manual_review/score==null/读不清→pending。
   getScoringItems(result).forEach((item, index) => {
+    const scoreMode = toText(item.score_mode)
     const status = toText(item.status)
     const isRejected = status === 'rejected' || status === 'failed'
-    const isBinary = BINARY_SCORE_MODES.has(toText(item.score_mode)) || isRejected
+    // 只收 pass_fail，或"非程度项"的 rejected（必交材料缺失/硬否决）；程度项即便 rejected 也排除。
+    const isBinary =
+      BINARY_SCORE_MODES.has(scoreMode) ||
+      (isRejected && !DEGREE_SCORE_MODES.has(scoreMode))
     if (!isBinary) return
 
     const title = toText(item.item) || `硬性响应 ${index + 1}`
@@ -1044,8 +1052,12 @@ export function buildOverviewChecklist(
     const text = collectIssueText(item, [title, basis])
     const pending =
       status === 'manual_review' || score == null || isPendingSignal(text)
+    // pass_fail 满足=满分；max 缺失(=0)时退而据 score>0 判达标，避免漏填 max 把达标项误判未达到。
     const met =
-      !pending && !isRejected && score != null && max > 0 && score >= max
+      !pending &&
+      !isRejected &&
+      score != null &&
+      (max > 0 ? score >= max : score > 0)
     push({
       group: '硬性响应',
       requirement: title,
