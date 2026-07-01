@@ -26,6 +26,7 @@ from server.platform.config import (
     configure_claude_runtime_env,
     get_claude_runtime_snapshot,
     offline_guard_error,
+    resolve_model_context_window,
 )
 from server.platform.logging_setup import logging_context
 from server.platform.paths import PROJECT_ROOT, ensure_local_layout
@@ -47,9 +48,89 @@ logger = logging.getLogger(__name__)
 # 合法推理强度档位（extended thinking effort）。env/per-call 传非法值一律剔除，不传给 CLI。
 _VALID_EFFORTS = frozenset({"low", "medium", "high", "xhigh", "max"})
 
+# 上下文截断预警（S7）：把注入 prompt 的字符数粗估成 token 数，与声明窗口比对。
+# CJK 标书底稿密集，deepseek 分词约 1.5 char/token；env MODEL_CHARS_PER_TOKEN 可调。
+# 这是安全预警而非精确 gate，取偏保守默认（宁可早报也不漏报截断风险）。
+_DEFAULT_CHARS_PER_TOKEN = 1.5
+# 预留输出 token 默认（对齐 build_options 的 CLAUDE_CODE_MAX_OUTPUT_TOKENS 兜底）。
+_DEFAULT_RESERVED_OUTPUT_TOKENS = 32000
+
 
 class ClaudeRuntimeError(RuntimeError):
     """Raised when a Claude request never produces a terminal result."""
+
+
+def _positive_float_env(name: str, default: float) -> float:
+    """Read a positive float from the environment, falling back to *default* on missing/invalid."""
+    raw = (os.getenv(name) or "").strip()
+    if not raw:
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
+def _reserved_output_tokens() -> int:
+    """预留给模型输出的 token 数——它同样吃上下文窗口，须计入截断预警。"""
+    raw = (os.getenv("CLAUDE_CODE_MAX_OUTPUT_TOKENS") or "").strip()
+    if not raw:
+        return _DEFAULT_RESERVED_OUTPUT_TOKENS
+    try:
+        value = int(raw)
+    except ValueError:
+        return _DEFAULT_RESERVED_OUTPUT_TOKENS
+    return value if value >= 0 else _DEFAULT_RESERVED_OUTPUT_TOKENS
+
+
+def _estimate_prompt_tokens(prompt: str) -> int:
+    """粗估 prompt 的输入 token 数（char 数 / MODEL_CHARS_PER_TOKEN）。"""
+    chars_per_token = _positive_float_env("MODEL_CHARS_PER_TOKEN", _DEFAULT_CHARS_PER_TOKEN)
+    return int(len(prompt) / chars_per_token)
+
+
+def warn_if_context_may_truncate(
+    prompt: str, *, model: str | None = None
+) -> dict[str, Any] | None:
+    """当预估输入 token + 预留输出 token 超过声明的模型上下文窗口时，记 WARNING。
+
+    S7 截断防护：平台默认模型可切成窗口远小于 V4Pro[1M] 的 Flash，而评标会把数百页
+    标书 OCR 底稿整段内联；超窗时网关会静默截断，模型据半截证据评分却无任何告警。
+    本函数在每次 agent 调用前粗估注入体量并与 ``MODEL_CONTEXT_WINDOW`` 比对，超窗即预警。
+
+    **Opt-in**：``MODEL_CONTEXT_WINDOW`` 未配置（<=0）时直接返回 None、不记日志，零行为变更。
+
+    Args:
+        prompt: 即将注入模型的完整 prompt 文本。
+        model: 覆盖用于日志的模型名；缺省取当前 runtime 的 anthropic_model。
+
+    Returns:
+        超窗时返回诊断 dict（估算/预留/窗口/模型），否则返回 None。
+    """
+    window = resolve_model_context_window()
+    if window <= 0:
+        return None
+    estimated_input = _estimate_prompt_tokens(prompt)
+    reserved_output = _reserved_output_tokens()
+    if estimated_input + reserved_output <= window:
+        return None
+    model_name = model or get_claude_runtime_snapshot()["anthropic_model"]
+    logger.warning(
+        "上下文可能被截断：预估输入 ~%d tokens + 预留输出 %d tokens 超过 "
+        "MODEL_CONTEXT_WINDOW=%d（模型=%s）。大标书证据可能在网关侧被静默截断、"
+        "导致评分依据不全；请改用大窗口模型，或分片 / 精简 OCR 底稿后再评。",
+        estimated_input,
+        reserved_output,
+        window,
+        model_name,
+    )
+    return {
+        "estimated_input_tokens": estimated_input,
+        "reserved_output_tokens": reserved_output,
+        "context_window": window,
+        "model": model_name,
+    }
 
 
 @dataclass(slots=True)
@@ -168,6 +249,7 @@ async def run_agent(
         conversation_id, resume_session_id, fork_from_session_id, continue_recent, tenant
     )
     session_logger = SessionLogger(current_session_id, request_id, prompt, started_at, tenant)
+    warn_if_context_may_truncate(prompt)
     options = build_options(**opts)
     cli_stderr: list[str] = []
     options.stderr = cli_stderr.append

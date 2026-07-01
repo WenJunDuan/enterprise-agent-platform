@@ -81,8 +81,16 @@ items:
     wave: 1
     priority: this_week
     depends_on: []
-    status: pending
-    blocker: "需用户给 Flash 模型 ID + 端点"
+    status: in_progress
+    blocker_resolved: "用户 2026-07-01 在 .env 配 Flash：MODEL_NAME=deepseek-v4-flash + 端点 https://api.deepseek.com/anthropic（V4Pro=deepseek-v4-pro[1M] 同网关注释切换）。Flash 现为平台默认模型。"
+    progress:
+      - "[done] 上下文截断防护：config.resolve_model_context_window(env MODEL_CONTEXT_WINDOW,opt-in) + agent_bridge.warn_if_context_may_truncate(预估输入 token+预留输出>窗口即 WARNING),接入 run_agent + run_agent_json 两条 funnel(覆盖 audit 流式 + tender 结构化)。TDD 10 用例,762 pytest 绿。.env 加注释提示。"
+    remaining:
+      - "tests/eval_tender.py(复用 server/audit/eval.py 骨架,换成评标路径)"
+      - "tender_golden_manifest.json(仿 tests/eval_fixtures/golden_manifest.json)"
+      - "config.get_flash_model_config()（A/B 评测用,非截断 guard 所需）"
+      - "tender_worker TENDER_EVAL_MODEL per-call 覆盖(仿 _TENDER_EFFORT 先例)"
+      - "部署机手跑 Flash vs V4Pro 对比(速度/成本/准确率)"
     refs: ["会议结论5", "待办3"]
   - id: S8
     slug: security-data-lifecycle

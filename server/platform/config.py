@@ -236,6 +236,30 @@ def resolve_second_review_model(environ: Mapping[str, str] | None = None) -> str
     return None
 
 
+def resolve_model_context_window(environ: Mapping[str, str] | None = None) -> int:
+    """Resolve the active model's declared context window (tokens) for the truncation guard.
+
+    运维在 .env 里声明当前 ``MODEL_NAME`` 模型的上下文窗口（如 Flash 的 65536）；
+    agent_bridge 据此在注入超大标书底稿时预警截断风险（见 ``warn_if_context_may_truncate``）。
+    未配置或非正数 → 返回 0，表示 guard 关闭（opt-in，零行为变更）。不缓存：改 env 即生效。
+
+    Args:
+        environ: Environment mapping to read; defaults to ``os.environ``.
+
+    Returns:
+        Declared context window in tokens, or 0 when unset/invalid/non-positive.
+    """
+    env = environ if environ is not None else os.environ
+    raw = (env.get("MODEL_CONTEXT_WINDOW") or "").strip()
+    if not raw:
+        return 0
+    try:
+        value = int(raw)
+    except ValueError:
+        return 0
+    return value if value > 0 else 0
+
+
 def _env_bool(name: str, default: bool = False) -> bool:
     value = os.getenv(name)
     if value is None:
