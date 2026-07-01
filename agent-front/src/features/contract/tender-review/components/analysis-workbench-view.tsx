@@ -1,12 +1,8 @@
 import { useEffect, useRef } from 'react'
-import { AlertTriangle, Brain, CheckCircle2, FileText, MapPin, Printer } from 'lucide-react'
+import { Brain, FileText, MapPin, Printer } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { getAdvisoryLabel } from '../model'
 import type {
-  IssueCategory,
-  IssueItem,
   ReviewCategory,
   ReviewItem,
   ReviewBidder,
@@ -14,7 +10,10 @@ import type {
   TenderReviewMockData,
   TenderReviewMode,
 } from '../types'
+import { formatScore } from '../format'
 import { OverviewChecklistView } from './overview-checklist-view'
+import { ScoringOverviewPanel } from './scoring-overview-panel'
+import { BidderCompareCards } from './bidder-compare-cards'
 
 type AnalysisWorkbenchViewProps = {
   data: TenderReviewMockData
@@ -196,7 +195,6 @@ function DetailWorkbench(props: AnalysisWorkbenchViewProps) {
     (item) => item.id === props.activeItemId
   )
   const activeLoc = activeItem?.loc ?? -1
-  const issueList = props.data.issueList ?? []
   const activeEvidenceRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -209,37 +207,12 @@ function DetailWorkbench(props: AnalysisWorkbenchViewProps) {
 
   return (
     <div className='grid min-h-[620px] xl:h-[calc(100vh-220px)] xl:min-h-[620px] xl:grid-cols-[288px_minmax(0,1.2fr)_minmax(340px,1fr)]'>
-      <aside className='min-h-0 overflow-y-auto border-b bg-muted/20 p-5 xl:border-r xl:border-b-0'>
-        <div className='rounded-xl border bg-card p-5 shadow-sm'>
-          <div className='flex items-center gap-2 text-sm font-semibold'>
-            <AlertTriangle className='size-4 text-amber-600' />
-            风险提示
-          </div>
-          <div className='mt-3 text-2xl font-semibold tracking-tight text-foreground'>
-            {getAdvisoryLabel(issueList)}
-          </div>
-          <div className='mt-3 grid grid-cols-2 gap-2 text-xs'>
-            {getIssueCategoryCounts(issueList).map((item) => (
-              <div key={item.category} className='rounded-lg bg-muted/50 p-2'>
-                <div className='text-muted-foreground'>{item.label}</div>
-                <div className='mt-1 font-semibold'>{item.count} 项</div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <IssueListPanel issues={issueList} className='mt-5' />
-
-        <div className='mt-5 rounded-xl border bg-card p-4'>
-          <div className='mb-2 flex items-center gap-2 text-sm font-semibold'>
-            <Brain className='size-4 text-primary' />
-            辅助小结
-          </div>
-          <p className='text-sm leading-6 text-muted-foreground'>
-            {getAdvisorySummary(issueList, selectedBidder.name)}
-          </p>
-        </div>
-      </aside>
+      <ScoringOverviewPanel
+        projectInfo={props.data.projectInfo}
+        bidderName={selectedBidder.name}
+        scoreSummary={props.data.scoreSummary}
+        scoringItems={props.data.scoringItems}
+      />
 
       <section className='flex min-h-0 min-w-0 flex-col border-b xl:border-r xl:border-b-0'>
         <div className='flex shrink-0 gap-1 overflow-x-auto px-5 pt-4'>
@@ -352,13 +325,26 @@ function ReviewItemCard({
       <span className='min-w-0 flex-1'>
         <span className='flex items-start justify-between gap-3'>
           <span className='font-medium'>{item.title}</span>
-          <span
-            className={cn(
-              'shrink-0 rounded-full px-3 py-1 text-xs font-semibold',
-              badge.className
-            )}
-          >
-            {badge.label}
+          <span className='flex shrink-0 items-center gap-2'>
+            {item.max != null ? (
+              <span className='text-xs font-semibold whitespace-nowrap'>
+                <b className='text-primary'>
+                  {item.got == null ? '—' : formatScore(item.got)}
+                </b>
+                <span className='text-muted-foreground'>
+                  {' '}
+                  / {formatScore(item.max)} 分
+                </span>
+              </span>
+            ) : null}
+            <span
+              className={cn(
+                'rounded-full px-3 py-1 text-xs font-semibold',
+                badge.className
+              )}
+            >
+              {badge.label}
+            </span>
           </span>
         </span>
         <span className='mt-1 block text-sm leading-6 text-muted-foreground'>
@@ -479,257 +465,16 @@ function getItemBadge(item: ReviewItem) {
 }
 
 function CompareWorkbench({ data }: { data: TenderReviewMockData }) {
-  const hasMultipleBidders = data.reviewBidders.length >= 2
-
+  const cards = data.bidderCards ?? []
   return (
-    <div className='space-y-5 bg-muted/20 p-6'>
+    <div className='space-y-4 bg-muted/20 p-6'>
       <div className='text-sm text-muted-foreground'>
         {data.reviewBidders.length} 家投标方 · {data.projectInfo.method} ·
-        当前仅展示辅助评审问题口径，结论性评分数据留作内部监督场景。
+        综合对比（符合性 checklist + 评分）
       </div>
-      <div className='grid gap-4 md:grid-cols-2 xl:grid-cols-4'>
-        {data.reviewBidders.map((bidder) => (
-            <div
-              key={bidder.id}
-              className='relative overflow-hidden rounded-xl border bg-card p-4 shadow-sm'
-            >
-              <div className='absolute inset-x-0 top-0 h-1 bg-primary/50' />
-              <div className='flex items-center justify-between'>
-                <Badge className='bg-muted text-muted-foreground hover:bg-muted'>
-                  辅助评审
-                </Badge>
-                <span className='flex size-6 items-center justify-center rounded-md bg-muted text-xs font-semibold'>
-                  {bidder.tag}
-                </span>
-              </div>
-              <div className='mt-3 line-clamp-2 min-h-10 text-sm font-semibold'>
-                {bidder.name}
-              </div>
-              <div className='mt-3 flex items-center gap-2 text-xs text-muted-foreground'>
-                <CheckCircle2 className='size-3.5 text-primary' />
-                分值与排序已隐藏
-              </div>
-            </div>
-        ))}
-      </div>
-      <CompareTable data={data} />
-      <IssueListPanel issues={data.issueList ?? []} />
-      {hasMultipleBidders ? (
-        <div className='rounded-xl border border-dashed bg-card p-4 text-sm text-muted-foreground'>
-          分项评分明细已转为问题清单口径；需要监督复核时再查看内部评分数据。
-        </div>
-      ) : (
-        <div className='rounded-xl border border-dashed bg-card p-4 text-sm text-muted-foreground'>
-          需至少 2 家投标人后展示横向评分；单家项目不会生成横比结果。
-        </div>
-      )}
+      <BidderCompareCards cards={cards} />
     </div>
   )
-}
-
-function CompareTable({ data }: { data: TenderReviewMockData }) {
-  const rows = data.compareGroups.flatMap((group) =>
-    group.rows.map((row) => ({ ...row, group: group.name }))
-  )
-  if (rows.length === 0) {
-    return (
-      <div className='rounded-xl border border-dashed bg-card p-4 text-sm text-muted-foreground'>
-        暂无横向评审要素。
-      </div>
-    )
-  }
-
-  const bidderCount = Math.max(data.reviewBidders.length, 1)
-  const gridStyle = {
-    gridTemplateColumns: `minmax(260px,1.6fr) repeat(${bidderCount}, minmax(140px,1fr))`,
-  }
-  const minWidth = 260 + bidderCount * 160
-
-  return (
-    <div className='overflow-x-auto rounded-xl border bg-card shadow-sm'>
-      <div style={{ minWidth }}>
-        <div
-          className='grid border-b bg-muted/40 text-xs font-semibold text-muted-foreground'
-          style={gridStyle}
-        >
-          <div className='px-5 py-3'>评审项</div>
-          {data.reviewBidders.map((bidder) => (
-            <div key={bidder.id} className='px-3 py-3 text-center'>
-              {bidder.short}
-            </div>
-          ))}
-        </div>
-        {rows.map((row) => (
-            <div
-              key={`${row.group}-${row.name}`}
-              className='grid border-b last:border-b-0'
-              style={gridStyle}
-            >
-              <div className='px-5 py-3'>
-                <div className='text-sm font-medium'>{row.name}</div>
-                <div className='text-xs text-muted-foreground'>
-                  {row.group} · 分值已隐藏
-                </div>
-              </div>
-              {row.cells.map((_value, index) => (
-                <div
-                  key={`${row.name}-${data.reviewBidders[index]?.id}`}
-                  className='flex items-center justify-center px-3 py-3'
-                >
-                  <span className='rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground'>
-                    需结合问题清单复核
-                  </span>
-                </div>
-              ))}
-            </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-function IssueListPanel({
-  issues,
-  className,
-}: {
-  issues: IssueItem[]
-  className?: string
-}) {
-  if (issues.length === 0) {
-    return (
-      <div className={cn('rounded-xl border bg-card p-4', className)}>
-        <div className='flex items-center gap-2 text-sm font-semibold'>
-          <CheckCircle2 className='size-4 text-emerald-600' />
-          问题清单
-        </div>
-        <p className='mt-2 text-sm leading-6 text-muted-foreground'>
-          暂未发现明显问题；仍建议专家结合原文进行必要复核。
-        </p>
-      </div>
-    )
-  }
-
-  const groups = issueCategoryOrder
-    .map((category) => ({
-      category,
-      meta: issueCategoryMeta[category],
-      items: issues.filter((issue) => issue.category === category),
-    }))
-    .filter((group) => group.items.length > 0)
-
-  return (
-    <div className={cn('rounded-xl border bg-card p-4', className)}>
-      <div className='flex items-center gap-2 text-sm font-semibold'>
-        <AlertTriangle className='size-4 text-amber-600' />
-        问题清单
-      </div>
-      <div className='mt-3 space-y-4'>
-        {groups.map((group) => (
-          <div key={group.category}>
-            <div className='mb-2 flex items-center justify-between gap-2'>
-              <div className='text-xs font-semibold text-muted-foreground'>
-                {group.meta.label}
-              </div>
-              <span className='rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground'>
-                {group.items.length} 项
-              </span>
-            </div>
-            <div className='space-y-2'>
-              {group.items.map((issue) => (
-                <div key={issue.id} className='rounded-lg bg-muted/40 p-3 text-xs'>
-                  <div className='flex flex-wrap items-center gap-2'>
-                    <Badge className={group.meta.badgeClassName}>
-                      {group.meta.label}
-                    </Badge>
-                    <span className='font-semibold text-foreground'>
-                      {issue.itemName}
-                    </span>
-                  </div>
-                  <div className='mt-2 leading-5 text-muted-foreground'>
-                    {issue.basis}
-                  </div>
-                  {issue.quote ? (
-                    <div className='mt-2 border-l-2 border-l-amber-300 pl-2 leading-5 text-muted-foreground italic'>
-                      「{issue.quote}」
-                    </div>
-                  ) : null}
-                  {issue.source ? (
-                    <div className='mt-2 flex items-center gap-1 font-medium text-primary'>
-                      <MapPin className='size-3 shrink-0' />
-                      {issue.source}
-                    </div>
-                  ) : null}
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-const issueCategoryOrder: IssueCategory[] = [
-  'disqualification_risk',
-  'eligibility_mismatch',
-  'score_deduction',
-  'formality_issue',
-  'missing_material',
-  'parameter_deviation',
-  'pending_verification',
-]
-
-const issueCategoryMeta: Record<
-  IssueCategory,
-  { label: string; badgeClassName: string }
-> = {
-  disqualification_risk: {
-    label: '废标风险',
-    badgeClassName: 'bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-300',
-  },
-  eligibility_mismatch: {
-    label: '资格不符',
-    badgeClassName: 'bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-300',
-  },
-  score_deduction: {
-    label: '扣分点',
-    badgeClassName:
-      'bg-orange-100 text-orange-700 dark:bg-orange-950/50 dark:text-orange-300',
-  },
-  formality_issue: {
-    label: '形式问题',
-    badgeClassName:
-      'bg-yellow-100 text-yellow-700 dark:bg-yellow-950/50 dark:text-yellow-300',
-  },
-  missing_material: {
-    label: '材料缺失',
-    badgeClassName: 'bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300',
-  },
-  parameter_deviation: {
-    label: '参数正负偏离',
-    badgeClassName: 'bg-blue-100 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300',
-  },
-  pending_verification: {
-    label: '待核验清单',
-    badgeClassName: 'bg-muted text-muted-foreground',
-  },
-}
-
-function getIssueCategoryCounts(issues: IssueItem[]) {
-  return issueCategoryOrder.map((category) => ({
-    category,
-    label: issueCategoryMeta[category].label,
-    count: issues.filter((issue) => issue.category === category).length,
-  }))
-}
-
-function getAdvisorySummary(issues: IssueItem[], bidderName: string) {
-  if (issues.length === 0) {
-    return `${bidderName} 暂未发现明显问题；专家仍可结合原文进行抽查复核。`
-  }
-  const riskCount = issues.filter((issue) => issue.status === 'risk').length
-  const pendingCount = issues.filter((issue) => issue.status === 'pending').length
-  return `${bidderName} 当前形成 ${issues.length} 项需关注内容，其中 ${riskCount} 项高风险、${pendingCount} 项待核验；请以问题清单和出处页为复核入口。`
 }
 
 const emptyBidder: ReviewBidder = {
