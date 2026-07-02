@@ -163,6 +163,48 @@ items:
       识别-评标流水线重叠作流式二期（backlog）。
     refs: ["roadmap.md 决策3"]
 
+  - id: D10
+    slug: expense-hotpath-reliability
+    stream: feature
+    title: "expense 审核链路可靠性包：热路径直连 spike + 多模态附件预嵌 + 耗时指标 + 休眠资产 runbook"
+    effort: M
+    wave: 1
+    depends_on: [D3]
+    status: pending
+    note: >
+      吸收 2026-06-12 quality backlog 账外剩余（③④⑤残），expense 域自此全部在册。
+      ①热路径直连 spike：官方 anthropic SDK messages.create 直打网关，绕开 claude-agent-sdk
+      CLI 子进程（当时定位的最大 flaky 源；2026-06-02 审核 0 工具调用静默编造 incident 亦是动机）。
+      **与 D3 强耦合故 depends_on**：D3 spike 若拍板 expense 统一 command 模式（依赖 CLI），
+      直连方案需重估；若直连胜出则 expense prompt 保持 Python 单源——二者只活一个，
+      D3 出数后同场拍板。②多模态附件预嵌（依赖①形态）+ 耗时分解指标（可离线先做）。
+      ③休眠资产重启 runbook（AUDIT_* 配置收敛已 ship，runbook 未做）。
+      验收：server/audit/eval.py golden case 不回退（部署机带网关跑 manifest）。
+      复核重开（expense-reviewer + post-write hook）为业务开关非工程项，重开条件已录
+      .claude/CLAUDE.md，不进本包。
+    refs: ["memory: project-quality-backlog(已归档,剩余项在此落账)", "memory: project-audit-tooluse-incident"]
+
+  - id: D11
+    slug: tender-discipline-residuals
+    stream: feature
+    title: "tender 判分纪律残留收口包：R4 安全硬化 + F04 evidence_chain 派生 + glm 技术参数 + R5/R6/R7"
+    effort: M
+    wave: 1
+    depends_on: [D1, D2]
+    status: pending
+    redzone: partial-agent-front
+    note: >
+      收口 2026-06-23 judgment-discipline sprint 六项账外残留（细节见该 sprint design.md）。
+      ①R4 #8a ocr-page 重识别 wiring——**安全敏感独立硬化轮**：agent Bash + 可注入 PDF = RCE 面，
+      须 can_use_tool 白名单 + 对抗验证（security-checklist P0 命令注入条目）。
+      ②F04 evidence_chain 顶层空→服务端从 award_hits 派生（纯服务端，低风险）。
+      ③glm 技术参数仍 manual（prompt/model 层；闸只救不造，见
+      compound/2026-06-23-learning-gate-rescues-not-creates.md）。④R5 schema 修订。
+      ⑤R6 config 修订。⑥R7 前端 null guard（**agent-front 红区**，需授权+worktree，
+      可与 D9 前端部分同批授权）。依赖 D2：残留修改落位 server/tender/ 新结构后做，避免二次搬迁；
+      D1 回归闸护航。串标围标识别（产品级扩展）与 S8（用户推迟）不进本包。
+    refs: ["sprints/2026-06-23-tender-judgment-discipline/design.md", "compound/2026-06-23-learning-gate-rescues-not-creates.md"]
+
 backlog:
   - "向量检索增强（bge-m3 自托管+离线打包）——结构化检索命中率不足或需历史案例语义检索时触发"
   - "识别-评标流水线重叠（流式二期）"
@@ -172,6 +214,7 @@ backlog:
 
 decisions_needed:
   - "D3: 延迟差值可接受阈值（spike 出数后拍板统一方向）"
+  - "D10: 直连 vs command 模式二选一（与 D3 同场拍板）+ 直连落地形态（dormant flag-off 现在建 vs 部署机带网关迭代）"
   - "D8: 复测通过标准量化（一致性跨度上限/成本下降目标，design 时敲定）"
-  - "D9: agent-front 红区授权（需明确同意+worktree）"
+  - "D9/D11-R7: agent-front 红区授权（需明确同意+worktree，前端两处可同批）"
   - "向量二期触发时机（依赖 D7 上线后的检索命中率数据）"
