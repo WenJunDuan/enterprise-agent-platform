@@ -22,8 +22,8 @@ items:
       前置完成 D2 一块);一致性 null 语义复用 tender_output.is_real_number(F2);
       **一致性阈值硬门锁定(V4Pro 基线标定后二次 commit)是 D4 开工前置条件(F4)**。
       范围含 S7 迁入项：tender_golden_manifest.json（仿 tests/eval_fixtures）、
-      config.get_flash_model_config()（A/B 用）、tender_worker TENDER_EVAL_MODEL per-call 覆盖
-      （仿 _TENDER_EFFORT 先例）。用户侧待办挂此：填 MODEL_CONTEXT_WINDOW 真实窗口重测截断防护、
+      tender_worker TENDER_EVAL_MODEL per-call 覆盖
+      （仿 _TENDER_EFFORT 先例；get_flash_model_config() 专名已在 design.md 中放弃，泛化为任意模型名覆盖）。用户侧待办挂此：填 MODEL_CONTEXT_WINDOW 真实窗口重测截断防护、
       部署机手跑 Flash vs V4Pro 对比。
     refs: ["旧 roadmap S7 remaining_migrated", "compound/2026-07-01-learning-flash-tender-eval-inconsistency.md"]
 

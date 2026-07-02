@@ -4,10 +4,10 @@
 version: "9.6.4"
 
 # === PACE 路由状态 ===
-path: "System" # 文档智能 program 2026-07-doc-intelligence 立项：三波次 D1-D9（地基/质量/结构/体验），旧 tender-program 已收口(S7/S9 结转,S8 用户推迟)
+path: "System" # 文档智能 program 2026-07-doc-intelligence 立项：四波次 D1-D11（地基/质量/结构/体验），旧 tender-program 已收口(S7/S9 结转,S8 用户推迟)
 stage: "design" # 【暂缓】D1 design 定稿存档(critic round1 已修订)；用户 2026-07-02 拍板整个 program 作为下一阶段优化、暂不实施——新 session 勿自动进 impl，等用户明确发令
-current_sprint_slug: "2026-07-02-eval-tender-scaffold" # 暂缓中；design 定稿在档，重启直接 T1
-current_roadmap_slug: "2026-07-doc-intelligence" # 9 item 三波次(Wave0 地基 D1-D3 + Wave1 质量 D4-D5 + Wave2 结构★ D6-D8 + Wave3 体验 D9)，见 roadmap/2026-07-doc-intelligence/
+current_sprint_slug: "2026-07-02-eval-tender-scaffold"
+current_roadmap_slug: "2026-07-doc-intelligence"
 skip_polish: false
 skip_architecture_check: false
 
@@ -59,7 +59,7 @@ counts:
 # === Pointers (指向最新相关文件) ===
 pointers:
   latest_design: "roadmap/2026-07-doc-intelligence/roadmap.md"
-  latest_review: "sprints/2026-06-23-tender-judgment-discipline/design.md" # 本 sprint 用 workflow(5 finder)发现 41 残留项替代正式 review；R8 e2e(deepseek+glm)验收见 design.md「实施与验收结论」
+  latest_review: "sprints/2026-07-01-tender-detail-scoring-redesign/reviews/pass2.md" # 最新正式 review(pass2, 2026-07-01)；2026-06-23-tender-judgment-discipline 以 workflow(5 finder)替代正式 review, 验收见该 sprint design.md
   latest_cleanup: "sprints/2026-06-19-contract-audit-feature/cleanup-pass.md"
   latest_brainstorm: ""
   latest_decisions: ["compound/2026-07-02-decision-ocr-routing-ladder.md", "compound/2026-06-20-decision-verification-gate-and-scaffolding.md", "compound/2026-06-19-decision-ops-below-routes-layering.md", "compound/2026-06-19-decision-agent-front-cc-out-of-scope.md"]
