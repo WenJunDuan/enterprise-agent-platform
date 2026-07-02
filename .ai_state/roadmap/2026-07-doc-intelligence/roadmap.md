@@ -34,8 +34,10 @@
 Wave 0 地基+安全网 ─ D1 eval_tender 正式化(回归闸,S7剩余迁入)
                     D2 tender feature 包重构(纯移动零行为,红区 worktree)
                     D3 prompt 单源统一 + .claude 瘦身
-Wave 1 质量层     ─ D4 L2 多模型路由+模型池(含印章/手写 POC)
+Wave 1 质量层     ─ D4 L2 多模型路由+模型池(含印章/手写 POC,五级决策梯已定稿)
                     D5 OCR 决策点 agent 化(混合)
+                    D10 expense 审核链路可靠性包(热路径直连 spike+附件预嵌+runbook)
+                    D11 tender 判分纪律残留收口包(R4安全硬化/F04/glm/R5-R7)
 Wave 2 结构层★    ─ D6 文档级结构化(章节树/页锚/实体)
                     D7 结构化 RAG 入库+检索(并入旧 S9)
                     D8 底稿瘦身落地+S7 harness 复测
@@ -45,6 +47,9 @@ Wave 3 体验层     ─ D9 页级流式 OCR
 排序理由：D1 是所有后续改动的质量回归闸，必须最先；D2/D3 把地基理干净再动工
 （OCR 主线会大改 `server/ocr/` 与 tender 消费侧，D5 的 prompt 管理依赖 D3 的机制决策）；
 Wave2 是收益最大的主线（成本/一致性双收）；流式是体验增强，殿后。
+**Wave1 即"三域优化 Sprint 包"**（2026-07-02 用户定）：OCR=D4/D5、expense=D10、tender=D11，
+三域账外债自此全部在册——D10 吸收 2026-06-12 quality backlog 剩余（③④⑤残），
+D11 收口 2026-06-23 judgment-discipline 六项残留；执行时按 PACE 惯例每 item 各开 sprint。
 
 ## 护栏（每 sprint 铁律级）
 
