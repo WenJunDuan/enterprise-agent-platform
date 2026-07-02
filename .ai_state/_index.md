@@ -4,10 +4,10 @@
 version: "9.6.4"
 
 # === PACE 路由状态 ===
-path: "Refactor" # tender 域路线图 2026-06-tender-program 执行中：S1-S6 已 ship，S7-S10 待办
-stage: "ship" # S1-S6+S10+详情页显分重构 全 ship;S7 阻塞解+截断防护切片+Flash-vs-V4Pro压测完成;73前端+762pytest+build+lint 绿；已 push origin(ea7a1ef)；两 dev server 在跑(9999 Flash/9998 V4Pro)供手测
-current_sprint_slug: "2026-06-tender-program"
-current_roadmap_slug: "2026-06-tender-program" # 9 sprint 路线图(技术债 S1-S4 + 产品 S5-S6 + 基础设施 S7-S9)，见 roadmap/2026-06-tender-program/
+path: "System" # 文档智能 program 2026-07-doc-intelligence 立项：三波次 D1-D9（地基/质量/结构/体验），旧 tender-program 已收口(S7/S9 结转,S8 用户推迟)
+stage: "roadmap" # 2026-07-02 roadmap 立项完成（架构评估+四分叉用户拍板）；下一步 D1(eval 安全网) 进 plan/design
+current_sprint_slug: "" # D1 立项时填 sprints/{date}-eval-tender-scaffold
+current_roadmap_slug: "2026-07-doc-intelligence" # 9 item 三波次(Wave0 地基 D1-D3 + Wave1 质量 D4-D5 + Wave2 结构★ D6-D8 + Wave3 体验 D9)，见 roadmap/2026-07-doc-intelligence/
 skip_polish: false
 skip_architecture_check: false
 
@@ -58,7 +58,7 @@ counts:
     explore: 0
 # === Pointers (指向最新相关文件) ===
 pointers:
-  latest_design: "roadmap/2026-06-tender-program/roadmap.md"
+  latest_design: "roadmap/2026-07-doc-intelligence/roadmap.md"
   latest_review: "sprints/2026-06-23-tender-judgment-discipline/design.md" # 本 sprint 用 workflow(5 finder)发现 41 残留项替代正式 review；R8 e2e(deepseek+glm)验收见 design.md「实施与验收结论」
   latest_cleanup: "sprints/2026-06-19-contract-audit-feature/cleanup-pass.md"
   latest_brainstorm: ""
@@ -67,7 +67,7 @@ pointers:
   latest_architecture_update: "2026-06-23T06:38:15.291Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "【新 session 从这读起 · 2026-07-01 checkpoint】仓库干净:仅 main、无 worktree、无 un-merged 分支;已 push origin(HEAD=ea7a1ef,与 origin 同步);73 前端测试+762 pytest+build+lint 全绿。**两 dev server 在后台跑供用户手测**(9999=Flash deepseek-v4-flash / 9998=V4Pro deepseek-v4-pro[1M],均后端单端口自服务前端 dist;CC 内启动必须 env -u ANTHROPIC_BASE_URL 等否则撞内网 offline_guard;要停 lsof -ti:9999,9998|xargs kill)。**tender 路线图 2026-06-tender-program 状态**:S1-S6 早 ship;**S10 概要分析 checklist ship**(merge bfa6cfa,✓/✗/⏳无分数,置首);**详情页显分重构 ship**(merge 807b732+ea7a1ef,详细分析左侧改评分总览[招标项目+总分/实得/已扣/待核验+类目合计+扣分明细逐条带出处]+评审卡显得分,风险对比改每家一卡[checklist+总分/实得+关键风险],撤销 S5 分值隐藏[用户拍板所有场景显分],概要分析保持无分数;3轮 CC×Codex review 闭环,见 sprints/2026-07-01-tender-detail-scoring-redesign/)。**S7 in_progress**:Flash 切默认模型(阻塞解)+截断防护切片(commit 5b5b819,config.resolve_model_context_window+agent_bridge.warn_if_context_may_truncate,opt-in)+**Flash-vs-V4Pro 详细对照压测完成**(harness logs/s7-model-compare/run_compare.py,报告 logs/s7-model-compare/REPORT.md;结论:V4Pro 一致性/policy_refs合规更好但2×慢+28%贵,Flash更快省但同标书评分漂移大,底稿32万token远超128K,压成本/提稳杠杆在精简底稿非换模型;见 compound/2026-07-01-learning-flash-tender-eval-inconsistency.md)。S7 剩余=eval_tender.py 正式化(harness 已是种子)。**剩余待办**:S8(数据安全,用户推迟到业务做完)/S9(KB+外部数据脚手架,依赖已就绪可起)/S7 评测脚手架正式化 + 用户填 MODEL_CONTEXT_WINDOW 真实窗口重测验证截断。铁律护栏(每 sprint):招标文件 criteria 唯一权威/不可判定不判0/重构零行为变更/pytest 全绿/agent-front 红区 worktree+授权。"
+next_action: "【新 session 从这读起 · 2026-07-02 checkpoint · 文档智能 program 立项】本日完成:①全仓架构评估交付(核心发现:tender 无 feature 包~3250行散在 routes/+common/、22文件超300行红线、**三域三套 prompt 投递机制**[expense=Python常量AUDIT_INSTRUCTIONS+setting_sources=[] / tender=run_command_json走.claude commands / ocr=core门面legacy import私有名]双源漂移风险、.claude/CLAUDE.md 过载tender细则);②用户全选4优化方向+OCR愿景(OCR Agent+多模型路由+文档理解+实时流式+结构化RAG),四分叉拍板:**混合agent化(管道+LLM决策点)/结构化检索先行(FTS/BM25+章节树+页锚,向量二期)/页级部分结果流/三波次立项**;③新 roadmap **roadmap/2026-07-doc-intelligence/**(roadmap.md+items.yaml,9 item):Wave0地基=D1 eval_tender正式化(回归闸,S7剩余迁入,含用户填MODEL_CONTEXT_WINDOW重测+部署机手跑对比)+D2 tender feature包重构(红区worktree,纯移动零行为,39测试文件护航)+D3 prompt单源统一(先spike测expense走command延迟差值)+.claude瘦身;Wave1质量=D4 L2多模型路由(印章手写POC,捎带core门面退役)+D5决策点agent化;Wave2结构★=D6文档级结构化(章节树/页锚/实体,新contracts schema)+D7结构化RAG(并入旧S9)+D8底稿瘦身落地(S7 harness复测验证);Wave3=D9页级流式(前端部分agent-front红区需授权)。旧roadmap 2026-06-tender-program 已收口:S7/S9 done(结转注记见items.yaml),S8保持用户推迟。**下一步:D1 立项进 plan/design**(复用 server/audit/eval.py 骨架+logs/s7-model-compare/run_compare.py 种子)。仓库状态:仅main,本日 .ai_state roadmap 立项档已本地 commit(未push,origin 停在 ea7a1ef);两 dev server 或仍在跑(9999 Flash/9998 V4Pro,停:lsof -ti:9999,9998|xargs kill)。铁律护栏:**页锚【第N页】全链路保真(evidence-resolution硬约束,RAG切片红线)**/eval回归闸先行/criteria唯一权威/不可判定不判0/重构零行为变更/pytest全绿/agent-front红区worktree+授权。"
 last_subagent: "codex-exec" # tender-report-dimensions D0-D5 headless (codex 0.142.1, gpt-5.5)；必须 env -u HTTP_PROXY -u HTTPS_PROXY 否则 streaming API 挂起，见 compound/2026-06-25-trick-codex-proxy-hangs-streaming.md
 last_subagent_at: "2026-06-25T00:00:00.000Z"
 active_worktrees: [] # git worktree list 仅 main；无其他分支/worktree(2026-06-23 复核确认)
