@@ -70,12 +70,21 @@ items:
     status: pending
     note: >
       前置：D1 一致性阈值已锁硬门（警告模式不得跨 Wave 存活，critic F4）。
-      清晰打印→PaddleOCR-VL；印章页→seal 产线编排进主流程；手写/疑难→内网多模态大模型
-      （qwen3.6-27b）；低置信度→升级更强模型重试。模型池经统一 litellm 网关注册，
-      兼容内网自托管与云网关双部署形态。印章/手写 POC（memory 挂账待办）在此落地。
-      捎带：ocr/runner.py 迁离 core 门面私有名 import（_extract_json_object）。
+      **模型池定案（用户 2026-07-02，部署机三模型）**：①PaddleOCR 经典管道=便宜快打底
+      （清晰印刷页默认）；②PaddleOCR-VL=复杂版面/表格/低清升级层（现主力）；
+      ③Unlimited-OCR（baidu 2026-06，3B/激活500M，R-SWA 一次前向数十页、KV cache 恒定，
+      github.com/baidu/Unlimited-OCR）=整本长文档一次性解析层（标书全本→章节树，
+      直接服务 D6 结构化+D8 底稿瘦身，SGLang/transformers 部署）。
+      路由形态=Claude 式分级升级（escalation）：便宜先行→_page_confidence/file_clarity
+      低置信页升级（extract_pdf_subset 只重跑差页，期望成本最小化，非单模型最优）；
+      印章页→seal 产线编排进主流程；手写/疑难兜底→内网多模态（qwen3.6-27b）。
+      实现锚点：engine.recognize() 的 env if/elif 换 EngineRegistry+能力画像+路由策略；
+      cache._engine_fingerprint 升 per-engine 进 cache key；classify(L1 文件类型路由)不动。
+      模型池经统一 litellm 网关注册，兼容内网自托管与云网关双部署形态。
+      印章/手写 POC（memory 挂账待办）在此落地，三模型能力画像以 POC 实测为准（铁律[出处优先]，
+      不凭记忆填基准）。捎带：ocr/runner.py 迁离 core 门面私有名 import（_extract_json_object）。
       改动须过 D1 golden case 回归。
-    refs: ["multi-ocr references/engines.md", "references/routing.md", "memory: project_ocr_form_fill 待办"]
+    refs: ["multi-ocr references/engines.md", "references/routing.md", "memory: project_ocr_form_fill 待办", "https://github.com/baidu/Unlimited-OCR", "https://arxiv.org/abs/2606.23050"]
 
   - id: D5
     slug: ocr-decision-agent
