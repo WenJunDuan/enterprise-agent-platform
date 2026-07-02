@@ -1,0 +1,14 @@
+sprint_slug: 2026-07-02-eval-tender-scaffold
+collected_evidence:
+  - tool_use_id: "toolu_01Piw9GuRKqQDMibxQfVPhEE"
+    tool: "Edit"
+    file: "/Users/mi_manchi/workspace/enterprise-agent-platform/.ai_state/_index.md"
+    timestamp: "2026-07-02T02:02:37.143Z"
+  - tool_use_id: "toolu_01KmbXQ9qeoQTBdhj65JjicN"
+    tool: "Edit"
+    file: "/Users/mi_manchi/workspace/enterprise-agent-platform/.ai_state/_index.md"
+    timestamp: "2026-07-02T02:02:40.089Z"
+  - tool_use_id: "toolu_01J5YhkeJaP9Dt4NQ4eyHciC"
+    tool: "Edit"
+    file: "/Users/mi_manchi/workspace/enterprise-agent-platform/.ai_state/_index.md"
+    timestamp: "2026-07-02T02:02:44.802Z"

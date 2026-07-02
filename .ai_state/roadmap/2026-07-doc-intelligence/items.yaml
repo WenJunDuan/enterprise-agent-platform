@@ -14,9 +14,13 @@ items:
     effort: M
     wave: 0
     depends_on: []
-    status: pending
+    status: in_progress # 2026-07-02 design 完成(round1 critic NEEDS_REVISION→已修订),待用户确认进 impl;见 sprints/2026-07-02-eval-tender-scaffold/design.md
     note: >
-      复用 server/audit/eval.py 骨架 + logs/s7-model-compare/run_compare.py harness 种子。
+      复用 server/audit/eval.py 骨架。原 S7 harness(logs/ gitignored)已从磁盘蒸发,方法论存
+      compound/2026-07-01-learning-flash-tender-eval-inconsistency.md——按重建+正式化实施。
+      design 要点:评标核心 _run_evaluation 下沉 server/tender/runner.py(critic F1,与 audit 同构,
+      前置完成 D2 一块);一致性 null 语义复用 tender_output.is_real_number(F2);
+      **一致性阈值硬门锁定(V4Pro 基线标定后二次 commit)是 D4 开工前置条件(F4)**。
       范围含 S7 迁入项：tender_golden_manifest.json（仿 tests/eval_fixtures）、
       config.get_flash_model_config()（A/B 用）、tender_worker TENDER_EVAL_MODEL per-call 覆盖
       （仿 _TENDER_EFFORT 先例）。用户侧待办挂此：填 MODEL_CONTEXT_WINDOW 真实窗口重测截断防护、
@@ -65,6 +69,7 @@ items:
     depends_on: [D1]
     status: pending
     note: >
+      前置：D1 一致性阈值已锁硬门（警告模式不得跨 Wave 存活，critic F4）。
       清晰打印→PaddleOCR-VL；印章页→seal 产线编排进主流程；手写/疑难→内网多模态大模型
       （qwen3.6-27b）；低置信度→升级更强模型重试。模型池经统一 litellm 网关注册，
       兼容内网自托管与云网关双部署形态。印章/手写 POC（memory 挂账待办）在此落地。
