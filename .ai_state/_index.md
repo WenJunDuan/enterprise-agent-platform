@@ -5,8 +5,8 @@ version: "9.6.4"
 
 # === PACE 路由状态 ===
 path: "System" # 文档智能 program 2026-07-doc-intelligence 立项：三波次 D1-D9（地基/质量/结构/体验），旧 tender-program 已收口(S7/S9 结转,S8 用户推迟)
-stage: "roadmap" # 2026-07-02 roadmap 立项完成（架构评估+四分叉用户拍板）；下一步 D1(eval 安全网) 进 plan/design
-current_sprint_slug: "" # D1 立项时填 sprints/{date}-eval-tender-scaffold
+stage: "design" # D1 design 完成+round1 critic(NEEDS_REVISION F1-F4)已修订；铁律[设计先行]：待用户确认后进 impl(TDD)
+current_sprint_slug: "2026-07-02-eval-tender-scaffold"
 current_roadmap_slug: "2026-07-doc-intelligence" # 9 item 三波次(Wave0 地基 D1-D3 + Wave1 质量 D4-D5 + Wave2 结构★ D6-D8 + Wave3 体验 D9)，见 roadmap/2026-07-doc-intelligence/
 skip_polish: false
 skip_architecture_check: false
@@ -67,11 +67,11 @@ pointers:
   latest_architecture_update: "2026-06-23T06:38:15.291Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "【新 session 从这读起 · 2026-07-02 checkpoint · 文档智能 program 立项】本日完成:①全仓架构评估交付(核心发现:tender 无 feature 包~3250行散在 routes/+common/、22文件超300行红线、**三域三套 prompt 投递机制**[expense=Python常量AUDIT_INSTRUCTIONS+setting_sources=[] / tender=run_command_json走.claude commands / ocr=core门面legacy import私有名]双源漂移风险、.claude/CLAUDE.md 过载tender细则);②用户全选4优化方向+OCR愿景(OCR Agent+多模型路由+文档理解+实时流式+结构化RAG),四分叉拍板:**混合agent化(管道+LLM决策点)/结构化检索先行(FTS/BM25+章节树+页锚,向量二期)/页级部分结果流/三波次立项**;③新 roadmap **roadmap/2026-07-doc-intelligence/**(roadmap.md+items.yaml,9 item):Wave0地基=D1 eval_tender正式化(回归闸,S7剩余迁入,含用户填MODEL_CONTEXT_WINDOW重测+部署机手跑对比)+D2 tender feature包重构(红区worktree,纯移动零行为,39测试文件护航)+D3 prompt单源统一(先spike测expense走command延迟差值)+.claude瘦身;Wave1质量=D4 L2多模型路由(印章手写POC,捎带core门面退役)+D5决策点agent化;Wave2结构★=D6文档级结构化(章节树/页锚/实体,新contracts schema)+D7结构化RAG(并入旧S9)+D8底稿瘦身落地(S7 harness复测验证);Wave3=D9页级流式(前端部分agent-front红区需授权)。旧roadmap 2026-06-tender-program 已收口:S7/S9 done(结转注记见items.yaml),S8保持用户推迟。**下一步:D1 立项进 plan/design**(复用 server/audit/eval.py 骨架+logs/s7-model-compare/run_compare.py 种子)。仓库状态:仅main,本日 .ai_state roadmap 立项档已本地 commit(未push,origin 停在 ea7a1ef);两 dev server 或仍在跑(9999 Flash/9998 V4Pro,停:lsof -ti:9999,9998|xargs kill)。铁律护栏:**页锚【第N页】全链路保真(evidence-resolution硬约束,RAG切片红线)**/eval回归闸先行/criteria唯一权威/不可判定不判0/重构零行为变更/pytest全绿/agent-front红区worktree+授权。"
+next_action: "【新 session 从这读起 · 2026-07-02 checkpoint · 文档智能 program 立项】本日完成:①全仓架构评估交付(核心发现:tender 无 feature 包~3250行散在 routes/+common/、22文件超300行红线、**三域三套 prompt 投递机制**[expense=Python常量AUDIT_INSTRUCTIONS+setting_sources=[] / tender=run_command_json走.claude commands / ocr=core门面legacy import私有名]双源漂移风险、.claude/CLAUDE.md 过载tender细则);②用户全选4优化方向+OCR愿景(OCR Agent+多模型路由+文档理解+实时流式+结构化RAG),四分叉拍板:**混合agent化(管道+LLM决策点)/结构化检索先行(FTS/BM25+章节树+页锚,向量二期)/页级部分结果流/三波次立项**;③新 roadmap **roadmap/2026-07-doc-intelligence/**(roadmap.md+items.yaml,9 item):Wave0地基=D1 eval_tender正式化(回归闸,S7剩余迁入,含用户填MODEL_CONTEXT_WINDOW重测+部署机手跑对比)+D2 tender feature包重构(红区worktree,纯移动零行为,39测试文件护航)+D3 prompt单源统一(先spike测expense走command延迟差值)+.claude瘦身;Wave1质量=D4 L2多模型路由(印章手写POC,捎带core门面退役)+D5决策点agent化;Wave2结构★=D6文档级结构化(章节树/页锚/实体,新contracts schema)+D7结构化RAG(并入旧S9)+D8底稿瘦身落地(S7 harness复测验证);Wave3=D9页级流式(前端部分agent-front红区需授权)。旧roadmap 2026-06-tender-program 已收口:S7/S9 done(结转注记见items.yaml),S8保持用户推迟。**D1 已进 design**:发现 S7 harness 已从 gitignored logs/ 蒸发(重建+正式化);design(sprints/2026-07-02-eval-tender-scaffold/design.md)含 round1 critic 修订(核心:评标 _run_evaluation 下沉 server/tender/runner.py 与 audit 同构、一致性看 scoring[] 跨次极差、null 复用 is_real_number、阈值先警告后锁硬门且锁门=D4 前置)——**待用户确认 design 后进 impl(TDD,T1-T5)**。仓库状态:仅main,本日 .ai_state roadmap 立项档已本地 commit(未push,origin 停在 ea7a1ef);两 dev server 或仍在跑(9999 Flash/9998 V4Pro,停:lsof -ti:9999,9998|xargs kill)。铁律护栏:**页锚【第N页】全链路保真(evidence-resolution硬约束,RAG切片红线)**/eval回归闸先行/criteria唯一权威/不可判定不判0/重构零行为变更/pytest全绿/agent-front红区worktree+授权。"
 last_subagent: "codex-exec" # tender-report-dimensions D0-D5 headless (codex 0.142.1, gpt-5.5)；必须 env -u HTTP_PROXY -u HTTPS_PROXY 否则 streaming API 挂起，见 compound/2026-06-25-trick-codex-proxy-hangs-streaming.md
 last_subagent_at: "2026-06-25T00:00:00.000Z"
 active_worktrees: [] # git worktree list 仅 main；无其他分支/worktree(2026-06-23 复核确认)
-last_critic_round: 0
+last_critic_round: 1 # D1 design round1: NEEDS_REVISION(F1 P0 分层违反/F2 null语义/F3 layering守卫/F4 警告模式止损)→全部采纳修订,F1 采更强解(评标核心下沉而非平行重写)
 design_changed_after_impl: false # judgment-discipline 核心 R1-R3 已 ship,R4-R7 明确 backlog(非 in-flight)
 
 # === 用户偏好 ===
