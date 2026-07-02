@@ -14,7 +14,7 @@ items:
     effort: M
     wave: 0
     depends_on: []
-    status: in_progress # 2026-07-02 design 完成(round1 critic NEEDS_REVISION→已修订),待用户确认进 impl;见 sprints/2026-07-02-eval-tender-scaffold/design.md
+    status: pending # design 定稿存档(round1 critic 已修订)——用户 2026-07-02 拍板暂缓实施;重启入口 sprints/2026-07-02-eval-tender-scaffold/design.md 直接从 T1(TDD) 开始,无需重新设计
     note: >
       复用 server/audit/eval.py 骨架。原 S7 harness(logs/ gitignored)已从磁盘蒸发,方法论存
       compound/2026-07-01-learning-flash-tender-eval-inconsistency.md——按重建+正式化实施。

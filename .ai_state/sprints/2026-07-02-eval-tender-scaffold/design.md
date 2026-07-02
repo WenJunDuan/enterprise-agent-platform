@@ -1,7 +1,9 @@
 # D1 · eval_tender 评测脚手架正式化 — design
 
 > roadmap: 2026-07-doc-intelligence / Wave0 / D1 (eval-tender-scaffold)
-> path: Feature (infra) · effort M · 状态: round1 critic=NEEDS_REVISION(F1-F4)→ 已按 findings 修订（正文含 `round1 Fx 修订` 标记），待用户确认后进 impl
+> path: Feature (infra) · effort M · 状态: **定稿存档 · 暂缓实施**（round1 critic F1-F4 已全部修订，
+> 正文含 `round1 Fx 修订` 标记；用户 2026-07-02 拍板"存下来作为下一阶段优化 Sprint，暂不实施"。
+> 重启时无需重新设计，直接从验收清单 T1 的 TDD 开始）
 
 ## 背景（WHY）
 
