@@ -1,0 +1,158 @@
+# 文档智能 Program items — 2026-07-02 架构评估 + 用户四分叉拍板立项
+# status: pending | in_progress | done | blocked
+slug: "2026-07-doc-intelligence"
+source:
+  assessment: "2026-07-02 全仓架构评估（会话交付：tender 无 feature 包 / 三域三套 prompt 机制 / OCR 五能力差距对照）"
+  evidence: "logs/s7-model-compare/REPORT.md（底稿32万token>>128K，杠杆在精简底稿）"
+  decisions: "roadmap.md 决策记录（混合agent化/结构化检索先行/页级部分结果流/三波次）"
+
+items:
+  - id: D1
+    slug: eval-tender-scaffold
+    stream: infra
+    title: "eval_tender.py 正式化 + golden manifest（S7 剩余迁入，全 program 回归闸）"
+    effort: M
+    wave: 0
+    depends_on: []
+    status: pending
+    note: >
+      复用 server/audit/eval.py 骨架 + logs/s7-model-compare/run_compare.py harness 种子。
+      范围含 S7 迁入项：tender_golden_manifest.json（仿 tests/eval_fixtures）、
+      config.get_flash_model_config()（A/B 用）、tender_worker TENDER_EVAL_MODEL per-call 覆盖
+      （仿 _TENDER_EFFORT 先例）。用户侧待办挂此：填 MODEL_CONTEXT_WINDOW 真实窗口重测截断防护、
+      部署机手跑 Flash vs V4Pro 对比。
+    refs: ["旧 roadmap S7 remaining_migrated", "compound/2026-07-01-learning-flash-tender-eval-inconsistency.md"]
+
+  - id: D2
+    slug: tender-feature-package
+    stream: refactor
+    title: "建 server/tender/ feature 包：routes/common 里约 3250 行 tender 逻辑归位"
+    effort: L
+    wave: 0
+    depends_on: []
+    status: pending
+    redzone: server-refactor
+    note: >
+      纯移动零行为变更，红区 worktree 强制（铁律[零写入]）。迁入：routes/ 的
+      tender_worker/tender_compare_worker/tender_doc_pipeline + common/ 的
+      tender_output/evidence_resolution；routes/tender.py(912) 拆薄为 HTTP 壳（可按
+      tasks/projects/docs 资源拆）。layering test 新增守卫：routes/ 不含 worker/prompt 构建；
+      tender 补进分层图与 feature 互斥规则。39 个 tender 测试文件护航。
+    refs: ["2026-07-02 架构评估 P0-1"]
+
+  - id: D3
+    slug: prompt-single-source
+    stream: refactor
+    title: "三域 prompt 投递机制收敛 + .claude 瘦身"
+    effort: M
+    wave: 0
+    depends_on: []
+    status: pending
+    note: >
+      先 spike：实测 expense 走 command 模式（setting_sources=["project"]）的延迟差值，
+      与现 AUDIT_INSTRUCTIONS 内联对比 → 差值可接受则统一到 tender 模式（command 文件单一真相源），
+      否则反向统一（.claude expense 资产标注非生产真相源）。捎带 .claude 侧收敛：
+      CLAUDE.md tender 实施细则下沉 skill/command（只留路由表+红线）、
+      默认关闭的 6 个 agent 纪律文本抽 shared reference、skill/command 命名统一 <domain>-<verb>。
+    refs: ["2026-07-02 架构评估 P1-3", "compound: 2026-06-12 audit.md 生产不生效教训"]
+
+  - id: D4
+    slug: l2-model-routing
+    stream: feature
+    title: "OCR 分支内 L2 页/区域级多模型路由 + 模型池注册（含印章/手写 POC）"
+    effort: L
+    wave: 1
+    depends_on: [D1]
+    status: pending
+    note: >
+      清晰打印→PaddleOCR-VL；印章页→seal 产线编排进主流程；手写/疑难→内网多模态大模型
+      （qwen3.6-27b）；低置信度→升级更强模型重试。模型池经统一 litellm 网关注册，
+      兼容内网自托管与云网关双部署形态。印章/手写 POC（memory 挂账待办）在此落地。
+      捎带：ocr/runner.py 迁离 core 门面私有名 import（_extract_json_object）。
+      改动须过 D1 golden case 回归。
+    refs: ["multi-ocr references/engines.md", "references/routing.md", "memory: project_ocr_form_fill 待办"]
+
+  - id: D5
+    slug: ocr-decision-agent
+    stream: feature
+    title: "OCR 决策点 agent 化（混合形态）：低置信度/异常页自检自纠环"
+    effort: M
+    wave: 1
+    depends_on: [D3, D4]
+    status: pending
+    note: >
+      用户拍板=混合：Python 管道骨架不变，LLM 只在分支介入——低置信度页复核、
+      结果自检（表格错位/金额格式异常→换引擎重跑）、失败页自愈。决策点 prompt 按 D3
+      收敛后的单源机制管理。不做全 agent 驱动（慢/贵/难回归，与确定性底稿校验链冲突）。
+    refs: ["roadmap.md 决策1"]
+
+  - id: D6
+    slug: doc-understanding
+    stream: feature
+    title: "文档级结构化：章节树/目录索引/页锚/跨页表格/关键实体 → 结构化底稿 schema"
+    effort: L
+    wave: 2
+    depends_on: [D1]
+    status: pending
+    note: >
+      从页级 VL 输出（Markdown+JSON）解析文档级结构：章节树+语义标签（资格审查章/评标办法章/
+      业绩章）、跨页表格合并、实体（金额/日期/资质证书号/项目经理名）。boq.py 是领域感知先例。
+      产出 .claude/contracts 新 schema（结构化底稿契约）。页锚【第N页】全程保真（硬护栏）。
+      直接服务 tender S1 定位 criteria。可与 Wave1 并行起，建议 D4 后收口以吃到识别质量提升。
+    refs: ["tender S1 定位需求", "护栏: 页锚保真"]
+
+  - id: D7
+    slug: structured-rag
+    stream: feature
+    title: "结构化 RAG：底稿入库（章节树+页锚+FTS/BM25）+ 检索接口（并入旧 S9 KB+外部数据脚手架）"
+    effort: L
+    wave: 2
+    depends_on: [D6]
+    status: pending
+    note: >
+      用户拍板=结构化检索先行：SQLite FTS/BM25 + 章节/条款定位，零新依赖，离线部署零成本；
+      向量检索作二期（backlog，触发条件见 roadmap.md）。吸收旧 roadmap S9 全部范围：
+      KB 补全 + 外部数据适配脚手架（只建脚手架不接真实接口）。检索结果必须带页锚出处。
+    refs: ["旧 roadmap S9（merged）", "roadmap.md 决策2"]
+
+  - id: D8
+    slug: transcript-slimming
+    stream: feature
+    title: "底稿瘦身落地：tender S1/S2 改按需检索喂模型 + S7 harness 复测验证"
+    effort: M
+    wave: 2
+    depends_on: [D2, D7]
+    status: pending
+    note: >
+      tender_worker（已迁 server/tender/）从 32 万 token 全量灌改为按 criteria 项检索相关章节喂模型。
+      验收=复跑 logs/s7-model-compare harness 对比：成本、时延、评分一致性跨度、policy_refs 合规率
+      四指标均不劣化且成本显著下降。这是全 program 的核心收益点。
+    refs: ["S7 压测结论", "D1 回归闸"]
+
+  - id: D9
+    slug: streaming-ocr
+    stream: feature
+    title: "页级流式 OCR：边识别边推每页完成事件+部分结果，前端渐进渲染"
+    effort: M
+    wave: 3
+    depends_on: [D4]
+    status: pending
+    redzone: agent-front
+    note: >
+      用户拍板=页级部分结果流。后端：pipeline 改 async generator 页级 yield，复用平台 SSE
+      进度流机制；前端渐进渲染属 agent-front 红区（需明确授权+worktree）。
+      识别-评标流水线重叠作流式二期（backlog）。
+    refs: ["roadmap.md 决策3"]
+
+backlog:
+  - "向量检索增强（bge-m3 自托管+离线打包）——结构化检索命中率不足或需历史案例语义检索时触发"
+  - "识别-评标流水线重叠（流式二期）"
+  - "config.py(491)/cli.py(527) 拆分；session store list_conversation_summaries 三处重复（2026-06-12 债）"
+  - "手写签名真伪验证（YOLO+孪生网络，非 OCR 域）"
+  - "S8 数据安全（用户推迟，拍板后插入，不阻塞本 program）"
+
+decisions_needed:
+  - "D3: 延迟差值可接受阈值（spike 出数后拍板统一方向）"
+  - "D8: 复测通过标准量化（一致性跨度上限/成本下降目标，design 时敲定）"
+  - "D9: agent-front 红区授权（需明确同意+worktree）"
+  - "向量二期触发时机（依赖 D7 上线后的检索命中率数据）"

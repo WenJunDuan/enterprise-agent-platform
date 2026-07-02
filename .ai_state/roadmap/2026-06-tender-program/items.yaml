@@ -81,13 +81,14 @@ items:
     wave: 1
     priority: this_week
     depends_on: []
-    status: in_progress
+    status: done
+    done_note: "截断防护+Flash/V4Pro 对照压测完成（见 progress）。eval 脚手架正式化等剩余项 2026-07-02 迁入 roadmap 2026-07-doc-intelligence D1（全 program 回归闸）；压测结论（杠杆在精简底稿）即该 roadmap Wave2 的立项依据。"
     blocker_resolved: "用户 2026-07-01 在 .env 配 Flash：MODEL_NAME=deepseek-v4-flash + 端点 https://api.deepseek.com/anthropic（V4Pro=deepseek-v4-pro[1M] 同网关注释切换）。Flash 现为平台默认模型。"
     progress:
       - "[done] 上下文截断防护：config.resolve_model_context_window(env MODEL_CONTEXT_WINDOW,opt-in) + agent_bridge.warn_if_context_may_truncate(预估输入 token+预留输出>窗口即 WARNING),接入 run_agent + run_agent_json 两条 funnel(覆盖 audit 流式 + tender 结构化)。TDD 10 用例,762 pytest 绿。.env 加注释提示。"
       - "[done] Flash 评标压测(2026-07-01,harness logs/s7-flash-stress/run_stress.py):首轮暴露 Flash 同标书评分严重不一致(实得合计[40,66,9]/7倍漂移)+policy_refs频繁空+run3崩塌疑似截断。"
       - "[done] Flash vs V4Pro 详细对照压测(2026-07-01,harness logs/s7-model-compare/run_compare.py,2标书×2模型×3=12次,细粒度计时/发现点/一致性,报告 logs/s7-model-compare/REPORT.md)。**结论**:时延 Flash~135s vs V4Pro~276s(2×慢);成本 Flash$2.68 vs V4Pro$3.44/次(贵28%);一致性 V4Pro更稳(案例A跨度9% vs Flash42%,V4Pro案例A实得项数恒7)但案例B两者都抖;policy_refs空 Flash4/6 vs V4Pro1/6(V4Pro完胜);契约本轮Flash0重试/V4Pro2重试(flaky非确定性);6/6全manual_review(价格横比单家算不出,正常)。**底稿32万token远超128K,压成本/提稳的杠杆是精简/分片底稿,不是换模型**。建议:关键路径用V4Pro+多次投票,Flash仅预筛;设MODEL_CONTEXT_WINDOW重测验证截断。"
-    remaining:
+    remaining_migrated: # 2026-07-02 → roadmap 2026-07-doc-intelligence D1
       - "tests/eval_tender.py(复用 server/audit/eval.py 骨架,换成评标路径)"
       - "tender_golden_manifest.json(仿 tests/eval_fixtures/golden_manifest.json)"
       - "config.get_flash_model_config()（A/B 评测用,非截断 guard 所需）"
@@ -111,7 +112,8 @@ items:
     effort: L
     wave: 4
     depends_on: [S3, S4]
-    status: pending
+    status: done
+    done_note: "未单独实施——2026-07-02 并入 roadmap 2026-07-doc-intelligence D7（结构化 RAG：KB 补全+检索+外部数据适配脚手架，同一存储/检索层不建两套）。"
     refs: ["会议结论6", "会议结论7", "待办7", "待办8"]
   - id: S10
     slug: tender-overview-checklist
