@@ -264,7 +264,7 @@ collected_evidence:
     tool: "Bash"
     file: ""
     kind: "test"
-    command: "rg -n "PLATFORM_DB_FILE|RESULT_INDEX_DB_FILE|tmp_path|monkeypatch.*DB|enterprise-agent-platform|pytest|ensure_local_layo"
+    command: 'rg -n "PLATFORM_DB_FILE|RESULT_INDEX_DB_FILE|tmp_path|monkeypatch.*DB|enterprise-agent-platform|pytest|ensure_local_layo"'
     result: "pass"
     timestamp: "2026-06-20T09:57:08.759127Z"
   - tool_use_id: "call_cbygMkebaClYpPPNjMfku89Y"

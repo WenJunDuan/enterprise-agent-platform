@@ -1,3 +1,10 @@
+---
+doc_type: decision
+date: 2026-07-02
+slug: ocr-routing-ladder
+sprint: 2026-07-02-eval-tender-scaffold
+---
+
 # Decision · OCR 五级路由决策梯（D4 设计基准）
 
 > 2026-07-02 用户拍板。D4（L2 多模型路由）的设计基准，实施时以此为纲。
