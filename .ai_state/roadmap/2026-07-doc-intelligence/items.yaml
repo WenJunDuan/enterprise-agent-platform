@@ -75,9 +75,14 @@ items:
       ③Unlimited-OCR（baidu 2026-06，3B/激活500M，R-SWA 一次前向数十页、KV cache 恒定，
       github.com/baidu/Unlimited-OCR）=整本长文档一次性解析层（标书全本→章节树，
       直接服务 D6 结构化+D8 底稿瘦身，SGLang/transformers 部署）。
-      路由形态=Claude 式分级升级（escalation）：便宜先行→_page_confidence/file_clarity
-      低置信页升级（extract_pdf_subset 只重跑差页，期望成本最小化，非单模型最优）；
-      印章页→seal 产线编排进主流程；手写/疑难兜底→内网多模态（qwen3.6-27b）。
+      路由形态=五级决策梯（用户 2026-07-02 梳理定稿，全文见
+      compound/2026-07-02-decision-ocr-routing-ladder.md）：**T0 直读优先显式化**
+      （能直读绝不 OCR，classify+native 已有，混合 PDF 页级直读+补OCR 为先例）→
+      T1 PaddleOCR 打底→T2 低置信/复杂版面升 VL（extract_pdf_subset 只重跑差页）→
+      T2s 印章 seal 产线→T3 整本长程 Unlimited-OCR→**T4 兜底=系统配置文件配置的
+      多模态大模型**（MODEL_BASE_URL/MODEL_NAME，config._forward_model_env；当前部署=
+      内网 qwen3.6-27b，**设计不 pin 型号，换模型改 .env 不改代码**）。
+      期望成本最小化（成本单调递增只升不降），非单模型最优。
       实现锚点：engine.recognize() 的 env if/elif 换 EngineRegistry+能力画像+路由策略；
       cache._engine_fingerprint 升 per-engine 进 cache key；classify(L1 文件类型路由)不动。
       模型池经统一 litellm 网关注册，兼容内网自托管与云网关双部署形态。

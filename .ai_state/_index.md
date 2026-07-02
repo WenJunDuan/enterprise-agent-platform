@@ -54,7 +54,7 @@ counts:
   compound:
     learning: 9
     trick: 1
-    decision: 3
+    decision: 4
     explore: 0
 # === Pointers (指向最新相关文件) ===
 pointers:
@@ -62,7 +62,7 @@ pointers:
   latest_review: "sprints/2026-06-23-tender-judgment-discipline/design.md" # 本 sprint 用 workflow(5 finder)发现 41 残留项替代正式 review；R8 e2e(deepseek+glm)验收见 design.md「实施与验收结论」
   latest_cleanup: "sprints/2026-06-19-contract-audit-feature/cleanup-pass.md"
   latest_brainstorm: ""
-  latest_decisions: ["compound/2026-06-20-decision-verification-gate-and-scaffolding.md", "compound/2026-06-19-decision-ops-below-routes-layering.md", "compound/2026-06-19-decision-agent-front-cc-out-of-scope.md"]
+  latest_decisions: ["compound/2026-07-02-decision-ocr-routing-ladder.md", "compound/2026-06-20-decision-verification-gate-and-scaffolding.md", "compound/2026-06-19-decision-ops-below-routes-layering.md", "compound/2026-06-19-decision-agent-front-cc-out-of-scope.md"]
   latest_lessons: ["compound/2026-07-01-learning-flash-tender-eval-inconsistency.md", "compound/2026-07-01-learning-adversarial-empirical-review-catches-text-leaks.md", "compound/2026-06-26-learning-cross-review-catches-latent-bugs.md", "compound/2026-06-23-learning-gate-rescues-not-creates.md", "compound/2026-06-22-learning-jsonschema-too-brittle-for-llm-output.md"]
   latest_architecture_update: "2026-06-23T06:38:15.291Z"
 
