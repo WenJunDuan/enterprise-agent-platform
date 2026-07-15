@@ -205,3 +205,74 @@ def test_tender_ocr_purpose_relocated_and_reexported():
 
     assert pipeline.TENDER_OCR_PURPOSE is runner.TENDER_OCR_PURPOSE
     assert "评分标准" in runner.TENDER_OCR_PURPOSE
+
+
+# ── D1 T3：TENDER_EVAL_MODEL env 覆盖（per-call model 优先，env 兜底） ─────────────
+
+
+def test_model_kwarg_omitted_when_unset(monkeypatch):
+    """model 参数未传且 TENDER_EVAL_MODEL 未设 → 不传 model kwargs（零行为变更，生产路径）。"""
+    import server.tender.runner as runner
+
+    monkeypatch.delenv("TENDER_EVAL_MODEL", raising=False)
+    calls: dict = {}
+    monkeypatch.setattr(runner, "run_command_json", _make_fake_run_command(calls))
+    monkeypatch.setattr(runner, "ocr_preprocess_block", lambda *a, **kw: "fallback")
+
+    asyncio.run(
+        runner.run_tender_evaluation(
+            request_id="rid-no-override", tenant="acme", directory_path="/fake/dir"
+        )
+    )
+
+    assert "model" not in calls
+
+
+def test_explicit_model_kwarg_takes_priority_over_env(monkeypatch):
+    """显式 model 参数优先于 TENDER_EVAL_MODEL env（CLI --model 场景）。"""
+    import server.tender.runner as runner
+
+    monkeypatch.setenv("TENDER_EVAL_MODEL", "env-model")
+    calls: dict = {}
+
+    async def fake_run(command_name, *arguments, schema_name, **opts):
+        calls["model"] = opts.get("model")
+        return {"verdict": "manual_review"}, object()
+
+    monkeypatch.setattr(runner, "run_command_json", fake_run)
+    monkeypatch.setattr(runner, "ocr_preprocess_block", lambda *a, **kw: "fallback")
+
+    asyncio.run(
+        runner.run_tender_evaluation(
+            request_id="rid-explicit",
+            tenant="acme",
+            directory_path="/fake/dir",
+            model="cli-model",
+        )
+    )
+
+    assert calls["model"] == "cli-model"
+
+
+def test_env_model_used_when_no_explicit_override(monkeypatch):
+    """无显式 model 参数、TENDER_EVAL_MODEL 已设 → 落到 env 值（生产 tender_worker 从不设此
+    env，故此路径只在部署机 eval 场景生效，零行为变更承诺仍成立）。"""
+    import server.tender.runner as runner
+
+    monkeypatch.setenv("TENDER_EVAL_MODEL", "deepseek-v4-pro")
+    calls: dict = {}
+
+    async def fake_run(command_name, *arguments, schema_name, **opts):
+        calls["model"] = opts.get("model")
+        return {"verdict": "manual_review"}, object()
+
+    monkeypatch.setattr(runner, "run_command_json", fake_run)
+    monkeypatch.setattr(runner, "ocr_preprocess_block", lambda *a, **kw: "fallback")
+
+    asyncio.run(
+        runner.run_tender_evaluation(
+            request_id="rid-env-fallback", tenant="acme", directory_path="/fake/dir"
+        )
+    )
+
+    assert calls["model"] == "deepseek-v4-pro"
