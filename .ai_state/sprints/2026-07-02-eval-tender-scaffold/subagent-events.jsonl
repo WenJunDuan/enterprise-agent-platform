@@ -1,0 +1,11 @@
+{"schema_version":1,"event":"SubagentStart","agent_id":"a0d447ab04c842bd5","agent_type":"generator","sprint_slug":"2026-07-02-eval-tender-scaffold","timestamp":"2026-07-15T07:12:22.405Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"a0d447ab04c842bd5","agent_type":"generator","sprint_slug":"2026-07-02-eval-tender-scaffold","timestamp":"2026-07-15T07:53:18.649Z"}
+{"schema_version":1,"event":"SubagentStop","agent_id":"a0d447ab04c842bd5","agent_type":"generator","sprint_slug":"2026-07-02-eval-tender-scaffold","timestamp":"2026-07-15T08:43:04.708Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"ac48575e363b37667","agent_type":"reviewer","sprint_slug":"2026-07-02-eval-tender-scaffold","timestamp":"2026-07-15T08:45:26.581Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"a6a89435492c31a1f","agent_type":"spec-compliance","sprint_slug":"2026-07-02-eval-tender-scaffold","timestamp":"2026-07-15T08:45:46.537Z"}
+{"schema_version":1,"event":"SubagentStop","agent_id":"ac48575e363b37667","agent_type":"reviewer","sprint_slug":"2026-07-02-eval-tender-scaffold","timestamp":"2026-07-15T08:48:36.548Z"}
+{"schema_version":1,"event":"SubagentStop","agent_id":"a6a89435492c31a1f","agent_type":"spec-compliance","sprint_slug":"2026-07-02-eval-tender-scaffold","timestamp":"2026-07-15T08:49:23.149Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"a0d447ab04c842bd5","agent_type":"generator","sprint_slug":"2026-07-02-eval-tender-scaffold","timestamp":"2026-07-15T08:50:31.166Z"}
+{"schema_version":1,"event":"SubagentStop","agent_id":"a0d447ab04c842bd5","agent_type":"generator","sprint_slug":"2026-07-02-eval-tender-scaffold","timestamp":"2026-07-15T09:08:55.909Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"a0d447ab04c842bd5","agent_type":"generator","sprint_slug":"2026-07-02-eval-tender-scaffold","timestamp":"2026-07-15T09:11:41.012Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"a0d447ab04c842bd5","agent_type":"generator","sprint_slug":"2026-07-02-eval-tender-scaffold","timestamp":"2026-07-15T09:23:59.427Z"}
