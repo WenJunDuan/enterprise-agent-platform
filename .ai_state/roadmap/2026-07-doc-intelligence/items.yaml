@@ -14,13 +14,18 @@ items:
     effort: M
     wave: 0
     depends_on: []
-    status: pending # design 定稿存档(round1 critic 已修订)——用户 2026-07-02 拍板暂缓实施;重启入口 sprints/2026-07-02-eval-tender-scaffold/design.md 直接从 T1(TDD) 开始,无需重新设计
+    status: in_progress # 2026-07-15 用户拍板 OCR 分层**方案 i**(ocr 降为服务层,守卫单向,见 design.md Round 2 决议)——GO 生效,impl 从 T1(TDD) 起,每 T commit+pytest 绿
     note: >
       复用 server/audit/eval.py 骨架。原 S7 harness(logs/ gitignored)已从磁盘蒸发,方法论存
       compound/2026-07-01-learning-flash-tender-eval-inconsistency.md——按重建+正式化实施。
       design 要点:评标核心 _run_evaluation 下沉 server/tender/runner.py(critic F1,与 audit 同构,
       前置完成 D2 一块);一致性 null 语义复用 tender_output.is_real_number(F2);
       **一致性阈值硬门锁定(V4Pro 基线标定后二次 commit)是 D4 开工前置条件(F4)**。
+      **round2 F5(P0)已决议(2026-07-15 用户拍板方案 i):ocr 降为 feature 域之下服务层,
+      _run_evaluation 连 ocr_preprocess_block 一起下沉(tender→ocr 合法),TENDER_OCR_PURPOSE
+      挪家 server/tender/,T5 守卫改单向(禁 ocr→tender/audit);T2 改口"纯移动为主+两处接缝
+      补针对性测试"。详见 design.md Round 2 决议记录 +
+      compound/2026-07-15-decision-ocr-service-layer.md。**
       范围含 S7 迁入项：tender_golden_manifest.json（仿 tests/eval_fixtures）、
       tender_worker TENDER_EVAL_MODEL per-call 覆盖
       （仿 _TENDER_EFFORT 先例；get_flash_model_config() 专名已在 design.md 中放弃，泛化为任意模型名覆盖）。用户侧待办挂此：填 MODEL_CONTEXT_WINDOW 真实窗口重测截断防护、
@@ -41,8 +46,21 @@ items:
       tender_worker/tender_compare_worker/tender_doc_pipeline + common/ 的
       tender_output/evidence_resolution；routes/tender.py(912) 拆薄为 HTTP 壳（可按
       tasks/projects/docs 资源拆）。layering test 新增守卫：routes/ 不含 worker/prompt 构建；
-      tender 补进分层图与 feature 互斥规则。39 个 tender 测试文件护航。
-    refs: ["2026-07-02 架构评估 P0-1"]
+      tender 补进分层图与 feature 互斥规则。测试护航：文件名含 tender 的测试 14 个、
+      内容引用 tender 的 25 个（2026-07-03 实测修正，原"39 文件"系虚数）。
+      **round2 两处阻塞（D1 design.md Round 2 F5/F6）：①已解——2026-07-15 D1 拍板方案 i
+      （ocr 降为服务层，tender→ocr 合法），tender_doc_pipeline 迁入不再撞守卫；
+      ②tender_output/evidence_resolution 被 common/output_contracts.py:30,460
+      （共享契约机，audit 亦消费）import，直接迁入会造 common→feature 逆向依赖——D2 design
+      时决定"tender 专属校验一起下沉"或"两模块留 common"。**2026-07-03 深评给出第三解(推荐):
+      schema 分家——注册 tender/audit-result.schema.json 专属处理器,tender hooks+evidence
+      resolve 挂 tender 名,expense 用纯通用处理器(现状 tender 校验无条件跑在 expense 结果上,
+      output_contracts.py:462-469 单 schema 多域共用是根因),分家后 tender_output 可随包合法
+      迁移;顺带修 contract.py:252 import-time 副作用注册。范围另+:worker 三胞胎骨架抽
+      background job harness(准入闸+引用集+信号量+超时+三态upsert 60-70%同构)、tender.py
+      按既有 banner 分节拆 tasks/projects/docs/compare(:133/223/441/627/854 已就位)。
+      详见 compound/2026-07-03-explore-arch-deep-review-deltas.md #7/#8/#12。**
+    refs: ["2026-07-02 架构评估 P0-1", "D1 design.md Round 2 F5/F6"]
 
   - id: D3
     slug: prompt-single-source
@@ -212,7 +230,11 @@ backlog:
   - "手写签名真伪验证（YOLO+孪生网络，非 OCR 域）"
   - "S8 数据安全（用户推迟，拍板后插入，不阻塞本 program）"
 
+decisions_made:
+  - "✅ 2026-07-15 **D1/D2 共用：OCR 分层归属=方案 i**——ocr 降为 feature 之下服务层,守卫改单向(允许 tender/audit→ocr,禁止 ocr→tender/audit)。见 D1 design.md Round 2 决议记录 + compound/2026-07-15-decision-ocr-service-layer.md"
+
 decisions_needed:
+  - "D2: tender_output/evidence_resolution 迁移方式（common/output_contracts 消费它们，见 Round 2 F6；D2 design 时拍板）"
   - "D3: 延迟差值可接受阈值（spike 出数后拍板统一方向）"
   - "D10: 直连 vs command 模式二选一（与 D3 同场拍板）+ 直连落地形态（dormant flag-off 现在建 vs 部署机带网关迭代）"
   - "D8: 复测通过标准量化（一致性跨度上限/成本下降目标，design 时敲定）"

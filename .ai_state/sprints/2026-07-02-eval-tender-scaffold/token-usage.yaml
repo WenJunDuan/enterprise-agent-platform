@@ -1,0 +1,119 @@
+sprint_slug: 2026-07-02-eval-tender-scaffold
+updated_at: "2026-07-15T06:50:39.248Z"
+status: "ok"
+totals:
+  cache_creation_input_tokens: 127098
+  cache_read_input_tokens: 46062
+  cached_input_tokens: 173160
+  input_tokens: 64532
+  output_tokens: 4528
+  reasoning_output_tokens: 0
+  total_tokens: 69060
+by_model:
+  "claude-fable-5":
+    calls: 6
+    cache_creation_input_tokens: 127098
+    cache_read_input_tokens: 46062
+    cached_input_tokens: 173160
+    input_tokens: 64532
+    output_tokens: 4528
+    reasoning_output_tokens: 0
+    total_tokens: 69060
+by_stage:
+  "design":
+    "claude-fable-5":
+      calls: 6
+      cache_creation_input_tokens: 127098
+      cache_read_input_tokens: 46062
+      cached_input_tokens: 173160
+      input_tokens: 64532
+      output_tokens: 4528
+      reasoning_output_tokens: 0
+      total_tokens: 69060
+records:
+  - fingerprint: "e070f47ba44d805d"
+    platform: "cc"
+    stage: "design"
+    source_type: "transcript_path"
+    source_id: "/Users/mi_manchi/.claude/projects/-Users-mi-manchi-workspace-enterprise-agent-platform/0239f7b9-27de-4bd4-bd48-d0650842db8e.jsonl"
+    timestamp: "2026-07-15T06:48:55.236Z"
+    model: "claude-fable-5"
+    cache_creation_input_tokens: 23031
+    cache_read_input_tokens: 0
+    cached_input_tokens: 23031
+    input_tokens: 16132
+    output_tokens: 429
+    reasoning_output_tokens: 0
+    total_tokens: 16561
+  - fingerprint: "4a4898969248d27c"
+    platform: "cc"
+    stage: "design"
+    source_type: "transcript_path"
+    source_id: "/Users/mi_manchi/.claude/projects/-Users-mi-manchi-workspace-enterprise-agent-platform/0239f7b9-27de-4bd4-bd48-d0650842db8e.jsonl"
+    timestamp: "2026-07-15T06:48:56.186Z"
+    model: "claude-fable-5"
+    cache_creation_input_tokens: 23031
+    cache_read_input_tokens: 0
+    cached_input_tokens: 23031
+    input_tokens: 16132
+    output_tokens: 429
+    reasoning_output_tokens: 0
+    total_tokens: 16561
+  - fingerprint: "67aeff32dd2b7bd3"
+    platform: "cc"
+    stage: "design"
+    source_type: "transcript_path"
+    source_id: "/Users/mi_manchi/.claude/projects/-Users-mi-manchi-workspace-enterprise-agent-platform/0239f7b9-27de-4bd4-bd48-d0650842db8e.jsonl"
+    timestamp: "2026-07-15T06:48:57.261Z"
+    model: "claude-fable-5"
+    cache_creation_input_tokens: 23031
+    cache_read_input_tokens: 0
+    cached_input_tokens: 23031
+    input_tokens: 16132
+    output_tokens: 429
+    reasoning_output_tokens: 0
+    total_tokens: 16561
+  - fingerprint: "926669237deaf4b0"
+    platform: "cc"
+    stage: "design"
+    source_type: "transcript_path"
+    source_id: "/Users/mi_manchi/.claude/projects/-Users-mi-manchi-workspace-enterprise-agent-platform/0239f7b9-27de-4bd4-bd48-d0650842db8e.jsonl"
+    timestamp: "2026-07-15T06:48:58.827Z"
+    model: "claude-fable-5"
+    cache_creation_input_tokens: 23031
+    cache_read_input_tokens: 0
+    cached_input_tokens: 23031
+    input_tokens: 16132
+    output_tokens: 429
+    reasoning_output_tokens: 0
+    total_tokens: 16561
+  - fingerprint: "473b8355ecc3a1f3"
+    platform: "cc"
+    stage: "design"
+    source_type: "transcript_path"
+    source_id: "/Users/mi_manchi/.claude/projects/-Users-mi-manchi-workspace-enterprise-agent-platform/0239f7b9-27de-4bd4-bd48-d0650842db8e.jsonl"
+    timestamp: "2026-07-15T06:49:24.595Z"
+    model: "claude-fable-5"
+    cache_creation_input_tokens: 17487
+    cache_read_input_tokens: 23031
+    cached_input_tokens: 40518
+    input_tokens: 2
+    output_tokens: 1406
+    reasoning_output_tokens: 0
+    total_tokens: 1408
+  - fingerprint: "d861088a8e0c98ed"
+    platform: "cc"
+    stage: "design"
+    source_type: "transcript_path"
+    source_id: "/Users/mi_manchi/.claude/projects/-Users-mi-manchi-workspace-enterprise-agent-platform/0239f7b9-27de-4bd4-bd48-d0650842db8e.jsonl"
+    timestamp: "2026-07-15T06:49:26.689Z"
+    model: "claude-fable-5"
+    cache_creation_input_tokens: 17487
+    cache_read_input_tokens: 23031
+    cached_input_tokens: 40518
+    input_tokens: 2
+    output_tokens: 1406
+    reasoning_output_tokens: 0
+    total_tokens: 1408
+notes:
+  []

@@ -1,9 +1,10 @@
 # D1 · eval_tender 评测脚手架正式化 — design
 
 > roadmap: 2026-07-doc-intelligence / Wave0 / D1 (eval-tender-scaffold)
-> path: Feature (infra) · effort M · 状态: **定稿存档 · 暂缓实施**（round1 critic F1-F4 已全部修订，
-> 正文含 `round1 Fx 修订` 标记；用户 2026-07-02 拍板"存下来作为下一阶段优化 Sprint，暂不实施"。
-> 重启时无需重新设计，直接从验收清单 T1 的 TDD 开始）
+> path: Feature (infra) · effort M · 状态: **定稿（GO）**。round1 critic F1-F4 已全部修订（正文含
+> `round1 Fx 修订` 标记）；round2 F5 [P0] 的 OCR 分层归属已于 **2026-07-15 用户拍板方案 i**
+> （ocr 降为 feature 域之下服务层，守卫改单向，详见文末 Round 2 决议），正文 T2/T5 已按
+> 方案 i 连带修订。impl 从 T1 起，每 T commit + pytest 绿再进下一 T。
 
 ## 背景（WHY）
 
@@ -57,17 +58,27 @@ feature → common 方向合法）。全 null run（S7 案例B run3 崩塌形态
 **止损（round1 F4 修订）**：硬门锁定是 **D4 开工的前置条件**（已写入 roadmap items.yaml D1/D4
 note），警告模式不得跨 Wave 存活。
 
-**Runner（round1 F1 修订：分层合法 + 复用生产路径，两者兼得）**：
+**Runner（round1 F1 修订 + round2 F5 方案 i 修订：分层合法 + 复用生产路径，两者兼得）**：
 - **评标核心下沉**：把 `_run_evaluation` 及其 doc-layer 助手（`_wait_doc_layer_ready` /
   `_load_doc_layer_context` / 相关开关读取）从 `routes/tender_worker.py` **移入**
   `server/tender/runner.py`（公开名 `run_tender_evaluation`）；routes 层保留任务调度壳
   （schedule/execute/track）改为 import feature 层——方向 routes → features 合法，
-  与 audit 完全同构（`routes/audit_worker` → `server/audit/runner`）。
+  入口结构与 audit 同构（`routes/audit_worker` → `server/audit/runner`）。
+- **OCR 依赖处置（方案 i，2026-07-15 拍板）**：分层教义修订——ocr 从 tender/audit 的平级
+  sibling 降为 feature 域之下的**服务层**（现实已有 audit_worker / tender_worker /
+  tender_doc_pipeline 三处按服务消费）。`_run_evaluation` 内嵌的 `ocr_preprocess_block`
+  调用**随代码一起下沉**（tender→ocr 自此合法，不再注入）；`TENDER_OCR_PURPOSE` 从
+  `routes/tender_doc_pipeline.py:33` **挪家至 `server/tender/`**，tender_doc_pipeline 改为
+  从 feature 层 import（routes→features 合法），消除 tender→routes 逆向依赖。
+  守卫改**单向**：允许 tender/audit→ocr，禁止 ocr→tender/audit（既有 audit↔ocr 互斥断言
+  同步改单向）。audit feature 层现无 ocr 依赖，D1 不改 audit 现状。
 - 为什么不按 critic 原案"新 runner 直调 run_command_json ~15 行"：eval 是回归闸，必须打**生产
   同一条路径**（doc-layer 底稿复用、criteria 注入、契约重试都是被测行为，D8 底稿瘦身复测正要测
   这里）；平行重写会造第二真相源。下沉方案同时满足 F1 的分层约束与"测生产路径"的根本目的。
-- 副产品：D2 的"worker 核心迁包"一块被前置完成，D2 剩余范围相应缩小；纯移动零行为变更，
-  由既有 worker/read-layer/timeout 回归测试守护。
+- 副产品：D2 的"worker 核心迁包"一块被前置完成，D2 剩余范围相应缩小。**以纯移动为主，
+  但含两处接缝改动（round2 连带修订，"零行为"表述作废）**：① `TENDER_OCR_PURPOSE` 挪家
+  （routes 引用点改 import）；② tender→ocr import 方向合法化（守卫改单向）。接缝须补
+  针对性测试，其余由既有 worker/read-layer/timeout 回归测试守护。
 - 每 case 串行 repeat-N（评标 ~3-5 min/次且打真实网关，不并发，防限流/互相干扰计时）。
 - 单 case 异常记 ERROR 不中断全局（沿用 audit 先例）。
 - `--model` CLI 覆盖 → 环境无关的 A/B：同 manifest 分别跑两个模型出两份报告人工对比
@@ -98,10 +109,12 @@ note），警告模式不得跨 Wave 存活。
 - 新增：`server/tender/`（包 + eval.py + runner.py）、`tests/test_tender_eval.py`、
   `tests/eval_fixtures/tender/*`
 - 修改：`server/routes/tender_worker.py`（评标核心+doc-layer 助手**迁出**至 runner.py，
-  routes 留调度壳改 import，纯移动）、`server/platform/config.py`（+TENDER_EVAL_MODEL，≈10 行）、
-  `server/common/tender_output.py`（`_is_real_number` 升公开名，1 行）、
-  `tests/test_layering.py`（tender 域 4 条守卫，见 T5）
-- 零行为变更：迁移纯移动零逻辑改动（既有回归测试守护）；model 覆盖默认空=现行为
+  routes 留调度壳改 import）、`server/routes/tender_doc_pipeline.py`（`TENDER_OCR_PURPOSE`
+  挪家至 server/tender/ 后改 import，方案 i 接缝）、`server/platform/config.py`
+  （+TENDER_EVAL_MODEL，≈10 行）、`server/common/tender_output.py`（`_is_real_number`
+  升公开名，1 行）、`tests/test_layering.py`（tender 域 4 条守卫 + audit↔ocr 互斥改单向，见 T5）
+- 行为面：迁移以纯移动为主，两处接缝（TENDER_OCR_PURPOSE 挪家 / tender→ocr 合法化）补
+  针对性测试；model 覆盖默认空=现行为
 - 不动：审核域、OCR 域、前端
 
 ## 风险与缓解
@@ -110,7 +123,7 @@ note），警告模式不得跨 Wave 存活。
 |---|---|
 | 真实 case 成本（~$3/次 × repeat3 × N case） | eval 只部署机手动触发不进 CI；manifest 从 2 个标书起步 |
 | 阈值无基线拍脑袋 / 警告模式长期化 | 首版警告模式，V4Pro 基线跑完锁硬门；**硬门锁定=D4 开工前置**（F4 止损，记入 roadmap） |
-| worker 核心迁包引回归 | 纯移动零逻辑改动；test_tender_worker_timeout / test_tender_read_layer / test_tender_routes 等全量守护；D2 剩余范围因此缩小 |
+| worker 核心迁包引回归 | 以纯移动为主+两处接缝（方案 i）；接缝补针对性测试，test_tender_worker_timeout / test_tender_read_layer / test_tender_routes 等全量守护；D2 剩余范围因此缩小 |
 | `server/tender/` 新包撞 layering 测试 | 新包按 feature 域规则注册进 test_layering（不 import audit/ocr），本 sprint 内补 |
 | 合成 fixture 与真实标书结构漂移 | README 明确"模板仅示意 layout，期望值须在部署机标定后填" （同 audit 先例措辞） |
 
@@ -120,15 +133,19 @@ note），警告模式不得跨 Wave 存活。
       scoring 带宽+policy_refs）/ score_consistency（repeat-N 极差，null 语义复用公开化的
       `tender_output.is_real_number`）/ format_report — **TDD 先测后实现**
 - [ ] T2 评标核心迁包：`_run_evaluation`+doc-layer 助手 → `server/tender/runner.py`（公开名
-      `run_tender_evaluation`），routes/tender_worker 留调度壳改 import——纯移动零行为
+      `run_tender_evaluation`），routes/tender_worker 留调度壳改 import；**方案 i 接缝**：
+      `ocr_preprocess_block` 调用随迁（tender→ocr 合法）、`TENDER_OCR_PURPOSE` 挪家
+      server/tender/（tender_doc_pipeline 改 import）——接缝补针对性测试，其余纯移动
       （既有 worker/read-layer/timeout 测试全绿为证）；eval 侧 runner：repeat-N 串行 +
       单 case 容错 + `--manifest/--repeat/--model` CLI
 - [ ] T3 config `TENDER_EVAL_MODEL` + per-call 覆盖（仿 _TENDER_EFFORT），默认空零行为变更
 - [ ] T4 `tests/eval_fixtures/tender/`（合成 manifest 模板 + runbook README 含 env -u 坑 +
       MODEL_CONTEXT_WINDOW 提示）
-- [ ] T5 `tests/test_tender_eval.py` 纯部分离线全绿（含全 null run 极差边界用例，F2）；
-      `test_layering.py` 补 tender 域 4 条守卫（F3）：tender↔audit 互斥 / tender↔ocr 互斥 /
-      ops forbidden 加 server.tender / common+stores forbidden 加 server.tender；全量 pytest 绿
+- [ ] T5 `tests/test_tender_eval.py` 纯部分离线全绿（含全 null run 极差边界用例 F2 +
+      `repeat < 2` 边界用例，round2 F7）；`test_layering.py` 补 tender 域 4 条守卫
+      （F3，按方案 i 修订）：(a) tender↔audit 互斥 / (b) **ocr→tender 与 ocr→audit 单向禁止
+      （tender/audit→ocr 合法，既有 audit↔ocr 互斥断言改单向）** / (c) ops forbidden 加
+      server.tender / (d) common+stores forbidden 加 server.tender；全量 pytest 绿
 - [ ] 部署机验证（用户/部署机侧）：真实 manifest 跑通出报告；A/B 两模型两报告；
       MODEL_CONTEXT_WINDOW 填值后复测截断——此三项属 runbook 验收，不阻塞代码 merge
 
@@ -185,3 +202,75 @@ note），警告模式不得跨 Wave 存活。
 1. **F1 分层修复（必须）**：新建 server/tender/runner.py 薄包装 run_command_json，eval.py 只 import 该 runner，不 import server.routes.*。tender_worker 的公开 wrapper 保留但不被 eval 引用。
 2. **F2/F3 规范补全**：design 方案节补 score_consistency null 处理语义（一句话对齐 _is_real_number）；T5 展开为 4 条具体 layering 断言目标。
 3. **F4 止损**：在 T4 runbook README 增加"基线收紧 checklist"，D1 items.yaml note 补追踪句，防止警告模式无限漂移至 D4 验收前。
+
+---
+
+## Round 2 · 主 agent 代码核验 Findings (2026-07-03)
+
+> 触发：用户要求"对照代码检查优化点是否正确"。逐条核验 design 事实主张后发现
+> round1 F1 修订（评标核心下沉）引入了 critic 与 design 均未覆盖的传递依赖问题。
+
+### VERDICT: NEEDS_DECISION（一处 program 级分层决策，其余维持定稿）
+### → 已决议（2026-07-15）：用户拍板**方案 i**，见文末决议记录；design 转 GO
+
+### F5 [P0] T2 下沉方案与 T5 自加守卫直接冲突：`_run_evaluation` 携带 tender→ocr / tender→routes 传递依赖
+
+- **现象**：`_run_evaluation` 的 inline OCR 回落调用 `ocr_preprocess_block`
+  （routes/tender_worker.py:19 import `server.ocr.pipeline`，:198 调用），并使用
+  `TENDER_OCR_PURPOSE`（:21 import `server.routes.tender_doc_pipeline`，常量定义在
+  tender_doc_pipeline.py:33）。整体移入 `server/tender/runner.py` 后：
+  ① tender(feature) → ocr(feature)，**T5 守卫 (a)/(b) 的 tender↔ocr 互斥会立即 fail 刚迁入的代码**；
+  ② tender(feature) → routes，正是 round1 F1 抓的那类逆向依赖换形式复发。
+- **对照先例**：audit 的真实同构解法是 **OCR 预处理留在 routes 层注入**——routes/audit_worker.py:15
+  import ocr_preprocess_block，feature 层 `run_inline_directory_audit` 只收注入好的 `ocr_block`，
+  docstring 明写"feature 域 audit/ 不可跨域 import ocr/"（server/audit/runner.py:129-131）。
+  design 声称"与 audit 完全同构"的前提未满足。
+- **波及 D2**：`tender_doc_pipeline` import `server.ocr.pipeline` + `server.ocr.prewarm_scheduler`
+  （tender_doc_pipeline.py:19-20），D2 迁它进 server/tender/ 时同一矛盾再爆。且 tender 与 audit
+  不同：真实标书是扫描件、S7 harness 正是复用生产 `_run_evaluation` 含 OCR 路径——eval 绕不开 OCR。
+- **两个可选解（program 级，拍一次管 D1+D2）**：
+  - **方案 i（主 agent 推荐）**：修订分层教义——ocr 从 tender/audit 的平级 sibling 降为 feature 域
+    之下的服务层（现实已有三处按服务消费：audit_worker / tender_worker / tender_doc_pipeline）。
+    T5 守卫改**单向**：允许 tender→ocr，禁止 ocr→tender/audit。改动最小、承认既成事实、
+    eval CLI 保持 `python -m server.tender.eval` 与 audit 对称。
+  - **方案 ii**：坚持 sibling 教义——OCR 回落留 routes 侧注入（`run_tender_evaluation` 收
+    `ocr_block` 或注入 callable），`TENDER_OCR_PURPOSE` 挪家；代价：eval CLI 需 OCR 故不能落
+    server/tender/eval.py，须上浮 app 层（如 `python -m server.cli eval-tender`），破坏入口对称，
+    D2 迁 tender_doc_pipeline 还要再造注入缝。
+- **连带修订**：无论选哪个，T2 的"纯移动零行为"表述不再成立（必然有接缝改动），须改口并给接缝补
+  针对性测试。
+
+### F6 [P1] D2 迁移清单中 `tender_output` / `evidence_resolution` 被 common 层自身消费，迁不动
+
+- **现象**：`server/common/output_contracts.py:30,460`（common 层共享契约机，audit 亦消费）
+  import 这两个模块。D2 按 items.yaml 迁它们进 server/tender/ → common→feature 逆向依赖，
+  撞 T5 守卫 (d)。D1 的 `is_real_number` 升公开名方案不受影响（D1 时点 tender_output 仍在 common）。
+- **处置**：已记入 items.yaml D2 note 与 decisions_needed，D2 design 时解。
+
+### F7 [P2] 小账两笔
+
+- items.yaml D2 "39 个 tender 测试文件护航"是虚数：实测文件名含 tender 的 14 个、内容引用 tender
+  的 25 个。已在 D2 note 修正，防 D2 时误判护航面。
+- score_consistency 对 `repeat < 2` 的行为（round1 critic 曾提）未进 T5 验收用例，T5 补一条边界。
+
+### 已核验为正确（免重查清单）
+
+`_is_real_number` 在 tender_output.py:263 ✓；`build_options` `defaults.update(overrides)` 支持
+per-call model 覆盖、`_TENDER_EFFORT` 先例管道通（T3 可行）✓；audit eval/runner 先例结构与 design
+描述一致 ✓；F4 硬门锁定=D4 前置已双向记录 ✓；roadmap D2-D11 依赖图自洽 ✓。
+
+---
+
+## Round 2 决议记录（2026-07-15，用户拍板）
+
+- **决策：方案 i** —— ocr 从 tender/audit 的平级 sibling 降为 feature 域之下的服务层；
+  T5 守卫改单向（允许 tender/audit→ocr，禁止 ocr→tender/audit）；eval CLI 保持
+  `python -m server.tender.eval` 与 audit 入口对称。program 级，一并解 D2 的
+  tender_doc_pipeline→server.ocr 同题（items.yaml D2 note ① 随之关闭）。
+- **依据**：改动最小；承认既成事实（audit_worker / tender_worker / tender_doc_pipeline
+  三处已按服务消费 ocr）；方案 ii 需 CLI 上浮 app 层破坏入口对称，且 D2 还要再造注入缝。
+- **连带修订已执行**：正文 Runner 节（OCR 依赖处置）、影响范围（+tender_doc_pipeline）、
+  风险表、T2（接缝改动+针对性测试，"纯移动零行为"作废）、T5（守卫 (b) 改单向）。
+- **教义落盘**：architecture/ARCHITECTURE.md 分层节补拍板注记（守卫落地后改图）；
+  compound/2026-07-15-decision-ocr-service-layer.md。
+- **GO 生效**：impl 从 T1 起，TDD，每 T commit + pytest 全绿再进下一 T。
