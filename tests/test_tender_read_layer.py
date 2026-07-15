@@ -1,8 +1,14 @@
-"""Tests for the tender evaluation read layer in tender_worker._run_evaluation.
+"""Tests for the tender evaluation read layer in server.tender.runner.run_tender_evaluation.
 
 TDD: tests written before implementation.
 
-The read layer: if TENDER_READ_DOC_LAYER=1 (default), _run_evaluation should
+D1 T2: the evaluation core (incl. the read layer) moved from
+``server.routes.tender_worker._run_evaluation`` to
+``server.tender.runner.run_tender_evaluation`` (design round1 F1 + round2 F5 方案 i).
+Assertions/coverage unchanged from the pre-move version — only the import target and the
+public function name follow the code to its new home.
+
+The read layer: if TENDER_READ_DOC_LAYER=1 (default), run_tender_evaluation should
 try to pull ocr_text from tender_doc_store before calling ocr_preprocess_block.
 
 Cases:
@@ -44,29 +50,29 @@ def _make_fake_run_command(calls: dict):
 
 def test_read_layer_uses_doc_store_when_ready(monkeypatch):
     """When doc layer is enabled and docs are ready, ocr_preprocess_block is NOT called."""
-    import server.routes.tender_worker as worker
+    import server.tender.runner as runner
 
     calls: dict = {}
 
-    monkeypatch.setattr(worker, "run_command_json", _make_fake_run_command(calls))
+    monkeypatch.setattr(runner, "run_command_json", _make_fake_run_command(calls))
 
     # Provide ready doc store data
     monkeypatch.setattr(
-        worker,
+        runner,
         "_load_doc_layer_context",
         lambda *_a, **_kw: "=== DOC LAYER TEXT ===",
     )
     # ocr_preprocess_block should NOT be called
     preprocess_called = []
     monkeypatch.setattr(
-        worker,
+        runner,
         "ocr_preprocess_block",
         lambda *a, **kw: preprocess_called.append(True) or "fallback",
     )
     monkeypatch.setenv("TENDER_READ_DOC_LAYER", "1")
 
     asyncio.run(
-        worker._run_evaluation(
+        runner.run_tender_evaluation(
             request_id="rid-layer-ready",
             tenant="acme",
             directory_path="/fake/dir",
@@ -81,14 +87,14 @@ def test_read_layer_uses_doc_store_when_ready(monkeypatch):
 
 def test_read_layer_fallback_when_doc_missing(monkeypatch):
     """When doc layer returns None (missing/not-ready), ocr_preprocess_block is called."""
-    import server.routes.tender_worker as worker
+    import server.tender.runner as runner
 
     calls: dict = {}
-    monkeypatch.setattr(worker, "run_command_json", _make_fake_run_command(calls))
+    monkeypatch.setattr(runner, "run_command_json", _make_fake_run_command(calls))
 
     # Doc layer returns None (no data available)
     monkeypatch.setattr(
-        worker,
+        runner,
         "_load_doc_layer_context",
         lambda *_a, **_kw: None,
     )
@@ -99,11 +105,11 @@ def test_read_layer_fallback_when_doc_missing(monkeypatch):
         preprocess_called.append(directory_path)
         return "fallback OCR text"
 
-    monkeypatch.setattr(worker, "ocr_preprocess_block", fake_preprocess)
+    monkeypatch.setattr(runner, "ocr_preprocess_block", fake_preprocess)
     monkeypatch.setenv("TENDER_READ_DOC_LAYER", "1")
 
     asyncio.run(
-        worker._run_evaluation(
+        runner.run_tender_evaluation(
             request_id="rid-layer-missing",
             tenant="acme",
             directory_path="/fake/dir",
@@ -116,14 +122,14 @@ def test_read_layer_fallback_when_doc_missing(monkeypatch):
 
 def test_read_layer_disabled_always_falls_back(monkeypatch):
     """When TENDER_READ_DOC_LAYER=0, ocr_preprocess_block is always called."""
-    import server.routes.tender_worker as worker
+    import server.tender.runner as runner
 
     calls: dict = {}
-    monkeypatch.setattr(worker, "run_command_json", _make_fake_run_command(calls))
+    monkeypatch.setattr(runner, "run_command_json", _make_fake_run_command(calls))
 
     load_called = []
     monkeypatch.setattr(
-        worker,
+        runner,
         "_load_doc_layer_context",
         lambda *_a, **_kw: load_called.append(True) or "doc layer",
     )
@@ -134,11 +140,11 @@ def test_read_layer_disabled_always_falls_back(monkeypatch):
         preprocess_called.append(directory_path)
         return "fallback OCR text"
 
-    monkeypatch.setattr(worker, "ocr_preprocess_block", fake_preprocess)
+    monkeypatch.setattr(runner, "ocr_preprocess_block", fake_preprocess)
     monkeypatch.setenv("TENDER_READ_DOC_LAYER", "0")
 
     asyncio.run(
-        worker._run_evaluation(
+        runner.run_tender_evaluation(
             request_id="rid-layer-disabled",
             tenant="acme",
             directory_path="/fake/dir",
@@ -153,14 +159,14 @@ def test_read_layer_disabled_always_falls_back(monkeypatch):
 
 def test_read_layer_no_project_id_falls_back(monkeypatch):
     """When project_id is None, doc layer is skipped, ocr_preprocess_block is called."""
-    import server.routes.tender_worker as worker
+    import server.tender.runner as runner
 
     calls: dict = {}
-    monkeypatch.setattr(worker, "run_command_json", _make_fake_run_command(calls))
+    monkeypatch.setattr(runner, "run_command_json", _make_fake_run_command(calls))
 
     load_called = []
     monkeypatch.setattr(
-        worker,
+        runner,
         "_load_doc_layer_context",
         lambda *_a, **_kw: load_called.append(True) or "doc layer",
     )
@@ -171,11 +177,11 @@ def test_read_layer_no_project_id_falls_back(monkeypatch):
         preprocess_called.append(directory_path)
         return "fallback OCR text"
 
-    monkeypatch.setattr(worker, "ocr_preprocess_block", fake_preprocess)
+    monkeypatch.setattr(runner, "ocr_preprocess_block", fake_preprocess)
     monkeypatch.setenv("TENDER_READ_DOC_LAYER", "1")
 
     asyncio.run(
-        worker._run_evaluation(
+        runner.run_tender_evaluation(
             request_id="rid-no-project",
             tenant="acme",
             directory_path="/fake/dir",
@@ -187,3 +193,15 @@ def test_read_layer_no_project_id_falls_back(monkeypatch):
     assert preprocess_called
 
 
+# ── D1 T2 接缝：TENDER_OCR_PURPOSE 挪家 ────────────────────────────────────────
+
+
+def test_tender_ocr_purpose_relocated_and_reexported():
+    """TENDER_OCR_PURPOSE 的权威定义现在是 server.tender.runner（方案 i 接缝①）；
+    server.routes.tender_doc_pipeline 只是 re-export 同一个对象，不再自己定义，
+    routes/tender.py 既有的 import 引用点因此不用改。"""
+    import server.routes.tender_doc_pipeline as pipeline
+    import server.tender.runner as runner
+
+    assert pipeline.TENDER_OCR_PURPOSE is runner.TENDER_OCR_PURPOSE
+    assert "评分标准" in runner.TENDER_OCR_PURPOSE

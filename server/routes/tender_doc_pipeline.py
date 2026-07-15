@@ -24,17 +24,14 @@ from server.stores.tender_doc_store import (
     update_project_doc_ocr,
 )
 from server.stores.tender_project_store import update_project_fields_if_empty
+# re-export：server.routes.tender 从本模块 import TENDER_OCR_PURPOSE（既有引用点不变）。
+from server.tender.runner import TENDER_OCR_PURPOSE as TENDER_OCR_PURPOSE
 
 logger = logging.getLogger(__name__)
 
-# 评标场景 OCR 目的（治"OCR 无目的性"）：让 OCR 引擎在通用文本提取之外，重点完整、结构化地还原
-# 评分标准/评标办法/扣分细则/废标条款等【表格】——评分表是评标命脉。S3 起此为唯一定义，
-# tender.py（上传预热）与 tender_worker.py（评标 OCR）均从本模块导入，消除原先两处重复。
-TENDER_OCR_PURPOSE = (
-    "本批为招投标评标材料。请在完整提取文本之外，特别完整、结构化地还原"
-    "【评分标准/评标办法/评分细则/扣分细则/加分项/废标与资格条款】等表格："
-    "保留表格的行列结构与每一行的分值数字，不要合并或省略任何评分/扣分行。"
-)
+# TENDER_OCR_PURPOSE 挪家 server/tender/runner.py（D1 T2 方案 i 接缝）：评标 OCR 与本模块的上传
+# 预热 OCR 共用同一目的字符串，evaluation 核心下沉后常量随之下沉，本模块改 import 复用（routes→
+# features 合法方向），消除原先两处重复的语义未变。
 
 # 评标方法枚举归一化（criteria.schema method enum）。模型常把"综合评估法"写成"综合评分法/打分法"，
 # 把法定方法名写成口语变体——这是 enum 校验最常见的漂移点。代码侧确定性归一化比 prompt 约束可靠
