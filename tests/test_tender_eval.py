@@ -518,3 +518,119 @@ def test_main_passes_model_override_through(monkeypatch, tmp_path) -> None:
     )
     main(["--manifest", str(manifest), "--model", "deepseek-v4-pro"])
     assert captured["model"] == "deepseek-v4-pro"
+
+
+# ── ops 指标（重试数 / 时延）：只记录进报告，绝不参与 pass/fail 判定 ─────────────
+#
+# design 评分维度表「运维指标 | 每次重试数/时延，只记录进报告不判 pass（基线数据）」
+# （来源 S7 配套问题②）。retry_count 从 run_tender_evaluation 返回的 meta 上取
+# （duck-typed getattr，meta 目前没有该字段就是 None，不抛错——这是报告字段，不是不变量）；
+# latency_sec 由 run_eval 自己用壁钟时间测（run_tender_evaluation 的返回契约不必为此改动，
+# 生产 tender_worker 调用链不受影响）。
+
+
+class _MetaWithRetryCount:
+    def __init__(self, retry_count: int) -> None:
+        self.retry_count = retry_count
+
+
+def test_run_eval_captures_retry_count_from_meta(monkeypatch) -> None:
+    import server.tender.eval as eval_mod
+
+    async def fake_run(**kwargs):
+        return {"verdict": "manual_review", "policy_refs": []}, _MetaWithRetryCount(2)
+
+    monkeypatch.setattr(eval_mod, "run_tender_evaluation", fake_run)
+
+    cases = [
+        GoldenTenderCase(
+            case_dir="d", expected_verdict="manual_review", require_policy_refs=False, repeat=1
+        )
+    ]
+    reports = asyncio.run(run_eval(cases))
+    assert reports[0].run_outcomes[0].retry_count == 2
+
+
+def test_run_eval_captures_latency_seconds(monkeypatch) -> None:
+    """latency_sec 由 run_eval 自己计时（壁钟），不依赖 meta 是否携带该字段。
+
+    不 monkeypatch 全局 ``time.monotonic``——asyncio 事件循环内部也用它计时，
+    替换掉会打崩 event loop（StopIteration）。改为让 fake_run 真实 sleep 一小段，
+    断言测得的 latency_sec 落在合理下界之上（非 0、非负、量级正确）。
+    """
+    import server.tender.eval as eval_mod
+
+    async def fake_run(**kwargs):
+        await asyncio.sleep(0.05)
+        return {"verdict": "manual_review", "policy_refs": []}, object()
+
+    monkeypatch.setattr(eval_mod, "run_tender_evaluation", fake_run)
+
+    cases = [
+        GoldenTenderCase(
+            case_dir="d", expected_verdict="manual_review", require_policy_refs=False, repeat=1
+        )
+    ]
+    reports = asyncio.run(run_eval(cases))
+    latency = reports[0].run_outcomes[0].latency_sec
+    assert latency is not None
+    assert 0.05 <= latency < 5.0
+
+
+def test_run_eval_retry_count_none_when_meta_lacks_it(monkeypatch) -> None:
+    """meta 缺 retry_count 字段（如生产同款 AgentRunMeta，plain object()）→ 记 None，不抛错。"""
+    import server.tender.eval as eval_mod
+
+    async def fake_run(**kwargs):
+        return {"verdict": "manual_review", "policy_refs": []}, object()
+
+    monkeypatch.setattr(eval_mod, "run_tender_evaluation", fake_run)
+
+    cases = [
+        GoldenTenderCase(
+            case_dir="d", expected_verdict="manual_review", require_policy_refs=False, repeat=1
+        )
+    ]
+    reports = asyncio.run(run_eval(cases))
+    assert reports[0].run_outcomes[0].retry_count is None
+
+
+def test_huge_ops_metrics_do_not_affect_pass_fail() -> None:
+    """指标超大也不置 fail——ops 指标只是基线数据，不是判定条件（design 明文）。"""
+    huge_outcome = CaseOutcome(
+        case_dir="d",
+        passed=True,
+        actual_verdict="manual_review",
+        retry_count=999,
+        latency_sec=99999.0,
+    )
+    report = CaseReport(
+        case_dir="d",
+        run_outcomes=[huge_outcome],
+        consistency=ConsistencyOutcome(
+            run_count=1, item_counts=[], total_scores=[], item_spread=0, total_spread=0,
+            item_spread_exceeded=False, total_spread_exceeded=False, skipped=True,
+        ),
+    )
+    assert report.passed is True
+    rendered = format_report([report])
+    assert "[PASS]" in rendered
+    assert "[FAIL]" not in rendered
+
+
+def test_format_report_prints_ops_metrics_line() -> None:
+    """每次 run 的 retry_count / latency_sec 作为基线数据行出现在报告里。"""
+    report = CaseReport(
+        case_dir="d",
+        run_outcomes=[
+            CaseOutcome(case_dir="d", passed=True, actual_verdict="manual_review", retry_count=1, latency_sec=12.3),
+            CaseOutcome(case_dir="d", passed=True, actual_verdict="manual_review", retry_count=0, latency_sec=5.0),
+        ],
+        consistency=ConsistencyOutcome(
+            run_count=2, item_counts=[], total_scores=[], item_spread=0, total_spread=0,
+            item_spread_exceeded=False, total_spread_exceeded=False, skipped=True,
+        ),
+    )
+    rendered = format_report([report])
+    assert "retries=[1, 0]" in rendered
+    assert "latency_sec=[12.3, 5.0]" in rendered

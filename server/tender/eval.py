@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -75,7 +76,13 @@ class GoldenTenderCase:
 
 @dataclass(slots=True)
 class CaseOutcome:
-    """Single-run scoring result for one case after comparison."""
+    """Single-run scoring result for one case after comparison.
+
+    ``retry_count`` / ``latency_sec``：运维基线指标（design 评分维度表「运维指标」，
+    来源 S7 配套问题②）——只记录进报告，**绝不参与** ``passed`` 判定（不像
+    ``mismatches``，这两项超标不代表评标结论错）。``score_case`` 是纯函数，不知道
+    重试/耗时；由 ``run_eval``（唯一接触真实 gateway I/O 的地方）在拿到结果后填入。
+    """
 
     case_dir: str
     passed: bool
@@ -84,6 +91,8 @@ class CaseOutcome:
     scored_item_count: int = 0
     total_score: float = 0.0
     error: str | None = None
+    retry_count: int | None = None
+    latency_sec: float | None = None
 
 
 @dataclass(slots=True)
@@ -333,7 +342,12 @@ def score_consistency(
 
 
 def format_report(reports: list[CaseReport]) -> str:
-    """Render a human-readable pass/fail summary, including consistency warnings."""
+    """Render a human-readable pass/fail summary, including consistency warnings.
+
+    运维指标（retries/latency_sec）行始终打印（有数据就打印），纯基线信息，
+    **不参与** PASS/FAIL/ERROR 的判定——即使某次 run 重试很多次或很慢，该 case
+    仍按 mismatches 判 PASS。
+    """
     passed = sum(1 for report in reports if report.passed)
     lines = [f"Tender golden eval: {passed}/{len(reports)} passed", ""]
     for report in reports:
@@ -356,6 +370,10 @@ def format_report(reports: list[CaseReport]) -> str:
             )
             for warning in consistency.warnings:
                 lines.append(f"            [WARN] {warning}")
+        if report.run_outcomes:
+            retries = [outcome.retry_count for outcome in report.run_outcomes]
+            latencies = [outcome.latency_sec for outcome in report.run_outcomes]
+            lines.append(f"            ops: retries={retries} latency_sec={latencies}")
     return "\n".join(lines)
 
 
@@ -378,8 +396,9 @@ async def run_eval(
         errors: list[str] = []
         for run_index in range(max(0, repeat)):
             request_id = f"eval-{Path(golden.case_dir).name}-{run_index}"
+            started_at = time.monotonic()
             try:
-                payload, _meta = await run_tender_evaluation(
+                payload, meta = await run_tender_evaluation(
                     request_id=request_id,
                     tenant=_EVAL_TENANT,
                     directory_path=golden.case_dir,
@@ -388,9 +407,16 @@ async def run_eval(
             except Exception as exc:  # noqa: BLE001 - harness reports failures, never crashes
                 errors.append(f"run {run_index}: {type(exc).__name__}: {exc}")
                 continue
+            latency_sec = time.monotonic() - started_at
             actual = payload if isinstance(payload, dict) else {}
             actual_results.append(actual)
-            run_outcomes.append(score_case(golden, actual))
+            outcome = score_case(golden, actual)
+            # 运维基线指标（design 评分维度表「运维指标」，S7 配套问题②）：只记录，不判 pass。
+            # meta 目前没有 retry_count 字段（AgentRunMeta 未携带）→ getattr 兜底 None，不抛错；
+            # 这是报告字段，不是承重不变量，未来 meta 补上该字段会自动被捡起。
+            outcome.retry_count = getattr(meta, "retry_count", None)
+            outcome.latency_sec = latency_sec
+            run_outcomes.append(outcome)
         consistency = score_consistency(golden, actual_results)
         reports.append(
             CaseReport(
