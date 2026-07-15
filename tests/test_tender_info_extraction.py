@@ -814,7 +814,7 @@ def test_docs_status_criteria_status_ready(client, monkeypatch):
 
 def test_worker_injects_stored_criteria_into_context(monkeypatch):
     """When get_project_doc returns non-empty criteria, _run_evaluation injects it into context."""
-    import server.routes.tender_worker as worker
+    import server.tender.runner as worker
 
     calls: dict = {}
 
@@ -869,7 +869,7 @@ def test_worker_injects_stored_criteria_into_context(monkeypatch):
     )
 
     asyncio.run(
-        worker._run_evaluation(
+        worker.run_tender_evaluation(
             request_id="rid-inject-criteria",
             tenant="acme",
             directory_path="/fake/dir",
@@ -888,7 +888,7 @@ def test_worker_injects_stored_criteria_into_context(monkeypatch):
 
 def test_worker_no_criteria_in_store_unchanged_behavior(monkeypatch):
     """When get_project_doc has no criteria, context is not polluted with criteria block."""
-    import server.routes.tender_worker as worker
+    import server.tender.runner as worker
 
     calls: dict = {}
 
@@ -938,7 +938,7 @@ def test_worker_no_criteria_in_store_unchanged_behavior(monkeypatch):
     )
 
     asyncio.run(
-        worker._run_evaluation(
+        worker.run_tender_evaluation(
             request_id="rid-no-criteria",
             tenant="acme",
             directory_path="/fake/dir",

@@ -9,24 +9,34 @@ checks (verdict / manual_review_reason / policy_refs), this harness runs each ca
 ``repeat`` times and measures the cross-run spread of "how many items got a real score" and
 "what did they sum to" — that is where the 7x drift actually showed up.
 
-The scoring below is pure and unit-tested offline (this is the D1 T1 slice: manifest
-parsing + single-run scoring + cross-run consistency + reporting). The live-gateway
-runner (``run_eval`` + CLI ``main``, calling ``server.tender.runner.run_tender_evaluation``)
-lands in D1 T2 once the evaluation core is down there — see
-``.ai_state/sprints/2026-07-02-eval-tender-scaffold/design.md``.
+The scoring is pure and unit-tested offline. The runner calls ``run_tender_evaluation``
+(a live model gateway call), so run it on the deployment host, not in CI:
+
+    uv run python -m server.tender.eval --manifest tests/eval_fixtures/tender/golden_manifest.json \
+        [--repeat 3] [--model deepseek-v4-pro]
+
+Real cases live under ``data/`` (gitignored); point ``--manifest`` at a file that
+references them. The committed fixture under ``tests/eval_fixtures/tender/`` is a
+synthetic template showing the manifest + case layout — calibrate the expected values
+against a known-good run on the target deployment before trusting them.
 """
 
 from __future__ import annotations
 
+import argparse
+import asyncio
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from server.common.tender_output import is_real_number
+from server.tender.runner import run_tender_evaluation
 
 _VALID_VERDICTS = {"approved", "rejected", "manual_review"}
 _DEFAULT_REPEAT = 3
+# eval 跑不代表任何真实租户；用固定伪租户隔离 session/日志记录，不撞生产数据。
+_EVAL_TENANT = "eval"
 
 
 @dataclass(frozen=True, slots=True)
@@ -349,5 +359,71 @@ def format_report(reports: list[CaseReport]) -> str:
     return "\n".join(lines)
 
 
-# run_eval (repeat-N live-gateway runner) + CLI main land in D1 T2 once
-# server.tender.runner.run_tender_evaluation exists.
+async def run_eval(
+    cases: list[GoldenTenderCase],
+    *,
+    repeat_override: int | None = None,
+    model: str | None = None,
+) -> list[CaseReport]:
+    """Run every case ``repeat`` times (串行, 防限流/互相干扰计时) and score it.
+
+    A gateway/contract failure on one run is recorded as an error rather than aborting
+    the whole run — one flaky run shouldn't hide the rest of the manifest.
+    """
+    reports: list[CaseReport] = []
+    for golden in cases:
+        repeat = repeat_override if repeat_override is not None else golden.repeat
+        run_outcomes: list[CaseOutcome] = []
+        actual_results: list[dict[str, Any]] = []
+        errors: list[str] = []
+        for run_index in range(max(0, repeat)):
+            request_id = f"eval-{Path(golden.case_dir).name}-{run_index}"
+            try:
+                payload, _meta = await run_tender_evaluation(
+                    request_id=request_id,
+                    tenant=_EVAL_TENANT,
+                    directory_path=golden.case_dir,
+                    model=model,
+                )
+            except Exception as exc:  # noqa: BLE001 - harness reports failures, never crashes
+                errors.append(f"run {run_index}: {type(exc).__name__}: {exc}")
+                continue
+            actual = payload if isinstance(payload, dict) else {}
+            actual_results.append(actual)
+            run_outcomes.append(score_case(golden, actual))
+        consistency = score_consistency(golden, actual_results)
+        reports.append(
+            CaseReport(
+                case_dir=golden.case_dir,
+                run_outcomes=run_outcomes,
+                consistency=consistency,
+                errors=errors,
+            )
+        )
+    return reports
+
+
+def main(argv: list[str] | None = None) -> int:
+    """CLI entrypoint: load manifest, run cases, print report, exit nonzero on any failure."""
+    parser = argparse.ArgumentParser(
+        description="Run the golden-case tender evaluation regression harness against a live gateway."
+    )
+    parser.add_argument(
+        "--manifest", required=True, type=Path, help="Path to the golden manifest JSON."
+    )
+    parser.add_argument(
+        "--repeat", type=int, default=None, help="Override every case's repeat-N run count."
+    )
+    parser.add_argument(
+        "--model", type=str, default=None, help="Override the model for this run (env-independent A/B)."
+    )
+    args = parser.parse_args(argv)
+
+    cases = load_golden_manifest(args.manifest)
+    reports = asyncio.run(run_eval(cases, repeat_override=args.repeat, model=args.model))
+    print(format_report(reports))
+    return 0 if all(report.passed for report in reports) else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

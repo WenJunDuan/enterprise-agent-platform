@@ -1,13 +1,14 @@
-"""Offline coverage for the tender golden-case eval harness (D1 T1).
+"""Offline coverage for the tender golden-case eval harness (D1 T1/T2).
 
 Mirrors ``tests/test_audit_eval.py``: the pure scoring/parsing/consistency/reporting
-surface is fully covered offline. The live-gateway runner (``run_eval``/CLI ``main``,
-calling ``server.tender.runner.run_tender_evaluation``) lands in D1 T2 alongside its own
-tests; the committed manifest fixture check lands in D1 T4.
+surface is fully covered offline; the live-gateway runner (``run_eval``/CLI ``main``)
+needs a real model gateway and is only smoke-checked via monkeypatching
+``run_tender_evaluation``. The committed manifest fixture check lands in D1 T4.
 """
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -21,7 +22,9 @@ from server.tender.eval import (
     ScoringExpectation,
     format_report,
     load_golden_manifest,
+    main,
     parse_golden_cases,
+    run_eval,
     score_case,
     score_consistency,
 )
@@ -427,4 +430,73 @@ def test_format_report_surfaces_consistency_warnings() -> None:
     report = format_report(reports)
     assert "warning mode" in report
 
-# run_eval / CLI main coverage lands in D1 T2 (needs server.tender.runner).
+
+# ── run_eval / CLI (monkeypatched runner, no live gateway) ─────────────────────
+
+
+def test_run_eval_repeats_per_case_and_scores(monkeypatch) -> None:
+    import server.tender.eval as eval_mod
+
+    calls: list[str] = []
+
+    async def fake_run(*, request_id, tenant, directory_path, project_id=None, bid_id=None, on_progress=None, model=None):
+        calls.append(request_id)
+        return {"verdict": "manual_review", "policy_refs": []}, object()
+
+    monkeypatch.setattr(eval_mod, "run_tender_evaluation", fake_run)
+
+    cases = [GoldenTenderCase(case_dir="d", expected_verdict="manual_review", require_policy_refs=False, repeat=2)]
+    reports = asyncio.run(run_eval(cases))
+    assert len(calls) == 2
+    assert reports[0].consistency.run_count == 2
+
+
+def test_run_eval_single_case_error_recorded_not_raised(monkeypatch) -> None:
+    import server.tender.eval as eval_mod
+
+    async def fake_run(**kwargs):
+        raise RuntimeError("gateway boom")
+
+    monkeypatch.setattr(eval_mod, "run_tender_evaluation", fake_run)
+
+    cases = [GoldenTenderCase(case_dir="d", expected_verdict="manual_review", repeat=2)]
+    reports = asyncio.run(run_eval(cases))
+    assert reports[0].errors
+    assert not reports[0].passed
+
+
+def test_main_exits_nonzero_on_failure(monkeypatch, tmp_path) -> None:
+    import server.tender.eval as eval_mod
+
+    async def fake_run(**kwargs):
+        return {"verdict": "approved", "policy_refs": []}, object()
+
+    monkeypatch.setattr(eval_mod, "run_tender_evaluation", fake_run)
+
+    manifest = tmp_path / "m.json"
+    manifest.write_text(
+        '{"cases": [{"case_dir": "d", "expected_verdict": "manual_review", "require_policy_refs": false, "repeat": 1}]}',
+        encoding="utf-8",
+    )
+    exit_code = main(["--manifest", str(manifest)])
+    assert exit_code == 1  # verdict mismatch (approved vs expected manual_review)
+
+
+def test_main_passes_model_override_through(monkeypatch, tmp_path) -> None:
+    import server.tender.eval as eval_mod
+
+    captured: dict = {}
+
+    async def fake_run(*, model=None, **kwargs):
+        captured["model"] = model
+        return {"verdict": "manual_review", "policy_refs": []}, object()
+
+    monkeypatch.setattr(eval_mod, "run_tender_evaluation", fake_run)
+
+    manifest = tmp_path / "m.json"
+    manifest.write_text(
+        '{"cases": [{"case_dir": "d", "expected_verdict": "manual_review", "require_policy_refs": false, "repeat": 1}]}',
+        encoding="utf-8",
+    )
+    main(["--manifest", str(manifest), "--model", "deepseek-v4-pro"])
+    assert captured["model"] == "deepseek-v4-pro"
