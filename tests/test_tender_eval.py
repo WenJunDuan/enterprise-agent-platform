@@ -1,9 +1,9 @@
-"""Offline coverage for the tender golden-case eval harness (D1 T1/T2).
+"""Offline coverage for the tender golden-case eval harness (D1 T1/T2/T4).
 
 Mirrors ``tests/test_audit_eval.py``: the pure scoring/parsing/consistency/reporting
 surface is fully covered offline; the live-gateway runner (``run_eval``/CLI ``main``)
 needs a real model gateway and is only smoke-checked via monkeypatching
-``run_tender_evaluation``. The committed manifest fixture check lands in D1 T4.
+``run_tender_evaluation``.
 """
 
 from __future__ import annotations
@@ -28,6 +28,8 @@ from server.tender.eval import (
     score_case,
     score_consistency,
 )
+
+_FIXTURES = Path(__file__).parent / "eval_fixtures" / "tender"
 
 
 # ── manifest parsing ──────────────────────────────────────────────────────────
@@ -105,6 +107,22 @@ def test_load_golden_manifest_rejects_non_object_root(tmp_path: Path) -> None:
     bad.write_text("[1, 2, 3]", encoding="utf-8")
     with pytest.raises(ValueError):
         load_golden_manifest(bad)
+
+
+def test_load_golden_manifest_reads_committed_fixture() -> None:
+    cases = load_golden_manifest(_FIXTURES / "golden_manifest.json")
+    assert len(cases) == 1
+    assert cases[0].case_dir == "tests/eval_fixtures/tender/placeholder-bid"
+    assert cases[0].expected_verdict == "manual_review"
+
+
+def test_committed_fixture_case_dir_exists() -> None:
+    """The template manifest must point at a real, present case directory."""
+    case = load_golden_manifest(_FIXTURES / "golden_manifest.json")[0]
+    project_root = Path(__file__).resolve().parents[1]
+    case_dir = project_root / case.case_dir
+    assert case_dir.is_dir()
+    assert any(case_dir.iterdir()), "placeholder bid case dir must contain at least one file"
 
 
 # ── score_case: verdict / manual_review_reason ────────────────────────────────

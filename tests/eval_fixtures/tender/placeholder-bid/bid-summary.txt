@@ -1,0 +1,10 @@
+合成评测用例，非真实投标文件。
+
+本目录仅用于演示 golden-case 评测的 case 目录布局（server.tender.eval 直接把
+case_dir 交给 /tender-evaluate 命令，命令内 AI 直读目录里的文件——不像
+audit 有固定的 audit-request.json 结构，招投标场景就是"目录里的原始标书文件"）。
+
+无真实招标文件（无资格审查条款、无评标办法/评分标准）可依据，预期 S1 判定
+rule_gap → verdict=manual_review。请勿把本目录当真实基线；真实评测请在
+data/ 下放置人工确认过结论的标书目录，并按一次 known-good 运行的输出校准
+golden_manifest.json 的 expected_* 字段。
