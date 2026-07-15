@@ -264,6 +264,11 @@ def _is_real_number(value: Any) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
+# 公开别名（D1 T1）：server.tender.eval 的 score_consistency 复用同一实数判定，避免跨模块
+# import 私有名、也避免第二套语义分歧（生产 scoring 校验与 eval 回归闸必须同源判定）。
+is_real_number = _is_real_number
+
+
 def _sum_hit_field(hits: Any, field: str) -> float | None:
     """累加 hits 列表里每条的数值字段；列表空或任一非数 → None（放弃校验，绝不误报）。"""
     if not isinstance(hits, list) or not hits:
