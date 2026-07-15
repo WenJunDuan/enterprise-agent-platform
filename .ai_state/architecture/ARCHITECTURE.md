@@ -25,6 +25,9 @@ app (api/cli) → routes → ops → features(audit|ocr) → core → common →
 - `ops` 是 routes 之下的 service 层（diagnostics/maintenance），被 app+routes 共同消费——
   见 `compound/2026-06-19-decision-ops-below-routes-layering.md`（T2.5 修正）。
 - feature 域（audit/ocr）互不 import；tender 走内联命令，未建 feature 模块。
+  **教义修订已拍板（2026-07-15，D1 F5 方案 i，见 compound/2026-07-15-decision-ocr-service-layer.md）**：
+  ocr 降为 feature 域之下服务层——允许 audit/tender→ocr，禁止 ocr→audit/tender（单向守卫）；
+  随 D1 T5 落 test_layering 后本节改正式分层图。
 - 守卫：`tests/test_layering.py`（6 条：routes 不 import api、platform 叶子、common 不依赖上层、
   feature 互斥、ops 不 import routes/app/features、stores 只 import platform）。
 
