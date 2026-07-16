@@ -237,7 +237,7 @@ def test_explicit_model_kwarg_takes_priority_over_env(monkeypatch):
 
     async def fake_run(command_name, *arguments, schema_name, **opts):
         calls["model"] = opts.get("model")
-        return {"verdict": "manual_review"}, object()
+        return {"verdict": "manual_review"}, _fake_meta(opts["request_id"])
 
     monkeypatch.setattr(runner, "run_command_json", fake_run)
     monkeypatch.setattr(runner, "ocr_preprocess_block", lambda *a, **kw: "fallback")
@@ -264,7 +264,7 @@ def test_env_model_used_when_no_explicit_override(monkeypatch):
 
     async def fake_run(command_name, *arguments, schema_name, **opts):
         calls["model"] = opts.get("model")
-        return {"verdict": "manual_review"}, object()
+        return {"verdict": "manual_review"}, _fake_meta(opts["request_id"])
 
     monkeypatch.setattr(runner, "run_command_json", fake_run)
     monkeypatch.setattr(runner, "ocr_preprocess_block", lambda *a, **kw: "fallback")
@@ -276,3 +276,59 @@ def test_env_model_used_when_no_explicit_override(monkeypatch):
     )
 
     assert calls["model"] == "deepseek-v4-pro"
+
+
+# ── D1 M1（返工）：契约重试次数是真实字段，不是 getattr 兜底 ──────────────────────
+#
+# AgentRunMeta 是 @dataclass(slots=True)——slots 类不能被外部动态挂属性，之前
+# eval.py 用 getattr(meta, "retry_count", None) 读永远只会读到 None（外部 setattr
+# 也会直接 AttributeError）。修法：AgentRunMeta 追加带默认值的尾部字段
+# retry_count: int = 0；run_tender_evaluation 的契约重试循环在成功 attempt 后
+# 写 meta.retry_count = attempt（该 attempt 就是这次调用实际重试了几次），
+# 供 eval 回归闸捕捉「D8 底稿瘦身导致 JSON 更易写坏→重试变多」这类回归信号
+# （design 评分维度表「运维指标」，S7 配套问题②）。
+
+
+def test_run_tender_evaluation_retry_count_zero_on_first_try_success(monkeypatch):
+    """一次成功（attempt=0，未重试）→ meta.retry_count == 0。"""
+    import server.tender.runner as runner
+
+    async def fake_run(command_name, *arguments, schema_name, **opts):
+        return {"verdict": "manual_review"}, _fake_meta(opts["request_id"])
+
+    monkeypatch.setattr(runner, "run_command_json", fake_run)
+    monkeypatch.setattr(runner, "ocr_preprocess_block", lambda *a, **kw: "fallback")
+
+    _payload, meta = asyncio.run(
+        runner.run_tender_evaluation(
+            request_id="rid-retry-zero", tenant="acme", directory_path="/fake/dir"
+        )
+    )
+
+    assert meta.retry_count == 0
+
+
+def test_run_tender_evaluation_retry_count_after_two_failures(monkeypatch):
+    """前 2 次抛契约异常，第 3 次（attempt=2）成功 → meta.retry_count == 2。"""
+    import server.tender.runner as runner
+
+    monkeypatch.setattr(runner, "TENDER_CONTRACT_MAX_RETRY", 2)
+    attempts = {"n": 0}
+
+    async def flaky_run(command_name, *arguments, schema_name, **opts):
+        attempts["n"] += 1
+        if attempts["n"] <= 2:
+            raise RuntimeError("契约校验失败：半截 JSON")
+        return {"verdict": "manual_review"}, _fake_meta(opts["request_id"])
+
+    monkeypatch.setattr(runner, "run_command_json", flaky_run)
+    monkeypatch.setattr(runner, "ocr_preprocess_block", lambda *a, **kw: "fallback")
+
+    _payload, meta = asyncio.run(
+        runner.run_tender_evaluation(
+            request_id="rid-retry-two", tenant="acme", directory_path="/fake/dir"
+        )
+    )
+
+    assert meta.retry_count == 2
+    assert attempts["n"] == 3

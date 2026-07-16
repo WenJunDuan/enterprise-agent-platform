@@ -412,9 +412,9 @@ async def run_eval(
             actual_results.append(actual)
             outcome = score_case(golden, actual)
             # 运维基线指标（design 评分维度表「运维指标」，S7 配套问题②）：只记录，不判 pass。
-            # meta 目前没有 retry_count 字段（AgentRunMeta 未携带）→ getattr 兜底 None，不抛错；
-            # 这是报告字段，不是承重不变量，未来 meta 补上该字段会自动被捡起。
-            outcome.retry_count = getattr(meta, "retry_count", None)
+            # meta.retry_count 是真实字段（AgentRunMeta 尾部默认字段 + run_tender_evaluation
+            # 的契约重试循环在成功 attempt 后写入），直读即可，不必再 getattr 兜底。
+            outcome.retry_count = meta.retry_count
             outcome.latency_sec = latency_sec
             run_outcomes.append(outcome)
         consistency = score_consistency(golden, actual_results)

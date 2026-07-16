@@ -217,7 +217,7 @@ async def run_tender_evaluation(
     last_error: Exception | None = None
     for attempt in range(TENDER_CONTRACT_MAX_RETRY + 1):
         try:
-            return await run_command_json(
+            payload, meta = await run_command_json(
                 "tender-evaluate",
                 directory_path,
                 schema_name=DEFAULT_OUTPUT_SCHEMA_NAME,
@@ -241,6 +241,12 @@ async def run_tender_evaluation(
                 structured=False,
                 **model_kwargs,
             )
+            # D1 M1（返工）：契约重试次数是运维基线指标（design 评分维度表「运维指标」，
+            # S7 配套问题②），供 eval 回归闸捕捉「D8 底稿瘦身导致 JSON 更易写坏→重试变多」
+            # 这类回归信号。成功时的 attempt（从 0 计数）即实际重试了几次；AgentRunMeta 已
+            # 声明 retry_count 尾部字段（带默认值 0），slots 下此赋值合法。
+            meta.retry_count = attempt
+            return payload, meta
         except Exception as exc:
             last_error = exc
             if attempt >= TENDER_CONTRACT_MAX_RETRY:

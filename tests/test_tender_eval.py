@@ -9,6 +9,7 @@ needs a real model gateway and is only smoke-checked via monkeypatching
 from __future__ import annotations
 
 import asyncio
+import types
 from pathlib import Path
 
 import pytest
@@ -30,6 +31,16 @@ from server.tender.eval import (
 )
 
 _FIXTURES = Path(__file__).parent / "eval_fixtures" / "tender"
+
+
+def _fake_meta(retry_count: int = 0) -> types.SimpleNamespace:
+    """Minimal stand-in for AgentRunMeta exposing exactly what eval.py reads.
+
+    D1 M1（返工）：eval.py 现在**直读** ``meta.retry_count``（不再 getattr 兜底），
+    因为生产 AgentRunMeta 是 slots 类、字段是带默认值的真实字段——``object()`` 不再是
+    合法的假 meta（既不能读也不能被赋值该属性），必须用带该属性的对象。
+    """
+    return types.SimpleNamespace(retry_count=retry_count)
 
 
 # ── manifest parsing ──────────────────────────────────────────────────────────
@@ -459,7 +470,7 @@ def test_run_eval_repeats_per_case_and_scores(monkeypatch) -> None:
 
     async def fake_run(*, request_id, tenant, directory_path, project_id=None, bid_id=None, on_progress=None, model=None):
         calls.append(request_id)
-        return {"verdict": "manual_review", "policy_refs": []}, object()
+        return {"verdict": "manual_review", "policy_refs": []}, _fake_meta()
 
     monkeypatch.setattr(eval_mod, "run_tender_evaluation", fake_run)
 
@@ -487,7 +498,7 @@ def test_main_exits_nonzero_on_failure(monkeypatch, tmp_path) -> None:
     import server.tender.eval as eval_mod
 
     async def fake_run(**kwargs):
-        return {"verdict": "approved", "policy_refs": []}, object()
+        return {"verdict": "approved", "policy_refs": []}, _fake_meta()
 
     monkeypatch.setattr(eval_mod, "run_tender_evaluation", fake_run)
 
@@ -507,7 +518,7 @@ def test_main_passes_model_override_through(monkeypatch, tmp_path) -> None:
 
     async def fake_run(*, model=None, **kwargs):
         captured["model"] = model
-        return {"verdict": "manual_review", "policy_refs": []}, object()
+        return {"verdict": "manual_review", "policy_refs": []}, _fake_meta()
 
     monkeypatch.setattr(eval_mod, "run_tender_evaluation", fake_run)
 
@@ -523,22 +534,20 @@ def test_main_passes_model_override_through(monkeypatch, tmp_path) -> None:
 # ── ops 指标（重试数 / 时延）：只记录进报告，绝不参与 pass/fail 判定 ─────────────
 #
 # design 评分维度表「运维指标 | 每次重试数/时延，只记录进报告不判 pass（基线数据）」
-# （来源 S7 配套问题②）。retry_count 从 run_tender_evaluation 返回的 meta 上取
-# （duck-typed getattr，meta 目前没有该字段就是 None，不抛错——这是报告字段，不是不变量）；
-# latency_sec 由 run_eval 自己用壁钟时间测（run_tender_evaluation 的返回契约不必为此改动，
-# 生产 tender_worker 调用链不受影响）。
-
-
-class _MetaWithRetryCount:
-    def __init__(self, retry_count: int) -> None:
-        self.retry_count = retry_count
+# （来源 S7 配套问题②）。retry_count 是 run_tender_evaluation 返回的 meta 上的真实字段
+# （AgentRunMeta 尾部默认字段 + 契约重试循环成功 attempt 后写入，见
+# tests/test_tender_read_layer.py 的 test_run_tender_evaluation_retry_count_* ——那才是
+# 契约重试循环实际发生的地方）；run_eval 只是直读并透传，故这里只验证「读到了真实值」，
+# 不重复模拟重试过程。latency_sec 由 run_eval 自己用壁钟时间测（run_tender_evaluation
+# 的返回契约不必为此改动，生产 tender_worker 调用链不受影响）。
 
 
 def test_run_eval_captures_retry_count_from_meta(monkeypatch) -> None:
+    """meta.retry_count == 2（如契约重试了 2 次才成功）→ run_eval 原样透传进 outcome。"""
     import server.tender.eval as eval_mod
 
     async def fake_run(**kwargs):
-        return {"verdict": "manual_review", "policy_refs": []}, _MetaWithRetryCount(2)
+        return {"verdict": "manual_review", "policy_refs": []}, _fake_meta(2)
 
     monkeypatch.setattr(eval_mod, "run_tender_evaluation", fake_run)
 
@@ -549,6 +558,24 @@ def test_run_eval_captures_retry_count_from_meta(monkeypatch) -> None:
     ]
     reports = asyncio.run(run_eval(cases))
     assert reports[0].run_outcomes[0].retry_count == 2
+
+
+def test_run_eval_retry_count_zero_on_first_try_success(monkeypatch) -> None:
+    """一次成功、未重试（meta.retry_count == 0）→ outcome.retry_count == 0。"""
+    import server.tender.eval as eval_mod
+
+    async def fake_run(**kwargs):
+        return {"verdict": "manual_review", "policy_refs": []}, _fake_meta(0)
+
+    monkeypatch.setattr(eval_mod, "run_tender_evaluation", fake_run)
+
+    cases = [
+        GoldenTenderCase(
+            case_dir="d", expected_verdict="manual_review", require_policy_refs=False, repeat=1
+        )
+    ]
+    reports = asyncio.run(run_eval(cases))
+    assert reports[0].run_outcomes[0].retry_count == 0
 
 
 def test_run_eval_captures_latency_seconds(monkeypatch) -> None:
@@ -562,7 +589,7 @@ def test_run_eval_captures_latency_seconds(monkeypatch) -> None:
 
     async def fake_run(**kwargs):
         await asyncio.sleep(0.05)
-        return {"verdict": "manual_review", "policy_refs": []}, object()
+        return {"verdict": "manual_review", "policy_refs": []}, _fake_meta()
 
     monkeypatch.setattr(eval_mod, "run_tender_evaluation", fake_run)
 
@@ -575,24 +602,6 @@ def test_run_eval_captures_latency_seconds(monkeypatch) -> None:
     latency = reports[0].run_outcomes[0].latency_sec
     assert latency is not None
     assert 0.05 <= latency < 5.0
-
-
-def test_run_eval_retry_count_none_when_meta_lacks_it(monkeypatch) -> None:
-    """meta 缺 retry_count 字段（如生产同款 AgentRunMeta，plain object()）→ 记 None，不抛错。"""
-    import server.tender.eval as eval_mod
-
-    async def fake_run(**kwargs):
-        return {"verdict": "manual_review", "policy_refs": []}, object()
-
-    monkeypatch.setattr(eval_mod, "run_tender_evaluation", fake_run)
-
-    cases = [
-        GoldenTenderCase(
-            case_dir="d", expected_verdict="manual_review", require_policy_refs=False, repeat=1
-        )
-    ]
-    reports = asyncio.run(run_eval(cases))
-    assert reports[0].run_outcomes[0].retry_count is None
 
 
 def test_huge_ops_metrics_do_not_affect_pass_fail() -> None:
