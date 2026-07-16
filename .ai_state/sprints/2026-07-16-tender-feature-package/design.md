@@ -135,3 +135,60 @@
 ---
 _参考：compound/2026-07-03-explore-arch-deep-review-deltas.md #7/#8/#9/#12；
 items.yaml D2 note；D1 design.md Round 2 F6。_
+
+---
+
+## Round 1 · Critic Findings（2026-07-16）
+
+### VERDICT: NEEDS_REVISION
+（2 条 P0 会让 F6 5 步实现路径在执行时直接卡住/静默留坑，须补再进下一轮。）
+
+**F1 [P0] schema 分家"复用同一 json"与代码机制冲突，步骤1 不可直接执行**
+- `contract.py:159-175` `apply_schema_semantics` 把 `schema_name` **同时**当处理器注册表 key +
+  物理文件路径（`:32-40` `resolve_output_schema_path`）。给 tender 挂新 schema 名（新 key）又想
+  复用同一 json 不建新文件 → 互斥：新名会去找 `.claude/contracts/tender/audit-result.schema.json`
+  （不存在，该目录仅 compare-result/criteria/extract-result/review-delta/tender-info）→ `JSONContractError`。
+- 补：二选一写进步骤1——(a) `register_schema_processor` 加可选 `schema_path` 字段
+  （tender 注册时 `schema_path=DEFAULT_OUTPUT_SCHEMA_NAME`）；(b) 复制 byte-identical 的
+  `.claude/contracts/tender/audit-result.schema.json` + 漂移测试（仿 `output_contracts.py:349-352`
+  `_AUDIT_SCHEMA_TOP_FIELDS` 守卫）。
+
+**F2 [P0] 迁移清单漏第二调用点 `server/cli.py` `tender-evaluate-json`**
+- `cli.py:195-215` 直接调 `run_command_json(schema_name=DEFAULT_OUTPUT_SCHEMA_NAME)`，不经 runner.py。
+  步骤4 只改 `runner.py:223` → cli.py 路径静默退化成跑通用 audit 校验（bug 从第二入口复现）。
+  `test_cli_tender_evaluate.py:18,89` 硬编码断言 schema 名会掩盖回归。
+- 补：迁移清单+接缝测试补 cli.py 第4调用点，同步改 test 断言；3 条接缝测试 → 4 条。
+
+**F3 [P1] tender schema processor 自注册触发点未定义，静默失效风险**
+- `register_schema_processor(TENDER_SCHEMA)` 需 import 时执行，迁移后谁 import 触发未写。
+  无人 import → `_SCHEMA_PROCESSORS.get` 得 None → `apply_schema_semantics` 静默退化为仅裸 json
+  校验（`contract.py:166-167` `processor is None: return`），不报错、行为悄悄变弱。
+- 补：明确 `server/tender/__init__.py` 或 `runner.py` 顶部 import 输出模块；补测试直接断言
+  `_SCHEMA_PROCESSORS` 有 TENDER_SCHEMA（而非只测行为副作用）。
+
+**F4 [P1] #8 worker harness 与"不动 audit 域"矛盾**
+- `audit_worker.py` 是三胞胎之一，抽 harness 必 touch audit_worker，撞 draft「影响范围」的
+  "不动 audit 域"；不 touch 则只 2/3 消费者接入，抽象合理性打折。
+- 补：#8 明确移出 D2 → 独立 sprint（跨 audit+tender+compare 一起做才站得住），验收 T3 删或标"不进 D2"。
+
+**F5 [P1] evidence_resolution 整搬使 ocr 测试反向依赖 tender，深评#10 张力未拍板**
+- `test_ocr_pipeline.py:686` / `test_boq.py:167` import `server.common.evidence_resolution` 的通用
+  语料原语（`CorpusIndex/existence_ratio/normalize_text/parse_corpus`，深评#10 指 `:103-453` 通用、
+  `:453-642` 才 audit 专属）。整搬 → 两 ocr 测试被迫 import `server.tender.evidence`（语义耦合，
+  D7 升格共享检索内核时二次搬迁）。draft"或留 common"未决。
+- 补：二选一——(a) 按#10 拆：`parse_corpus/CorpusIndex/existence_ratio/normalize_text` 留 common
+  （或独立 `server/common/corpus.py`），仅 `resolve_audit_evidence` 整合层随 tender 迁+挂 tender
+  schema 名；(b) 整搬 + 明确记录"ocr 测试耦合 tender 包"技术债留 D7。不留"或留 common"悬而未决。
+
+**F6-F8 [P2，不阻塞，impl 顺手带]**
+- F6：`eval.py:34` 已 `import tender_output.is_real_number`（D1 产物），迁移清单补这处 import 路径改。
+- F7：风险表拆两行——本地 pre-merge = 14/25 pytest + layering + 接缝测试；部署机 post-merge =
+  D1 eval 闸真跑（需网关，非阻塞）。别让人误以为 eval 闸能本地 CI 自动跑。
+- F8：验收加"每个 Ti 各自一 commit，pytest 全绿再进下一 Ti"（红区回滚锚点）。
+
+### 进 impl 前必补清单（5 项 F1-F5，落实后进下轮 critic 或直接 APPROVE）
+1. **F1** schema_path 别名 vs 复制物理 schema 文件二选一 + 漂移测试设计
+2. **F2** 迁移清单+接缝测试补 `server/cli.py` 第二调用点 + `test_cli_tender_evaluate.py` 断言
+3. **F3** 自注册 import 触发点 + "TENDER_SCHEMA 已注册"直接断言测试
+4. **F4** #8 worker harness 移出 D2（独立 sprint），T3 删除/标"不进 D2"
+5. **F5** evidence_resolution 拆分（按#10）vs 整搬记债 二选一拍板
