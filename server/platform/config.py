@@ -424,6 +424,25 @@ def get_audit_settings() -> AuditSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class TenderEvalSettings:
+    """Tender 评标 model per-call 覆盖（D1 T3，迁自 S7 remaining）。
+
+    仿 ``_TENDER_EFFORT`` 先例：只读 env，不缓存，部署机改 env 立即生效。``model`` 空 →
+    ``run_tender_evaluation`` 不覆盖，走全局 ``MODEL_NAME``/``ANTHROPIC_MODEL``（现行为不变，
+    生产 tender_worker 从不设 ``TENDER_EVAL_MODEL``）；非空 → per-call 覆盖，供
+    ``--model`` CLI / eval harness 对同一 manifest 跑不同模型做环境无关 A/B。不做
+    ``get_flash_model_config()`` 专名（S7 原案）——泛化为任意模型名覆盖，Flash 只是取值之一。
+    """
+
+    model: str
+
+
+def get_tender_eval_settings() -> TenderEvalSettings:
+    """Read the tender-eval model override fresh from the environment."""
+    return TenderEvalSettings(model=os.getenv("TENDER_EVAL_MODEL", "").strip())
+
+
+@dataclass(frozen=True, slots=True)
 class OcrSettings:
     """文档识别 → 表单回填的运行开关（env 可调，每次读一次）。
 

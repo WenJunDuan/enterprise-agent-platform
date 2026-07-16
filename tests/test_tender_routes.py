@@ -216,7 +216,13 @@ def test_unsupported_content_type(client):
 
 
 def test_worker_forwards_to_evaluate_bid_and_persists(monkeypatch):
+    """worker 转发逻辑：execute_tender_evaluation_task（调度壳，留 tender_worker）→
+    run_tender_evaluation（评标核心，D1 T2 下沉 server.tender.runner）→ run_command_json。
+    调度壳 monkeypatch 在 worker 模块，核心的 run_command_json 需 monkeypatch 在其下沉后的
+    新家（server.tender.runner），否则真实网关调用会被触发（D1 T2 接缝）。
+    """
     import server.routes.tender_worker as worker
+    import server.tender.runner as runner
 
     calls: dict = {}
 
@@ -240,7 +246,7 @@ def test_worker_forwards_to_evaluate_bid_and_persists(monkeypatch):
         )
         return {"verdict": "manual_review", "claim_id": "T-1"}, meta
 
-    monkeypatch.setattr(worker, "run_command_json", fake_json)
+    monkeypatch.setattr(runner, "run_command_json", fake_json)
 
     request_id = "test-tender-worker-rid"
     asyncio.run(
@@ -620,8 +626,13 @@ def test_delete_project_unknown_and_cross_tenant_404(client):
 
 
 def test_worker_threads_project_id(monkeypatch):
-    """codex P1.3 透传链：worker 把 project_id 传给 run_command_json（端到端透传未断）。"""
+    """codex P1.3 透传链：worker 把 project_id 传给 run_command_json（端到端透传未断）。
+
+    D1 T2 接缝：run_command_json 现只在 server.tender.runner 内被调用（评标核心下沉），
+    调度壳仍在 tender_worker——两个模块各 monkeypatch 各自需要的一半。
+    """
     import server.routes.tender_worker as worker
+    import server.tender.runner as runner
 
     calls: dict = {}
 
@@ -642,7 +653,7 @@ def test_worker_threads_project_id(monkeypatch):
         )
         return {"verdict": "manual_review", "claim_id": "T-2"}, meta
 
-    monkeypatch.setattr(worker, "run_command_json", fake_json)
+    monkeypatch.setattr(runner, "run_command_json", fake_json)
     asyncio.run(
         worker.execute_tender_evaluation_task(
             request_id="rid-pid-thread",

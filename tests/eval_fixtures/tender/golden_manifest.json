@@ -1,0 +1,17 @@
+{
+  "_comment": "合成模板：演示 manifest 字段与 case 目录布局。真实评测请新建一个 manifest，把 case_dir 指向 data/ 下的真实标书目录，并按一次 known-good 运行的输出（含跨次一致性阈值）校准 expected_*/max_*_spread 字段。",
+  "cases": [
+    {
+      "case_dir": "tests/eval_fixtures/tender/placeholder-bid",
+      "expected_verdict": "manual_review",
+      "expected_manual_review_reason": "rule_gap",
+      "eligibility_expectations": [],
+      "scoring_expectations": [],
+      "require_policy_refs": false,
+      "max_item_spread": null,
+      "max_total_spread": null,
+      "repeat": 3,
+      "note": "合成占位标书目录，无真实招标文件/评标办法可依据，预期 S1 判 rule_gap manual_review；演示布局，非真实基线，阈值待部署机用真实标书建立后填。"
+    }
+  ]
+}
