@@ -78,6 +78,9 @@
   （测试文件与 main 分支点字节相同，未被本 sprint 触碰）=worktree venv 环境缺口，非回归。
 - 2 条 P2 不阻塞：RF1 float 显示→defer；RF2 case_dir 穿越→CLI 内网例外记录不整改
   （触发升级条件：eval 若暴露服务接口须升 P0）。
+- **更新 2026-07-16 quick fix（commit 299c223）**：D1 ship 后快速复验，RF1 float 显示 +
+  RF2 case_dir 穿越校验 + 新发现的 `--repeat<1` 空跑误判 PASS 边界，已一并修复，各补一条
+  测试，全量 821 绿+ruff 净。**P2 清零**（RF2 提前落地防御深度，虽属 CLI 例外亦无害）。
 - 路径：Feature(infra) 不强制 polish → **直接 ship**，ship 时顺补 ARCHITECTURE.md 正式分层图
   （已于 ship 收口完成）。
 - worktree 遗留（不阻塞 merge）：该 worktree `.venv` 缺 fitz，可 `uv sync --extra ocr` 补齐。
