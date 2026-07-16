@@ -54,7 +54,7 @@ counts:
   compound:
     learning: 10
     trick: 1
-    decision: 5
+    decision: 6
     explore: 1
 # === Pointers (指向最新相关文件) ===
 pointers:
@@ -62,7 +62,7 @@ pointers:
   latest_review: "sprints/2026-07-01-tender-detail-scoring-redesign/reviews/pass2.md" # 最新正式 review(pass2, 2026-07-01)；2026-06-23-tender-judgment-discipline 以 workflow(5 finder)替代正式 review, 验收见该 sprint design.md
   latest_cleanup: "sprints/2026-06-19-contract-audit-feature/cleanup-pass.md"
   latest_brainstorm: ""
-  latest_decisions: ["compound/2026-07-15-decision-ocr-service-layer.md", "compound/2026-07-02-decision-ocr-routing-ladder.md", "compound/2026-06-20-decision-verification-gate-and-scaffolding.md", "compound/2026-06-19-decision-ops-below-routes-layering.md", "compound/2026-06-19-decision-agent-front-cc-out-of-scope.md"]
+  latest_decisions: ["compound/2026-07-16-decision-schema-split-tender.md", "compound/2026-07-15-decision-ocr-service-layer.md", "compound/2026-07-02-decision-ocr-routing-ladder.md", "compound/2026-06-20-decision-verification-gate-and-scaffolding.md", "compound/2026-06-19-decision-ops-below-routes-layering.md"]
   latest_lessons: ["compound/2026-07-15-learning-slots-dataclass-hollow-getattr.md", "compound/2026-07-01-learning-flash-tender-eval-inconsistency.md", "compound/2026-07-01-learning-adversarial-empirical-review-catches-text-leaks.md", "compound/2026-06-26-learning-cross-review-catches-latent-bugs.md", "compound/2026-06-23-learning-gate-rescues-not-creates.md"]
   latest_architecture_update: "2026-07-16T03:06:10.397Z"
 

@@ -232,9 +232,9 @@ backlog:
 
 decisions_made:
   - "✅ 2026-07-15 **D1/D2 共用：OCR 分层归属=方案 i**——ocr 降为 feature 之下服务层,守卫改单向(允许 tender/audit→ocr,禁止 ocr→tender/audit)。见 D1 design.md Round 2 决议记录 + compound/2026-07-15-decision-ocr-service-layer.md"
+  - "✅ 2026-07-16 **D2 F6:tender_output/evidence_resolution 归属=方案 A schema 分家**——tender 6 校验+evidence resolve 挂 tender 专属 schema 名,audit/expense 用纯通用处理器,两模块合法迁入 server/tender/;行为接缝(schema 名变更)由 D1 eval 闸+接缝测试护航。见 sprints/2026-07-16-tender-feature-package/design.md F6 节 + compound/2026-07-16-decision-schema-split-tender.md"
 
 decisions_needed:
-  - "D2: tender_output/evidence_resolution 迁移方式（common/output_contracts 消费它们，见 Round 2 F6；D2 design 时拍板）"
   - "D3: 延迟差值可接受阈值（spike 出数后拍板统一方向）"
   - "D10: 直连 vs command 模式二选一（与 D3 同场拍板）+ 直连落地形态（dormant flag-off 现在建 vs 部署机带网关迭代）"
   - "D8: 复测通过标准量化（一致性跨度上限/成本下降目标，design 时敲定）"
