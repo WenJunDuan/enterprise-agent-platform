@@ -82,7 +82,7 @@ def _fake_meta(request_id: str):
 
 def test_p11_load_doc_layer_with_bid_id_loads_only_that_bid(monkeypatch):
     """When bid_id provided, only that bid's OCR text is included; list_bid_docs NOT called."""
-    import server.routes.tender_worker as worker
+    import server.tender.runner as worker
 
     monkeypatch.setattr(
         worker,
@@ -110,7 +110,7 @@ def test_p11_load_doc_layer_with_bid_id_loads_only_that_bid(monkeypatch):
 
 def test_p11_load_doc_layer_without_bid_id_returns_none(monkeypatch):
     """Without bid_id, _load_doc_layer_context returns None (no mixing all bids)."""
-    import server.routes.tender_worker as worker
+    import server.tender.runner as worker
 
     monkeypatch.setattr(
         worker,
@@ -123,7 +123,7 @@ def test_p11_load_doc_layer_without_bid_id_returns_none(monkeypatch):
 
 def test_p11_load_doc_layer_bid_not_ready_returns_none(monkeypatch):
     """When current bid's OCR is not ready, returns None (fallback)."""
-    import server.routes.tender_worker as worker
+    import server.tender.runner as worker
 
     monkeypatch.setattr(
         worker,
@@ -147,7 +147,7 @@ def test_p11_load_doc_layer_bid_not_ready_returns_none(monkeypatch):
 
 def test_p11_load_doc_layer_bid_not_found_returns_none(monkeypatch):
     """When bid_id not found, returns None."""
-    import server.routes.tender_worker as worker
+    import server.tender.runner as worker
 
     monkeypatch.setattr(
         worker,
@@ -162,7 +162,7 @@ def test_p11_load_doc_layer_bid_not_found_returns_none(monkeypatch):
 
 def test_p11_load_doc_layer_failed_bid_returns_none(monkeypatch):
     """When bid ocr_status=failed, returns None (no fallback to failed text)."""
-    import server.routes.tender_worker as worker
+    import server.tender.runner as worker
 
     monkeypatch.setattr(
         worker,
@@ -185,8 +185,8 @@ def test_p11_load_doc_layer_failed_bid_returns_none(monkeypatch):
 
 
 def test_p11_run_evaluation_passes_bid_id_to_load_context(monkeypatch):
-    """_run_evaluation passes bid_id down to _load_doc_layer_context."""
-    import server.routes.tender_worker as worker
+    """run_tender_evaluation passes bid_id down to _load_doc_layer_context."""
+    import server.tender.runner as worker
 
     load_calls = {}
 
@@ -206,7 +206,7 @@ def test_p11_run_evaluation_passes_bid_id_to_load_context(monkeypatch):
     monkeypatch.setattr(worker, "run_command_json", fake_run_command)
 
     asyncio.run(
-        worker._run_evaluation(
+        worker.run_tender_evaluation(
             request_id="rid-bid-scoped",
             tenant="acme",
             directory_path="/fake/dir",
@@ -222,7 +222,7 @@ def test_p11_run_evaluation_passes_bid_id_to_load_context(monkeypatch):
 
 def test_p11_multiple_bids_only_current_bid_in_context(monkeypatch):
     """Multiple bids in store → only current bid's text appears in agent context."""
-    import server.routes.tender_worker as worker
+    import server.tender.runner as worker
 
     bids_data = {
         "bid-A": {"bid_id": "bid-A", "ocr_status": "ready", "ocr_text": "投标人甲文档", "bidder_name": "甲"},
@@ -252,7 +252,7 @@ def test_p11_multiple_bids_only_current_bid_in_context(monkeypatch):
     monkeypatch.setenv("TENDER_READ_DOC_LAYER", "1")
 
     asyncio.run(
-        worker._run_evaluation(
+        worker.run_tender_evaluation(
             request_id="rid-only-B",
             tenant="acme",
             directory_path="/fake/dir",

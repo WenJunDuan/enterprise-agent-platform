@@ -146,6 +146,12 @@ class AgentRunMeta:
     result_subtype: str | None
     cost_usd: float
     finished_at: str | None
+    # 尾部默认字段（D1 M1 补丁）：契约重试次数，默认 0（本次调用一次成功，未重试）。
+    # slots=True 禁止外部动态挂属性，此字段必须在此声明才能被赋值——server.tender.runner
+    # 的契约重试循环在成功 attempt 后写 meta.retry_count = attempt，供 eval 回归闸
+    # 记录运维基线指标（S7 配套问题②）。纯增量、有默认值，json_bridge.py 唯一构造点全
+    # 关键字传参，不传本字段时安全走默认 0，audit/expense 调用链零改动。
+    retry_count: int = 0
 
 
 def build_options(**overrides: Any) -> ClaudeAgentOptions:
