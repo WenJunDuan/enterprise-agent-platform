@@ -49,10 +49,10 @@ counts:
   issues_count: 0
   refactors_count: 0
   systems_count: 6
-  reviews_count: 55
+  reviews_count: 56
   cleanup_count: 1
   compound:
-    learning: 9
+    learning: 10
     trick: 1
     decision: 5
     explore: 1
@@ -63,8 +63,8 @@ pointers:
   latest_cleanup: "sprints/2026-06-19-contract-audit-feature/cleanup-pass.md"
   latest_brainstorm: ""
   latest_decisions: ["compound/2026-07-15-decision-ocr-service-layer.md", "compound/2026-07-02-decision-ocr-routing-ladder.md", "compound/2026-06-20-decision-verification-gate-and-scaffolding.md", "compound/2026-06-19-decision-ops-below-routes-layering.md", "compound/2026-06-19-decision-agent-front-cc-out-of-scope.md"]
-  latest_lessons: ["compound/2026-07-01-learning-flash-tender-eval-inconsistency.md", "compound/2026-07-01-learning-adversarial-empirical-review-catches-text-leaks.md", "compound/2026-06-26-learning-cross-review-catches-latent-bugs.md", "compound/2026-06-23-learning-gate-rescues-not-creates.md", "compound/2026-06-22-learning-jsonschema-too-brittle-for-llm-output.md"]
-  latest_architecture_update: "2026-07-15T07:06:35.694Z"
+  latest_lessons: ["compound/2026-07-15-learning-slots-dataclass-hollow-getattr.md", "compound/2026-07-01-learning-flash-tender-eval-inconsistency.md", "compound/2026-07-01-learning-adversarial-empirical-review-catches-text-leaks.md", "compound/2026-06-26-learning-cross-review-catches-latent-bugs.md", "compound/2026-06-23-learning-gate-rescues-not-creates.md"]
+  latest_architecture_update: "2026-07-16T03:06:10.397Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
 next_action: "【2026-07-15 增量·先读】**D1 impl 已完成,review 进行中**。①拍板:OCR 分层方案 i(ocr 降为服务层,允许 tender/audit→ocr 禁反向,TENDER_OCR_PURPOSE 挪家 server/tender/),决议落盘 design.md Round 2 决议+compound/2026-07-15-decision-ocr-service-layer.md+ARCHITECTURE.md 注记,main commit 1099807。②impl:generator 于 worktree(分支 worktree-agent-a0d447ab04c842bd5,路径 .claude/worktrees/agent-a0d447ab04c842bd5)完成 T1-T5 共 5 commit:9ddbce5(T1 评分核)/3bee6e6(T2 核心下沉 runner.py+两接缝)/1520260(T3 TENDER_EVAL_MODEL)/c0f0336(T4 fixtures+runbook)/38bbdb3(T5 layering 单向守卫)。③主agent实证:worktree 全量 pytest 806绿/5失败(test_ocr_engine+test_ocr_pipeline 缺 fitz,main 基线原样复现=环境既有,非 sprint 引入),ruff 净。④review pass1 双侧已返:reviewer 无P0/P1(2条P2:浮点显示留polish/case_dir穿越按CLI例外记录不整改),spec-compliance T1-T5全covered零越界零偏离仅 M1 MISSING(运维指标未进报告);M1 轮1补丁(9972808)latency 实测落地但 retry_count 被主agent判空壳(AgentRunMeta slots 类,getattr 永久None,见 compound/2026-07-15-learning-slots-dataclass-hollow-getattr.md)。⑤**⏸用户 2026-07-15 叫停,次日续**。M1 轮2返工停在中途:generator(已 TaskStop,可 SendMessage 续)在 worktree 留**未提交**改动 agent_bridge.py(+6,AgentRunMeta retry_count 字段)+runner.py(+8,循环赋 attempt)+test_tender_read_layer.py(+60),其自报"GREEN,下一步改 eval.py 直读 meta.retry_count 并修 test_tender_eval.py 假 meta 测试"。**明日续跑入口:恢复/新起 generator 完成 eval.py 直读+测试修复→全量 pytest(811 基线+5 fitz 环境失败)+ruff→单独 commit→主agent核验非默认值断言→evaluator 判 VERDICT→PASS 才 merge 回 main+清 worktree**;findings 全在 reviews/pass1.md;round2 F6 留 D2 design 解。部署机三项(真实 manifest/AB/MODEL_CONTEXT_WINDOW)属 runbook 验收不阻塞 merge。║【新 session 从这读起 · 2026-07-02 checkpoint · 文档智能 program 立项】本日完成:①全仓架构评估交付(核心发现:tender 无 feature 包~3250行散在 routes/+common/、22文件超300行红线、**三域三套 prompt 投递机制**[expense=Python常量AUDIT_INSTRUCTIONS+setting_sources=[] / tender=run_command_json走.claude commands / ocr=core门面legacy import私有名]双源漂移风险、.claude/CLAUDE.md 过载tender细则);②用户全选4优化方向+OCR愿景(OCR Agent+多模型路由+文档理解+实时流式+结构化RAG),四分叉拍板:**混合agent化(管道+LLM决策点)/结构化检索先行(FTS/BM25+章节树+页锚,向量二期)/页级部分结果流/三波次立项**;③新 roadmap **roadmap/2026-07-doc-intelligence/**(roadmap.md+items.yaml,**11 item**):Wave0地基=D1 eval_tender正式化(回归闸,S7剩余迁入,含用户填MODEL_CONTEXT_WINDOW重测+部署机手跑对比)+D2 tender feature包重构(红区worktree,纯移动零行为,39测试文件护航)+D3 prompt单源统一(先spike测expense走command延迟差值)+.claude瘦身;Wave1质量=D4 L2多模型路由(**2026-07-02 模型池定案:PaddleOCR 打底/PaddleOCR-VL 升级/Unlimited-OCR 长程整本解析[baidu 3B/激活500M,R-SWA,兼济 D6 章节树+D8 底稿瘦身],分级 escalation 形态+实现锚点见 items.yaml D4 note**,印章手写POC,捎带core门面退役)+D5决策点agent化+**D10 expense可靠性包(2026-07-02补账,吸收6-12 backlog③④⑤:热路径直连spike[与D3 command模式二选一同场拍板]+多模态附件预嵌+耗时指标+休眠runbook)+D11 tender残留收口包(2026-07-02补账,吸收6-23判分纪律六残留:R4 ocr-page重识别wiring安全硬化[RCE面,can_use_tool白名单+对抗验证]/F04 evidence_chain从award_hits派生/glm技术参数/R5 schema/R6 config/R7前端null guard[agent-front红区可与D9同批授权])——Wave1即三域优化Sprint包,三域账外债全部在册**;Wave2结构★=D6文档级结构化(章节树/页锚/实体,新contracts schema)+D7结构化RAG(并入旧S9)+D8底稿瘦身落地(S7 harness复测验证);Wave3=D9页级流式(前端部分agent-front红区需授权)。旧roadmap 2026-06-tender-program 已收口:S7/S9 done(结转注记见items.yaml),S8保持用户推迟。**D1 已进 design**:发现 S7 harness 已从 gitignored logs/ 蒸发(重建+正式化);design(sprints/2026-07-02-eval-tender-scaffold/design.md)含 round1 critic 修订(核心:评标 _run_evaluation 下沉 server/tender/runner.py 与 audit 同构、一致性看 scoring[] 跨次极差、null 复用 is_real_number、阈值先警告后锁硬门且锁门=D4 前置)。**⚠️进度更新 2026-07-02:用户已解除暂缓,梳理执行盘面(依赖序:Wave0 D1/D2/D3 可起,业务层 D4+全被卡)后拍板 D1(eval回归闸)为首发 Sprint;design 定稿+critic修订就绪,主 agent 已出 T1-T5 计划,待用户 GO 即从 T1(TDD,纯新增评分核测试)开工,每 T commit+pytest 绿再进下一 T。GO 前勿写代码。D2-D11 仍 pending。**(重启入口:design.md 验收清单 T1-T5,无需重新设计)。仓库状态:仅main,本日全部产出为 .ai_state 设计文档(**代码零改动**,git diff ea7a1ef..HEAD 仅 .ai_state),已 commit 并 push origin;**push 时 GitHub 报 11 个依赖漏洞(3 high,见 repo Security→Dependabot,已挂后台任务芯片,待用户点开或另行处理)**;两 dev server 9999/9998 已停(2026-07-02 验证两端口无进程;重启法见 compound flash 学习#3 的 env -u 坑)。铁律护栏:**页锚【第N页】全链路保真(evidence-resolution硬约束,RAG切片红线)**/eval回归闸先行/criteria唯一权威/不可判定不判0/重构零行为变更/pytest全绿/agent-front红区worktree+授权。"
@@ -393,6 +393,7 @@ slug 拆分为独立 sprint 目录；`lessons.md` 整体保留为
 - `docs/` — 项目参考文档 (开发指南 / 前端对接 / audit-skills)，非状态机文件
 
 ## 历史 (由 pace-continuator hook 自动追加, 最多保留近 10 条)
+- `2026-07-15 09:51:55`: stage=review sprint=2026-07-02-eval-tender-scaffold turn-end
 - `2026-07-15 07:53:39`: stage=impl sprint=2026-07-02-eval-tender-scaffold turn-end
 - `2026-07-02 02:29:53`: stage=design sprint=2026-07-02-eval-tender-scaffold turn-end
 - `2026-07-01 04:52:37`: stage=ship sprint=2026-06-tender-program turn-end
@@ -402,7 +403,6 @@ slug 拆分为独立 sprint 目录；`lessons.md` 整体保留为
 - `2026-06-25 09:46:58`: stage=design sprint=2026-06-25-tender-report-dimensions turn-end
 - `2026-06-23 15:40:09`: stage=ship sprint=2026-06-23-tender-judgment-discipline turn-end
 - `2026-06-23 06:41:35`: stage=ship sprint=2026-06-22-tender-evidence-accuracy-hardening turn-end
-- `2026-06-22 03:11:05`: stage=design sprint=2026-06-22-tender-evidence-accuracy-hardening turn-end
 
 
 - 2026-06-02 [migrate] v9.6.2(legacy flat) → v9.6.4. 备份见 `.ai_state.backup-*`。

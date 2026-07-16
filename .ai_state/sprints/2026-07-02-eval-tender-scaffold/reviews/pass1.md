@@ -56,10 +56,28 @@
   `getattr(meta, "retry_count", None)` 兜底——**主 agent 复核判定为空壳**：AgentRunMeta 是
   `@dataclass(slots=True)`（agent_bridge.py:136-149），slots 类不可能被附加属性，该值永久 None，
   "契约重试次数"基线维度实际未落地（正是 D8 要闸的回归信号）。
-- 处置轮 2（返工中）：批准影响范围小幅修订——AgentRunMeta 追加尾部默认字段 `retry_count: int = 0`
-  （纯增量，audit/expense 构造点零改动）；runner.py 重试循环成功路径捕获 meta 后赋 `attempt`；
-  eval.py 直读；TDD 断言"2 次失败第 3 次成功 → retry_count==2"。完成后本节补 commit hash。
+- 处置轮 2（2026-07-16 完成，commit 9972808 latency + 2f7baac retry 直读）：影响范围小幅修订——
+  AgentRunMeta 追加尾部默认字段 `retry_count: int = 0`；runner.py 重试循环成功路径捕获 meta 后
+  赋 `attempt`；eval.py:417 直读 `meta.retry_count`（getattr 已删）。
+- **主 agent 实证**：load-bearing 测试 `test_run_tender_evaluation_retry_count_after_two_failures`
+  （monkeypatch flaky_run 前 2 次抛契约异常、第 3 次成功 → 断言 retry_count==2）真实生效、非空壳；
+  全量 `uv run pytest -q` = 813 passed / 5 failed（fitz 环境既有，main 基线同 failure）；ruff 净；
+  AgentRunMeta 唯一构造点 json_bridge.py:302 全关键字传参 → audit/expense 零影响（已核验）。
+  M1 闭环。
 
 ## Evaluator VERDICT
 
-（待 M1 补齐 commit 核验后运行 evaluator。）
+**VERDICT: PASS**（评分 4.6/5.0：Functionality 4.7 / Spec 4.8 / Craft 4.5 / Robustness 4.3）
+— 2026-07-16，evaluator 独立复核 T1-T5+M1。
+
+- Sisyphus 完整性：T1-T5 + M1 全 covered，独立复跑测试确认；`done_without_evidence=0`、
+  `unresolved_over_engineering=0`。
+- M1 真实性核验：`retry_count` 由 AgentRunMeta 真 slots 字段承载、runner 循环真赋值、
+  load-bearing 测试真断言（flaky 2 失败→==2），非空壳。
+- 5 个 fitz 失败：evaluator 独立确认 `git diff <merge-base>..HEAD -- test_ocr_*` 为空
+  （测试文件与 main 分支点字节相同，未被本 sprint 触碰）=worktree venv 环境缺口，非回归。
+- 2 条 P2 不阻塞：RF1 float 显示→defer；RF2 case_dir 穿越→CLI 内网例外记录不整改
+  （触发升级条件：eval 若暴露服务接口须升 P0）。
+- 路径：Feature(infra) 不强制 polish → **直接 ship**，ship 时顺补 ARCHITECTURE.md 正式分层图
+  （已于 ship 收口完成）。
+- worktree 遗留（不阻塞 merge）：该 worktree `.venv` 缺 fitz，可 `uv sync --extra ocr` 补齐。
