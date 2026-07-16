@@ -38,7 +38,7 @@
 | `common/evidence_resolution.py` | `server/tender/evidence.py`（或留 common，见深评#10） | **取决于 F6** |
 | `routes/tender.py`(912) | 拆薄为 HTTP 壳 + 按 banner 分节 | 拆分 |
 
-### 🔑 F6 决策（待用户拍板）：tender_output / evidence_resolution 归属
+### ✅ F6 决策（2026-07-16 用户拍板 = 方案 A · schema 分家）：tender_output / evidence_resolution 归属
 
 **根因**（已核验代码）：`common/contract.py:252` 末尾 import `output_contracts` →
 `output_contracts.py:30-37` import `tender_output` 6 个校验函数 + `:460` import
@@ -66,8 +66,21 @@
 - **零行为变更、最省事**，但 tender 逻辑仍有一部分留在 common（output/evidence 共约
   ？行），D2"归位"目标打折扣，耦合债留到未来（D7 会再碰 evidence_resolution，见深评#10）。
 
-**主 agent 倾向**：方案 A（一次解干净，与 D1 分层拍板同调；D1 eval 闸正好为这类行为接缝
-兜底）。但 A 的 schema 名变更要谨慎回归。**请 D1 收口后拍板。**
+**决议：方案 A（2026-07-16 用户拍板，见 compound/2026-07-16-decision-schema-split-tender.md）。**
+
+**实现路径（供 critic 核 + design 定稿细化）**：
+1. 定 tender 专属 schema 名（如 `TENDER_OUTPUT_SCHEMA_NAME`）。**critic 待定**：新 json schema 文件
+   vs 复用 audit-result.json 校验规则 + 仅处理器链分家——tender 结论仍须符合
+   `.claude/contracts/common/audit-result.schema.json`，**倾向复用同一 json + 独立处理器注册**
+   （schema 内容一致、只是 normalize/validate/enrich/resolve 处理器链挂 tender 名）。
+2. `tender_output`（6 校验）+ `evidence_resolution`（resolve_audit_evidence）迁入 server/tender/，
+   从 tender 模块调 `register_schema_processor(TENDER_SCHEMA, …)` 自注册（feature 自注册合法）。
+3. `output_contracts.py` 去掉 `:30-37` tender import 与 `:460` evidence import，只留通用
+   audit-result 注册（不再挂 tender 校验）；`contract.py:252` 副作用不再拉入 tender（纯 audit 干净）。
+4. `tender_worker`/`runner` 改传 `schema_name=TENDER_SCHEMA`（D1 `runner.py` 现传
+   `DEFAULT_OUTPUT_SCHEMA_NAME`）——**这是本 sprint 的行为接缝，D1 eval 回归闸 + 接缝测试护航**。
+5. 接缝测试（必补）：expense/audit 结果不再跑 tender 校验（新断言）、tender 结果校验行为不变、
+   纯 audit import 不拉入 tender 模块（守卫 contract.py 副作用已解）。
 
 ### 范围附加项（深评 #8 / #12，随 F6 一并定）
 
