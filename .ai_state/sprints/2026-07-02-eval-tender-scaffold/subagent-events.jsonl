@@ -9,3 +9,7 @@
 {"schema_version":1,"event":"SubagentStop","agent_id":"a0d447ab04c842bd5","agent_type":"generator","sprint_slug":"2026-07-02-eval-tender-scaffold","timestamp":"2026-07-15T09:08:55.909Z"}
 {"schema_version":1,"event":"SubagentStart","agent_id":"a0d447ab04c842bd5","agent_type":"generator","sprint_slug":"2026-07-02-eval-tender-scaffold","timestamp":"2026-07-15T09:11:41.012Z"}
 {"schema_version":1,"event":"SubagentStart","agent_id":"a0d447ab04c842bd5","agent_type":"generator","sprint_slug":"2026-07-02-eval-tender-scaffold","timestamp":"2026-07-15T09:23:59.427Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"a0d447ab04c842bd5","agent_type":"generator","sprint_slug":"2026-07-02-eval-tender-scaffold","timestamp":"2026-07-16T02:24:55.628Z"}
+{"schema_version":1,"event":"SubagentStop","agent_id":"a0d447ab04c842bd5","agent_type":"generator","sprint_slug":"2026-07-02-eval-tender-scaffold","timestamp":"2026-07-16T02:37:00.543Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"afcc4cb3690d20f5f","agent_type":"evaluator","sprint_slug":"2026-07-02-eval-tender-scaffold","timestamp":"2026-07-16T02:50:22.301Z"}
+{"schema_version":1,"event":"SubagentStop","agent_id":"afcc4cb3690d20f5f","agent_type":"evaluator","sprint_slug":"2026-07-02-eval-tender-scaffold","timestamp":"2026-07-16T03:03:43.000Z"}

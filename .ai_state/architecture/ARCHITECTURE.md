@@ -19,17 +19,19 @@
 ## 全局分层（server/）
 
 ```
-app (api/cli) → routes → ops → features(audit|ocr) → core → common → stores → platform
+app (api/cli) → routes → ops → features(audit|tender) → ocr(服务层) → core → common → stores → platform
 ```
 
 - `ops` 是 routes 之下的 service 层（diagnostics/maintenance），被 app+routes 共同消费——
   见 `compound/2026-06-19-decision-ops-below-routes-layering.md`（T2.5 修正）。
-- feature 域（audit/ocr）互不 import；tender 走内联命令，未建 feature 模块。
-  **教义修订已拍板（2026-07-15，D1 F5 方案 i，见 compound/2026-07-15-decision-ocr-service-layer.md）**：
-  ocr 降为 feature 域之下服务层——允许 audit/tender→ocr，禁止 ocr→audit/tender（单向守卫）；
-  随 D1 T5 落 test_layering 后本节改正式分层图。
-- 守卫：`tests/test_layering.py`（6 条：routes 不 import api、platform 叶子、common 不依赖上层、
-  feature 互斥、ops 不 import routes/app/features、stores 只 import platform）。
+- feature 域 audit/tender 互不 import；**ocr 降为 features 之下的服务层**——允许 audit/tender→ocr，
+  禁止 ocr→audit/tender（单向守卫，2026-07-15 D1 F5 方案 i 拍板并经 D1 T5 落地，见
+  `compound/2026-07-15-decision-ocr-service-layer.md`）。
+- **tender feature 包成型中**：D1 已落 `server/tender/`（eval 回归闸 + runner 评标核心下沉），
+  worker/doc_pipeline 等其余约 3250 行由 D2 迁入（当前仍在 routes/common）。
+- 守卫：`tests/test_layering.py`：routes 不 import api、platform 叶子、common 不依赖上层、
+  feature 互斥（audit↔tender）、**ocr 单向（audit/tender→ocr 合法、反向禁止）**、ops 不 import
+  routes/app/features、stores 只 import platform、server.tender 纳入 ops/common/stores 禁区。
 
 ## 存储
 
