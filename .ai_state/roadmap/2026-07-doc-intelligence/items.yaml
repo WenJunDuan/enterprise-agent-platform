@@ -14,7 +14,7 @@ items:
     effort: M
     wave: 0
     depends_on: []
-    status: in_progress # 2026-07-15 用户拍板 OCR 分层**方案 i**(ocr 降为服务层,守卫单向,见 design.md Round 2 决议)——GO 生效,impl 从 T1(TDD) 起,每 T commit+pytest 绿
+    status: done # 2026-07-16 D1 SHIP:review PASS(evaluator 4.6/5),7 commit merge 回 main(77d9ffe),main 全量 818 绿+ruff 净,worktree 已清。产出:eval 回归闸(server/tender/eval.py 评分核+score_consistency 跨次极差+运维指标 retry/latency)、评标核心下沉 server/tender/runner.py、OCR 方案 i 单向守卫、TENDER_EVAL_MODEL、golden manifest+runbook。2 P2 defer(float显示→polish/case_dir→CLI例外);ARCHITECTURE 分层图已重绘。一致性硬门锁定(V4Pro 基线后)=D4 前置
     note: >
       复用 server/audit/eval.py 骨架。原 S7 harness(logs/ gitignored)已从磁盘蒸发,方法论存
       compound/2026-07-01-learning-flash-tender-eval-inconsistency.md——按重建+正式化实施。
