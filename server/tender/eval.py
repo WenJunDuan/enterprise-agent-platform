@@ -166,6 +166,10 @@ def parse_golden_cases(payload: dict[str, Any]) -> list[GoldenTenderCase]:
         verdict = str(item.get("expected_verdict") or "").strip()
         if not case_dir:
             raise ValueError(f"cases[{index}] missing case_dir")
+        if ".." in Path(case_dir).parts:
+            # 防路径穿越：manifest 由部署机操作员自著（内网 CLI），此为防御深度——拒绝 ../
+            # 逃逸出预期 case 根（RF2；eval 若日后暴露服务接口，此校验即硬约束）。
+            raise ValueError(f"cases[{index}] case_dir must not contain '..': {case_dir}")
         if verdict not in _VALID_VERDICTS:
             raise ValueError(
                 f"cases[{index}] expected_verdict must be one of {sorted(_VALID_VERDICTS)}"
@@ -363,10 +367,12 @@ def format_report(reports: list[CaseReport]) -> str:
                 lines.extend(f"            - {mismatch}" for mismatch in outcome.mismatches)
         consistency = report.consistency
         if consistency is not None and not consistency.skipped:
+            # 整数分用 :g 去掉 .0 噪音（60.0→60），非整数保留（66.5→66.5）——RF1。
+            total_scores_str = ", ".join(f"{t:g}" for t in consistency.total_scores)
             lines.append(
                 f"            item_counts={consistency.item_counts} "
                 f"(spread={consistency.item_spread}), "
-                f"total_scores={consistency.total_scores} (spread={consistency.total_spread})"
+                f"total_scores=[{total_scores_str}] (spread={consistency.total_spread:g})"
             )
             for warning in consistency.warnings:
                 lines.append(f"            [WARN] {warning}")
@@ -391,6 +397,18 @@ async def run_eval(
     reports: list[CaseReport] = []
     for golden in cases:
         repeat = repeat_override if repeat_override is not None else golden.repeat
+        if repeat < 1:
+            # repeat<1 一次都不跑，但空 all() 会误判 PASS——记为 error 让 case fail-fast，
+            # 防"没验证却报通过"（正常路径 manifest repeat 被 `or DEFAULT` 兜住，仅 CLI --repeat 0 触发）。
+            reports.append(
+                CaseReport(
+                    case_dir=golden.case_dir,
+                    run_outcomes=[],
+                    consistency=None,
+                    errors=[f"repeat must be >= 1, got {repeat}"],
+                )
+            )
+            continue
         run_outcomes: list[CaseOutcome] = []
         actual_results: list[dict[str, Any]] = []
         errors: list[str] = []

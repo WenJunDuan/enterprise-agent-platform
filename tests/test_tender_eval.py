@@ -643,3 +643,36 @@ def test_format_report_prints_ops_metrics_line() -> None:
     rendered = format_report([report])
     assert "retries=[1, 0]" in rendered
     assert "latency_sec=[12.3, 5.0]" in rendered
+
+
+def test_parse_golden_cases_rejects_path_traversal() -> None:
+    """case_dir 含 '..' 被拒（RF2 路径穿越防御深度）。"""
+    with pytest.raises(ValueError, match="must not contain"):
+        parse_golden_cases(
+            {"cases": [{"case_dir": "../../etc", "expected_verdict": "approved"}]}
+        )
+
+
+def test_run_eval_repeat_below_one_records_error() -> None:
+    """repeat<1（如 CLI --repeat 0）不空跑判 PASS，而是记 error 让 case fail-fast。"""
+    cases = [GoldenTenderCase(case_dir="data/t1", expected_verdict="approved")]
+    reports = asyncio.run(run_eval(cases, repeat_override=0))
+    assert len(reports) == 1
+    assert reports[0].passed is False
+    assert any("repeat must be >= 1" in err for err in reports[0].errors)
+
+
+def test_format_report_integer_scores_drop_float_noise() -> None:
+    """整数总分显示无 .0 噪音（RF1）：60.0→60、总分极差 6.0→6。"""
+    report = CaseReport(
+        case_dir="data/t1",
+        run_outcomes=[CaseOutcome(case_dir="data/t1", passed=True, actual_verdict="approved")],
+        consistency=ConsistencyOutcome(
+            run_count=2, item_counts=[3, 3], total_scores=[60.0, 66.0],
+            item_spread=0, total_spread=6.0,
+            item_spread_exceeded=False, total_spread_exceeded=False,
+        ),
+    )
+    rendered = format_report([report])
+    assert "total_scores=[60, 66] (spread=6)" in rendered
+    assert "60.0" not in rendered
