@@ -26,6 +26,7 @@ from server.platform import config as config_module
 from server.platform.asset_validation import validate_knowledge_assets
 from server.platform.config import get_claude_runtime_report
 from server.platform.source_proxy import prepare_text_proxy
+from server.tender.output import TENDER_OUTPUT_SCHEMA_NAME
 from server.stores.memory_store import get_memory_record_by_id, list_memory_records
 from server.stores.request_store import (
     get_request_audit_by_request_id_admin,
@@ -209,7 +210,7 @@ def tender_evaluate_json(
             conversation_id=conversation_id or new_conversation_id(),
             resume_session_id=resume_session_id or None,
             fork_from_session_id=fork_from_session_id or None,
-            schema_name=DEFAULT_OUTPUT_SCHEMA_NAME,
+            schema_name=TENDER_OUTPUT_SCHEMA_NAME,
         )
 
     _invoke_json_command(_run())
