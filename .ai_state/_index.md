@@ -5,7 +5,7 @@ version: "9.6.4"
 
 # === PACE 路由状态 ===
 path: "System" # 文档智能 program 2026-07-doc-intelligence 立项：四波次 D1-D11（地基/质量/结构/体验），旧 tender-program 已收口(S7/S9 结转,S8 用户推迟)
-stage: "design" # 2026-07-18: D2(tender 包)+D6(doc 结构化)双双 merge 回 main(834 绿),worktree 已清;主线转 tender-schema-split(F6+F5)design;D3/D5/D7-D11 pending
+stage: "design" # 2026-07-18: D2+D6 已 ship(merge 260a140/c874bd8 + push origin main ✓,main 834 绿,worktree/分支/stash 全清);主线 tender-schema-split(F6+F5)+并行 D7-MVP 双 design 进行中(fable5 后台产出);实现将分派 generator(A)+codex(B);D3/D5/D8-D11 pending
 current_sprint_slug: "2026-07-16-tender-feature-package" # D2(D1 已 done 收口, sprint 目录 2026-07-02-eval-tender-scaffold 归档)
 current_roadmap_slug: "2026-07-doc-intelligence"
 skip_polish: false
