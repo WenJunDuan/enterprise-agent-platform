@@ -14,6 +14,8 @@ from server.common.contract import (
     SchemaProcessor,
     _SCHEMA_PROCESSORS,
     apply_schema_semantics,
+    build_output_format,
+    load_output_schema,
     register_schema_processor,
 )
 import server.common.output_contracts as _oc
@@ -634,3 +636,45 @@ def test_r4_manual_review_item_no_completeness_warn():
         ),
     )
     assert "deduction_scored_no_hits" not in _warning_codes(out)
+
+
+# ── T1: schema_path 别名机制 —— 一个注册表 key 复用另一物理 schema 文件 ──────────
+#
+# tender 专属注册表 key（TENDER_OUTPUT_SCHEMA_NAME）不建 byte-identical 物理 schema 文件，
+# 而是复用 common/audit-result.json——两处物理解析入口（硬 schema 校验 apply_schema_semantics
+# 与 SDK output_format 构造 build_output_format）都必须统一走 _resolve_physical_schema_name，
+# 否则 build_output_format(alias) 会去找不存在的物理文件而报错（round-1 critic 核实的真实第二
+# 调用点，见 design.md 背景 §1）。
+
+
+def test_alias_schema_validates_against_aliased_physical_schema():
+    """(a) apply_schema_semantics 用别名 key 时，硬 schema 校验走 schema_path 指向的物理文件。"""
+    alias = "test/alias-demo.schema.json"
+    register_schema_processor(alias, schema_path=DEFAULT_OUTPUT_SCHEMA_NAME)
+    try:
+        out = apply_schema_semantics(alias, _valid_audit_result())
+        assert out["verdict"] == "approved"  # 走通了 audit-result.json 的形校验
+        with pytest.raises(JSONContractError):
+            apply_schema_semantics(alias, {"verdict": "??", "explanation": "x"})
+    finally:
+        _SCHEMA_PROCESSORS.pop(alias, None)
+
+
+def test_alias_schema_build_output_format_resolves_same_physical_schema():
+    """(b) build_output_format 用别名 key 时，SDK output_format 复用同一物理文件的 schema 内容。"""
+    alias = "test/alias-demo.schema.json"
+    register_schema_processor(alias, schema_path=DEFAULT_OUTPUT_SCHEMA_NAME)
+    try:
+        assert build_output_format(alias)["schema"] == load_output_schema(
+            DEFAULT_OUTPUT_SCHEMA_NAME
+        )
+    finally:
+        _SCHEMA_PROCESSORS.pop(alias, None)
+
+
+def test_unaliased_schemas_resolve_to_themselves():
+    """既有 processor（DEFAULT/INIT_RULES）都没设 schema_path → 物理解析原样返回 schema_name，
+    零行为变更（不依赖别名机制的所有既有调用点不受影响）。"""
+    assert build_output_format(DEFAULT_OUTPUT_SCHEMA_NAME)["schema"] == load_output_schema(
+        DEFAULT_OUTPUT_SCHEMA_NAME
+    )
