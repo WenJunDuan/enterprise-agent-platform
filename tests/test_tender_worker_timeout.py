@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 
-import server.routes.tender_worker as tw
+import server.tender.worker as tw
 
 
 def test_tender_timeout_sets_failed_status(monkeypatch):

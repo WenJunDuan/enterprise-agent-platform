@@ -1,12 +1,12 @@
 """Tender 招标/投标文档摄取编排：上传后台 OCR → criteria/tender_info 抽取（S3 从 tender.py 下沉）。
 
-routes 层 helper（与 ``tender_worker`` 同级，非 HTTP router）。它把 OCR 通用能力（
+server/tender/ feature 层 helper（与 ``worker`` 同级，非 HTTP router；D2 从
+``routes/tender_doc_pipeline.py`` 纯移动至此，见 D2 design T3）。它把 OCR 通用能力（
 ``server.ocr.pipeline`` 的 ``prewarm_and_text``/``is_ocr_text_valid`` + ``server.ocr.prewarm_scheduler``
 的并发闸/任务追踪）与 tender 业务（写 ``tender_doc_store``、调 ``tender-extract-info``）粘合。
 
-放 routes 层而非 ops/：ops 层禁止 import feature（``server.ocr``），见 ``tests/test_layering.py``
-``test_ops_does_not_import_routes_app_or_features``；本编排需同时用 ocr + stores + common，只有
-routes 层可合法组合三者。``tender.py`` 路由消费本模块，自身仅做 HTTP 编排。
+放 feature 层：本编排需同时用 ocr + stores + common，feature 层可合法向下 import 三者（见
+``tests/test_layering.py``）；``routes/tender.py`` 路由消费本模块，自身仅做 HTTP 编排。
 """
 
 from __future__ import annotations

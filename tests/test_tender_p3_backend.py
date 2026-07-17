@@ -50,7 +50,7 @@ SAMPLE_CRITERIA = {
 def test_criteria_backfill_writes_when_none(monkeypatch):
     """评标 completed + criteria in payload → 写入招标层 (当前为空)。"""
     from server.stores.tender_doc_store import get_project_doc, upsert_project_doc
-    from server.routes.tender_worker import _backfill_criteria
+    from server.tender.worker import _backfill_criteria
 
     pid = _pid()
     tenant = "t-crit-a"
@@ -74,7 +74,7 @@ def test_criteria_backfill_first_writer_wins(monkeypatch):
         update_project_doc_criteria,
         upsert_project_doc,
     )
-    from server.routes.tender_worker import _backfill_criteria
+    from server.tender.worker import _backfill_criteria
 
     pid = _pid()
     tenant = "t-crit-b"
@@ -95,7 +95,7 @@ def test_criteria_backfill_first_writer_wins(monkeypatch):
 
 def test_criteria_backfill_skips_none_project_id():
     """project_id 为 None (散单) 时直接跳过, 不抛异常。"""
-    from server.routes.tender_worker import _backfill_criteria
+    from server.tender.worker import _backfill_criteria
 
     # 不应抛任何异常
     _backfill_criteria(None, "any-tenant", SAMPLE_CRITERIA)
@@ -104,7 +104,7 @@ def test_criteria_backfill_skips_none_project_id():
 def test_criteria_backfill_skips_empty_criteria():
     """criteria 为 None 或空时跳过 (无需回填)。"""
     from server.stores.tender_doc_store import get_project_doc, upsert_project_doc
-    from server.routes.tender_worker import _backfill_criteria
+    from server.tender.worker import _backfill_criteria
 
     pid = _pid()
     tenant = "t-crit-c"
@@ -118,8 +118,8 @@ def test_criteria_backfill_skips_empty_criteria():
 
 def test_criteria_backfill_does_not_crash_on_exception(monkeypatch):
     """DB 异常时不应崩评标主流程: _backfill_criteria 吞掉异常、仅 log。"""
-    import server.routes.tender_worker as worker_mod
-    from server.routes.tender_worker import _backfill_criteria
+    import server.tender.worker as worker_mod
+    from server.tender.worker import _backfill_criteria
 
     call_count = {"n": 0}
 
@@ -137,7 +137,7 @@ def test_criteria_backfill_does_not_crash_on_exception(monkeypatch):
 
 def test_criteria_backfill_skips_project_not_in_db():
     """project_id 存在但招标层记录不存在时安全跳过。"""
-    from server.routes.tender_worker import _backfill_criteria
+    from server.tender.worker import _backfill_criteria
 
     # 没有预先创建 project doc → 应安全跳过
     _backfill_criteria(_pid(), "no-such-tenant", SAMPLE_CRITERIA)
@@ -289,7 +289,7 @@ def test_remove_project_submission_dir_rejects_traversal():
 def test_sanitize_tender_info_strips_unknown_keeps_known():
     """未知字段（如 bid_deadline）剥掉但不丢整对象——根因：schema additionalProperties:false
     下旧 validate 遇任一多余字段即抛错丢掉整份 tender_info → 区1 空白。"""
-    from server.routes.tender_doc_pipeline import sanitize_tender_info
+    from server.tender.doc_pipeline import sanitize_tender_info
 
     out = sanitize_tender_info(
         {
@@ -315,7 +315,7 @@ def test_sanitize_tender_info_strips_unknown_keeps_known():
 
 def test_sanitize_tender_info_drops_empty_and_nonstring():
     """空串/非 string/None 字段跳过；无任何可用字段或非 dict 入参 → None。"""
-    from server.routes.tender_doc_pipeline import sanitize_tender_info
+    from server.tender.doc_pipeline import sanitize_tender_info
 
     assert sanitize_tender_info(None) is None
     assert sanitize_tender_info("nope") is None
