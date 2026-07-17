@@ -145,7 +145,7 @@ items:
     effort: L
     wave: 2
     depends_on: [D6]
-    status: pending
+    status: done # 2026-07-18 merge 3b686d1(与 A 并行,codex sol-high 实现,主agent审读+独立验+全量 844 绿,MVP):server/ocr/rag.py(章节子树分块+index_document/search)+server/stores/rag_store.py(FTS5 trigram 中文分词+BM25+conn 注入,页锚保真硬护栏,_escape_match_query 防查询注入)+docstructure 2 helper 改名复用(chapter_heading/scan_page_context)+10测试。DEFER 后续:tender S1 接线(消费 search 定位 criteria 章)/旧 S9 KB 合并/外部数据脚手架/向量二期
     note: >
       用户拍板=结构化检索先行：SQLite FTS/BM25 + 章节/条款定位，零新依赖，离线部署零成本；
       向量检索作二期（backlog，触发条件见 roadmap.md）。吸收旧 roadmap S9 全部范围：
