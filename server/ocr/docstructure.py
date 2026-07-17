@@ -41,7 +41,7 @@ _TAG_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 
 
-def _scan_page_context(lines: Sequence[str]) -> tuple[list[int | None], set[int]]:
+def scan_page_context(lines: Sequence[str]) -> tuple[list[int | None], set[int]]:
     """Return the page visible at each line and all page numbers in anchors."""
     page_of: list[int | None] = []
     pages: set[int] = set()
@@ -60,7 +60,7 @@ def _scan_page_context(lines: Sequence[str]) -> tuple[list[int | None], set[int]
     return page_of, pages
 
 
-def _chapter_title(raw: str) -> tuple[str, int] | None:
+def chapter_heading(raw: str) -> tuple[str, int] | None:
     """Recognize a conservative chapter heading and return its title and level."""
     markdown = _MARKDOWN_TITLE_RE.match(raw)
     if markdown:
@@ -88,13 +88,13 @@ def parse_chapters(
     lines: Sequence[str], page_of: Sequence[int | None] | None = None
 ) -> list[dict[str, Any]]:
     """Parse formal headings into a nested chapter tree."""
-    contexts = page_of if page_of is not None else _scan_page_context(lines)[0]
+    contexts = page_of if page_of is not None else scan_page_context(lines)[0]
     roots: list[dict[str, Any]] = []
     stack: list[dict[str, Any]] = []
     for index, raw in enumerate(lines):
         if raw.strip().startswith("### 文件:"):
             continue
-        heading = _chapter_title(raw)
+        heading = chapter_heading(raw)
         if heading is None:
             continue
         title, level = heading
@@ -124,7 +124,7 @@ def extract_entities(
     lines: Sequence[str], page_of: Sequence[int | None] | None = None
 ) -> list[dict[str, Any]]:
     """Extract labeled amounts, dates, certificate numbers, and people."""
-    contexts = page_of if page_of is not None else _scan_page_context(lines)[0]
+    contexts = page_of if page_of is not None else scan_page_context(lines)[0]
     found: list[tuple[int, int, dict[str, Any]]] = []
     seen: set[tuple[str, str, int | None]] = set()
     for index, raw in enumerate(lines):
@@ -226,7 +226,7 @@ def merge_tables(
     lines: Sequence[str], page_of: Sequence[int | None] | None = None
 ) -> list[dict[str, Any]]:
     """Find conservative table segments and merge compatible cross-page continuations."""
-    contexts = page_of if page_of is not None else _scan_page_context(lines)[0]
+    contexts = page_of if page_of is not None else scan_page_context(lines)[0]
     segments: list[dict[str, Any]] = []
     index = 0
     while index < len(lines):
@@ -327,7 +327,7 @@ def _file_name(block: str, explicit: str | None) -> str:
 def build_doc_structure(block_or_body: str, *, file_name: str | None = None) -> dict[str, Any]:
     """Build a schema-shaped document structure from a pipeline extraction block."""
     lines = (block_or_body or "").splitlines()
-    page_of, pages = _scan_page_context(lines)
+    page_of, pages = scan_page_context(lines)
     return {
         "file": _file_name(block_or_body or "", file_name),
         "page_count": max(pages) if pages else None,
