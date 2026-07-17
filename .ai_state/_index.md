@@ -58,8 +58,8 @@ counts:
     explore: 1
 # === Pointers (指向最新相关文件) ===
 pointers:
-  latest_design: "roadmap/2026-07-doc-intelligence/roadmap.md"
-  latest_review: "sprints/2026-07-01-tender-detail-scoring-redesign/reviews/pass2.md" # 最新正式 review(pass2, 2026-07-01)；2026-06-23-tender-judgment-discipline 以 workflow(5 finder)替代正式 review, 验收见该 sprint design.md
+  latest_design: "sprints/2026-07-16-tender-feature-package/design.md" # D2 定稿(F6=A+Round1修订应答);roadmap 见 roadmap/2026-07-doc-intelligence/
+  latest_review: "sprints/2026-07-02-eval-tender-scaffold/reviews/pass1.md" # D1 review PASS(evaluator 4.6/5, 2026-07-16)+P2 quick fix 清零
   latest_cleanup: "sprints/2026-06-19-contract-audit-feature/cleanup-pass.md"
   latest_brainstorm: ""
   latest_decisions: ["compound/2026-07-16-decision-schema-split-tender.md", "compound/2026-07-15-decision-ocr-service-layer.md", "compound/2026-07-02-decision-ocr-routing-ladder.md", "compound/2026-06-20-decision-verification-gate-and-scaffolding.md", "compound/2026-06-19-decision-ops-below-routes-layering.md"]
