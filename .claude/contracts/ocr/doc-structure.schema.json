@@ -1,0 +1,80 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ocr_doc_structure",
+  "description": "单文件 OCR 底稿的确定性文档级结构化产物。",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "file": { "type": "string" },
+    "page_count": { "type": ["integer", "null"], "minimum": 1 },
+    "chapters": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/chapter" }
+    },
+    "entities": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/entity" }
+    },
+    "tables": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/table" }
+    }
+  },
+  "required": ["file", "page_count", "chapters", "entities", "tables"],
+  "$defs": {
+    "chapter": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "title": { "type": "string" },
+        "level": { "type": "integer", "minimum": 1, "maximum": 3 },
+        "page": { "type": ["integer", "null"], "minimum": 1 },
+        "tag": {
+          "type": ["string", "null"],
+          "enum": [
+            "qualification_review",
+            "evaluation_method",
+            "performance",
+            "commercial",
+            "technical",
+            "bid_form",
+            "general",
+            null
+          ]
+        },
+        "children": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/chapter" }
+        }
+      },
+      "required": ["title", "level", "page", "tag", "children"]
+    },
+    "entity": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": { "type": "string", "enum": ["amount", "date", "cert_no", "person"] },
+        "value": { "type": "string" },
+        "page": { "type": ["integer", "null"], "minimum": 1 },
+        "source": { "type": "string", "maxLength": 120 }
+      },
+      "required": ["type", "value", "page", "source"]
+    },
+    "table": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "start_page": { "type": ["integer", "null"], "minimum": 1 },
+        "end_page": { "type": ["integer", "null"], "minimum": 1 },
+        "columns": { "type": "array", "items": { "type": "string" } },
+        "row_count": { "type": "integer", "minimum": 0 },
+        "merged_from_pages": {
+          "type": "array",
+          "items": { "type": "integer", "minimum": 1 }
+        }
+      },
+      "required": ["name", "start_page", "end_page", "columns", "row_count", "merged_from_pages"]
+    }
+  }
+}
