@@ -29,7 +29,7 @@ def client(monkeypatch):
     monkeypatch.setenv("ALLOW_INSECURE_DEFAULT_TENANT_KEY", "")
     # Patch schedule_tender_evaluation_task to no-op (existing evaluate tests depend on it)
     monkeypatch.setattr(
-        "server.routes.tender.schedule_tender_evaluation_task", lambda **kwargs: None
+        "server.routes.tender.tasks.schedule_tender_evaluation_task", lambda **kwargs: None
     )
     return TestClient(api_module.app)
 
@@ -52,7 +52,7 @@ def _pdf_file(name: str = "tender.pdf") -> tuple[str, tuple]:
 
 def test_upload_tender_doc_returns_project_id_and_ocr_status(client, monkeypatch):
     """Successful upload returns {project_id, ocr_status}."""
-    import server.routes.tender as tender_module
+    import server.routes.tender.docs as tender_module
 
     # Patch background OCR so test doesn't actually run OCR
     monkeypatch.setattr(
@@ -72,7 +72,7 @@ def test_upload_tender_doc_returns_project_id_and_ocr_status(client, monkeypatch
 
 
 def test_upload_tender_doc_unknown_project_returns_404(client, monkeypatch):
-    import server.routes.tender as tender_module
+    import server.routes.tender.docs as tender_module
 
     monkeypatch.setattr(
         tender_module, "_start_project_doc_ocr_task", lambda *a, **kw: None
@@ -93,7 +93,7 @@ def test_upload_tender_doc_requires_auth(client):
 
 def test_upload_tender_doc_writes_to_store(client, monkeypatch):
     """After upload, tender_project_docs row exists with ocr_status running."""
-    import server.routes.tender as tender_module
+    import server.routes.tender.docs as tender_module
     from server.stores.tender_doc_store import get_project_doc
 
     monkeypatch.setattr(
@@ -116,7 +116,7 @@ def test_upload_tender_doc_writes_to_store(client, monkeypatch):
 
 
 def test_upload_bid_returns_bid_id_and_ocr_status(client, monkeypatch):
-    import server.routes.tender as tender_module
+    import server.routes.tender.docs as tender_module
 
     monkeypatch.setattr(
         tender_module, "_start_bid_doc_ocr_task", lambda *a, **kw: None
@@ -137,7 +137,7 @@ def test_upload_bid_returns_bid_id_and_ocr_status(client, monkeypatch):
 
 
 def test_upload_bid_unknown_project_returns_404(client, monkeypatch):
-    import server.routes.tender as tender_module
+    import server.routes.tender.docs as tender_module
 
     monkeypatch.setattr(
         tender_module, "_start_bid_doc_ocr_task", lambda *a, **kw: None
@@ -163,7 +163,7 @@ def test_upload_bid_requires_auth(client):
 
 def test_upload_bid_writes_to_store(client, monkeypatch):
     """After upload, tender_bid_docs row exists for project with running ocr_status."""
-    import server.routes.tender as tender_module
+    import server.routes.tender.docs as tender_module
     from server.stores.tender_doc_store import list_bid_docs
 
     monkeypatch.setattr(
@@ -189,7 +189,7 @@ def test_upload_bid_writes_to_store(client, monkeypatch):
 
 def test_upload_multiple_bids(client, monkeypatch):
     """Multiple bid uploads to same project each get unique bid_id."""
-    import server.routes.tender as tender_module
+    import server.routes.tender.docs as tender_module
 
     monkeypatch.setattr(
         tender_module, "_start_bid_doc_ocr_task", lambda *a, **kw: None
@@ -214,7 +214,7 @@ def test_upload_multiple_bids(client, monkeypatch):
 
 def test_docs_status_returns_structure(client, monkeypatch):
     """docs-status returns {tender_doc, bids} with expected fields."""
-    import server.routes.tender as tender_module
+    import server.routes.tender.docs as tender_module
 
     monkeypatch.setattr(
         tender_module, "_start_project_doc_ocr_task", lambda *a, **kw: None
