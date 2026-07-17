@@ -39,7 +39,7 @@ items:
     effort: L
     wave: 0
     depends_on: []
-    status: pending
+    status: done # 2026-07-18 merge 260a140:T1-T5 纯移动(worker/compare_worker/doc_pipeline→server/tender/ + tender.py→routes/tender/ 分节包 + features↛routes/ops/api 守卫);review PASS(reviewer CLEAN 逐字节+spec PASS);main 834 绿。范围收窄=纯移动(round2 F6 揭示 schema 分家实为共享 contract 行为重构)→残留 tender_output/evidence_resolution 拆出独立 sprint tender-schema-split(F6+F5),见 compound/2026-07-16-decision-carve-f6-schema-split-from-d2.md
     redzone: server-refactor
     note: >
       纯移动零行为变更，红区 worktree 强制（铁律[零写入]）。迁入：routes/ 的
@@ -130,7 +130,7 @@ items:
     effort: L
     wave: 2
     depends_on: [D1]
-    status: pending
+    status: done # 2026-07-18 merge c874bd8(提前拉起,与 D2 并行,codex sol-high 实现):server/ocr/docstructure.py 确定性(复用 boq _PAGE_RE/_AMOUNT_STRICT/_PAGE_CARRY_LINES,章节树+语义标签+实体+跨页表格保守合并,页锚硬护栏 page=真实号或 null 不臆造)+doc-structure.schema.json+12测试;主agent通读+独立跑测通过。tender S1 接线(find_chapters_by_tag 消费定位 evaluation_method 章)留薄 follow-up;D8 底稿瘦身可复用
     note: >
       从页级 VL 输出（Markdown+JSON）解析文档级结构：章节树+语义标签（资格审查章/评标办法章/
       业绩章）、跨页表格合并、实体（金额/日期/资质证书号/项目经理名）。boq.py 是领域感知先例。
