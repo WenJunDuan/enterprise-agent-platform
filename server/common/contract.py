@@ -55,7 +55,7 @@ def load_output_schema(schema_name: str = DEFAULT_OUTPUT_SCHEMA_NAME) -> dict[st
 
 def build_output_format(schema_name: str = DEFAULT_OUTPUT_SCHEMA_NAME) -> dict[str, Any]:
     """Build the SDK `output_format` payload for structured outputs."""
-    return {"type": "json_schema", "schema": load_output_schema(schema_name)}
+    return {"type": "json_schema", "schema": load_output_schema(_resolve_physical_schema_name(schema_name))}
 
 
 @dataclass(frozen=True)
@@ -77,6 +77,11 @@ class SchemaProcessor:
     # 闸：校验模型引用的出处是否真在底稿）。仅当调用方透传 evidence_source 才触发；不传则跳过
     # （向后兼容，audit/旧路径零影响）。签名 (output, evidence_source) → output。
     resolve: Callable[[StructuredJSON, str], StructuredJSON] | None = None
+    # schema_path: 物理 .claude/contracts 文件名覆盖（可选）。None（默认）＝物理文件与注册表 key
+    # 同名（现状，audit/expense 零变化）；设置时，本 key 的处理器链挂在 schema_name 下，但硬 schema
+    # 校验 / SDK output_format 复用 schema_path 指向的另一物理文件——供 tender 专属处理器链复用
+    # 共享 audit-result.json，不必产出 byte-identical 副本。
+    schema_path: str | None = None
 
 
 _SCHEMA_PROCESSORS: dict[str, SchemaProcessor] = {}
@@ -89,6 +94,7 @@ def register_schema_processor(
     validate: Callable[[StructuredJSON], None] | None = None,
     enrich: Callable[[StructuredJSON], StructuredJSON] | None = None,
     resolve: Callable[[StructuredJSON, str], StructuredJSON] | None = None,
+    schema_path: str | None = None,
 ) -> None:
     """Register conformance hooks for a schema.
 
@@ -96,8 +102,22 @@ def register_schema_processor(
     if/elif — open for extension, closed for modification.
     """
     _SCHEMA_PROCESSORS[schema_name] = SchemaProcessor(
-        normalize=normalize, validate=validate, enrich=enrich, resolve=resolve
+        normalize=normalize, validate=validate, enrich=enrich, resolve=resolve, schema_path=schema_path
     )
+
+
+def _resolve_physical_schema_name(schema_name: str) -> str:
+    """Resolve the physical `.claude/contracts/` file for a registry key.
+
+    A registered processor may declare `schema_path` to reuse a different physical
+    schema file than its own registry key (tender's key reuses the shared
+    audit-result.json without a byte-duplicate file). Unregistered keys, or
+    processors without schema_path, resolve to themselves — audit/expense unchanged.
+    """
+    processor = _SCHEMA_PROCESSORS.get(schema_name)
+    if processor is not None and processor.schema_path:
+        return processor.schema_path
+    return schema_name
 
 
 def _validate_against_json_schema(schema_name: str, structured_output: StructuredJSON) -> None:
@@ -162,7 +182,8 @@ def apply_schema_semantics(
     if processor is not None and processor.normalize is not None:
         structured_output = processor.normalize(structured_output, request_id)
     # G1（round4 F1）：JSON Schema 形校验先于语义处理（normalize 后、enrich 前）。
-    _validate_against_json_schema(schema_name, structured_output)
+    # T1 schema_path 别名：物理『形』校验解析到 schema_path 指向的文件（未设 → 原样 schema_name）。
+    _validate_against_json_schema(_resolve_physical_schema_name(schema_name), structured_output)
     if processor is None:
         return structured_output
     if processor.validate is not None:
