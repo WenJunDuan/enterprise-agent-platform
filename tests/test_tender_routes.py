@@ -34,7 +34,7 @@ def client(monkeypatch):
     monkeypatch.setattr(deps_module, "tenant_keys_are_default", lambda: False)
     monkeypatch.setenv("ALLOW_INSECURE_DEFAULT_TENANT_KEY", "")
     monkeypatch.setattr(
-        "server.routes.tender.schedule_tender_evaluation_task", lambda **kwargs: None
+        "server.routes.tender.tasks.schedule_tender_evaluation_task", lambda **kwargs: None
     )
     return TestClient(api_module.app)
 
@@ -120,7 +120,7 @@ def test_result_completed_returns_payload(client, monkeypatch):
             }
         )
         monkeypatch.setattr(
-            "server.routes.tender.get_result_payload_by_request_id",
+            "server.routes.tender.tasks.get_result_payload_by_request_id",
             lambda request_id, tenant: {
                 "response": {"verdict": "manual_review", "summary": "需要人工复核"}
             },
@@ -221,7 +221,7 @@ def test_worker_forwards_to_evaluate_bid_and_persists(monkeypatch):
     调度壳 monkeypatch 在 worker 模块，核心的 run_command_json 需 monkeypatch 在其下沉后的
     新家（server.tender.runner），否则真实网关调用会被触发（D1 T2 接缝）。
     """
-    import server.routes.tender_worker as worker
+    import server.tender.worker as worker
     import server.tender.runner as runner
 
     calls: dict = {}
@@ -358,7 +358,7 @@ def test_delete_unknown_returns_404(client):
 
 def test_evaluate_queue_full_returns_503(client, monkeypatch):
     # round4 F5 准入闸：在途任务满 → 503，不再无界接单。
-    monkeypatch.setattr("server.routes.tender.admission_available", lambda: False)
+    monkeypatch.setattr("server.routes.tender.tasks.admission_available", lambda: False)
     case = _make_dir_case("test-tender-503")
     try:
         resp = client.post(
@@ -608,7 +608,7 @@ def test_delete_project_with_accepted_bid_returns_409(client):
 def test_delete_project_with_active_compare_returns_409(client, monkeypatch):
     """codex P1-2：项目下有在途价格横比 → 删项目回 409（复用 has_active_compare 守卫）。"""
     pid = _create_project(client, tender_no=f"R-{uuid.uuid4().hex[:8]}")["project_id"]
-    monkeypatch.setattr("server.routes.tender.has_active_compare", lambda tenant, project_id: True)
+    monkeypatch.setattr("server.routes.tender.projects.has_active_compare", lambda tenant, project_id: True)
     resp = client.delete(f"/tender/projects/{pid}", headers=_AUTH)
     assert resp.status_code == 409
     assert client.get(f"/tender/projects/{pid}", headers=_AUTH).status_code == 200
@@ -631,7 +631,7 @@ def test_worker_threads_project_id(monkeypatch):
     D1 T2 接缝：run_command_json 现只在 server.tender.runner 内被调用（评标核心下沉），
     调度壳仍在 tender_worker——两个模块各 monkeypatch 各自需要的一半。
     """
-    import server.routes.tender_worker as worker
+    import server.tender.worker as worker
     import server.tender.runner as runner
 
     calls: dict = {}
@@ -671,7 +671,7 @@ def test_evaluate_and_retry_pass_project_id_to_schedule(client, monkeypatch):
     （retry 丢 project_id 会让 worker 以 None 归档，覆盖原 project-scoped 结论）。"""
     calls: list = []
     monkeypatch.setattr(
-        "server.routes.tender.schedule_tender_evaluation_task",
+        "server.routes.tender.tasks.schedule_tender_evaluation_task",
         lambda **kw: calls.append(kw),
     )
     pid = _create_project(client, tender_no=f"R-{uuid.uuid4().hex[:8]}")["project_id"]
@@ -696,7 +696,7 @@ def test_evaluate_upload_passes_prewarm_bid_id_to_schedule(client, monkeypatch):
 
     calls: list = []
     monkeypatch.setattr(
-        "server.routes.tender.schedule_tender_evaluation_task",
+        "server.routes.tender.tasks.schedule_tender_evaluation_task",
         lambda **kw: calls.append(kw),
     )
     pid = _create_project(client, tender_no=f"R-{uuid.uuid4().hex[:8]}")["project_id"]
@@ -719,7 +719,7 @@ def test_evaluate_upload_without_bid_id_passes_none(client, monkeypatch):
 
     calls: list = []
     monkeypatch.setattr(
-        "server.routes.tender.schedule_tender_evaluation_task",
+        "server.routes.tender.tasks.schedule_tender_evaluation_task",
         lambda **kw: calls.append(kw),
     )
     pid = _create_project(client, tender_no=f"R-{uuid.uuid4().hex[:8]}")["project_id"]

@@ -17,7 +17,7 @@ def _client(monkeypatch) -> TestClient:
     monkeypatch.setattr(deps_module, "tenant_keys_are_default", lambda: False)
     monkeypatch.setenv("ALLOW_INSECURE_DEFAULT_TENANT_KEY", "")
     monkeypatch.setattr(
-        "server.routes.tender.schedule_tender_evaluation_task", lambda **kwargs: None
+        "server.routes.tender.tasks.schedule_tender_evaluation_task", lambda **kwargs: None
     )
     return TestClient(api_module.app)
 

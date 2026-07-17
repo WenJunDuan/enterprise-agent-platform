@@ -198,9 +198,9 @@ def test_read_layer_no_project_id_falls_back(monkeypatch):
 
 def test_tender_ocr_purpose_relocated_and_reexported():
     """TENDER_OCR_PURPOSE 的权威定义现在是 server.tender.runner（方案 i 接缝①）；
-    server.routes.tender_doc_pipeline 只是 re-export 同一个对象，不再自己定义，
+    server.tender.doc_pipeline 只是 re-export 同一个对象，不再自己定义，
     routes/tender.py 既有的 import 引用点因此不用改。"""
-    import server.routes.tender_doc_pipeline as pipeline
+    import server.tender.doc_pipeline as pipeline
     import server.tender.runner as runner
 
     assert pipeline.TENDER_OCR_PURPOSE is runner.TENDER_OCR_PURPOSE

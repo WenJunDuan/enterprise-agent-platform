@@ -40,7 +40,7 @@ def client(monkeypatch):
     monkeypatch.setattr(deps_module, "tenant_keys_are_default", lambda: False)
     monkeypatch.setenv("ALLOW_INSECURE_DEFAULT_TENANT_KEY", "")
     monkeypatch.setattr(
-        "server.routes.tender.schedule_tender_evaluation_task", lambda **kwargs: None
+        "server.routes.tender.tasks.schedule_tender_evaluation_task", lambda **kwargs: None
     )
     return TestClient(api_module.app)
 
@@ -270,7 +270,7 @@ def test_p11_multiple_bids_only_current_bid_in_context(monkeypatch):
 
 def test_p11_bid_id_passed_through_schedule_to_worker(monkeypatch):
     """schedule_tender_evaluation_task accepts and passes bid_id."""
-    import server.routes.tender_worker as worker
+    import server.tender.worker as worker
 
     # The schedule function must accept bid_id and pass it to execute_tender_evaluation_task
     import inspect
@@ -309,7 +309,7 @@ def test_p12_start_project_ocr_uses_strong_ref(monkeypatch):
     """start_*_doc_ocr_task must register the created task via track_upload_ocr_task (防 GC)."""
     import inspect
 
-    import server.routes.tender_doc_pipeline as pipeline
+    import server.tender.doc_pipeline as pipeline
 
     src_proj = inspect.getsource(pipeline.start_project_doc_ocr_task)
     src_bid = inspect.getsource(pipeline.start_bid_doc_ocr_task)
@@ -348,16 +348,16 @@ def test_p13_project_doc_ocr_writes_failed_on_exception(monkeypatch):
     monkeypatch.setattr(deps_module, "tenant_keys_are_default", lambda: False)
     monkeypatch.setenv("ALLOW_INSECURE_DEFAULT_TENANT_KEY", "")
     monkeypatch.setattr(
-        "server.routes.tender.schedule_tender_evaluation_task", lambda **kwargs: None
+        "server.routes.tender.tasks.schedule_tender_evaluation_task", lambda **kwargs: None
     )
 
     def _raise(*args, **kwargs):
         raise RuntimeError("OCR engine down")
 
-    # S3: OCR 编排下沉 server.routes.tender_doc_pipeline；prewarm_and_text 在该模块导入。
-    import server.routes.tender_doc_pipeline as pipeline
+    # S3: OCR 编排下沉 server.tender.doc_pipeline；prewarm_and_text 在该模块导入。
+    import server.tender.doc_pipeline as pipeline
 
-    monkeypatch.setattr("server.routes.tender_doc_pipeline.prewarm_and_text", _raise)
+    monkeypatch.setattr("server.tender.doc_pipeline.prewarm_and_text", _raise)
 
     client = TestClient(api_module.app)
     pid = _make_project(client)
@@ -388,15 +388,15 @@ def test_p13_bid_doc_ocr_writes_failed_on_exception(monkeypatch):
     monkeypatch.setattr(deps_module, "tenant_keys_are_default", lambda: False)
     monkeypatch.setenv("ALLOW_INSECURE_DEFAULT_TENANT_KEY", "")
     monkeypatch.setattr(
-        "server.routes.tender.schedule_tender_evaluation_task", lambda **kwargs: None
+        "server.routes.tender.tasks.schedule_tender_evaluation_task", lambda **kwargs: None
     )
 
     def _raise(*args, **kwargs):
         raise RuntimeError("OCR engine down")
 
-    import server.routes.tender_doc_pipeline as pipeline
+    import server.tender.doc_pipeline as pipeline
 
-    monkeypatch.setattr("server.routes.tender_doc_pipeline.prewarm_and_text", _raise)
+    monkeypatch.setattr("server.tender.doc_pipeline.prewarm_and_text", _raise)
 
     client = TestClient(api_module.app)
     pid = _make_project(client)
@@ -426,7 +426,7 @@ def test_p13_project_doc_ocr_task_function_exists():
     """run_project_doc_ocr is an importable coroutine in tender_doc_pipeline (S3 下沉)."""
     import asyncio
 
-    import server.routes.tender_doc_pipeline as pipeline
+    import server.tender.doc_pipeline as pipeline
 
     assert hasattr(pipeline, "run_project_doc_ocr"), (
         "run_project_doc_ocr must be an importable coroutine in server/routes/tender_doc_pipeline.py"
@@ -440,7 +440,7 @@ def test_p13_bid_doc_ocr_task_function_exists():
     """run_bid_doc_ocr is an importable coroutine in tender_doc_pipeline (S3 下沉)."""
     import asyncio
 
-    import server.routes.tender_doc_pipeline as pipeline
+    import server.tender.doc_pipeline as pipeline
 
     assert hasattr(pipeline, "run_bid_doc_ocr"), (
         "run_bid_doc_ocr must be an importable coroutine in server/routes/tender_doc_pipeline.py"
@@ -461,14 +461,14 @@ def test_p13_project_doc_ocr_writes_failed_on_rendered_error_block(monkeypatch):
     monkeypatch.setattr(deps_module, "tenant_keys_are_default", lambda: False)
     monkeypatch.setenv("ALLOW_INSECURE_DEFAULT_TENANT_KEY", "")
     monkeypatch.setattr(
-        "server.routes.tender.schedule_tender_evaluation_task", lambda **kwargs: None
+        "server.routes.tender.tasks.schedule_tender_evaluation_task", lambda **kwargs: None
     )
 
-    import server.routes.tender_doc_pipeline as pipeline
+    import server.tender.doc_pipeline as pipeline
 
     error_block = "### 文件: bad.pdf (kind=pdf, route=ocr)\n[识别失败] OCR engine down"
     monkeypatch.setattr(
-        "server.routes.tender_doc_pipeline.prewarm_and_text", lambda *a, **kw: error_block
+        "server.tender.doc_pipeline.prewarm_and_text", lambda *a, **kw: error_block
     )
 
     client = TestClient(api_module.app)
@@ -493,14 +493,14 @@ def test_p13_bid_doc_ocr_writes_failed_on_rendered_error_block(monkeypatch):
     monkeypatch.setattr(deps_module, "tenant_keys_are_default", lambda: False)
     monkeypatch.setenv("ALLOW_INSECURE_DEFAULT_TENANT_KEY", "")
     monkeypatch.setattr(
-        "server.routes.tender.schedule_tender_evaluation_task", lambda **kwargs: None
+        "server.routes.tender.tasks.schedule_tender_evaluation_task", lambda **kwargs: None
     )
 
-    import server.routes.tender_doc_pipeline as pipeline
+    import server.tender.doc_pipeline as pipeline
 
     error_block = "### 文件: bid.pdf (kind=pdf, route=ocr)\n[识别失败] OCR engine down"
     monkeypatch.setattr(
-        "server.routes.tender_doc_pipeline.prewarm_and_text", lambda *a, **kw: error_block
+        "server.tender.doc_pipeline.prewarm_and_text", lambda *a, **kw: error_block
     )
 
     client = TestClient(api_module.app)
@@ -534,12 +534,12 @@ def test_p14_upload_tender_doc_no_file_returns_400(monkeypatch):
     monkeypatch.setattr("server.routes.deps.TENANT_KEYS", {"default": _TOKEN})
     import server.api as api_module
     import server.routes.deps as deps_module
-    import server.routes.tender as tender_module
+    import server.routes.tender.docs as tender_module
 
     monkeypatch.setattr(deps_module, "tenant_keys_are_default", lambda: False)
     monkeypatch.setenv("ALLOW_INSECURE_DEFAULT_TENANT_KEY", "")
     monkeypatch.setattr(
-        "server.routes.tender.schedule_tender_evaluation_task", lambda **kwargs: None
+        "server.routes.tender.tasks.schedule_tender_evaluation_task", lambda **kwargs: None
     )
     monkeypatch.setattr(
         tender_module, "_start_project_doc_ocr_task", lambda *a, **kw: None
@@ -560,12 +560,12 @@ def test_p14_upload_bid_no_file_returns_400(monkeypatch):
     monkeypatch.setattr("server.routes.deps.TENANT_KEYS", {"default": _TOKEN})
     import server.api as api_module
     import server.routes.deps as deps_module
-    import server.routes.tender as tender_module
+    import server.routes.tender.docs as tender_module
 
     monkeypatch.setattr(deps_module, "tenant_keys_are_default", lambda: False)
     monkeypatch.setenv("ALLOW_INSECURE_DEFAULT_TENANT_KEY", "")
     monkeypatch.setattr(
-        "server.routes.tender.schedule_tender_evaluation_task", lambda **kwargs: None
+        "server.routes.tender.tasks.schedule_tender_evaluation_task", lambda **kwargs: None
     )
     monkeypatch.setattr(
         tender_module, "_start_bid_doc_ocr_task", lambda *a, **kw: None
@@ -618,13 +618,13 @@ def test_p15_delete_project_clears_project_doc_dir(monkeypatch):
     monkeypatch.setattr("server.routes.deps.TENANT_KEYS", {"default": _TOKEN})
     import server.api as api_module
     import server.routes.deps as deps_module
-    import server.routes.tender as tender_module
+    import server.routes.tender.projects as tender_module
     from server.stores.tender_doc_store import upsert_project_doc
 
     monkeypatch.setattr(deps_module, "tenant_keys_are_default", lambda: False)
     monkeypatch.setenv("ALLOW_INSECURE_DEFAULT_TENANT_KEY", "")
     monkeypatch.setattr(
-        "server.routes.tender.schedule_tender_evaluation_task", lambda **kwargs: None
+        "server.routes.tender.tasks.schedule_tender_evaluation_task", lambda **kwargs: None
     )
 
     client = TestClient(api_module.app)
@@ -884,7 +884,7 @@ def test_client_disconnect_handled_in_upload_tender_doc():
     """upload_tender_doc source must contain ClientDisconnect handling."""
     import inspect
 
-    import server.routes.tender as t
+    import server.routes.tender.docs as t
 
     src = inspect.getsource(t.upload_tender_doc)
     assert "ClientDisconnect" in src, (
@@ -896,7 +896,7 @@ def test_client_disconnect_handled_in_upload_bid_doc():
     """upload_bid_doc source must contain ClientDisconnect handling."""
     import inspect
 
-    import server.routes.tender as t
+    import server.routes.tender.docs as t
 
     src = inspect.getsource(t.upload_bid_doc)
     assert "ClientDisconnect" in src, (
@@ -908,7 +908,7 @@ def test_client_disconnect_handled_in_submit_bid_evaluation():
     """_submit_bid_evaluation source must contain ClientDisconnect handling."""
     import inspect
 
-    import server.routes.tender as t
+    import server.routes.tender.tasks as t
 
     src = inspect.getsource(t._submit_bid_evaluation)
     assert "ClientDisconnect" in src, (
@@ -923,12 +923,12 @@ def test_client_disconnect_returns_400_in_tender_doc(monkeypatch):
     monkeypatch.setattr("server.routes.deps.TENANT_KEYS", {"default": _TOKEN})
     import server.api as api_module
     import server.routes.deps as deps_module
-    import server.routes.tender as tender_module
+    import server.routes.tender.docs as tender_module
 
     monkeypatch.setattr(deps_module, "tenant_keys_are_default", lambda: False)
     monkeypatch.setenv("ALLOW_INSECURE_DEFAULT_TENANT_KEY", "")
     monkeypatch.setattr(
-        "server.routes.tender.schedule_tender_evaluation_task", lambda **kwargs: None
+        "server.routes.tender.tasks.schedule_tender_evaluation_task", lambda **kwargs: None
     )
     monkeypatch.setattr(
         tender_module, "_start_project_doc_ocr_task", lambda *a, **kw: None
@@ -962,12 +962,12 @@ def test_client_disconnect_returns_400_in_upload_bid(monkeypatch):
     monkeypatch.setattr("server.routes.deps.TENANT_KEYS", {"default": _TOKEN})
     import server.api as api_module
     import server.routes.deps as deps_module
-    import server.routes.tender as tender_module
+    import server.routes.tender.docs as tender_module
 
     monkeypatch.setattr(deps_module, "tenant_keys_are_default", lambda: False)
     monkeypatch.setenv("ALLOW_INSECURE_DEFAULT_TENANT_KEY", "")
     monkeypatch.setattr(
-        "server.routes.tender.schedule_tender_evaluation_task", lambda **kwargs: None
+        "server.routes.tender.tasks.schedule_tender_evaluation_task", lambda **kwargs: None
     )
     monkeypatch.setattr(
         tender_module, "_start_bid_doc_ocr_task", lambda *a, **kw: None
@@ -1004,7 +1004,7 @@ def test_client_disconnect_returns_400_in_submit_bid_evaluation(monkeypatch):
     monkeypatch.setattr(deps_module, "tenant_keys_are_default", lambda: False)
     monkeypatch.setenv("ALLOW_INSECURE_DEFAULT_TENANT_KEY", "")
     monkeypatch.setattr(
-        "server.routes.tender.schedule_tender_evaluation_task", lambda **kwargs: None
+        "server.routes.tender.tasks.schedule_tender_evaluation_task", lambda **kwargs: None
     )
 
     from fastapi import Request

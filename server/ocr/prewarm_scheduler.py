@@ -2,8 +2,8 @@
 
 S3 抽离：从 ``routes/tender.py`` 下沉的**通用 OCR 编排基建**——上传即 OCR 的并发上限信号量、
 防 fire-and-forget 任务被 GC 静默回收的强引用集、按 ``project_id`` 分桶以便删项目时定向取消。
-属 ocr feature 层的通用能力，由 routes 层（``tender_doc_pipeline``）消费；本模块只依赖 stdlib，
-不引 stores/routes，避免层级反转。
+属 ocr feature 层的通用能力，由同为 feature 层的 ``server.tender.doc_pipeline``（D2 从
+``routes/tender_doc_pipeline.py`` 移入）消费；本模块只依赖 stdlib，不引 stores/routes，避免层级反转。
 """
 
 from __future__ import annotations
