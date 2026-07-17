@@ -27,14 +27,6 @@ from server.common.contract import (
     StructuredJSON,
     register_schema_processor,
 )
-from server.common.tender_output import (
-    _finalize_user_explanation,
-    _has_hard_disqualification,
-    _normalize_optional_plan,
-    _verify_plan_shape,
-    _verify_score_mode_consistency,
-    _verify_scoring_consistency,
-)
 from server.platform.paths import PROJECT_ROOT
 
 
@@ -190,7 +182,6 @@ def enrich_audit_decision(structured_output: StructuredJSON) -> StructuredJSON:
             normalized_dims = _coerce_risk_dimensions(structured_output["risk_dimensions"])
             if normalized_dims is not None:
                 structured_output["risk_dimensions"] = normalized_dims
-        _finalize_user_explanation(structured_output)
     return structured_output
 
 
@@ -306,9 +297,6 @@ def _validate_audit_result(structured_output: StructuredJSON) -> None:
                         f"policy_refs 引用了不存在的 rule_id（疑似编造）: {unknown}"
                     )
 
-    _verify_scoring_consistency(structured_output)
-    _verify_score_mode_consistency(structured_output)
-    _verify_plan_shape(structured_output)
     _cleanse_risk_dimensions(structured_output)
 
 
@@ -400,16 +388,6 @@ def normalize_audit_result(
     if not isinstance(structured_output, dict):
         return structured_output
     _stamp_server_metadata(structured_output, request_id)
-    # 承重 verdict 一致性：废标/资格否决独立 gate 优先级最高——extracted_data.disqualification_hits
-    # 非空，或任一 eligibility_checks.status=fail（命中硬废标/资格否决）→ verdict 必须 rejected
-    # （命令 S4 法定规则）。模型偶把"投错标/实质性未响应"判成 manual_review（S4 在"废标→rejected"
-    # 与"有 manual_review 项→manual_review"间优先级含糊，模型择后者，与其自己标的 disqualification_hits
-    # 自相矛盾）→ 此处确定性纠偏。跑在硬校验**前** → 纠偏后的 rejected 仍过 policy_refs 真伪闸
-    # （模型既已据废标条款标 disqualification_hits，通常已带 policy_refs；缺则校验失败触发重试，正确）。
-    if structured_output.get("verdict") != "rejected" and _has_hard_disqualification(
-        structured_output.get("extracted_data")
-    ):
-        structured_output["verdict"] = "rejected"
     # manual_review_reason 仅对 verdict=manual_review 有意义；approved/rejected 时模型偶尔仍带出
     # 旧枚举（如 data_conflict），会残留进结论误导前端/消费者 → 非 manual_review 一律剥离。
     if structured_output.get("verdict") != "manual_review":
@@ -438,9 +416,7 @@ def normalize_audit_result(
     # qwen/deepseek 评标 `evidence_chain/N` 反复挂 rule_ref/relevance）。剥到契约允许的
     # {source,finding,conclusion} + 补缺省，使其稳过校验，不因展示字段拖垮整单评标。
     _normalize_evidence_chain(structured_output)
-    # 降评标重试：可选 plan 形不对 → 丢（非承重）；policy_refs 里编造的 rule_id → 剥
-    # （留真实引用，承重无依据仍由承重依据闸拒）。两者原本任一不合即整单契约失败、重跑整个 ~290s 评标。
-    _normalize_optional_plan(structured_output)
+    # policy_refs 里编造的 rule_id → 剥（留真实引用，承重无依据仍由承重依据闸拒）。
     _strip_unknown_policy_refs(structured_output)
     # result/conclusion 是服务端从 verdict 派生的【决策】字段（enrich 后才有）；
     # 模型【自报】它们＝篡改决策，必须拒、绝不静默剥离。

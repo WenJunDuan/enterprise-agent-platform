@@ -31,7 +31,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from server.common.tender_output import is_real_number
+from server.tender.output import is_real_number
 from server.tender.runner import run_tender_evaluation
 
 _VALID_VERDICTS = {"approved", "rejected", "manual_review"}
