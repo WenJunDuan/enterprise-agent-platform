@@ -549,3 +549,38 @@ def test_cli_import_registers_tender_schema():
   尚未瘦身的 tender helper（违反"共享层不再依赖 tender"的目标状态），要么需要一次性的临时反向
   import 作为过渡胶水（用完即删的一次性代码，不产生长期价值，纯粹增加 diff 噪音）。两条路径都不如
   把"移动 + 拆分 + 注册"揉进同一个原子 commit 干净，故按当前 T2 粒度执行。
+
+---
+
+## Round 1 · Critic 修订应答（2026-07-18，opus critic → NEEDS_REVISION，主 agent 落实）
+
+> opus 独立复核（含实测 monkeypatch 验证）判 NEEDS_REVISION：1 P0（F1 行为保真漏洞）+ 1 P2（F2 文档完整性）。
+> 三个待核实点**全 CONFIRMED**：build_output_format 确为第二物理 schema 解析点且无漏第三处（diagnostics/
+> credit_api/PLAN_SCHEMA 都不会被别名）；测试迁移计数精确（38/22/2）；F5 边界逐函数 28 定义比对完全正确、
+> 无反向依赖。**本节为 impl 前必补，generator 以本节为准（覆盖上文 T3 中"import 路径没变不用改"的表述）。**
+
+**F1 [P0] → resolve_audit_evidence 二次 enrich 必须用 tender 组合版（修 + 补 TDD 守卫）**
+- 根因（critic 实测确认）：`evidence_resolution.py:629`（T3 迁往 `server/tender/evidence.py` 的同段）里
+  `resolve_audit_evidence` 在 evidence 降级触发 verdict `approved→manual_review` 后，惰性
+  `from server.common.output_contracts import enrich_audit_decision` 重算 result/conclusion。但 T2 已把
+  **通用版** `enrich_audit_decision` 瘦身（删 `_finalize_user_explanation`）——原 T3 只判"import 路径字符串
+  没变、不用改"，漏了"被 import 的函数体行为已被 T2 改变"。后果：拆分后 verdict 已翻 manual_review、评分已降
+  null，但 explanation 仍是陈旧"…合计 40 分"，**静默失真呈现给人工复核**。全量 pytest 绿也测不出
+  （`test_pipeline_with_evidence_source_runs_resolution` 断言 evidence/scoring/verdict/result，**不断言 explanation**）。
+- **修复（T3 强制）**：`server/tender/evidence.py` 的 `resolve_audit_evidence` 二次 enrich 改惰性
+  `from server.tender.output import enrich_tender_result`（tender 组合版，含 `_finalize_user_explanation`；
+  同样惰性 import 断模块加载期环，不新增环）。**不得**用 common 的瘦身通用版。
+- **新增回归测试（T3/T5 强制，TDD 守卫，非走过场）**：断言"evidence 降级触发 verdict 翻转后 explanation 含
+  刷新后的『得分小结：…』（反映降级后的 score=null/合计变化）"。generator 须**先在拆分前基线写此测试并确认
+  当前通过**（保真基线），**再证明：拆分后若二次 enrich 误用通用瘦身版 → 此测试失败；改用
+  `enrich_tender_result` → 转绿**。这条即 F1 保真的守卫。
+
+**F2 [P2] → 测试迁移"无需改动"表补一行**
+- `tests/test_tender_info_extraction.py:830/904` 各有一处 `schema_name="common/audit-result.schema.json"`
+  字面量（在 `_fake_meta()` 构造 AgentRunMeta 替身里），与已核实免动的 `test_tender_read_layer.py`/
+  `test_codex_p2_rework_fixes.py` 同类 inert 占位、**从不被断言**，免动。含该字面量的文件实为 7 个（critic
+  grep 核实），本设计迁移分类补齐这一条，坐实完整性 claim。
+
+**门禁状态**：除 F1 外全部经 opus 独立核验为真。F1 修复具体、可 TDD 守卫；主 agent 判**修订后 ready 进 impl**
+（红区 worktree 强制：generator + `isolation:worktree`，T1-T6 每步单 commit + pytest 绿再进下一，**F1 回归测试
+为 T3 硬门**）。impl 后照常走 review 三件套 + evaluator，F1 保真是 spec-compliance 重点核查项。
