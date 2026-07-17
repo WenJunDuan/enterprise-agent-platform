@@ -192,3 +192,61 @@ items.yaml D2 note；D1 design.md Round 2 F6。_
 3. **F3** 自注册 import 触发点 + "TENDER_SCHEMA 已注册"直接断言测试
 4. **F4** #8 worker harness 移出 D2（独立 sprint），T3 删除/标"不进 D2"
 5. **F5** evidence_resolution 拆分（按#10）vs 整搬记债 二选一拍板
+
+---
+
+## Round 1 修订应答（2026-07-16，F1/F5 用户已拍板）
+
+> 进 impl 前 design 定稿**以本应答为准**（覆盖上文 draft 中"待定/或留 common/随 F6 定"等未决表述）。
+> 已核验代码（contract.py:32-175 / evidence_resolution.py 结构 / cli.py:195-215 / test_cli_tender_evaluate.py）。
+> **范围校准**：D2 = tender 纯移动 + F6 schema 分家（**含 contract 机制向后兼容小改**）+ evidence 拆分；
+> 不再是纯"零行为移动"。
+
+**F1 → schema_path 别名（用户拍板）**
+- `SchemaProcessor`（contract.py:61-79 frozen dataclass）加字段 `schema_path: str | None = None`；
+  `register_schema_processor`（:85-100）加同名可选参数透传。
+- `apply_schema_semantics`（:161 取 processor 后）把物理 schema 解析改用 `processor.schema_path or
+  schema_name`——`_validate_against_json_schema`（:103）增一个"物理 schema 名"参数，由 apply 传入
+  `processor.schema_path or schema_name`（未注册 processor 时回退 schema_name，audit/expense 零变化）。
+- tender 注册：`register_schema_processor(TENDER_OUTPUT_SCHEMA_NAME, normalize/validate/enrich/resolve=…,
+  schema_path=DEFAULT_OUTPUT_SCHEMA_NAME)`——key=tender 专属名（挂 tender 处理器链），物理 json 复用
+  audit-result.json（不建新文件、无漂移）。
+- 接缝测试：tender key 走 tender 处理器链 + 物理形校验仍用 audit-result.json（形校验行为不变）。
+
+**F2 → 补 cli.py 第二调用点**
+- `cli.py:212` tender-evaluate-json 的 `schema_name=DEFAULT_OUTPUT_SCHEMA_NAME` → `TENDER_OUTPUT_SCHEMA_NAME`。
+- `test_cli_tender_evaluate.py:18` `EVAL_SCHEMA` + `:32/:89/:93` 断言同步改 tender schema 名；测试
+  `test_evaluate_bid_json_uses_audit_result_schema` 语义/名改为走 tender schema。
+- 接缝测试 3 条 → **4 条**（+cli.py 路径确实走 tender 校验，防 bug 从第二入口复现）。
+
+**F3 → 自注册触发点**
+- tender_output 迁入 `server/tender/output.py` 后，模块级调 `register_schema_processor(TENDER_OUTPUT_SCHEMA_NAME, …)`；
+  由 `server/tender/__init__.py` import output 模块保证"加载 server.tender 即注册"（runner/worker/eval/cli
+  任一入口 import server.tender 都触发）。
+- 补测试：直接断言 `_SCHEMA_PROCESSORS` 含 `TENDER_OUTPUT_SCHEMA_NAME`（不只测行为副作用）。
+
+**F4 → #8 worker harness 移出 D2**
+- #8（audit/tender/compare worker 三胞胎抽 background job harness）**不进 D2**，独立 sprint
+  （跨三消费者一起做才站得住，避免撞"不动 audit 域"）。D2 只做 tender worker 纯移动 + F6。
+  验收标准无 harness 项；范围附加项段的 #8 标"移出 D2"。
+
+**F5 → evidence_resolution 拆分（用户拍板：通用留 common）**
+- 通用检索内核留 common（**建议独立 `server/common/corpus.py`，为 D7 结构化检索预留**）：
+  `normalize_text/_parse_file_head/_normalize_filename/parse_corpus/CorpusIndex/_cap_corpus/
+  existence_ratio/page_status/parse_source/_classify`（evidence_resolution.py:112-453 语料解析+匹配打分原语）。
+- tender/audit 专属整合迁 `server/tender/evidence.py`：`resolve_audit_evidence`(:500) + scoring 专属助手
+  (`_check_one/_check_hits/_hit_moves_score/_downgrade_scoring_item/_flag_low_clarity_sources`, :355-499)，
+  挂 tender schema 的 resolve hook。
+- 精确边界 impl 时按"是否碰 scoring 语义"划（碰 scoring→迁 tender / 纯语料·匹配→留 common）。
+- 效果：ocr 测试（test_ocr_pipeline.py:686 / test_boq.py:167 用 CorpusIndex/existence_ratio/
+  normalize_text/parse_corpus）import 改指 corpus.py，**不耦合 tender**；D7 直接复用 corpus.py。
+
+**F6-F8（P2，impl 顺手带）**
+- F6：`eval.py:34 from server.common.tender_output import is_real_number` → 迁移后新路径
+  （tender_output → server/tender/output.py）。
+- F7：验收护航拆两层——本地 pre-merge = 14/25 pytest + layering + 接缝测试；部署机 post-merge =
+  D1 eval 闸真跑（需网关，非阻塞）。别让人误以为 eval 闸能本地 CI 自动跑。
+- F8：每个 Ti 各自一 commit，pytest 全绿再进下一 Ti（红区回滚锚点）。
+
+**状态**：F1/F5 已拍板、F2/F3/F4 已定，5 项 impl 前必补均已落地为可执行指引。**下一步可选**：再过一轮 critic
+确认（推荐，因引入 contract 机制小改）/ 或主 agent 直接判 ready 进 impl。

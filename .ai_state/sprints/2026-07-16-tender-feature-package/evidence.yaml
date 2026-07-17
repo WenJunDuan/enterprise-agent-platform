@@ -1,0 +1,7 @@
+sprint_slug: "2026-07-16-tender-feature-package"
+collected_evidence:
+  - tool_use_id: "toolu_01P1uPa9MZCk8FPvTpTAseY9"
+    tool: "Bash"
+    result: pass
+    command: "grep -n \"def main\\|argparse\\|golden_manifest\\|network_in_polish\\|requires network\\|skip\\|pytest.mark\" server/tender/eval.py | head -40"
+    timestamp: "2026-07-16T09:24:31.305Z"
