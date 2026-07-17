@@ -233,6 +233,8 @@ backlog:
 decisions_made:
   - "✅ 2026-07-15 **D1/D2 共用：OCR 分层归属=方案 i**——ocr 降为 feature 之下服务层,守卫改单向(允许 tender/audit→ocr,禁止 ocr→tender/audit)。见 D1 design.md Round 2 决议记录 + compound/2026-07-15-decision-ocr-service-layer.md"
   - "✅ 2026-07-16 **D2 F6:tender_output/evidence_resolution 归属=方案 A schema 分家**——tender 6 校验+evidence resolve 挂 tender 专属 schema 名,audit/expense 用纯通用处理器,两模块合法迁入 server/tender/;行为接缝(schema 名变更)由 D1 eval 闸+接缝测试护航。见 sprints/2026-07-16-tender-feature-package/design.md F6 节 + compound/2026-07-16-decision-schema-split-tender.md"
+  - "✅ 2026-07-16 **D2 F1(critic P0):schema 分家机制=schema_path 别名**——SchemaProcessor+register_schema_processor 加可选 schema_path 字段,tender 挂专属 key 但复用 audit-result.json 物理文件(不建新文件/无漂移);apply_schema_semantics 用 processor.schema_path or schema_name 解析物理文件。见 design.md Round1 修订应答"
+  - "✅ 2026-07-16 **D2 F5(critic P1):evidence_resolution=拆分(通用留 common)**——通用检索原语(parse_corpus/CorpusIndex/existence_ratio/normalize_text 等 :112-453)留 common(建议独立 server/common/corpus.py 为 D7 预留),仅 resolve_audit_evidence 整合层+scoring 专属助手迁 server/tender/evidence.py。ocr 测试不耦合 tender。见 design.md Round1 修订应答"
 
 decisions_needed:
   - "D3: 延迟差值可接受阈值（spike 出数后拍板统一方向）"
