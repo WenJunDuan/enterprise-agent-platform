@@ -1,3 +1,15 @@
 {"schema_version":1,"event":"SubagentStart","agent_id":"ab8a656fe5ae7fbcd","agent_type":"critic","sprint_slug":"2026-07-16-tender-feature-package","timestamp":"2026-07-16T09:18:25.607Z"}
 {"schema_version":1,"event":"SubagentStart","agent_id":"ab8a656fe5ae7fbcd","agent_type":"critic","sprint_slug":"2026-07-16-tender-feature-package","timestamp":"2026-07-16T09:28:26.487Z"}
 {"schema_version":1,"event":"SubagentStop","agent_id":"ab8a656fe5ae7fbcd","agent_type":"critic","sprint_slug":"2026-07-16-tender-feature-package","timestamp":"2026-07-16T09:29:47.448Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"aeb1416b6c3a06010","agent_type":"statusline-setup","sprint_slug":"2026-07-16-tender-feature-package","timestamp":"2026-07-17T02:36:14.242Z"}
+{"schema_version":1,"event":"SubagentStop","agent_id":"aeb1416b6c3a06010","agent_type":"statusline-setup","sprint_slug":"2026-07-16-tender-feature-package","timestamp":"2026-07-17T02:36:52.533Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"aeb1416b6c3a06010","agent_type":"statusline-setup","sprint_slug":"2026-07-16-tender-feature-package","timestamp":"2026-07-17T02:37:48.134Z"}
+{"schema_version":1,"event":"SubagentStop","agent_id":"aeb1416b6c3a06010","agent_type":"statusline-setup","sprint_slug":"2026-07-16-tender-feature-package","timestamp":"2026-07-17T02:44:01.344Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"a89ff4bc41c5515c8","agent_type":"critic","sprint_slug":"2026-07-16-tender-feature-package","timestamp":"2026-07-17T03:05:03.337Z"}
+{"schema_version":1,"event":"SubagentStop","agent_id":"a89ff4bc41c5515c8","agent_type":"critic","sprint_slug":"2026-07-16-tender-feature-package","timestamp":"2026-07-17T03:18:20.804Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"a06a7cad0b270e604","agent_type":"generator","sprint_slug":"2026-07-16-tender-feature-package","timestamp":"2026-07-17T08:03:44.839Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"a06a7cad0b270e604","agent_type":"generator","sprint_slug":"2026-07-16-tender-feature-package","timestamp":"2026-07-17T09:03:57.239Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"a5d07294c0150f60f","agent_type":"reviewer","sprint_slug":"2026-07-16-tender-feature-package","timestamp":"2026-07-17T22:09:25.568Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"a82f0ace75cfa18bb","agent_type":"spec-compliance","sprint_slug":"2026-07-16-tender-feature-package","timestamp":"2026-07-17T22:09:35.273Z"}
+{"schema_version":1,"event":"SubagentStop","agent_id":"a82f0ace75cfa18bb","agent_type":"spec-compliance","sprint_slug":"2026-07-16-tender-feature-package","timestamp":"2026-07-17T22:18:23.848Z"}
+{"schema_version":1,"event":"SubagentStop","agent_id":"a5d07294c0150f60f","agent_type":"reviewer","sprint_slug":"2026-07-16-tender-feature-package","timestamp":"2026-07-17T22:19:03.392Z"}

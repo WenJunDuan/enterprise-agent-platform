@@ -5,3 +5,8 @@ collected_evidence:
     result: pass
     command: "grep -n \"def main\\|argparse\\|golden_manifest\\|network_in_polish\\|requires network\\|skip\\|pytest.mark\" server/tender/eval.py | head -40"
     timestamp: "2026-07-16T09:24:31.305Z"
+  - tool_use_id: "toolu_012bPGV3ENdrFMQApxxEiuVZ"
+    tool: "Bash"
+    result: pass
+    command: "python -m pytest -q 2>&1 | tail -25"
+    timestamp: "2026-07-17T22:15:44.693Z"
