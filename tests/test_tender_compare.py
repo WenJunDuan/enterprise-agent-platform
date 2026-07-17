@@ -111,7 +111,7 @@ def test_compare_schema_loads_and_validates():
 
 
 def test_collect_compare_input_and_signature():
-    from server.routes.tender_compare_worker import collect_compare_input
+    from server.tender.compare_worker import collect_compare_input
 
     pid = get_or_create_project(tenant="acme", tender_no=f"R-{uuid.uuid4().hex[:8]}")["project_id"]
     _archive_bid(pid, "B1", 1000.0)
@@ -127,7 +127,7 @@ def test_collect_compare_input_and_signature():
 
 
 def test_collect_returns_none_when_under_two():
-    from server.routes.tender_compare_worker import collect_compare_input
+    from server.tender.compare_worker import collect_compare_input
 
     pid = get_or_create_project(tenant="acme", tender_no=f"R-{uuid.uuid4().hex[:8]}")["project_id"]
     _archive_bid(pid, "B1", 1000.0)
@@ -198,7 +198,7 @@ def test_get_compare_result_and_stale(client):
     from server.stores.tender_compare_store import (
         upsert_compare_result,
     )
-    from server.routes.tender_compare_worker import collect_compare_input
+    from server.tender.compare_worker import collect_compare_input
 
     pid = _new_project(client)
     _archive_bid(pid, "B1", 1000.0)
@@ -229,7 +229,7 @@ def test_compare_does_not_pollute_results_or_roster(client, monkeypatch):
     """
     import asyncio as _asyncio
 
-    import server.routes.tender_compare_worker as worker
+    import server.tender.compare_worker as worker
 
     pid = _new_project(client)
     _archive_bid(pid, "B1", 1000.0)
@@ -267,7 +267,7 @@ def test_compare_does_not_pollute_results_or_roster(client, monkeypatch):
 
 def test_collect_flags_criteria_inconsistent(client):
     """codex P1.1：各家 criteria 不一致 → compare 输入标 criteria_inconsistent=true。"""
-    from server.routes.tender_compare_worker import collect_compare_input
+    from server.tender.compare_worker import collect_compare_input
 
     pid = _new_project(client)
     _archive_bid(pid, "B1", 1000.0, criteria=_criteria(price_max=40))
@@ -278,7 +278,7 @@ def test_collect_flags_criteria_inconsistent(client):
 
 def test_collect_criteria_consistent_when_same(client):
     """各家 criteria 相同 → criteria_inconsistent=false。"""
-    from server.routes.tender_compare_worker import collect_compare_input
+    from server.tender.compare_worker import collect_compare_input
 
     pid = _new_project(client)
     same = _criteria()
@@ -291,7 +291,7 @@ def test_collect_criteria_consistent_when_same(client):
 def test_compare_recommended_shows_in_detail_when_final(client):
     """compare 非 stale 且非 provisional → 详情展示 recommendedBidder（codex P1.5）。"""
     from server.stores.tender_compare_store import upsert_compare_result
-    from server.routes.tender_compare_worker import collect_compare_input
+    from server.tender.compare_worker import collect_compare_input
 
     pid = _new_project(client, funding_type="state_funded")
     _archive_bid(pid, "B1", 1000.0)
@@ -310,7 +310,7 @@ def test_compare_recommended_shows_in_detail_when_final(client):
 def test_compare_provisional_hidden_in_detail(client):
     """provisional 推荐不在详情展示 recommendedBidder（codex P1.5）。"""
     from server.stores.tender_compare_store import upsert_compare_result
-    from server.routes.tender_compare_worker import collect_compare_input
+    from server.tender.compare_worker import collect_compare_input
 
     pid = _new_project(client, funding_type="other")
     _archive_bid(pid, "B1", 1000.0)
