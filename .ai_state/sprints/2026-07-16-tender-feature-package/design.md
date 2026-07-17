@@ -116,16 +116,18 @@
 | 迁移基线漂移（D1 未 merge） | **本 draft 不定稿**；D1 merge 后 rg/wc 复核清单再进 critic |
 | D2 范围过大（迁移+harness+拆分） | 分步 commit；harness 抽取可降级独立 sprint |
 
-## 验收标准（草稿，待定稿细化）
+## 验收标准（D2 范围定稿 = 纯移动；以文末「Round 2 后 · D2 范围定稿」为准）
 
-- [ ] （前置）D1 已 merge 回 main，迁移基线确认
-- [ ] （前置）用户拍板 F6=A/B，范围附加项（#8/#12）确定
-- [ ] T1 worker/compare_worker/doc_pipeline 迁 server/tender/，routes 留 HTTP 壳改 import
-- [ ] T2 [若 F6=A] schema 分家 + tender_output/evidence 迁入 + 接缝测试
-- [ ] T3 [若纳入] worker background job harness 抽取
-- [ ] T4 tender.py 按 banner 拆分
-- [ ] T5 test_layering 守卫扩展至 server/tender/ 全子模块；全量 pytest 绿 + ruff 净
-- [ ] D1 eval 回归闸复跑无劣化（部署机，属 runbook 验收）
+- [x] （前置）D1 已 merge 回 main（merge 77d9ffe，main 818 绿）
+- [x] （前置）范围决策：F6 schema 分家 + F5 evidence 拆分 → 拆独立 sprint（本 D2 不做）；#8 harness 亦不进 D2
+- [x] （前置）迁移面已核实干净（2026-07-16 rg 实证）：3 待迁文件仅下行 import（common/platform/stores/ocr/tender），无 features→routes/ops 上行边；消费者仅 routes/tender.py（壳）+ tender/runner+__init__，余皆注释
+- [ ] T1 `routes/tender_worker.py` → `server/tender/worker.py`；routes/tender.py 改 import；pytest 绿 + 单独 commit
+- [ ] T2 `routes/tender_compare_worker.py` → `server/tender/compare_worker.py`；改 import；pytest 绿 + 单独 commit
+- [ ] T3 `routes/tender_doc_pipeline.py` → `server/tender/doc_pipeline.py`（改 import + 更新 prewarm_scheduler.py:5 "routes 层" 陈述注释）；pytest 绿 + 单独 commit
+- [ ] T4 `routes/tender.py`(912) 按 banner(:133/223/441/627/854) 拆薄为 HTTP 壳 + tasks/projects/docs/compare 分节路由（业务逻辑已在 T1-T3 归位）；pytest 绿 + 单独 commit
+- [ ] T5 test_layering 守卫扩展至 server/tender/ 新子模块；全量 pytest 绿（818 基线）+ ruff 净
+- [ ] F8 红区纪律：每个 Ti 各自一 commit、pytest 全绿再进下一 Ti（回滚锚点）
+- [ ] （runbook，不阻塞 merge）D1 eval 回归闸复跑无劣化（部署机需网关）
 
 ## 备选（放弃）
 
@@ -250,3 +252,91 @@ items.yaml D2 note；D1 design.md Round 2 F6。_
 
 **状态**：F1/F5 已拍板、F2/F3/F4 已定，5 项 impl 前必补均已落地为可执行指引。**下一步可选**：再过一轮 critic
 确认（推荐，因引入 contract 机制小改）/ 或主 agent 直接判 ready 进 impl。
+
+---
+
+## Round 2 · Critic Findings（2026-07-16，主 agent 已独立核验）
+
+### VERDICT: NEEDS_REVISION
+
+Round-2 critic 顶真实代码复核 R1 修订应答；主 agent 独立复核确认下述 P0/P1 属实
+（读 output_contracts.py 全文 + rg 计数 test_contract_registry.py + 核 cli 路径 import 链）。
+
+**G1 [P0] F6 schema 分家漏了核心三函数拆分 + 隐藏大批测试迁移（R1 应答未覆盖）**
+- 已核实：`output_contracts.py:462-470` 单一处理器把 `normalize_audit_result`/`_validate_audit_result`/
+  `enrich_audit_decision` 挂在 `DEFAULT_OUTPUT_SCHEMA_NAME`(audit-result) 上；这三函数**直接内嵌 tender 专属校验**——
+  normalize 调 `_has_hard_disqualification`(:409)/`_normalize_optional_plan`(:443)；validate 调
+  `_verify_scoring_consistency`/`_verify_score_mode_consistency`/`_verify_plan_shape`(:309-311)；
+  enrich 调 `_finalize_user_explanation`(:193)。六 helper 全 import 自 `common/tender_output`(:30-37)。
+- R1 应答 F1 只写"去掉 tender import / tender 注册 normalize/validate/enrich=…(裸 …)"，**从未写明这三函数
+  必须一分为二**（通用版留 output_contracts 挂 DEFAULT；tender 组合版进 server/tender/output.py 叠加 tender 校验）。
+  照字面实施 → 要么 audit/expense 仍跑 tender 校验(违 方案A 目标)，要么 tender 校验一并丢失。
+- 隐藏测试迁移：`tests/test_contract_registry.py` **38 处** `DEFAULT_OUTPUT_SCHEMA_NAME` 引用，大量用 tender 载荷
+  断言 tender 行为(废标/资格/scoring/plan/r4，:264-636) + `test_evidence_resolution.py:590-608`。tender 校验
+  搬离 DEFAULT 后这批断言直接失败/静默失效 → 违"T5 全量 pytest 绿"。R1 的"接缝测试 3→4 条"严重低估。
+- 补(若 F6 留 D2)：显式写出三函数拆分方案(通用/tender 边界 + 6 helper 逐个归属) + 把 test_contract_registry
+  tender 行为块迁移列为验收独立 sub-task。
+
+**G2 [P1] F3 自注册对 cli.py 入口未证**
+- 已核实：cli.py→command_adapter→json_bridge→contract 全链路**零 `server.tender` import**(rg 确认)；
+  cli.py:212 `tender_evaluate_json` 现传 `DEFAULT_OUTPUT_SCHEMA_NAME`。impl 若把 `TENDER_OUTPUT_SCHEMA_NAME`
+  硬编码/经 core 转出而不 `from server.tender.output import`，`python -m server.cli tender-evaluate-json`
+  独立进程永不触发注册 → `_SCHEMA_PROCESSORS.get` 得 None → 静默退化裸 JSON 校验 = 原 F3 缺陷经 CLI 复现。
+- 补：强制 cli.py `from server.tender.output import TENDER_OUTPUT_SCHEMA_NAME`；注册断言测试用隔离子进程，
+  不得因同 pytest 进程内他模块已 import server.tender 蒙混。
+
+**G3 [P2] 验收标准清单文档漂移**
+- `## 验收标准`(:119-128 旧 draft 段) 仍列 `T3 [若纳入] worker background job harness 抽取`，与 R1 应答 F4
+  "验收标准无 harness 项"矛盾。按 铁律[文档即真相] 须真删/renumber，不能只在下文散文覆盖。
+- 附：迁移清单只列 eval.py，漏 `test_tender_output.py`/`test_evidence_resolution.py`/`test_boq.py`/
+  `test_ocr_pipeline.py` 的 import 路径改动(`server.common.{tender_output,evidence_resolution}` → `server.tender.{output,evidence}`)。
+
+### 已闭合 / 部分闭合
+- **F2 RESOLVED**：cli.py:212 确为唯一第二调用点(audit/compare/doc_pipeline 各自独立 schema，未受影响)。
+- **F5 RESOLVED**：corpus 拆分边界与真实 evidence_resolution.py 结构一致(通用原语 :112-346 不反调 scoring :355-500)；
+  ocr 测试仅 import 通用原语，post-split 指向 corpus.py 干净。P2 nit：resolve_audit_evidence 懒 import
+  `enrich_audit_decision`(feature→common 合法)，impl 时须确认 G1 拆分后的通用 enrich 仍够 tender 降级路径用。
+- **F1/F3 PARTIALLY RESOLVED**：schema_path 别名机制本身经核可用(frozen dataclass 加可选字段安全)，但依赖 G1
+  的深层拆分未写明；F3 机制对 runner/worker/eval 成立、对 cli 不成立(见 G2)。
+
+### 关键结论：F6=A 的真实成本
+R1 把 F6 定性为"含 contract 机制**向后兼容小改**"。Round-2 证伪：F6=A 实为**共享 contract 层的行为重构**
+（拆 3 核心函数 + 迁移 test_contract_registry 大批断言 + 6 helper 边界判定），回归面显著，非"小改"。
+**下一步取决于范围决策**（见 session：保 F6 在 D2 补全修订+round3 / 或 F6+F5 拆独立 sprint、D2 只做纯移动）。
+
+---
+
+## Round 2 后 · D2 范围定稿（2026-07-16，用户拍板 F6+F5 拆分）
+
+> **本节为 D2 最终范围，覆盖上文 draft 迁移清单与 Round1 应答中一切关于 F6/F5 归属的表述。**
+> 触发：Round-2 critic G1 证伪"F6=A 向后兼容小改"——实为共享 contract 层行为重构。用户拍板：
+> **F6(schema 分家) + F5(evidence 拆分) 拆出独立 sprint；D2 只做已核实为干净的纯移动。**
+
+### D2 in-scope（纯移动/拆分，回归面小）
+- T1 `routes/tender_worker.py` → `server/tender/worker.py`
+- T2 `routes/tender_compare_worker.py` → `server/tender/compare_worker.py`
+- T3 `routes/tender_doc_pipeline.py` → `server/tender/doc_pipeline.py`
+- T4 `routes/tender.py`(912) 按 banner 拆薄为 HTTP 壳 + tasks/projects/docs/compare 分节路由
+- T5 test_layering 守卫扩展 + 全量 pytest 绿 + ruff
+
+**迁移面已核实干净（2026-07-16 rg 实证）**：三个待迁文件仅下行 import
+（common/platform/stores/ocr/tender），无 features→routes/ops/app 上行边；`ocr/prewarm_scheduler.py`
+是被 doc_pipeline 消费（features→ocr 下行，合法），非反向。consumer 仅 `routes/tender.py`（壳，
+routes→features 下行）+ `tender/runner`+`__init__`（同层），余皆注释。故为真·纯移动，无依赖破除接缝。
+
+### D2 out-of-scope → 新 sprint `tender-schema-split`（F6+F5，待立）
+承接 Round-2 未闭合项，作新 sprint 的 design 输入（不丢）：
+- **F6 schema 分家**：拆 `normalize_audit_result`/`_validate_audit_result`/`enrich_audit_decision`
+  为"通用版留 output_contracts 挂 DEFAULT + tender 组合版进 server/tender/output.py 叠加 tender 校验"（G1）；
+  6 helper 通用/tender 边界判定；`test_contract_registry.py` 38 处 tender 行为断言迁移 TENDER schema；
+  schema_path 别名（F1 机制 Round-2 已验可用）；cli.py `from server.tender.output import`（G2）+ 隔离子进程注册断言测试。
+- **F5 evidence 拆分**：通用语料原语 → `server/common/corpus.py`；`resolve_audit_evidence` + scoring 助手
+  → `server/tender/evidence.py`（边界与机制 Round-2 已验 F5 RESOLVED）。
+- 依赖：F6/F5 sprint **depends_on D2**（worker 归位后再动 output/evidence/schema，避免二次搬迁）。
+
+### 门禁判定
+Round-1/Round-2 的 NEEDS_REVISION 阻塞项**全部为 F6 专属**，随 F6 移出 D2 即消解。D2 剩余纯移动
+经 rg 核实无开口 finding。**主 agent 判 D2 定稿 ready 进 impl（红区 worktree 强制：generator +
+`isolation: worktree`，T1-T5 TDD，每 Ti 单 commit + pytest 绿再进下一）。**
+
+_决议：compound/2026-07-16-decision-carve-f6-schema-split-from-d2.md。_
