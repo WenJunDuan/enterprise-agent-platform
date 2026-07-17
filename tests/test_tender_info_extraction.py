@@ -343,7 +343,7 @@ def test_extract_project_doc_info_happy_path(monkeypatch):
     - backfills empty project fields from tender_info
     - does not overwrite non-empty project fields
     """
-    import server.routes.tender_doc_pipeline as tender_module
+    import server.tender.doc_pipeline as tender_module
     from server.stores.tender_doc_store import get_project_doc, upsert_project_doc
     from server.stores.tender_project_store import get_or_create_project, get_project
 
@@ -402,7 +402,7 @@ def test_extract_project_doc_info_happy_path(monkeypatch):
 
 def test_extract_project_doc_info_preserves_user_fields(monkeypatch):
     """_extract_project_doc_info must not overwrite user-filled project fields."""
-    import server.routes.tender_doc_pipeline as tender_module
+    import server.tender.doc_pipeline as tender_module
     from server.stores.tender_doc_store import upsert_project_doc
     from server.stores.tender_project_store import get_or_create_project, get_project
 
@@ -449,7 +449,7 @@ def test_extract_project_doc_info_preserves_user_fields(monkeypatch):
 
 def test_extract_project_doc_info_failure_sets_criteria_failed(monkeypatch):
     """On run_command_json exception, criteria_status=failed; ocr_status=ready unchanged."""
-    import server.routes.tender_doc_pipeline as tender_module
+    import server.tender.doc_pipeline as tender_module
     from server.stores.tender_doc_store import get_project_doc, upsert_project_doc
     from server.stores.tender_project_store import get_or_create_project
 
@@ -483,7 +483,7 @@ def test_extract_project_doc_info_failure_sets_criteria_failed(monkeypatch):
 
 def test_extract_project_doc_info_bad_payload_sets_criteria_failed(monkeypatch):
     """When run_command_json returns payload without criteria key, criteria_status=failed."""
-    import server.routes.tender_doc_pipeline as tender_module
+    import server.tender.doc_pipeline as tender_module
     from server.stores.tender_doc_store import get_project_doc, upsert_project_doc
     from server.stores.tender_project_store import get_or_create_project
     from server.common.agent_bridge import AgentRunMeta
@@ -545,7 +545,7 @@ def _meta_for(rid: str):
 def test_extract_project_doc_info_invalid_criteria_sets_failed(monkeypatch):
     """codex R1 P1: criteria 不符合 criteria.schema（缺 required items/method）→ criteria_status=failed，
     绝不把残缺 criteria 标 ready 注入评标。"""
-    import server.routes.tender_doc_pipeline as tender_module
+    import server.tender.doc_pipeline as tender_module
     from server.stores.tender_doc_store import get_project_doc, upsert_project_doc
     from server.stores.tender_project_store import get_or_create_project
 
@@ -570,7 +570,7 @@ def test_extract_project_doc_info_invalid_criteria_sets_failed(monkeypatch):
 def test_extract_project_doc_info_invalid_tender_info_dropped_criteria_ready(monkeypatch):
     """codex R1 P1: criteria 合法但 tender_info 非法 → tender_info 丢弃、criteria 仍 ready
     （tender_info 仅展示/回填，best-effort，不拖垮整体）。"""
-    import server.routes.tender_doc_pipeline as tender_module
+    import server.tender.doc_pipeline as tender_module
     from server.stores.tender_doc_store import get_project_doc, upsert_project_doc
     from server.stores.tender_project_store import get_or_create_project
 
