@@ -92,9 +92,9 @@ def test_hits_carry_page_anchor_provenance_and_invariant():
     by_title = {hit["chapter_title"]: hit for hit in hits}
 
     assert by_title["第一章 评标办法"]["page_start"] == 1
-    assert by_title["第一章 评标办法"]["page_end"] == 2
-    assert by_title["第一章 评标办法"]["page_anchor"] == "【第 1-2 页】"
-    assert by_title["一、评分标准"]["page_anchor"] == "【第 2 页】"
+    assert by_title["第一章 评标办法"]["page_end"] == 3
+    assert by_title["第一章 评标办法"]["page_anchor"] == "【第 1-3 页】"
+    assert by_title["一、评分标准"]["page_anchor"] == "【第 2-3 页】"
     assert by_title["第二章 资格审查"]["page_anchor"] == "【第 3 页】"
     for hit in hits:
         if hit["page_start"] is not None:
