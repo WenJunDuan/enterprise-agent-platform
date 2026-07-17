@@ -29,7 +29,7 @@ from starlette.requests import ClientDisconnect
 from server.core import enrich_audit_decision
 from server.ocr.prewarm_scheduler import cancel_project_ocr_tasks as _cancel_project_ocr_tasks
 from server.routes.deps import verify_tenant
-from server.routes.tender_compare_worker import (
+from server.tender.compare_worker import (
     collect_compare_input,
     has_active_compare,
     schedule_compare_task,
