@@ -107,6 +107,24 @@ def test_feature_domains_do_not_import_each_other():
     assert not tender_to_audit, f"tender/ imports audit/: {tender_to_audit}"
 
 
+def test_features_do_not_import_routes_ops_or_app():
+    """(e) D2 守卫：feature 域(audit/tender)不得向上 import routes/ops/api。
+
+    这正是 D2 把 tender_worker/compare_worker/doc_pipeline 从 routes/ 迁进
+    server/tender/ 的意义——worker 归位 feature 层后只依赖下层
+    (common/ocr/core/stores/platform),绝不反向 import 回 routes(否则 features→routes
+    上行边,破坏单向分层)。既有守卫只锁"下层不 import features",本条补"features 不上行"。
+    """
+    forbidden = ("server.routes", "server.ops", "server.api")
+    offenders = [
+        (f, mod)
+        for pkg in ("audit", "tender")
+        for f, mod in _server_imports(pkg)
+        if mod.startswith(forbidden)
+    ]
+    assert not offenders, f"feature 域 import 了 routes/ops/api 上行层: {offenders}"
+
+
 def test_ocr_does_not_import_tender_or_audit():
     """(b) 方案 i 守卫（单向，2026-07-15 拍板）：ocr 降为 audit/tender 之下的服务层——
     audit/tender → ocr 合法（audit_worker / tender_worker / tender_doc_pipeline 三处已按
