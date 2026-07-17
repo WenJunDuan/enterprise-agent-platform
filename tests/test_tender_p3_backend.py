@@ -289,7 +289,7 @@ def test_remove_project_submission_dir_rejects_traversal():
 def test_sanitize_tender_info_strips_unknown_keeps_known():
     """未知字段（如 bid_deadline）剥掉但不丢整对象——根因：schema additionalProperties:false
     下旧 validate 遇任一多余字段即抛错丢掉整份 tender_info → 区1 空白。"""
-    from server.routes.tender_doc_pipeline import sanitize_tender_info
+    from server.tender.doc_pipeline import sanitize_tender_info
 
     out = sanitize_tender_info(
         {
@@ -315,7 +315,7 @@ def test_sanitize_tender_info_strips_unknown_keeps_known():
 
 def test_sanitize_tender_info_drops_empty_and_nonstring():
     """空串/非 string/None 字段跳过；无任何可用字段或非 dict 入参 → None。"""
-    from server.routes.tender_doc_pipeline import sanitize_tender_info
+    from server.tender.doc_pipeline import sanitize_tender_info
 
     assert sanitize_tender_info(None) is None
     assert sanitize_tender_info("nope") is None

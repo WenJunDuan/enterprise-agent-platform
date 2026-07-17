@@ -34,7 +34,7 @@ from server.tender.compare_worker import (
     has_active_compare,
     schedule_compare_task,
 )
-from server.routes.tender_doc_pipeline import (
+from server.tender.doc_pipeline import (
     TENDER_OCR_PURPOSE as _TENDER_OCR_PURPOSE,
     start_bid_doc_ocr_task as _start_bid_doc_ocr_task,
     start_project_doc_ocr_task as _start_project_doc_ocr_task,
@@ -83,7 +83,7 @@ from server.stores.tender_task_store import (
 logger = logging.getLogger(__name__)
 
 # OCR 上传编排（并发闸/任务追踪/取消）已下沉 server.ocr.prewarm_scheduler；招标/投标文档
-# 摄取（后台 OCR → criteria/tender_info 抽取）已下沉 server.routes.tender_doc_pipeline（S3）。
+# 摄取（后台 OCR → criteria/tender_info 抽取）已下沉 server.tender.doc_pipeline（S3）。
 # 本路由模块仅做 HTTP 编排，调用上述模块的公开函数（顶部以旧私有名 import alias 保兼容）。
 
 router = APIRouter(tags=["tender"])
