@@ -32,7 +32,7 @@ def client(monkeypatch):
 
     monkeypatch.setattr(deps_module, "tenant_keys_are_default", lambda: False)
     monkeypatch.setenv("ALLOW_INSECURE_DEFAULT_TENANT_KEY", "")
-    monkeypatch.setattr("server.routes.tender.schedule_compare_task", lambda **kw: None)
+    monkeypatch.setattr("server.routes.tender.compare.schedule_compare_task", lambda **kw: None)
     return TestClient(api_module.app)
 
 

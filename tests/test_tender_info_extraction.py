@@ -610,7 +610,7 @@ def client(monkeypatch):
     monkeypatch.setattr(deps_module, "tenant_keys_are_default", lambda: False)
     monkeypatch.setenv("ALLOW_INSECURE_DEFAULT_TENANT_KEY", "")
     monkeypatch.setattr(
-        "server.routes.tender.schedule_tender_evaluation_task", lambda **kwargs: None
+        "server.routes.tender.tasks.schedule_tender_evaluation_task", lambda **kwargs: None
     )
     return TestClient(api_module.app)
 
@@ -624,7 +624,7 @@ def _make_project_api(client: TestClient, tender_no: str | None = None) -> str:
 
 def test_get_tender_doc_returns_expected_shape(client, monkeypatch):
     """GET /tender/projects/{id}/tender-doc returns correct schema shape."""
-    import server.routes.tender as tender_module
+    import server.routes.tender.docs as tender_module
     from server.stores.tender_doc_store import upsert_project_doc
 
     monkeypatch.setattr(tender_module, "_start_project_doc_ocr_task", lambda *a, **kw: None)
@@ -653,7 +653,7 @@ def test_get_tender_doc_returns_expected_shape(client, monkeypatch):
 def test_get_tender_doc_infers_failed_when_ocr_failed_and_criteria_stuck(client, monkeypatch):
     """reviewer R1 F3: ocr_status=failed 但 criteria_status 悬在 pending（崩溃/中断）→ GET 端把
     criteria_status 推断为 failed（终态），让前端停轮询；DB 原值不改。"""
-    import server.routes.tender as tender_module
+    import server.routes.tender.docs as tender_module
     from server.stores.tender_doc_store import get_project_doc, update_project_doc_ocr, upsert_project_doc
 
     monkeypatch.setattr(tender_module, "_start_project_doc_ocr_task", lambda *a, **kw: None)
@@ -672,7 +672,7 @@ def test_get_tender_doc_infers_failed_when_ocr_failed_and_criteria_stuck(client,
 
 def test_get_tender_doc_returns_null_criteria_when_not_ready(client, monkeypatch):
     """GET /tender/projects/{id}/tender-doc returns criteria=null when not yet extracted."""
-    import server.routes.tender as tender_module
+    import server.routes.tender.docs as tender_module
     from server.stores.tender_doc_store import upsert_project_doc
 
     monkeypatch.setattr(tender_module, "_start_project_doc_ocr_task", lambda *a, **kw: None)
@@ -695,7 +695,7 @@ def test_get_tender_doc_returns_null_criteria_when_not_ready(client, monkeypatch
 
 def test_get_tender_doc_returns_decoded_criteria_when_ready(client, monkeypatch):
     """GET /tender/projects/{id}/tender-doc returns decoded criteria object when extracted."""
-    import server.routes.tender as tender_module
+    import server.routes.tender.docs as tender_module
     from server.stores.tender_doc_store import (
         upsert_project_doc,
         update_project_doc_criteria_extracted,
@@ -737,7 +737,7 @@ def test_get_tender_doc_404_for_missing_project(client):
 
 def test_get_tender_doc_requires_auth(client, monkeypatch):
     """GET /tender/projects/{id}/tender-doc requires authentication."""
-    import server.routes.tender as tender_module
+    import server.routes.tender.docs as tender_module
 
     monkeypatch.setattr(tender_module, "_start_project_doc_ocr_task", lambda *a, **kw: None)
     pid = _make_project_api(client)
@@ -759,7 +759,7 @@ def test_get_tender_doc_no_doc_uploaded_returns_404(client):
 
 def test_docs_status_includes_criteria_status(client, monkeypatch):
     """GET /tender/projects/{id}/docs-status includes criteria_status in tender_doc."""
-    import server.routes.tender as tender_module
+    import server.routes.tender.docs as tender_module
     from server.stores.tender_doc_store import upsert_project_doc
 
     monkeypatch.setattr(tender_module, "_start_project_doc_ocr_task", lambda *a, **kw: None)
@@ -783,7 +783,7 @@ def test_docs_status_includes_criteria_status(client, monkeypatch):
 
 def test_docs_status_criteria_status_ready(client, monkeypatch):
     """docs-status returns criteria_status=ready after successful extraction."""
-    import server.routes.tender as tender_module
+    import server.routes.tender.docs as tender_module
     from server.stores.tender_doc_store import (
         upsert_project_doc,
         update_project_doc_criteria_extracted,
