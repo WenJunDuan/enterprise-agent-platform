@@ -164,7 +164,7 @@ def test_no_key_amounts_returns_none():
 
 
 def test_summary_parsable_by_r1_and_total_resolved():
-    from server.common.evidence_resolution import (
+    from server.common.corpus import (
         CorpusIndex,
         existence_ratio,
         normalize_text,

@@ -578,7 +578,7 @@ def enrich_tender_result(structured_output: StructuredJSON) -> StructuredJSON:
     return structured_output
 
 
-from server.common.evidence_resolution import resolve_audit_evidence  # noqa: E402
+from server.tender.evidence import resolve_audit_evidence  # noqa: E402
 
 register_schema_processor(
     TENDER_OUTPUT_SCHEMA_NAME,

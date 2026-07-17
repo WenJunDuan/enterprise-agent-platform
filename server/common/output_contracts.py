@@ -433,16 +433,15 @@ def normalize_audit_result(
     return structured_output
 
 
-from server.common.evidence_resolution import resolve_audit_evidence  # noqa: E402
-
 register_schema_processor(
     DEFAULT_OUTPUT_SCHEMA_NAME,
     normalize=normalize_audit_result,
     validate=_validate_audit_result,
     enrich=enrich_audit_decision,
-    # 拿到本案底稿时回查结论里每条出处真伪（仅 tender_worker 透传 evidence_source 才触发；
-    # audit/expense 不透传 → 跳过，零影响）。
-    resolve=resolve_audit_evidence,
+    # F5：evidence-resolution 回查闸是 tender 专属（挂在 server/tender/evidence.py 的
+    # TENDER_OUTPUT_SCHEMA_NAME 处理器上），DEFAULT（expense/audit 共用）不再挂 resolve hook——
+    # expense/audit 调用链从不透传 evidence_source（apply_schema_semantics 的 resolve 分支本就
+    # 双重门禁：evidence_source 非空 且 processor.resolve is not None），删除零行为影响。
 )
 register_schema_processor(
     INIT_RULES_REPORT_SCHEMA_NAME,
