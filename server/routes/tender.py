@@ -39,7 +39,7 @@ from server.routes.tender_doc_pipeline import (
     start_bid_doc_ocr_task as _start_bid_doc_ocr_task,
     start_project_doc_ocr_task as _start_project_doc_ocr_task,
 )
-from server.routes.tender_worker import admission_available, schedule_tender_evaluation_task
+from server.tender.worker import admission_available, schedule_tender_evaluation_task
 from server.routes.upload_helpers import (
     UNBOUND_PROJECT,
     collect_uploaded_files,

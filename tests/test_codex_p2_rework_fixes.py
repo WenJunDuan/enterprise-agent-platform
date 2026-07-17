@@ -270,7 +270,7 @@ def test_p11_multiple_bids_only_current_bid_in_context(monkeypatch):
 
 def test_p11_bid_id_passed_through_schedule_to_worker(monkeypatch):
     """schedule_tender_evaluation_task accepts and passes bid_id."""
-    import server.routes.tender_worker as worker
+    import server.tender.worker as worker
 
     # The schedule function must accept bid_id and pass it to execute_tender_evaluation_task
     import inspect
