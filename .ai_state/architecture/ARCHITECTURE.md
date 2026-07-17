@@ -41,5 +41,9 @@ app (api/cli) → routes → ops → features(audit|tender) → ocr(服务层) �
 
 - 统一单库 `data/db/platform.sqlite3`（多表）：results/requests/sessions/review_deltas/
   memory_assets/audit_tasks/tender_tasks + **tender_projects/tender_compare_tasks/tender_compare_results**（招标数据模型）。
+- **D7 新增 `rag_chunks`（FTS5 虚表，tokenize=trigram 支持中文 BM25）**：D6 文档结构化产物按章节子树分块入库，
+  供 `server/ocr/rag.py::search` 带页锚出处检索（服务 tender S1 定位 + D8 底稿瘦身）；conn 注入、零侵入既有表。
+- **OCR 结构化层（D6/D7，2026-07-18）**：`server/ocr/docstructure.py`（确定性章节树/语义标签/实体/跨页表格合并，
+  页锚硬护栏）+ `server/ocr/rag.py`（分块+索引+FTS5 检索）+ `server/stores/rag_store.py`；均 ocr 服务层,不 import tender/audit。
 - 大 blob 留文件：会话 event 流、上传原件。
 - 详见 `sprints/2026-06-19-logging-and-storage/design-data-storage.md` + `architecture/system-tender-data-model.md`。
