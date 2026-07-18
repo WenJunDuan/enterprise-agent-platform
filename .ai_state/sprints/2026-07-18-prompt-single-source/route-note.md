@@ -60,7 +60,33 @@
 - 方向 c(主 agent 推荐): 先修下方 prompt-闸矛盾 + 补齐 D10 直连 spike 数据, 再同场拍——本 spike 已证延迟不卡方向, 剩余变量是 D10 直连形态
 - 不论方向: 两源漂移已在生产可靠性上收费, 修 explanation 缺失应尽快(哪怕先做内容对齐不动机制)
 
-## 附录 · spike 首跑暴露的产品级矛盾 (2026-07-18, 未修, 待用户拍)
+## E1 · D10① 直连 spike 结果 (2026-07-18, 完场, 证据=spike/d10-results.jsonl)
+
+Mode D=anthropic SDK 直打网关(同 build_inline_audit_prompt 产物、同 _extract_json_object 抽取、同
+apply_schema_semantics 契约链, 无 CLI 子进程无 agent loop); A-ctl=生产 CLI 路径时段对齐控制组。
+
+| 指标 | D 直连 (6/7 attempt ok) | A CLI (当日 8 样本: verify 6 + ctl 2) |
+|---|---|---|
+| 墙钟 | placeholder 8.0/14.0/9.6s · taxi 19.0/24.8/25.3s (**中位 19.0s**) | 22.8-55.5s (**中位 ~31s**) |
+| verdict/refs | 6/6 rejected + 正确 rule_id | 8/8 rejected + 正确 rule_id |
+| 契约失败 | 1/7 (flash 漏 manual_review_reason, 重试成) | 修复后 0/8 首试全成 |
+| 成本信号 | 网关 prompt cache 生效: 重复审同 prompt input 7059→19-59 tokens | $0.20-0.30/单 |
+
+**判读**: ①直连比 CLI 路径**快 ~40-60%**(差值=CLI 子进程启动+agent loop 往返+SDK 桥接), 且天然享受
+网关 prompt cache(重复规则/指令段几乎零 input 计费)。②契约缺字段率与机制无关(模型行为), 但 CLI 独有
+的故障类(bundled CLI 流式崩溃/buffer 上限, AuditSettings docstring 在册)在直连形态不存在。③直连丢掉
+工具面(Read 附件/多模态)——D10②附件预嵌正是补这个, 形态耦合成立。④实施注意: 本机 shell 有 SOCKS 代理,
+直连 client 需显式剥代理 env 或 trust_env=False(与 compound codex 代理坑同源), 生产部署机需核对。
+
+**E2 拍板包(主 agent 推荐: 方向 b + D10 直连立项)**:
+- 时延: 直连(19s) < 生产内联 CLI(31s) ≈/< command B2(55.5s, 修复前窗口测) → command 统一无时延收益, 直连有大收益
+- 成本: command +35%; 直连反而因网关缓存更省
+- 可靠性: prompt 内容修复后 A 路径 8/8 首试成; 机制间无显著差; CLI 独有故障类直连消除
+- **推荐 b=Python 单源**: AUDIT_INSTRUCTIONS 保持唯一真相源, .claude expense 资产标注非生产真相源(或改薄壳);
+  D10 实施=直连形态 flag 门控(默认关, CLI 路径保底), 附件预嵌随直连形态做; tender 仍走 command(其 OCR 注入/
+  多步形态不在本拍板范围)。方向 a(command 统一)被数据支配: 更贵、不更快、漂移问题 b 同样能解。
+
+## 附录 · spike 首跑暴露的产品级矛盾 (2026-07-18, 已修复 ship, 60d860c)
 
 **现象**: 首跑用 `tests/eval_fixtures/placeholder-invoice`(golden 期望 rejected), Mode A 生产路径两次尝试均硬失败:
 `JSONContractError: audit result with verdict=rejected must cite at least one policy_ref.`

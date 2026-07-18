@@ -188,7 +188,7 @@ items:
     effort: M
     wave: 1
     depends_on: [D3]
-    status: pending
+    status: pending # 2026-07-18 ①直连 spike DONE(E1):直连比 CLI 快 40-60%(中位 19s vs ~31s)+网关 prompt cache 红利,verdict/refs 全对,CLI 独有故障类消除;证据与 E2 拍板包见 sprints/2026-07-18-prompt-single-source/route-note.md;待用户 E2 拍板(推荐 b=Python 单源+直连立项)后实施
     note: >
       吸收 2026-06-12 quality backlog 账外剩余（③④⑤残），expense 域自此全部在册。
       ①热路径直连 spike：官方 anthropic SDK messages.create 直打网关，绕开 claude-agent-sdk
