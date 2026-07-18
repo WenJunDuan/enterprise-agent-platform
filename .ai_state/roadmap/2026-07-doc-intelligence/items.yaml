@@ -69,7 +69,7 @@ items:
     effort: M
     wave: 0
     depends_on: []
-    status: pending
+    status: pending # 2026-07-18 spike DONE(sprints/2026-07-18-prompt-single-source/route-note.md):三模式时延中位差<6%=延迟不卡方向;command 侧成本+~35%;意外主发现=两源漂移已兑换成可靠性差(内联 4/6 漏 explanation vs command 1/7)+prompt-闸矛盾(runner.py:56 vs output_contracts.py:286,flash 下 golden placeholder-invoice 假红);B1(agent 自行读)1/3 verdict 漂移=淘汰,command 统一须 B2(context 注入)形态。待用户拍方向(与 D10 直连同场)
     note: >
       先 spike：实测 expense 走 command 模式（setting_sources=["project"]）的延迟差值，
       与现 AUDIT_INSTRUCTIONS 内联对比 → 差值可接受则统一到 tender 模式（command 文件单一真相源），

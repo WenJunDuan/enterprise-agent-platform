@@ -1,0 +1,12 @@
+{
+  "claim_id": "SPIKE-TAXI-001",
+  "applicant": "王建国",
+  "category": "travel",
+  "amount": 320,
+  "currency": "CNY",
+  "expense_date": "2026-07-10",
+  "invoice_no": "032001900211",
+  "description": "赴南京客户现场支持三天，报销期间市内出租车费用共 320 元（4 张出租车发票）。出差报备表已于 2026-07-06 审批通过。",
+  "pre_approval": "出差报备表 2026-07-06 已批准",
+  "attachments": ["出租车发票x4"]
+}
