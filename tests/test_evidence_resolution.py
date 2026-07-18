@@ -8,14 +8,14 @@ from __future__ import annotations
 
 import pytest
 
-from server.common.evidence_resolution import (
+from server.common.corpus import (
     CorpusIndex,
     existence_ratio,
     normalize_text,
     parse_corpus,
     parse_source,
-    resolve_audit_evidence,
 )
+from server.tender.evidence import resolve_audit_evidence
 
 # ── 底稿样例（两态）────────────────────────────────────────────────────────────
 
@@ -589,10 +589,11 @@ def _full_audit_result(**overrides) -> dict:
 
 def test_pipeline_no_evidence_source_skips_resolution(monkeypatch):
     import server.common.output_contracts as oc
-    from server.common.contract import DEFAULT_OUTPUT_SCHEMA_NAME, apply_schema_semantics
+    from server.common.contract import apply_schema_semantics
+    from server.tender.output import TENDER_OUTPUT_SCHEMA_NAME
 
     monkeypatch.setattr(oc, "_load_known_rule_ids", lambda: set())  # 真伪闸跳过
-    out = apply_schema_semantics(DEFAULT_OUTPUT_SCHEMA_NAME, _full_audit_result())
+    out = apply_schema_semantics(TENDER_OUTPUT_SCHEMA_NAME, _full_audit_result())
     # 未传底稿 → resolve 跳过：无 evidence_resolution、不降级、verdict 不变
     assert "evidence_resolution" not in out["extracted_data"]
     assert out["verdict"] == "approved"
@@ -600,12 +601,13 @@ def test_pipeline_no_evidence_source_skips_resolution(monkeypatch):
 
 def test_pipeline_with_evidence_source_runs_resolution(monkeypatch):
     import server.common.output_contracts as oc
-    from server.common.contract import DEFAULT_OUTPUT_SCHEMA_NAME, apply_schema_semantics
+    from server.common.contract import apply_schema_semantics
+    from server.tender.output import TENDER_OUTPUT_SCHEMA_NAME
 
     monkeypatch.setattr(oc, "_load_known_rule_ids", lambda: set())
     monkeypatch.setenv("EVIDENCE_RESOLUTION_DOWNGRADE", "1")
     out = apply_schema_semantics(
-        DEFAULT_OUTPUT_SCHEMA_NAME, _full_audit_result(), evidence_source=INLINE_CORPUS
+        TENDER_OUTPUT_SCHEMA_NAME, _full_audit_result(), evidence_source=INLINE_CORPUS
     )
     # 传底稿 → 编造 quote 被回查降级 + verdict 升级 + 摘要写入
     assert out["extracted_data"]["evidence_resolution"]["unresolved"] == 1
@@ -614,11 +616,44 @@ def test_pipeline_with_evidence_source_runs_resolution(monkeypatch):
     assert out["result"] is False
 
 
+def test_pipeline_evidence_downgrade_refreshes_score_summary_in_explanation(monkeypatch):
+    """F1 [P0] 回归守卫（Round-1 critic）：evidence 降级触发 verdict approved→manual_review 后，
+    resolve_audit_evidence 的二次 enrich 必须重算 explanation 里的『得分小结：…』（反映降级后的
+    score=null / 合计变化），而不是让 explanation 停留在陈旧的"综上，合计 40 分"。
+
+    根因：normalize_audit_result/enrich_audit_decision 拆分成 tender 组合版之后，
+    resolve_audit_evidence 的惰性二次 enrich 若误用**通用瘦身版** `enrich_audit_decision`
+    （已被拆走 `_finalize_user_explanation`），explanation 就不会刷新——静默把过期的得分小结
+    呈现给人工复核。必须用 tender 组合版 `enrich_tender_result`。
+    """
+    import server.common.output_contracts as oc
+    from server.common.contract import apply_schema_semantics
+    from server.tender.output import TENDER_OUTPUT_SCHEMA_NAME
+
+    monkeypatch.setattr(oc, "_load_known_rule_ids", lambda: set())
+    monkeypatch.setenv("EVIDENCE_RESOLUTION_DOWNGRADE", "1")
+    stale_explanation = "各项均按评标办法判定。综上，合计 40 分。"
+    out = apply_schema_semantics(
+        TENDER_OUTPUT_SCHEMA_NAME,
+        _full_audit_result(explanation=stale_explanation),
+        evidence_source=INLINE_CORPUS,
+    )
+    # 前置断言：确实触发了 F1 要守卫的降级场景（verdict 翻转 + 评分项降级）。
+    assert out["verdict"] == "manual_review"
+    assert out["extracted_data"]["scoring"][0]["status"] == "manual_review"
+    # F1 核心断言：explanation 必须含刷新后的得分小结（反映降级后 score=null 的合计），
+    # 而不是停留在模型原写的陈旧"合计 40 分"。
+    assert "得分小结：" in out["explanation"], (
+        "explanation 未刷新得分小结——二次 enrich 大概率误用了通用瘦身版 enrich_audit_decision"
+    )
+    assert "合计 40 分" not in out["explanation"]
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # R3: confidence 消费（低置信→manual_review，接 G3）
 # ══════════════════════════════════════════════════════════════════════════════
 
-from server.common.evidence_resolution import (  # noqa: E402
+from server.common.corpus import (  # noqa: E402
     _normalize_filename,
     _parse_file_head,
 )

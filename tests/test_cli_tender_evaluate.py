@@ -12,10 +12,9 @@ from typer.testing import CliRunner
 
 import server.cli as cli
 from server.common.agent_bridge import AgentRunMeta
+from server.tender.output import TENDER_OUTPUT_SCHEMA_NAME as EVAL_SCHEMA
 
 runner = CliRunner()
-
-EVAL_SCHEMA = "common/audit-result.schema.json"
 
 
 def _runtime_ok() -> dict:

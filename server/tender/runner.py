@@ -20,8 +20,8 @@ import os
 from typing import Any, Callable
 
 from server.common.command_adapter import run_command_json
-from server.common.contract import DEFAULT_OUTPUT_SCHEMA_NAME
 from server.ocr.pipeline import ocr_preprocess_block
+from server.tender.output import TENDER_OUTPUT_SCHEMA_NAME
 from server.platform.config import get_tender_eval_settings
 from server.stores.session_store import new_conversation_id
 from server.stores.tender_doc_store import get_bid_doc, get_project_doc
@@ -220,7 +220,7 @@ async def run_tender_evaluation(
             payload, meta = await run_command_json(
                 "tender-evaluate",
                 directory_path,
-                schema_name=DEFAULT_OUTPUT_SCHEMA_NAME,
+                schema_name=TENDER_OUTPUT_SCHEMA_NAME,
                 request_id=request_id,
                 tenant=tenant,
                 project_id=project_id,  # 显式透传 → 结论落 results.project_id（codex P1.3）

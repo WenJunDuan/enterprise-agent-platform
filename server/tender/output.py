@@ -1,11 +1,17 @@
-"""Tender 专属输出后处理（从 server.common.output_contracts 抽离, S4/审计 F2）。
+"""Tender 专属输出后处理 + 注册表 key（F6 schema 分家，本模块新家，原 server/common/tender_output.py）。
 
-``output_contracts.py`` 是 expense/tender/audit **共享** 的 audit-result 契约策略；但其中评分一致性
-校验、废标/资格否决 gate、解释文本规范化等 **仅 tender 评标** 用得到。把这部分迁出共享模块，
-根治 D0 那类"tender 逻辑误伤 expense 解释"的跨域污染温床。
+``output_contracts.py`` 挂的 ``DEFAULT_OUTPUT_SCHEMA_NAME`` 是 expense/tender/audit **共享** 的
+audit-result 契约策略（通用 normalize/validate/enrich）；评分一致性校验、废标/资格否决 gate、
+解释文本规范化等 **仅 tender 评标** 用得到的 6 个 helper 落本模块。本模块额外提供三个 tender
+**组合函数**（``normalize_tender_result``/``validate_tender_result``/``enrich_tender_result`` ——
+各自「通用版 + tender-only 步骤」的拼装，顺序对应拆分前合并函数里的原始行号顺序，详见函数
+docstring），并把它们注册到独立的 ``TENDER_OUTPUT_SCHEMA_NAME``，使 tender 评标校验彻底不再
+挂在 expense/audit 共用的 ``DEFAULT_OUTPUT_SCHEMA_NAME`` 上（根治 D0 那类"tender 逻辑误伤
+expense 解释"的跨域污染温床，也让 ``server/common/**`` 不再反向依赖 ``server/tender/**``）。
 
-依赖方向严格单向：``output_contracts`` → ``tender_output``（本模块**不** import output_contracts，
-避免环）。本模块只依赖机制层 ``server.common.contract``（与 output_contracts 同款，已验证无环）。
+依赖方向严格单向：本模块 → ``server.common.output_contracts``（tender→common，合法下行；
+``output_contracts`` 不 import 本模块，无环）。6 个 tender-only helper 函数体内仍对
+``server.common.contract`` 使用惰性 import（沿用旧 tender_output.py 的既有写法，未改动）。
 """
 
 from __future__ import annotations
@@ -15,12 +21,31 @@ from typing import Any
 
 import jsonschema
 
-# 不在模块顶层 import server.common.contract：会形成
-# contract → output_contracts → tender_output → contract 的**加载期**环——当 tender_output 被最先
-# import 时，contract 末尾回头 import output_contracts，而 output_contracts 又来 import 本模块尚未
-# 定义的函数 → ImportError（S4 交叉 review P1）。改在用到的函数内惰性 import，彻底断开模块加载期的环。
+from server.common.contract import (
+    DEFAULT_OUTPUT_SCHEMA_NAME,
+    StructuredJSON,
+    register_schema_processor,
+)
+from server.common.output_contracts import (
+    _validate_audit_result,
+    enrich_audit_decision,
+    normalize_audit_result,
+)
+
+# 不在模块顶层 import server.common.contract 的其余符号（JSONContractError/load_output_schema）：
+# 会形成 contract → output_contracts → tender_output(旧名) → contract 的**加载期**环——当本模块被
+# 最先 import 时，contract 末尾回头 import output_contracts，而 output_contracts 又来 import 本模块
+# 尚未定义的函数 → ImportError（S4 交叉 review P1）。改在用到的函数内惰性 import，彻底断开该环。
+# `DEFAULT_OUTPUT_SCHEMA_NAME`/`register_schema_processor` 与 `output_contracts` 的通用函数在
+# 顶层 import 是安全的：`server.common.contract` 模块加载完成（含其末尾对 output_contracts 的
+# import）后才会轮到 tender 包被 import，两者在本模块加载时已在 sys.modules 就绪，不产生新环。
 
 PLAN_SCHEMA_NAME = "common/plan.schema.json"
+
+TENDER_OUTPUT_SCHEMA_NAME = "tender/audit-result.schema.json"
+# 仅注册表 key；物理 schema 复用 common/audit-result.json（见下方 register_schema_processor 的
+# schema_path=DEFAULT_OUTPUT_SCHEMA_NAME）。刻意不在 .claude/contracts/tender/ 下建同名文件——
+# 建了反而会被 resolve_output_schema_path 误当成"真的物理文件"而与共享 schema 产生内容漂移。
 
 # ── 废标/资格否决 gate（tender S4：独立 gate 决定 verdict，与逐项 scoring 解耦）────────────
 
@@ -501,3 +526,65 @@ def _verify_score_mode_consistency(structured_output: dict[str, Any]) -> None:
             existing.extend(warnings)
         else:
             extracted["validation_warnings"] = warnings
+
+
+# ── Tender 组合函数（generic + tender-only steps；顺序对应拆分前合并函数的原始行号顺序）──────
+
+
+def normalize_tender_result(
+    structured_output: StructuredJSON, request_id: str | None = None
+) -> StructuredJSON:
+    """Tender 组合版 normalize。
+
+    废标/资格否决 verdict 纠偏必须排在通用 normalize **之前**：拆分前的合并函数里，纠偏
+    先于 manual_review_reason 清理（`verdict != manual_review` 才 pop）——若纠偏把 verdict 从
+    manual_review 拍成 rejected，随后的清理才会正确剥掉残留的 manual_review_reason。倒过来跑，
+    清理会看到"纠偏前"的 verdict，manual_review_reason 不会被剥（回归，
+    `test_disqualification_hits_coerce_verdict_to_rejected` 会失败）。可选 plan 丢弃排在通用
+    normalize **之后**：它只操作 `extracted_data.plan`，通用 normalize 的任何一步都不碰
+    `extracted_data` 内部结构（`extracted_data` 本身是白名单顶层字段，整体保留），两者互不依赖，
+    与拆分前的相对位置（原函数末尾）等价。
+    """
+    if isinstance(structured_output, dict):
+        if structured_output.get("verdict") != "rejected" and _has_hard_disqualification(
+            structured_output.get("extracted_data")
+        ):
+            structured_output["verdict"] = "rejected"
+    structured_output = normalize_audit_result(structured_output, request_id)
+    if isinstance(structured_output, dict):
+        _normalize_optional_plan(structured_output)
+    return structured_output
+
+
+def validate_tender_result(structured_output: StructuredJSON) -> None:
+    """Tender 组合版 validate：通用闸（verdict/policy_refs/风险维度清洗）之后追加评分一致性
+    三闸。三者操作的字段互不相交（通用闸不碰 extracted_data.scoring/plan），排列顺序对结果无影响
+    ——沿用拆分前 `_validate_audit_result` 内的原始调用顺序（scoring→score_mode→plan_shape）。
+    """
+    _validate_audit_result(structured_output)
+    _verify_scoring_consistency(structured_output)
+    _verify_score_mode_consistency(structured_output)
+    _verify_plan_shape(structured_output)
+
+
+def enrich_tender_result(structured_output: StructuredJSON) -> StructuredJSON:
+    """Tender 组合版 enrich：通用派生（result/conclusion/policy_refs_detail/risk_dimensions）
+    之后追加得分小结重算 + 术语脱敏——`_finalize_user_explanation` 在拆分前的合并函数里本来就是
+    最后一条语句，这里原样保留在最后，顺序零变化。
+    """
+    structured_output = enrich_audit_decision(structured_output)
+    if isinstance(structured_output, dict):
+        _finalize_user_explanation(structured_output)
+    return structured_output
+
+
+from server.tender.evidence import resolve_audit_evidence  # noqa: E402
+
+register_schema_processor(
+    TENDER_OUTPUT_SCHEMA_NAME,
+    normalize=normalize_tender_result,
+    validate=validate_tender_result,
+    enrich=enrich_tender_result,
+    resolve=resolve_audit_evidence,
+    schema_path=DEFAULT_OUTPUT_SCHEMA_NAME,
+)

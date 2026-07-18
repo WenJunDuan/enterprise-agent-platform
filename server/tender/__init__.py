@@ -10,3 +10,5 @@ stores/platform；禁止 import routes/app/audit（见 ``tests/test_layering.py`
 """
 
 from __future__ import annotations
+
+from server.tender import output  # noqa: F401 — 触发 TENDER_OUTPUT_SCHEMA_NAME 自注册

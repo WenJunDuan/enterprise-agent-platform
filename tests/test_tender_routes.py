@@ -17,10 +17,10 @@ from fastapi.testclient import TestClient
 from server.common.agent_bridge import AgentRunMeta
 from server.routes.upload_helpers import UNBOUND_PROJECT, tenant_submission_root
 from server.stores.tender_task_store import get_tender_task_admin, upsert_tender_task
+from server.tender.output import TENDER_OUTPUT_SCHEMA_NAME as EVAL_SCHEMA
 
 _TOKEN = "test-fake-token-acme-tender"
 _AUTH = {"Authorization": f"Bearer {_TOKEN}"}
-EVAL_SCHEMA = "common/audit-result.schema.json"
 _CASE_ROOT = tenant_submission_root("acme")  # 测试租户提交子树根（F2 隔离边界）
 
 
