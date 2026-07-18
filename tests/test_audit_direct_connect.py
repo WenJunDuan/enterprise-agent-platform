@@ -74,7 +74,9 @@ def test_flag_on_dispatches_direct_entry_and_skips_cli(monkeypatch, tmp_path):
     monkeypatch.setattr(runner, "PROJECT_ROOT", tmp_path)
     monkeypatch.setattr(runner, "EXPENSE_RULES_DIR", tmp_path / "no-rules")
 
-    async def fake_run_direct_audit(prompt, *, request_id, tenant, schema_name, contract_max_retry):
+    async def fake_run_direct_audit(
+        prompt, *, request_id, tenant, schema_name, contract_max_retry, **_opts
+    ):
         return {"verdict": "approved"}, _fake_meta(request_id, mode="direct")
 
     monkeypatch.setattr(runner, "run_direct_audit", fake_run_direct_audit)
@@ -99,7 +101,9 @@ def test_transport_failure_falls_back_to_cli_once(monkeypatch, tmp_path):
 
     calls = {"direct": 0, "cli": 0}
 
-    async def failing_direct(prompt, *, request_id, tenant, schema_name, contract_max_retry):
+    async def failing_direct(
+        prompt, *, request_id, tenant, schema_name, contract_max_retry, **_opts
+    ):
         calls["direct"] += 1
         raise DirectTransportError("connection refused")
 
@@ -129,7 +133,9 @@ def test_contract_failure_does_not_fall_back(monkeypatch, tmp_path):
     monkeypatch.setattr(runner, "PROJECT_ROOT", tmp_path)
     monkeypatch.setattr(runner, "EXPENSE_RULES_DIR", tmp_path / "no-rules")
 
-    async def failing_direct(prompt, *, request_id, tenant, schema_name, contract_max_retry):
+    async def failing_direct(
+        prompt, *, request_id, tenant, schema_name, contract_max_retry, **_opts
+    ):
         raise DirectContractError("model output failed schema validation after retries")
 
     monkeypatch.setattr(runner, "run_direct_audit", failing_direct)
@@ -139,5 +145,59 @@ def test_contract_failure_does_not_fall_back(monkeypatch, tmp_path):
         asyncio.run(
             runner.run_inline_directory_audit(
                 "no/such/dir", request_id="rid-no-fallback", tenant="acme"
+            )
+        )
+
+
+def test_flag_on_forwards_archive_to_results_opt(monkeypatch, tmp_path):
+    """review F3: flag-on 分支显式转发 archive_to_results 给直连路径（不静默丢弃）。"""
+    import server.audit.runner as runner
+
+    monkeypatch.setenv("AUDIT_DIRECT_CONNECT", "1")
+    monkeypatch.setattr(runner, "run_agent_json", _fail_if_called)
+    monkeypatch.setattr(runner, "PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(runner, "EXPENSE_RULES_DIR", tmp_path / "no-rules")
+
+    seen = {}
+
+    async def capture_direct(
+        prompt, *, request_id, tenant, schema_name, contract_max_retry, **opts
+    ):
+        seen.update(opts)
+        return {"verdict": "approved"}, _fake_meta(request_id, mode="direct")
+
+    monkeypatch.setattr(runner, "run_direct_audit", capture_direct)
+
+    asyncio.run(
+        runner.run_inline_directory_audit(
+            "no/such/dir",
+            request_id="rid-archive-opt",
+            tenant="acme",
+            archive_to_results=False,
+            project_id="proj-9",
+        )
+    )
+
+    assert seen["archive_to_results"] is False
+    assert seen["project_id"] == "proj-9"
+
+
+def test_flag_on_rejects_unsupported_opt(monkeypatch, tmp_path):
+    """review F3: 直连路径遇未声明 opt（如 evidence_source）→ fail-fast，不静默漂移。"""
+    import server.audit.runner as runner
+
+    monkeypatch.setenv("AUDIT_DIRECT_CONNECT", "1")
+    monkeypatch.setattr(runner, "run_direct_audit", _fail_if_called)
+    monkeypatch.setattr(runner, "run_agent_json", _fail_if_called)
+    monkeypatch.setattr(runner, "PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(runner, "EXPENSE_RULES_DIR", tmp_path / "no-rules")
+
+    with pytest.raises(ValueError, match="evidence_source"):
+        asyncio.run(
+            runner.run_inline_directory_audit(
+                "no/such/dir",
+                request_id="rid-bad-opt",
+                tenant="acme",
+                evidence_source="some-corpus",
             )
         )

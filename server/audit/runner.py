@@ -149,6 +149,18 @@ async def run_inline_directory_audit(
     """
     if _direct_connect_enabled():
         settings = get_audit_settings()
+        # 直连路径只支持 run_direct_audit 显式声明的 opts（review round1 F3）：从副本里取出
+        # project_id/archive_to_results 转发，其余键 **fail-fast**——不静默丢弃，避免 flag
+        # on/off 行为悄悄漂移（如某调用方新传 evidence_source 时直连侧无声吞掉）。opts 原样
+        # 保留供传输类回落时透传给 CLI 路径（CLI 经 run_agent_json 支持这些键）。
+        direct_opts = dict(opts)
+        project_id = direct_opts.pop("project_id", None)
+        archive_to_results = direct_opts.pop("archive_to_results", True)
+        if direct_opts:
+            raise ValueError(
+                f"AUDIT_DIRECT_CONNECT 直连路径不支持这些选项: {sorted(direct_opts)}；"
+                "请走 CLI 路径（AUDIT_DIRECT_CONNECT=0）或扩展 run_direct_audit 显式支持。"
+            )
         prompt = build_inline_audit_prompt(directory_path, ocr_block=ocr_block)
         try:
             return await run_direct_audit(
@@ -157,6 +169,8 @@ async def run_inline_directory_audit(
                 tenant=tenant,
                 schema_name=DEFAULT_OUTPUT_SCHEMA_NAME,
                 contract_max_retry=settings.contract_max_retry,
+                project_id=project_id,
+                archive_to_results=archive_to_results,
             )
         except DirectTransportError as exc:
             logger.warning(
