@@ -23,12 +23,23 @@ Bash(OCR 命令行); 投标 PDF 是**攻击者可控输入**(外部投标人上�
 shell 元字符或 `../` 穿越 = 潜在 RCE(security-checklist P0 命令注入)。**未过对抗验证则不接线**
 (保留 skill 手动用, 0623 原决议, fail-closed)。
 
-**机制(实施前需探明, 列为 A0 探查任务)**:
-- A0: 探 claude-agent-sdk python `can_use_tool` 回调支持面(版本/签名/在 build_options 的接法),
-  与 tender worker 现有 allowed_tools 面; 探 ocr-page skill 实际执行的命令形态。
-- A1: 白名单闸——`can_use_tool` 回调(或等价机制)限定: 仅允许 ocr-page 规定形态调用; 参数硬校验
-  (文件路径必须解析后落在本任务提交目录内、页码必须正整数、拒绝任何 shell 元字符/穿越);
-  校验在服务端 Python 层, 不信任 agent 传参。
+**⚠️ 时间线修正(critic F2, P0)**: Bash 敞口**并非 R4 引入, 当前生产已存在**——
+`agent_bridge.build_options`(:175-176)只设 `allowed_tools`(免提示放行清单, 不含 Bash)+
+`permission_mode="bypassPermissions"`(豁免全部权限检查), 但 **`tools` 参数未设** → CLI 默认
+全量内置工具(含 Bash)存在且 bypass 下全放行(SDK types.py `tools`/`allowed_tools` 语义已核,
+主 agent 2026-07-18 独立验证)。批次 A 定位改写为「**收紧已存在敞口 + 正式接线 ocr-page**」。
+**Hotfix 提案(待用户拍, 独立于本 sprint)**: 立即在 build_options 显式设
+`tools=["Read","Glob","Grep","Write","Skill","Task"]`(与现 allowed_tools 一致, 排除 Bash/Edit),
+一行改动+全量回归+golden 验证; R4 接线时再按白名单开受控 Bash。
+
+**机制(critic F1 修正: can_use_tool 是死路——bypassPermissions 下不触发, 且要求 streaming
+prompt, 现架构 query(str) 会直接 ValueError; 改用 PreToolUse hooks)**:
+- A0: 探 `ClaudeAgentOptions.hooks` PreToolUse 回调(matcher="Bash"/"Skill", 返回
+  permissionDecision allow/deny)在现有 query() 架构的接法(项目已有 .claude/settings.json
+  PreToolUse 先例); 探 ocr-page skill 实际执行的命令形态。
+- A1: 白名单闸——PreToolUse hook 限定: 仅允许 ocr-page 规定形态调用; 参数硬校验(文件路径解析后
+  必须落在本任务提交目录内、页码正整数、拒绝 shell 元字符/穿越); 校验在服务端 Python 层,
+  不信任 agent 传参。
 - A2: 对抗验证(TDD, 红先行)——注入样本集: 文件名含 `;rm`/反引号/`$()`、`../` 穿越、超长参数、
   伪造页锚; 断言全部被拒且进程无副作用。
 - A3: 接线——tender-eval skill/命令文档补「读不清页→调 ocr-page→用重识别文本再判」指令;
@@ -39,17 +50,23 @@ shell 元字符或 `../` 穿越 = 潜在 RCE(security-checklist P0 命令注入)
 ## 批次 B · 服务端确定性收口(codex, TDD)
 
 - **B1/F04 · evidence_chain 顶层派生**: `server/tender/output.py:enrich_tender_result` 追加——
-  顶层 `evidence_chain` 为空时, 从 `scoring[].award_hits/deduction_hits`(带非零分命中优先)派生
-  `{source, finding, conclusion}` 条目, **保留页锚**。顺序语义: 派生发生在 enrich(闸后), 派生源
-  award_hits 的 quote 本就经 evidence-resolution 闸回查过, 与「evidence_chain=展示元数据非承重」
-  既有语义一致, 不引入二次承重。复用 `server/tender/evidence.py` 的 hit 原语(:118-140)。
-  测试: 空链派生/非空链不覆盖/无 scoring 安全跳过/页锚保真断言。
-- **B2/R5 · schema 与语义对齐**(实施前探查 tender 语义处理器现状, schema-split 后动 tender 侧
-  不动 expense): ①`reviewed_by` 错标(实测吐 expense-auditor→应 tender-evaluator, 服务端 normalize
-  盖章); ②`manual_review_reason` tender 侧枚举补齐(requires_live_event/external_data/
-  cross_bid_comparison 语义是否入枚举, 以 .claude/CLAUDE.md tender 节与 0623 design 为准);
-  ③`policy_refs_detail` 入约评估——**若需改共享物理 schema(common/audit-result.json)则升级评估**:
-  影响 expense 侧=范围外, 改为 tender 专属物理 schema 文件(分家二期)或 defer, design 定稿时拍。
+  顶层 `evidence_chain` 为**空**时, 从 `scoring[].award_hits/deduction_hits`(带非零分命中优先)派生
+  `{source, finding, conclusion}` 条目, **保留页锚**。**空链精确定义(critic F4)**: None/缺字段/
+  `[]`/或经 `_normalize_evidence_chain` 拍平后所有条目 source+finding+conclusion 全为空串。
+  **顺序语义(critic F3 修正)**: `apply_schema_semantics` 实际顺序=normalize→schema→validate→
+  **enrich→resolve**——派生发生在 resolve 闸**之前**; 派生条目会被同次 resolve() 当普通
+  evidence_chain 项做存在性标注(仅写 `resolution` 字段), 但**降级只挂在 scoring[] 的
+  `_check_hits`/`_downgrade_scoring_item`**, 故不会二次误降级。测试: 空链派生(含全空串假非空)/
+  非空链不覆盖/无 scoring 安全跳过/页锚保真/**派生条目即便标 unresolved 也不改变 verdict 与
+  scoring** 五类断言。复用 `server/tender/evidence.py` hit 原语(:118-140)。
+- **B2/R5 · schema 与语义对齐**(critic F5/F7/F8 精简): ①`reviewed_by` 盖章——**在
+  `server/tender/output.py:normalize_tender_result` 调用共享 normalize 后覆盖
+  `reviewed_by="tender-evaluator"`**, 不改共享默认值 `_DEFAULT_REVIEWED_BY`(免波及 expense);
+  ②`manual_review_reason` 枚举扩展——直接编辑共享物理 schema
+  `.claude/contracts/common/audit-result.schema.json` 的 enum(加法式向后兼容, 无需升级评估仪式),
+  值以 .claude/CLAUDE.md tender 节为准; ③~~policy_refs_detail 入约~~**已删**——2026-06-23
+  `d26d90d` 已实现于共享 `enrich_audit_decision`(schema 校验后派生, 有测试), 本项改为
+  「补 1 个 tender 场景回归测试」的近零工作量确认项。
 - **B3/R6 · config 收口**: INFRA-01 超时关系约束(定位 TENDER_TIMEOUT 与 OCR 云等待的实际读取点,
   启动时校验「OCR 等待 ≤ 0.5×TENDER 超时」否则日志警告——只警告不硬拒, 部署机自主); INFRA-02
   cache v2 首跑重 OCR 的部署提示(runbook/README 注记+启动日志一行)。
@@ -76,7 +93,7 @@ expense 域零改动; 共享闸零改动(B2③ 如需动共享 schema 则按升�
 |---|---|
 | R4 白名单被绕过(未知注入面) | fail-closed: 对抗测试任一失败即不接线; can_use_tool 之外参数再服务端硬校验双层 |
 | F04 派生条目撞 evidence-resolution 闸误降级 | 派生放闸后 enrich; 测试含「真伪闸开启时派生不触发降级」断言 |
-| B2③ 牵动共享 schema | 触发即停, design 定稿时单独拍(专属物理文件 or defer) |
+| B2② 枚举扩展影响 expense 校验 | 加法式 enum 扩展向后兼容; expense 现有测试全绿作回归证明 |
 | glm 网关不可达 | C1 降部署机窗口, 不阻塞收口 |
 | D1 golden 回归波动 | 网关抖动重跑一次口径(沿用 D3+D10 验收 2 约定) |
 
@@ -86,9 +103,29 @@ expense 域零改动; 共享闸零改动(B2③ 如需动共享 schema 则按升�
 2. 批次 B: 全量 pytest 基线不回退+新增全绿; F04 派生四断言(空链派生/非空不覆盖/无 scoring 跳过/
    页锚保真); B2 语义断言(reviewed_by 盖章/枚举); B3 config 警告单测。
 3. ruff 净; 每批次独立 commit 序列; review(reviewer+spec)→evaluator PASS 后 merge。
-4. 条件项 C1/C2 状态如实记录(done/降级部署机/待授权), 不计入 Sisyphus 完整性阻塞。
+4. 条件项 C1/C2 若未完成, **必须在 plan.md 对应 Task 显式标 `status=blocked` + 阻塞原因**
+   (网关不可达/待用户授权)——符合铁律[Sisyphus 完整性]允许的 blocked 语义, 不得静默省略或不建
+   Task(critic F6)。
 
 ## 分派与顺序
 
-批次 B(codex, 确定性, 先行)∥ 批次 A(opus, 安全轮, 可并行不同 worktree 或串行——**建议串行
-B→A** 避免双写者红区叠加); C1/C2 按条件触发。critic 审议于 D3+D10 收口、本 sprint 立项时执行。
+批次 B(codex, 确定性, 先行)与批次 A(opus, 安全轮)**文件面基本不重叠**(B=output.py+config.py,
+A=agent_bridge hooks 接缝+skills 文档), 默认仍串行 B→A 求稳, wall-clock 紧张可双 worktree 真并行
+(critic F9)。C1/C2 按条件触发。
+
+## Round 1 · Critic Findings 与修订应答(2026-07-18, critic subagent, VERDICT=NEEDS_REVISION→已全部应答)
+
+| # | 级 | Finding(摘要) | 应答 |
+|---|---|---|---|
+| F1 | P0 | can_use_tool 死路: bypassPermissions 下不触发 + query(str) 非 streaming 直接 ValueError | 批次 A 机制改 PreToolUse hooks(SDK 文档指定替代), A0 探查改写 |
+| F2 | P0 | **Bash 敞口当前生产已存在**(tools 未设=全量工具+bypass 全放行), 非 R4 引入 | 批次 A 定位改「收紧敞口+接线」; **独立 Hotfix 提案待用户拍**(build_options 显式设 tools 排除 Bash); 主 agent 已独立核验 SDK 语义坐实 |
+| F3 | P0 | F04 顺序论据错误: 实际 enrich **先于** resolve | B1 论据改正(派生条目被 resolve 标注但降级只挂 scoring 不误降级)+补「unresolved 不改 verdict/scoring」断言 |
+| F4 | P1 | 空链判定无定义(全空串假非空) | B1 落空链精确定义 |
+| F5 | P1 | B2③ policy_refs_detail 已于 d26d90d 实现(共享 enrich, 有测试) | 砍 B2③, 改近零工作量回归确认项 |
+| F6 | P1 | 条件项与 Sisyphus 完整性表述不严谨 | 验收 4 改「blocked+原因」语义 |
+| F7 | P1 | B2③ 物理 schema 分叉=伪需求过度设计 | 随 F5 删除, 风险表行同步替换 |
+| F8 | P2 | reviewed_by 修复位置未指明(共享默认值不可改) | B2① 明确在 normalize_tender_result 覆盖盖章 |
+| F9 | P2 | 串行建议偏保守 | 分派节注记可并行 |
+
+P0 全部闭合(F2 的 Hotfix 部分待用户拍板, 不阻塞 design 定稿)。立项时若 Hotfix 已先行, 批次 A 在
+收紧基线上做接线; 未先行则批次 A 首个 commit 即收紧 tools。
