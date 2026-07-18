@@ -128,3 +128,12 @@
 - Agent ID: a7c67e0b5b30d846d
 - Last message: ## Spec Compliance (spec-compliance, 2026-07-18T00:00:00Z) **Design read in full**: `.ai_state/sprints/2026-07-18-tender-schema-split/design.md` (T1–T6 + F6/F5 spec + Round 1 critic revision F1/F2). *
 
+## 2026-07-18T00:37:31.296Z · general-purpose
+- Event: SubagentStart
+- Agent ID: afda8235852788fb4
+
+## 2026-07-18T00:48:39.343Z · general-purpose
+- Event: SubagentStop
+- Agent ID: afda8235852788fb4
+- Last message: Design doc written to `/Users/mi_manchi/workspace/enterprise-agent-platform/.ai_state/sprints/2026-07-18-d8-transcript-slimming/design.md` (503 lines, mirrors the D7 handoff-spec style/structure). Gro
+

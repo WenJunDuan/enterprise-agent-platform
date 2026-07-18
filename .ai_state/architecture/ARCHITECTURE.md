@@ -36,6 +36,10 @@ app (api/cli) → routes → ops → features(audit|tender) → ocr(服务层) �
   `server/common/corpus.py`（通用语料原语）+ `server/tender/evidence.py`（tender resolve + scoring 助手）；
   共享 audit-result 三函数 generic/tender 分家，expense/audit 不再跑 tender 校验。**tender 逻辑至此全部归位
   `server/tender/`，`common/` 零 tender 依赖。** 见 `compound/2026-07-16-decision-carve-f6-schema-split-from-d2.md`。
+- **D8 底稿瘦身（transcript-slimming，merge be85ec0）**：新增 `server/tender/context_slim.py`——按项目 criteria
+  检索招标文件相关章节（内存 FTS5，复用 D6 `docstructure` + D7 `rag`），替代全量 32 万 token 灌注；`runner.py`
+  loader 由 `TENDER_SLIM_CONTEXT`（默认关）门控，flag off = 同一 `_load_doc_layer_context` 函数对象、行为逐字节不变。
+  页锚显式前缀保真，任一 criteria 项零命中则整档回退不部分丢。成本/质量四指标验收 = 部署机 runbook（待跑）。
 - 守卫：`tests/test_layering.py`：routes 不 import api、platform 叶子、common 不依赖上层、
   feature 互斥（audit↔tender）、**ocr 单向（audit/tender→ocr 合法、反向禁止）**、ops 不 import
   routes/app/features、stores 只 import platform、server.tender 纳入 ops/common/stores 禁区、
