@@ -51,6 +51,32 @@ Wave2 是收益最大的主线（成本/一致性双收）；流式是体验增�
 三域账外债自此全部在册——D10 吸收 2026-06-12 quality backlog 剩余（③④⑤残），
 D11 收口 2026-06-23 judgment-discipline 六项残留；执行时按 PACE 惯例每 item 各开 sprint。
 
+## 执行序重排（2026-07-18，D3 spike 出数后，fable5 主 agent 排定）
+
+**重排依据**（证据：`sprints/2026-07-18-prompt-single-source/{route-note.md, spike/results.jsonl}`）：
+
+1. D3 spike 完场：三模式时延中位差 <6% → **延迟不再是 command 统一的约束**；两源 prompt 漂移已实测
+   兑换成生产可靠性差（内联 4/6 attempt 漏 explanation vs command 侧 1/7）→ D3 从「卫生债」升级为
+   「可靠性项」；B1（agent 自行取证）1/3 verdict 漂移淘汰，command 统一必须 B2（context 注入）形态。
+2. 其中最痛的 prompt-闸矛盾已单独修复（`07f1dc8`，2026-07-18 merge `60d860c`），D3 拍板压力降低，
+   但**剩余唯一决策变量 = D10① 直连 spike 数据**（直连 vs command 二选一，roadmap 原定同场拍板）。
+3. D11 的依赖（D1/D2）已全部 done，与 D3/D10 零耦合 → 提升为等待窗口的并行项。
+4. D4 仍卡部署机前置（V4Pro 基线标定 → 一致性阈值硬门锁定），部署机窗口的活集中打包。
+
+**新执行序**（E# 为建议顺位；「窗口并行」= 等用户拍板/部署机期间可起）：
+
+| 顺位 | 项 | 场地 | 说明 |
+|---|---|---|---|
+| E1 | **D10① 直连 spike** | 本机 | anthropic SDK 直打网关测时延/可靠性，补齐 D3/D10 拍板的最后一块数据；小工装，落同 sprint spike/ |
+| E2 | **D3+D10 同场拍板 → D3 实施** | 用户拍 → 本机 | 方向 a=command 单源(B2) / b=Python 单源；实施含 .claude 瘦身，方向定后可外包（codex/generator） |
+| E2' | D10 剩余（②附件预嵌 ③耗时指标+runbook） | 本机 | 形态随 E2 拍板定 |
+| E3 | **D11 tender 残留收口** | 本机·窗口并行 | R4 安全硬化独立轮（红区）；F04 纯服务端低风险可先行；R7 前端与 D9 同批授权 |
+| E4 | chore：dependabot 14 漏洞（6 high） | 本机·窗口并行 | 走 deps-check，可外包 codex |
+| — | 部署机窗口（用户）：D8 runbook 四指标→达标改默认 1；V4Pro 基线→一致性阈值锁硬门（=D4 前置） | 部署机 | 两件同窗口做完 |
+| E5 | D4 L2 多模型路由 | 本机 | 部署机前置解锁后 |
+| E6 | D5 决策点 agent 化 | 本机 | 依赖 D3+D4 |
+| E7 | D9 页级流式 | 本机+前端红区 | 依赖 D4 + agent-front 授权 |
+
 ## 护栏（每 sprint 铁律级）
 
 - **页锚全链路保真**：任何切片/检索/结构化产物必须保留【第N页】锚点，否则
