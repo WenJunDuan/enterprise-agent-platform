@@ -159,7 +159,7 @@ items:
     effort: M
     wave: 2
     depends_on: [D2, D7]
-    status: pending
+    status: done # 2026-07-18 merge be85ec0(codex sol-high,主agent审读+独立验,全量 861 绿,MVP):server/tender/context_slim.py 按 criteria(eligibility_rules→qualification_review/items→evaluation_method)检索招标文件章节(内存 FTS5 复用 D6 docstructure+D7 rag,chunk_id 去重,页锚显式前缀保真,任一查询空/无章节则整档回退不部分丢)+runner.py flag 门控 TENDER_SLIM_CONTEXT(默认关,off=同一 loader 函数对象逐字节不变,现有 test_tender_read_layer 10 测未改全过)。**部署机 runbook(codex 范围外,待跑)**:TENDER_SLIM_CONTEXT=1 用真标书跑 S7 harness 对比成本/时延/一致性跨度/policy_refs 四指标,达标再改默认值 1(另开任务)。DEFER:投标(S2)侧检索精简=backlog
     note: >
       tender_worker（已迁 server/tender/）从 32 万 token 全量灌改为按 criteria 项检索相关章节喂模型。
       验收=复跑 logs/s7-model-compare harness 对比：成本、时延、评分一致性跨度、policy_refs 合规率

@@ -27,3 +27,5 @@
 {"schema_version":1,"event":"SubagentStart","agent_id":"a7c67e0b5b30d846d","agent_type":"spec-compliance","sprint_slug":"2026-07-16-tender-feature-package","timestamp":"2026-07-17T23:50:41.458Z"}
 {"schema_version":1,"event":"SubagentStop","agent_id":"a0d0570d6514c9b80","agent_type":"reviewer","sprint_slug":"2026-07-16-tender-feature-package","timestamp":"2026-07-18T00:29:55.957Z"}
 {"schema_version":1,"event":"SubagentStop","agent_id":"a7c67e0b5b30d846d","agent_type":"spec-compliance","sprint_slug":"2026-07-16-tender-feature-package","timestamp":"2026-07-18T00:30:55.096Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"afda8235852788fb4","agent_type":"general-purpose","sprint_slug":"2026-07-16-tender-feature-package","timestamp":"2026-07-18T00:37:31.295Z"}
+{"schema_version":1,"event":"SubagentStop","agent_id":"afda8235852788fb4","agent_type":"general-purpose","sprint_slug":"2026-07-16-tender-feature-package","timestamp":"2026-07-18T00:48:39.342Z"}
