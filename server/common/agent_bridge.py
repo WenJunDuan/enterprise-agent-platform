@@ -152,6 +152,13 @@ class AgentRunMeta:
     # 记录运维基线指标（S7 配套问题②）。纯增量、有默认值，json_bridge.py 唯一构造点全
     # 关键字传参，不传本字段时安全走默认 0，audit/expense 调用链零改动。
     retry_count: int = 0
+    # 尾部默认字段（D10③，同 retry_count 先例）：耗时/token 指标，默认 0——只有
+    # server/audit/direct.py 的直连路径实际填写（网关一次往返即拿到 usage），
+    # CLI 路径（run_agent_json/run_agent）不改动、维持默认 0（无对应 SDK 事件可读）。
+    # slots=True 同样禁止外部动态挂属性，字段必须在此声明才能被赋值。
+    wall_s: float = 0.0
+    input_tokens: int = 0
+    output_tokens: int = 0
 
 
 def build_options(**overrides: Any) -> ClaudeAgentOptions:
