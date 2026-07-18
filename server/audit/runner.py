@@ -9,9 +9,11 @@ the injected rules; Python only delivers the inputs.
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
+from server.audit.direct import DirectTransportError, run_direct_audit
 from server.common.domain_profile import (
     DomainProfile,
     assemble_domain_prompt,
@@ -29,6 +31,14 @@ from server.platform.config import get_audit_settings
 from server.platform.paths import PROJECT_ROOT
 
 logger = logging.getLogger(__name__)
+
+# D10① flag 门控（默认关）：开启后走 server/audit/direct.py 的 AsyncAnthropic 直连路径，
+# 关闭（默认）时行为与 flag 引入前完全一致——现有 claude-agent-sdk CLI 子进程路径。
+AUDIT_DIRECT_CONNECT_ENV = "AUDIT_DIRECT_CONNECT"
+
+
+def _direct_connect_enabled() -> bool:
+    return os.getenv(AUDIT_DIRECT_CONNECT_ENV, "0").strip().lower() in {"1", "true", "yes"}
 
 EXPENSE_RULES_DIR = PROJECT_ROOT / "knowledge" / "expense"
 CASE_REQUEST_FILE = "audit-request.json"
@@ -129,6 +139,69 @@ async def run_inline_directory_audit(
 
     ``ocr_block``（P4）：附件确定性 OCR 底稿，**由路由层预处理后传入**（feature 域 audit/ 不可
     跨域 import ocr/；OCR 预处理放 routes/audit_worker，见 test_layering）。注入后模型无需再 Read。
+
+    D10① flag 门控（``AUDIT_DIRECT_CONNECT``，默认关）：关闭时行为与 flag 引入前完全一致——
+    全部走下方 ``_run_cli_directory_audit``（claude-agent-sdk CLI 子进程）。开启时先走
+    ``server/audit/direct.py`` 的 AsyncAnthropic 直连路径；**回落语义**（critic F2，不可
+    静默降级）——传输类故障（连接/鉴权/网关 5xx/超时，秒级失败）单次回落 CLI 路径（复合最坏
+    ≈ 直连超时 + CLI 自身重试环 < AUDIT_TIMEOUT_SEC 180s）；契约类故障（重试耗尽仍不合规，
+    换路径大概率同败）直接向上抛出，**不回落**。
+    """
+    if _direct_connect_enabled():
+        settings = get_audit_settings()
+        # 直连路径只支持 run_direct_audit 显式声明的 opts（review round1 F3）：从副本里取出
+        # project_id/archive_to_results 转发，其余键 **fail-fast**——不静默丢弃，避免 flag
+        # on/off 行为悄悄漂移（如某调用方新传 evidence_source 时直连侧无声吞掉）。opts 原样
+        # 保留供传输类回落时透传给 CLI 路径（CLI 经 run_agent_json 支持这些键）。
+        direct_opts = dict(opts)
+        project_id = direct_opts.pop("project_id", None)
+        archive_to_results = direct_opts.pop("archive_to_results", True)
+        if direct_opts:
+            raise ValueError(
+                f"AUDIT_DIRECT_CONNECT 直连路径不支持这些选项: {sorted(direct_opts)}；"
+                "请走 CLI 路径（AUDIT_DIRECT_CONNECT=0）或扩展 run_direct_audit 显式支持。"
+            )
+        prompt = build_inline_audit_prompt(directory_path, ocr_block=ocr_block)
+        try:
+            return await run_direct_audit(
+                prompt,
+                request_id=request_id,
+                tenant=tenant,
+                schema_name=DEFAULT_OUTPUT_SCHEMA_NAME,
+                contract_max_retry=settings.contract_max_retry,
+                project_id=project_id,
+                archive_to_results=archive_to_results,
+            )
+        except DirectTransportError as exc:
+            logger.warning(
+                "audit direct-connect transport failure, falling back to CLI path once: %s",
+                exc,
+                extra={"request_id": request_id, "tenant": tenant or "default"},
+            )
+            return await _run_cli_directory_audit(
+                directory_path,
+                request_id=request_id,
+                tenant=tenant,
+                ocr_block=ocr_block,
+                **opts,
+            )
+        # DirectContractError：设计禁止静默降级，原样向上抛出，不回落 CLI 路径。
+    return await _run_cli_directory_audit(
+        directory_path, request_id=request_id, tenant=tenant, ocr_block=ocr_block, **opts
+    )
+
+
+async def _run_cli_directory_audit(
+    directory_path: str,
+    *,
+    request_id: str,
+    tenant: str | None,
+    ocr_block: str | None = None,
+    **opts: Any,
+) -> tuple[StructuredJSON, AgentRunMeta]:
+    """claude-agent-sdk CLI 子进程路径（D10① 引入前的 ``run_inline_directory_audit`` 原实现，
+    仅改名——flag off 时字节级行为不变，D8 wiring 断言写法同款覆盖见
+    ``tests/test_audit_direct_connect.py``）。
     """
     # 所有开关集中在 config.AuditSettings（含各项取舍背景）；每次审核读一次，
     # 部署机改 env 重启即生效。
