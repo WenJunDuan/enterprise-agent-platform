@@ -16,11 +16,11 @@ import jsonschema
 import pytest
 
 from server.common.contract import (
-    DEFAULT_OUTPUT_SCHEMA_NAME,
     JSONContractError,
     apply_schema_semantics,
     load_output_schema,
 )
+from server.tender.output import TENDER_OUTPUT_SCHEMA_NAME
 import server.common.output_contracts as oc
 
 CRITERIA_SCHEMA = "tender/criteria.schema.json"
@@ -265,7 +265,7 @@ def test_audit_with_criteria_passes_with_statute_policy_ref(monkeypatch):
     # 承重 approved：policy_refs 引通则层真实 rule_id → 过真伪闸；criteria 随 extracted_data 保留。
     monkeypatch.setenv("RULE_REF_CHECK", "1")
     monkeypatch.setattr(oc, "_load_known_rule_ids", lambda: _TENDER_KNOWN)
-    out = apply_schema_semantics(DEFAULT_OUTPUT_SCHEMA_NAME, _audit_approved())
+    out = apply_schema_semantics(TENDER_OUTPUT_SCHEMA_NAME, _audit_approved())
     assert out["result"] is True
     # criteria 不被出口闸吞，原样落 extracted_data（→ archive_result_payload 持久化）。
     assert out["extracted_data"]["criteria"]["method"] == "综合评估法"
@@ -279,7 +279,7 @@ def test_fabricated_project_layer_ref_rejected(monkeypatch):
     monkeypatch.setattr(oc, "_load_known_rule_ids", lambda: _TENDER_KNOWN)
     with pytest.raises(JSONContractError):
         apply_schema_semantics(
-            DEFAULT_OUTPUT_SCHEMA_NAME,
+            TENDER_OUTPUT_SCHEMA_NAME,
             _audit_approved(policy_refs=["tender_r2024007_004"]),
         )
 
@@ -289,7 +289,7 @@ def test_unjudgeable_item_null_score_passes(monkeypatch):
     monkeypatch.setenv("RULE_REF_CHECK", "1")
     monkeypatch.setattr(oc, "_load_known_rule_ids", lambda: _TENDER_KNOWN)
     out = apply_schema_semantics(
-        DEFAULT_OUTPUT_SCHEMA_NAME,
+        TENDER_OUTPUT_SCHEMA_NAME,
         _audit_approved(
             verdict="manual_review",
             manual_review_reason="rule_gap",
@@ -361,7 +361,7 @@ def test_tender_explanation_score_summary_stays_server_canonical(monkeypatch):
     monkeypatch.setenv("RULE_REF_CHECK", "1")
     monkeypatch.setattr(oc, "_load_known_rule_ids", lambda: _TENDER_KNOWN)
     out = apply_schema_semantics(
-        DEFAULT_OUTPUT_SCHEMA_NAME,
+        TENDER_OUTPUT_SCHEMA_NAME,
         _scored_with(
             {
                 "criteria": _scored_criteria(),
@@ -396,7 +396,7 @@ def test_score_mode_deduction_inconsistent_records_warning(monkeypatch):
     crit = _scored_criteria()
     crit["items"][0]["score_mode"] = "deduction"
     out = apply_schema_semantics(
-        DEFAULT_OUTPUT_SCHEMA_NAME,
+        TENDER_OUTPUT_SCHEMA_NAME,
         _scored_with(
             {
                 "criteria": crit,
@@ -425,7 +425,7 @@ def test_score_mode_deduction_consistent_no_warning(monkeypatch):
     crit = _scored_criteria()
     crit["items"][0]["score_mode"] = "deduction"
     out = apply_schema_semantics(
-        DEFAULT_OUTPUT_SCHEMA_NAME,
+        TENDER_OUTPUT_SCHEMA_NAME,
         _scored_with(
             {
                 "criteria": crit,
@@ -454,7 +454,7 @@ def test_score_mode_banded_not_treated_as_deduction(monkeypatch):
     crit = _scored_criteria()
     crit["items"][0]["score_mode"] = "banded"
     out = apply_schema_semantics(
-        DEFAULT_OUTPUT_SCHEMA_NAME,
+        TENDER_OUTPUT_SCHEMA_NAME,
         _scored_with(
             {
                 "criteria": crit,
@@ -477,7 +477,7 @@ def test_score_mode_skips_null_and_manual(monkeypatch):
     monkeypatch.setenv("RULE_REF_CHECK", "1")
     monkeypatch.setattr(oc, "_load_known_rule_ids", lambda: _TENDER_KNOWN)
     out = apply_schema_semantics(
-        DEFAULT_OUTPUT_SCHEMA_NAME,
+        TENDER_OUTPUT_SCHEMA_NAME,
         _scored_with(
             {
                 "criteria": _mixed_criteria(),
@@ -541,7 +541,7 @@ def test_criteria_missing_score_mode_warns(monkeypatch):
     monkeypatch.setenv("RULE_REF_CHECK", "1")
     monkeypatch.setattr(oc, "_load_known_rule_ids", lambda: _TENDER_KNOWN)
     out = apply_schema_semantics(
-        DEFAULT_OUTPUT_SCHEMA_NAME,
+        TENDER_OUTPUT_SCHEMA_NAME,
         _scored_with(
             {
                 "criteria": _scored_criteria(),  # 无 score_mode
@@ -564,7 +564,7 @@ def test_criteria_mode_container_mismatch_warns(monkeypatch):
     crit["items"][0]["score_mode"] = "deduction"  # 但不给 deductions
     crit["items"][1]["score_mode"] = "banded"  # 但不给 bands
     out = apply_schema_semantics(
-        DEFAULT_OUTPUT_SCHEMA_NAME,
+        TENDER_OUTPUT_SCHEMA_NAME,
         _scored_with(
             {
                 "criteria": crit,
@@ -585,7 +585,7 @@ def test_tender_explanation_is_user_facing_and_score_summary_is_canonical(monkey
     monkeypatch.setenv("RULE_REF_CHECK", "1")
     monkeypatch.setattr(oc, "_load_known_rule_ids", lambda: _TENDER_KNOWN)
     out = apply_schema_semantics(
-        DEFAULT_OUTPUT_SCHEMA_NAME,
+        TENDER_OUTPUT_SCHEMA_NAME,
         _scored_with(
             {
                 "criteria": _scored_criteria(),
@@ -635,7 +635,7 @@ def test_failed_eligibility_rejected_explanation_skips_score_summary(monkeypatch
     monkeypatch.setenv("RULE_REF_CHECK", "1")
     monkeypatch.setattr(oc, "_load_known_rule_ids", lambda: _TENDER_KNOWN)
     out = apply_schema_semantics(
-        DEFAULT_OUTPUT_SCHEMA_NAME,
+        TENDER_OUTPUT_SCHEMA_NAME,
         _scored_with(
             {
                 "criteria": _scored_criteria(),
@@ -683,7 +683,7 @@ def test_unknown_top_field_stripped_not_rejected(monkeypatch):
     monkeypatch.setenv("RULE_REF_CHECK", "1")
     monkeypatch.setattr(oc, "_load_known_rule_ids", lambda: _TENDER_KNOWN)
     out = apply_schema_semantics(
-        DEFAULT_OUTPUT_SCHEMA_NAME,
+        TENDER_OUTPUT_SCHEMA_NAME,
         _audit_approved(
             missing_fields=["entertainment_target"],
             technical_subtotal=50,
@@ -701,7 +701,7 @@ def test_scored_zero_demoted_when_disqualified(monkeypatch):
     crit = _scored_criteria()
     crit["items"][0]["score_mode"] = "additive"
     out = apply_schema_semantics(
-        DEFAULT_OUTPUT_SCHEMA_NAME,
+        TENDER_OUTPUT_SCHEMA_NAME,
         _scored_with(
             {
                 "criteria": crit,
@@ -727,7 +727,7 @@ def test_scored_zero_no_disq_only_warns(monkeypatch):
     crit = _scored_criteria()
     crit["items"][0]["score_mode"] = "additive"
     out = apply_schema_semantics(
-        DEFAULT_OUTPUT_SCHEMA_NAME,
+        TENDER_OUTPUT_SCHEMA_NAME,
         _scored_with(
             {
                 "criteria": crit,
@@ -752,7 +752,7 @@ def test_passfail_zero_not_demoted(monkeypatch):
     crit = _scored_criteria()
     crit["items"][0]["score_mode"] = "pass_fail"
     out = apply_schema_semantics(
-        DEFAULT_OUTPUT_SCHEMA_NAME,
+        TENDER_OUTPUT_SCHEMA_NAME,
         _scored_with(
             {
                 "criteria": crit,
@@ -775,7 +775,7 @@ def test_deduction_zero_with_hits_no_suspect(monkeypatch):
     crit = _scored_criteria()
     crit["items"][0]["score_mode"] = "deduction"
     out = apply_schema_semantics(
-        DEFAULT_OUTPUT_SCHEMA_NAME,
+        TENDER_OUTPUT_SCHEMA_NAME,
         _scored_with(
             {
                 "criteria": crit,
@@ -900,7 +900,7 @@ def test_formula_scored_closed_spec_no_warning(monkeypatch):
     monkeypatch.setenv("RULE_REF_CHECK", "1")
     monkeypatch.setattr(oc, "_load_known_rule_ids", lambda: _TENDER_KNOWN)
     out = apply_schema_semantics(
-        DEFAULT_OUTPUT_SCHEMA_NAME,
+        TENDER_OUTPUT_SCHEMA_NAME,
         _scored_with({"criteria": _formula_criteria(_CLOSED_FORMULA_SPEC),
                       "scoring": _formula_scoring()}),
     )
@@ -912,7 +912,7 @@ def test_formula_scored_no_spec_warns(monkeypatch):
     monkeypatch.setenv("RULE_REF_CHECK", "1")
     monkeypatch.setattr(oc, "_load_known_rule_ids", lambda: _TENDER_KNOWN)
     out = apply_schema_semantics(
-        DEFAULT_OUTPUT_SCHEMA_NAME,
+        TENDER_OUTPUT_SCHEMA_NAME,
         _scored_with({"criteria": _formula_criteria(None),
                       "scoring": _formula_scoring()}),
     )
@@ -924,7 +924,7 @@ def test_formula_scored_not_closeable_warns(monkeypatch):
     monkeypatch.setenv("RULE_REF_CHECK", "1")
     monkeypatch.setattr(oc, "_load_known_rule_ids", lambda: _TENDER_KNOWN)
     out = apply_schema_semantics(
-        DEFAULT_OUTPUT_SCHEMA_NAME,
+        TENDER_OUTPUT_SCHEMA_NAME,
         _scored_with({"criteria": _formula_criteria(_CROSS_FORMULA_SPEC),
                       "scoring": _formula_scoring()}),
     )
@@ -936,7 +936,7 @@ def test_formula_manual_review_no_warning(monkeypatch):
     monkeypatch.setenv("RULE_REF_CHECK", "1")
     monkeypatch.setattr(oc, "_load_known_rule_ids", lambda: _TENDER_KNOWN)
     out = apply_schema_semantics(
-        DEFAULT_OUTPUT_SCHEMA_NAME,
+        TENDER_OUTPUT_SCHEMA_NAME,
         _scored_with(
             {"criteria": _formula_criteria(_CROSS_FORMULA_SPEC),
              "scoring": _formula_scoring(status="manual_review", score=None)},
@@ -955,7 +955,7 @@ def test_formula_scored_missing_value_warns(monkeypatch):
     spec = copy.deepcopy(_CLOSED_FORMULA_SPEC)
     spec["variables"][1]["value"] = None  # 本家报价没抽到
     out = apply_schema_semantics(
-        DEFAULT_OUTPUT_SCHEMA_NAME,
+        TENDER_OUTPUT_SCHEMA_NAME,
         _scored_with({"criteria": _formula_criteria(spec), "scoring": _formula_scoring()}),
     )
     assert "formula_scored_missing_value" in _formula_warns(out)

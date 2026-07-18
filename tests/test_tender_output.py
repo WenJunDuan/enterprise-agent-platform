@@ -1,4 +1,4 @@
-"""S4: server.common.tender_output 直接单测（从 output_contracts 抽离的 tender 专属逻辑）。
+"""F6: server.tender.output 直接单测（从 output_contracts 抽离的 tender 专属逻辑，T2 搬家）。
 
 锁定：① tender-only 后处理不误伤 expense；② 废标/资格 gate 的 confirmed/eligibility 语义；
 ③ 得分小结重算；④ 评分一致性闸（硬拒超量纲 / 软告警 score_mode 不一致 / 可选 plan 丢弃）。
@@ -12,17 +12,17 @@ import sys
 import pytest
 
 from server.common.contract import JSONContractError
-from server.common import tender_output as to
+from server.tender import output as to
 
 
 def test_tender_output_independently_importable():
-    """S4 review P2: 全新解释器里**首个** import server.common.tender_output 必须成功。
+    """S4 review P2: 全新解释器里**首个** import server.tender.output 必须成功。
 
-    防 contract → output_contracts → tender_output → contract 的模块加载期环回归（本测试文件本身
+    防 contract → output_contracts → tender.output → contract 的模块加载期环回归（本测试文件本身
     先 import 了 contract，会 preload 安全顺序而掩盖该 bug，故用独立子进程在干净 sys.modules 下验证）。
     """
     result = subprocess.run(
-        [sys.executable, "-c", "import server.common.tender_output"],
+        [sys.executable, "-c", "import server.tender.output"],
         capture_output=True,
         text=True,
     )
@@ -111,3 +111,36 @@ def test_normalize_optional_plan_drops_invalid():
     out = {"extracted_data": {"plan": {"not": "valid-plan-shape"}}}
     to._normalize_optional_plan(out)
     assert "plan" not in out["extracted_data"]  # 形不对的可选 plan 丢弃，不抛
+
+
+# ── T5 (G2/F3): 自注册回归 —— 隔离子进程，不被同进程内其它测试的 import 顺序掩盖 ──────
+
+
+def test_package_import_registers_tender_schema():
+    """G2/F3: importing the server.tender package (any submodule) must self-register
+    TENDER_OUTPUT_SCHEMA_NAME -- proven in a fresh interpreter so no other test's import
+    order can accidentally pre-warm the registry."""
+    code = (
+        "import server.tender\n"
+        "from server.common.contract import _SCHEMA_PROCESSORS\n"
+        "from server.tender.output import TENDER_OUTPUT_SCHEMA_NAME\n"
+        "assert TENDER_OUTPUT_SCHEMA_NAME in _SCHEMA_PROCESSORS, "
+        "'server.tender import did not self-register the tender schema processor'\n"
+    )
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
+
+
+def test_cli_import_registers_tender_schema():
+    """G2: the CLI entrypoint specifically must trigger self-registration -- this is the
+    exact gap Round-2 critic flagged (cli.py->command_adapter->json_bridge->contract had zero
+    server.tender import). Importing server.cli in a fresh interpreter must be enough."""
+    code = (
+        "import server.cli\n"
+        "from server.common.contract import _SCHEMA_PROCESSORS\n"
+        "from server.tender.output import TENDER_OUTPUT_SCHEMA_NAME\n"
+        "assert TENDER_OUTPUT_SCHEMA_NAME in _SCHEMA_PROCESSORS, "
+        "'importing server.cli did not self-register the tender schema processor'\n"
+    )
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr

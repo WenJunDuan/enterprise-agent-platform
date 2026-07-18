@@ -14,8 +14,11 @@ from server.common.contract import (
     SchemaProcessor,
     _SCHEMA_PROCESSORS,
     apply_schema_semantics,
+    build_output_format,
+    load_output_schema,
     register_schema_processor,
 )
+from server.tender.output import TENDER_OUTPUT_SCHEMA_NAME
 import server.common.output_contracts as _oc
 
 
@@ -87,7 +90,7 @@ def test_disqualification_hits_coerce_verdict_to_rejected():
     """R2 verdict 一致性：disqualification_hits 非空（硬废标）→ verdict 强制 rejected，即使模型
     判 manual_review（治"投错标判成 manual_review"，与其自标 disqualification_hits 自相矛盾）。"""
     out = apply_schema_semantics(
-        DEFAULT_OUTPUT_SCHEMA_NAME,
+        TENDER_OUTPUT_SCHEMA_NAME,
         _valid_audit_result(
             verdict="manual_review",
             manual_review_reason="insufficient_evidence",
@@ -106,7 +109,7 @@ def test_unconfirmed_disqualification_does_not_coerce_rejected():
     不误废标合规投标人。"""
     for confirmed in (False, None):
         out = apply_schema_semantics(
-            DEFAULT_OUTPUT_SCHEMA_NAME,
+            TENDER_OUTPUT_SCHEMA_NAME,
             _valid_audit_result(
                 verdict="manual_review",
                 manual_review_reason="insufficient_evidence",
@@ -128,7 +131,7 @@ def test_unconfirmed_disqualification_does_not_coerce_rejected():
 def test_confirmed_disqualification_still_coerces_rejected():
     """R2b 反例：confirmed:true 的硬废标命中 → 仍强制 rejected（决断不放松）。"""
     out = apply_schema_semantics(
-        DEFAULT_OUTPUT_SCHEMA_NAME,
+        TENDER_OUTPUT_SCHEMA_NAME,
         _valid_audit_result(
             verdict="manual_review",
             manual_review_reason="insufficient_evidence",
@@ -163,7 +166,7 @@ def test_string_reasons_coerced_to_list_not_rejected():
 def test_eligibility_fail_coerces_verdict_to_rejected():
     """R2：任一 eligibility_checks.status=fail（资格否决）→ verdict 强制 rejected。"""
     out = apply_schema_semantics(
-        DEFAULT_OUTPUT_SCHEMA_NAME,
+        TENDER_OUTPUT_SCHEMA_NAME,
         _valid_audit_result(
             verdict="approved",
             policy_refs=["tender_evalmethod_006"],
@@ -176,7 +179,7 @@ def test_eligibility_fail_coerces_verdict_to_rejected():
 def test_no_disqualification_leaves_verdict_untouched():
     """无废标/资格否决 → verdict 不被纠偏（expense 域 extracted_data 无此结构，恒不触发）。"""
     out = apply_schema_semantics(
-        DEFAULT_OUTPUT_SCHEMA_NAME,
+        TENDER_OUTPUT_SCHEMA_NAME,
         _valid_audit_result(verdict="approved", extracted_data={"scoring": []}),
     )
     assert out["verdict"] == "approved"
@@ -193,7 +196,7 @@ def test_falsy_disqualification_does_not_coerce(disq):
     朴素 bool() 会把"无"当命中→误判废标。必须是"非空 list + 含有内容的 dict"才算硬废标。
     """
     out = apply_schema_semantics(
-        DEFAULT_OUTPUT_SCHEMA_NAME,
+        TENDER_OUTPUT_SCHEMA_NAME,
         _valid_audit_result(verdict="approved", extracted_data={"disqualification_hits": disq}),
     )
     assert out["verdict"] == "approved"
@@ -243,7 +246,7 @@ def test_evidence_chain_extra_fields_normalized_not_rejected():
 def test_eligibility_fail_case_insensitive_coerces(status):
     """codex R2 P2：eligibility status 大小写/空白容错（FAIL/fail /Fail 均算 fail→rejected）。"""
     out = apply_schema_semantics(
-        DEFAULT_OUTPUT_SCHEMA_NAME,
+        TENDER_OUTPUT_SCHEMA_NAME,
         _valid_audit_result(
             verdict="approved",
             policy_refs=["tender_evalmethod_006"],
@@ -418,7 +421,7 @@ def test_mixed_policy_refs_strips_fabricated_keeps_real(monkeypatch):
 def test_malformed_optional_plan_dropped_not_rejected():
     """R4-D 降重试：可选 extracted_data.plan 形不符 plan 契约 → 丢弃而非整单拒（实测 glm）。"""
     out = apply_schema_semantics(
-        DEFAULT_OUTPUT_SCHEMA_NAME,
+        TENDER_OUTPUT_SCHEMA_NAME,
         _valid_audit_result(
             verdict="manual_review",
             manual_review_reason="insufficient_evidence",
@@ -447,7 +450,7 @@ def test_scoring_consistency_rejects_score_over_max():
         extracted_data={"scoring": [{"item": "技术", "max": 10, "score": 15, "status": "scored"}]}
     )
     with pytest.raises(JSONContractError):
-        apply_schema_semantics(DEFAULT_OUTPUT_SCHEMA_NAME, bad)
+        apply_schema_semantics(TENDER_OUTPUT_SCHEMA_NAME, bad)
 
 
 def test_scoring_consistency_allows_null_score():
@@ -457,7 +460,7 @@ def test_scoring_consistency_allows_null_score():
             "scoring": [{"item": "答辩", "max": 10, "score": None, "status": "manual_review"}]
         }
     )
-    out = apply_schema_semantics(DEFAULT_OUTPUT_SCHEMA_NAME, ok)
+    out = apply_schema_semantics(TENDER_OUTPUT_SCHEMA_NAME, ok)
     assert out["result"] is True
 
 
@@ -465,7 +468,7 @@ def test_scoring_consistency_allows_valid_score():
     ok = _valid_audit_result(
         extracted_data={"scoring": [{"item": "技术", "max": 10, "score": 8, "status": "scored"}]}
     )
-    out = apply_schema_semantics(DEFAULT_OUTPUT_SCHEMA_NAME, ok)
+    out = apply_schema_semantics(TENDER_OUTPUT_SCHEMA_NAME, ok)
     assert out["result"] is True
 
 
@@ -476,20 +479,20 @@ def test_plan_present_valid_passes():
     ok = _valid_audit_result(
         extracted_data={"plan": {"nodes": [{"step": 0, "intent": "清点文件", "tag": "sequential"}]}}
     )
-    out = apply_schema_semantics(DEFAULT_OUTPUT_SCHEMA_NAME, ok)
+    out = apply_schema_semantics(TENDER_OUTPUT_SCHEMA_NAME, ok)
     assert out["result"] is True
 
 
 def test_plan_present_malformed_dropped_not_rejected():
     # R4-D 行为变更：plan 是【可选】非承重字段，形不对 → 丢弃而非整单拒（旧行为整单拒会重跑 290s）。
     bad = _valid_audit_result(extracted_data={"plan": {"nodes": [{"step": 0}]}})
-    out = apply_schema_semantics(DEFAULT_OUTPUT_SCHEMA_NAME, bad)
+    out = apply_schema_semantics(TENDER_OUTPUT_SCHEMA_NAME, bad)
     assert "plan" not in out["extracted_data"]
 
 
 def test_no_plan_skips_plan_check():
     # 未产出 plan（内联散文计划）→ 跳过，不报错。
-    out = apply_schema_semantics(DEFAULT_OUTPUT_SCHEMA_NAME, _valid_audit_result())
+    out = apply_schema_semantics(TENDER_OUTPUT_SCHEMA_NAME, _valid_audit_result())
     assert out["result"] is True
 
 
@@ -533,7 +536,7 @@ def _warning_codes(out: dict) -> set[str]:
 def test_r4_deduction_scored_partial_without_hits_warns():
     # 部分扣分(0<score<max)却无 deduction_hits 明细 → 笼统扣分告警
     out = apply_schema_semantics(
-        DEFAULT_OUTPUT_SCHEMA_NAME,
+        TENDER_OUTPUT_SCHEMA_NAME,
         _valid_audit_result(
             extracted_data={
                 "scoring": [
@@ -554,7 +557,7 @@ def test_r4_deduction_scored_partial_without_hits_warns():
 def test_r4_deduction_full_score_without_hits_no_warn():
     # 满分不扣，无 hits 合法 → 不告警
     out = apply_schema_semantics(
-        DEFAULT_OUTPUT_SCHEMA_NAME,
+        TENDER_OUTPUT_SCHEMA_NAME,
         _valid_audit_result(
             extracted_data={
                 "scoring": [
@@ -575,7 +578,7 @@ def test_r4_deduction_full_score_without_hits_no_warn():
 def test_r4_deduction_with_hits_no_completeness_warn():
     # 有逐条明细且算术自洽 → 无完整性告警
     out = apply_schema_semantics(
-        DEFAULT_OUTPUT_SCHEMA_NAME,
+        TENDER_OUTPUT_SCHEMA_NAME,
         _valid_audit_result(
             extracted_data={
                 "scoring": [
@@ -596,7 +599,7 @@ def test_r4_deduction_with_hits_no_completeness_warn():
 
 def test_r4_additive_scored_above_base_without_awards_warns():
     out = apply_schema_semantics(
-        DEFAULT_OUTPUT_SCHEMA_NAME,
+        TENDER_OUTPUT_SCHEMA_NAME,
         _valid_audit_result(
             extracted_data={
                 "criteria": {"items": [{"item": "加分项", "score_mode": "additive", "base": 0}]},
@@ -618,7 +621,7 @@ def test_r4_additive_scored_above_base_without_awards_warns():
 def test_r4_manual_review_item_no_completeness_warn():
     # manual_review 项不触发明细完整性告警
     out = apply_schema_semantics(
-        DEFAULT_OUTPUT_SCHEMA_NAME,
+        TENDER_OUTPUT_SCHEMA_NAME,
         _valid_audit_result(
             extracted_data={
                 "scoring": [
@@ -634,3 +637,45 @@ def test_r4_manual_review_item_no_completeness_warn():
         ),
     )
     assert "deduction_scored_no_hits" not in _warning_codes(out)
+
+
+# ── T1: schema_path 别名机制 —— 一个注册表 key 复用另一物理 schema 文件 ──────────
+#
+# tender 专属注册表 key（TENDER_OUTPUT_SCHEMA_NAME）不建 byte-identical 物理 schema 文件，
+# 而是复用 common/audit-result.json——两处物理解析入口（硬 schema 校验 apply_schema_semantics
+# 与 SDK output_format 构造 build_output_format）都必须统一走 _resolve_physical_schema_name，
+# 否则 build_output_format(alias) 会去找不存在的物理文件而报错（round-1 critic 核实的真实第二
+# 调用点，见 design.md 背景 §1）。
+
+
+def test_alias_schema_validates_against_aliased_physical_schema():
+    """(a) apply_schema_semantics 用别名 key 时，硬 schema 校验走 schema_path 指向的物理文件。"""
+    alias = "test/alias-demo.schema.json"
+    register_schema_processor(alias, schema_path=DEFAULT_OUTPUT_SCHEMA_NAME)
+    try:
+        out = apply_schema_semantics(alias, _valid_audit_result())
+        assert out["verdict"] == "approved"  # 走通了 audit-result.json 的形校验
+        with pytest.raises(JSONContractError):
+            apply_schema_semantics(alias, {"verdict": "??", "explanation": "x"})
+    finally:
+        _SCHEMA_PROCESSORS.pop(alias, None)
+
+
+def test_alias_schema_build_output_format_resolves_same_physical_schema():
+    """(b) build_output_format 用别名 key 时，SDK output_format 复用同一物理文件的 schema 内容。"""
+    alias = "test/alias-demo.schema.json"
+    register_schema_processor(alias, schema_path=DEFAULT_OUTPUT_SCHEMA_NAME)
+    try:
+        assert build_output_format(alias)["schema"] == load_output_schema(
+            DEFAULT_OUTPUT_SCHEMA_NAME
+        )
+    finally:
+        _SCHEMA_PROCESSORS.pop(alias, None)
+
+
+def test_unaliased_schemas_resolve_to_themselves():
+    """既有 processor（DEFAULT/INIT_RULES）都没设 schema_path → 物理解析原样返回 schema_name，
+    零行为变更（不依赖别名机制的所有既有调用点不受影响）。"""
+    assert build_output_format(DEFAULT_OUTPUT_SCHEMA_NAME)["schema"] == load_output_schema(
+        DEFAULT_OUTPUT_SCHEMA_NAME
+    )

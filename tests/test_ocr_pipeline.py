@@ -683,7 +683,7 @@ def test_build_block_large_non_boq_head_tail_when_enabled(monkeypatch):
 def test_build_block_boq_summary_resolvable_by_r1(monkeypatch):
     # R1×R2 协同：BOQ 摘要经 build_extraction_block 包裹后，R1 parse_corpus 解析页号 + 总价 resolved
     import server.ocr.pipeline as pipeline_mod
-    from server.common.evidence_resolution import (
+    from server.common.corpus import (
         CorpusIndex,
         existence_ratio,
         normalize_text,
