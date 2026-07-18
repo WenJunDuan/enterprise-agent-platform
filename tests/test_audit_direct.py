@@ -100,6 +100,48 @@ class TestBuildClient:
         assert model == "test-model"
         assert client is not None
 
+    def test_native_api_key_passed_as_api_key_not_bearer(self, monkeypatch):
+        """review F1: 原生 API key（无 auth token）走 ``api_key=``（x-api-key 头），
+        不能折叠成 ``auth_token=``（Bearer 头）——否则只认 x-api-key 的网关会鉴权失败。"""
+        captured: dict = {}
+
+        class _CaptureClient:
+            def __init__(self, **kwargs):
+                captured.update(kwargs)
+
+        monkeypatch.setattr("server.audit.direct.AsyncAnthropic", _CaptureClient)
+        # conftest 设了 ANTHROPIC_API_KEY；清掉任何 auth token 来源，确保只剩 api_key。
+        monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
+        monkeypatch.delenv("MODEL_AUTH_TOKEN", raising=False)
+
+        _build_client()
+        assert captured.get("api_key")
+        assert "auth_token" not in captured
+
+    def test_auth_token_passed_as_bearer_not_api_key(self, monkeypatch):
+        """review F1: 配了 auth token（网关/LiteLLM 场景）走 ``auth_token=``（Bearer 头），
+        并优先于 api_key。"""
+        captured: dict = {}
+
+        class _CaptureClient:
+            def __init__(self, **kwargs):
+                captured.update(kwargs)
+
+        monkeypatch.setattr("server.audit.direct.AsyncAnthropic", _CaptureClient)
+        monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "test-fake-bearer-token-not-real")
+
+        _build_client()
+        assert captured.get("auth_token") == "test-fake-bearer-token-not-real"
+        assert "api_key" not in captured
+
+    def test_client_uses_sdk_default_timeout_not_httpx_5s(self, monkeypatch):
+        """review F4: 不显式传 timeout——httpx 默认 Timeout(5.0) 命中 SDK 的
+        HTTPX_DEFAULT_TIMEOUT 哨兵，SDK 落到自身 DEFAULT_TIMEOUT（read 600s / connect 5s），
+        不会因 httpx 5s 默认而误触发超时回落。"""
+        client, _model = _build_client()
+        assert client.timeout.read == 600
+        assert client.timeout.connect == 5.0
+
 
 class TestRunDirectAuditSuccess:
     async def test_archives_to_results_table_and_reads_back(self, monkeypatch):
@@ -214,3 +256,29 @@ class TestRunDirectAuditTransport:
                 contract_max_retry=0,
             )
         assert fake_client.messages.calls == 1
+
+    async def test_client_4xx_propagates_without_wrapping_or_fallback(self, monkeypatch):
+        """review F2: 400/404/422 等持久性客户端错误原样向上抛出（不包装成
+        DirectTransportError，故调用方 runner 不会误当传输类回落）——避免静默掩盖真实
+        请求/配置错误。"""
+        request = httpx.Request("POST", "http://test-gateway:4000/v1/messages")
+        response = httpx.Response(status_code=400, request=request)
+        fake_client = _FakeClient(
+            [APIStatusError("bad request", response=response, body=None)]
+        )
+        monkeypatch.setattr(
+            "server.audit.direct._build_client", lambda: (fake_client, "test-model")
+        )
+
+        # 原样传播 APIStatusError；DirectTransportError 是 RuntimeError，不会被这里捕获——
+        # 若实现误把 400 包装成传输类，本断言会失败（正是我们要防的回归）。
+        with pytest.raises(APIStatusError):
+            await run_direct_audit(
+                "prompt text",
+                request_id="rid-direct-4xx-001",
+                tenant="acme",
+                schema_name=DEFAULT_OUTPUT_SCHEMA_NAME,
+                contract_max_retry=2,
+            )
+        assert fake_client.messages.calls == 1
+        assert fake_client.closed is True
