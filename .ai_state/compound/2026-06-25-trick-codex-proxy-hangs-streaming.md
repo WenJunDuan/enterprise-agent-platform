@@ -39,6 +39,20 @@ env -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy \
   codex exec --dangerously-bypass-approvals-and-sandbox -C <repo> - < task.md
 ```
 
+## 2026-07-18 增补 · anthropic SDK 直连同坑(第三例, SOCKS 变体)
+
+D10①直连 spike:`anthropic` python SDK 构造 client 时直接 ImportError 崩——本机代理是
+**SOCKS**(`ALL_PROXY` 等),httpx 需 `socksio` 包才肯走 SOCKS,缺则拒绝启动(比挂起好:fail-fast)。
+网关是国内 deepseek 端点本就不需代理。修法同款:
+
+```bash
+env -u ALL_PROXY -u HTTPS_PROXY -u HTTP_PROXY -u all_proxy -u https_proxy -u http_proxy \
+  uv run --with anthropic python <script>
+```
+
+**产品化直连(D10 实施)必须代码内免疫**:构造 client 用 `http_client=DefaultHttpxClient(trust_env=False)`
+之类显式关代理继承,不能依赖调用方 shell 环境;部署机网络形态需在 runbook 单独核对。
+
 ## 旁注
 
 - `~/.codex/hooks.json` 有非致命 parse warning：`unknown field _comment_athena`（codex 只认 `hooks` 键）。不阻断，但该删掉那个注释字段。
