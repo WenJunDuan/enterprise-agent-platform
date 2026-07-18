@@ -2,3 +2,4 @@
 {"schema_version":1,"event":"StopFailure","error":"server_error","is_interrupt":false,"duration_ms":null,"timestamp":"2026-07-17T08:54:27.104Z"}
 {"schema_version":1,"event":"StopFailure","error":"server_error","is_interrupt":false,"duration_ms":null,"timestamp":"2026-07-17T09:12:34.823Z"}
 {"schema_version":1,"event":"StopFailure","error":"server_error","is_interrupt":false,"duration_ms":null,"timestamp":"2026-07-17T13:56:57.215Z"}
+{"schema_version":1,"event":"StopFailure","error":"rate_limit","is_interrupt":false,"duration_ms":null,"timestamp":"2026-07-18T01:11:18.157Z"}

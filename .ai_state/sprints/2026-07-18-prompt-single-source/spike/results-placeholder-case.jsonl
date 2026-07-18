@@ -1,0 +1,2 @@
+{"mode": "A", "round": 1, "attempt": 1, "request_id": "spike-a-r1a1", "at": "2026-07-18T05:42:57.838105+00:00", "ok": false, "wall_s": 20.4, "error": "JSONContractError: audit result with verdict=rejected must cite at least one policy_ref."}
+{"mode": "A", "round": 1, "attempt": 2, "request_id": "spike-a-r1a2", "at": "2026-07-18T05:43:18.238264+00:00", "ok": false, "wall_s": 25.8, "error": "JSONContractError: audit result with verdict=rejected must cite at least one policy_ref."}
