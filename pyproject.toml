@@ -9,8 +9,10 @@ description = "Enterprise agent platform scaffold powered by Claude Agent SDK."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "anthropic>=0.117.0",
     "claude-agent-sdk>=0.2.88",
     "fastapi>=0.115.0",
+    "httpx>=0.28.1",
     "jsonschema>=4.23.0",
     "python-dotenv>=1.0.1",
     "python-multipart>=0.0.30",
