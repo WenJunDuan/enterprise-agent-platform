@@ -1,0 +1,2 @@
+{"schema_version":1,"event":"SubagentStart","agent_id":"a5936e30b72369693","agent_type":"generator","sprint_slug":"2026-07-18-prompt-single-source","timestamp":"2026-07-18T06:12:38.053Z"}
+{"schema_version":1,"event":"SubagentStop","agent_id":"a5936e30b72369693","agent_type":"generator","sprint_slug":"2026-07-18-prompt-single-source","timestamp":"2026-07-18T06:17:56.356Z"}
