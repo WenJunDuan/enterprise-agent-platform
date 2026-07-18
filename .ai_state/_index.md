@@ -5,7 +5,7 @@ version: "9.6.4"
 
 # === PACE 路由状态 ===
 path: "System" # 文档智能 program 2026-07-doc-intelligence 立项：四波次 D1-D11（地基/质量/结构/体验），旧 tender-program 已收口(S7/S9 结转,S8 用户推迟)
-stage: "plan" # 2026-07-18: 收口推送已完成(origin 同步至 e9d73b3), 回 plan 如实反映 sprint 待 E2 拍板(design.md DRAFT 就绪); push 需 ship 的门禁矛盾见 proposals.md
+stage: "impl" # 2026-07-18: 拍板 b→design 定稿→critic round1 NEEDS_REVISION(2P0+3P1+2P2)已全部应答并入正文→主agent判 ready; generator+worktree 实施 T1-T5 中
 current_sprint_slug: "2026-07-18-prompt-single-source" # D3(spike 完场+缺陷①修复 ship; 前 sprint 2026-07-16-tender-feature-package 已归档)
 current_roadmap_slug: "2026-07-doc-intelligence"
 skip_polish: false
