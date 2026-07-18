@@ -181,14 +181,16 @@ async def _run_contract_retry_loop(
             continue
 
         usage = getattr(response, "usage", None)
+        input_tokens = getattr(usage, "input_tokens", 0) or 0
+        output_tokens = getattr(usage, "output_tokens", 0) or 0
         logger.info(
             "audit_direct_metrics",
             extra={
                 "request_id": request_id,
                 "tenant": tenant or "default",
                 "wall_s": round(wall_s, 3),
-                "input_tokens": getattr(usage, "input_tokens", 0) or 0,
-                "output_tokens": getattr(usage, "output_tokens", 0) or 0,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
             },
         )
         finished_at = utc_now()
@@ -220,6 +222,9 @@ async def _run_contract_retry_loop(
             result_subtype="success",
             cost_usd=0.0,
             finished_at=finished_at,
+            wall_s=round(wall_s, 3),
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
         )
         return structured, meta
     # 不可达：循环要么 return 要么在最后一次 attempt 抛 DirectContractError。
