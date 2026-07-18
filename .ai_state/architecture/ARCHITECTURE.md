@@ -29,9 +29,13 @@ app (api/cli) → routes → ops → features(audit|tender) → ocr(服务层) �
   `compound/2026-07-15-decision-ocr-service-layer.md`）。
 - **tender feature 包已成型**：D1 落 `server/tender/`（eval 回归闸 + runner 评标核心下沉），
   **D2 迁入 worker/compare_worker/doc_pipeline，并把 `routes/tender.py`(912) 拆成 `routes/tender/`
-  分节路由包（tasks/projects/docs/compare + 壳）**。残留 `common/tender_output` + `evidence_resolution`
-  由后续 sprint **tender-schema-split**（F6 schema 分家 + F5 evidence 拆分）迁入，见
-  `compound/2026-07-16-decision-carve-f6-schema-split-from-d2.md`。
+  分节路由包（tasks/projects/docs/compare + 壳）**。**2026-07-18 `tender-schema-split`（F6 schema 分家 +
+  F5 evidence 拆分）merge `f998969` 收全**：`tender_output`→`server/tender/output.py`（挂
+  `TENDER_OUTPUT_SCHEMA_NAME`，`schema_path` 别名复用 audit-result.json，双解析点 apply_schema_semantics +
+  build_output_format 统一走 `_resolve_physical_schema_name`）；`evidence_resolution` 拆成
+  `server/common/corpus.py`（通用语料原语）+ `server/tender/evidence.py`（tender resolve + scoring 助手）；
+  共享 audit-result 三函数 generic/tender 分家，expense/audit 不再跑 tender 校验。**tender 逻辑至此全部归位
+  `server/tender/`，`common/` 零 tender 依赖。** 见 `compound/2026-07-16-decision-carve-f6-schema-split-from-d2.md`。
 - 守卫：`tests/test_layering.py`：routes 不 import api、platform 叶子、common 不依赖上层、
   feature 互斥（audit↔tender）、**ocr 单向（audit/tender→ocr 合法、反向禁止）**、ops 不 import
   routes/app/features、stores 只 import platform、server.tender 纳入 ops/common/stores 禁区、
