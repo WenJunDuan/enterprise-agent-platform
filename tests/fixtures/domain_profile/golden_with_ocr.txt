@@ -16,9 +16,10 @@
   - 发票号 / 税号格式不符：位数不符、含非法字符、与币种 / 地区规则不一致；
   - 字段自相矛盾：分项金额之和与合计不符、币种与金额单位冲突、附件与申报严重不一致。
 - 按程度区分结论（拿不准时一律从宽用 manual_review，不要轻易 rejected）：
-  - 多项异常并存、足以认定数据不可信 → `verdict=rejected`，`risk_score >= 80`，`risk_dimensions` 中 `anomaly` 取高分；`explanation` 客观列出触发判定的字段与取值，定性措辞克制。
+  - 多项异常并存、足以认定数据不可信，且能在下方“本地规则”中找到禁止谎报 / 虚报 / 冒领 / 套取等数据真实性类条款 → `verdict=rejected`，`policy_refs` 引用该条款的 `rule_id`（数据真实性拒绝同样要引规则，不得空数组），`risk_score >= 80`，`risk_dimensions` 中 `anomaly` 取高分；`explanation` 客观列出触发判定的字段与取值，定性措辞克制。
+  - 多项异常并存、足以认定数据不可信，但“本地规则”中确实没有任何数据真实性类条款可引用 → 不要判 `rejected`（无据判决不成立），改 `verdict=manual_review`，`manual_review_reason` 取 `data_conflict`（发票相关取 `invoice_invalid`）；`explanation` 说明触发判定的字段与取值，并注明本地规则未覆盖此类条款，需人工核实。
   - 仅个别可疑、证据不足以认定 → `verdict=manual_review`，`manual_review_reason` 取 `data_conflict`（发票相关取 `invoice_invalid`）；`explanation` 说明可疑点并指出需人工核实。
-- 该判定基于数据真实性而非业务限额，此时 `policy_refs` 允许为空数组；但 `evidence_chain` 必须把触发判定的字段与取值写进 `finding`。
+- 上述两条 `manual_review` 分支 `policy_refs` 允许为空数组；`rejected` 分支必须有 `policy_refs`（与常规分析一致，不因数据真实性判定而豁免）。无论哪个分支，`evidence_chain` 都必须把触发判定的字段与取值写进 `finding`。
 
 输出：
 - 决策只用 `verdict`（approved / rejected / manual_review）；不要输出 `result` / `conclusion`（服务端派生）。
@@ -28,7 +29,7 @@
   - 不堆砌技术黑话（如「Unix 纪元」「系统默认值占位符」），字段异常直接描述现象即可，例「日期为 1970-01-01，疑似默认值或占位值」。
   - 不加自我点评式括注（如「（典型占位数据）」「（非真实人员）」）；事实写进 `finding`，定性交给 `verdict` 与 `reasons`，同一问题只说一次，不连套多个标签。
   - 定性留有余地：除非证据确凿且规则支持，否则用「疑似 / 需人工核实」，不替调查人员下「造假 / 伪造」的终局结论。
-- **输出纪律（严格遵守）**：分析在内部完成（如需思考，写在 `<think>...</think>` 内）；最终回复**只能是一个 JSON 对象**，其前后不得有任何分析、前言、说明或重复内容；所有文本字段一律用**中文**，不要中英文混杂。
+- **输出纪律（严格遵守）**：分析在内部完成（如需思考，写在 `<think>...</think>` 内）；最终回复**只能是一个 JSON 对象**，其前后不得有任何分析、前言、说明或重复内容；所有文本字段一律用**中文**，不要中英文混杂。该 JSON 对象必须包含 `verdict` / `explanation` / `reasons` / `policy_refs` / `risk_score` / `evidence_chain` 六个字段，一个都不能少；`explanation` 为**必填且非空**字段，不论走常规审核还是数据真实性核验分支都必须填写，禁止省略。
 - **JSON 合法性（极重要，违反会导致解析失败）**：字符串值内部引用人名 / 实体 / 字段值 / 票号时，**一律使用中文引号「」或『』**，**严禁在字符串值里使用半角双引号 `"`**（它会提前闭合字符串、破坏 JSON）；确需半角双引号时必须转义为 `"`。例：写 `"申请人为「张三」"`，不要写 `"申请人为"张三""`。
 
 === 本案材料 ===
