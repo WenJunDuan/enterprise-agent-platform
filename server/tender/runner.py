@@ -15,12 +15,14 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 from typing import Any, Callable
 
 from server.common.command_adapter import run_command_json
 from server.ocr.pipeline import ocr_preprocess_block
+from server.tender.context_slim import build_slim_tender_context
 from server.tender.output import TENDER_OUTPUT_SCHEMA_NAME
 from server.platform.config import get_tender_eval_settings
 from server.stores.session_store import new_conversation_id
@@ -104,6 +106,54 @@ def _load_doc_layer_context(project_id: str, bid_id: str | None, tenant: str) ->
         return None
 
 
+def _tender_slim_context_enabled() -> bool:
+    """Return True when D8 criteria-driven tender context slimming is enabled."""
+    return os.getenv("TENDER_SLIM_CONTEXT", "0").lower() in {"1", "true", "yes"}
+
+
+def _parse_stored_criteria(raw: str | None) -> dict | None:
+    """Parse stored criteria JSON for the D8 slimming path, tolerating missing or invalid data."""
+    if not raw:
+        return None
+    try:
+        parsed = json.loads(raw)
+    except (ValueError, TypeError):
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _load_doc_layer_context_slim(project_id: str, bid_id: str | None, tenant: str) -> str | None:
+    """Load doc-layer context with an optional criteria-driven tender-document reduction.
+
+    This preserves the full tender text when criteria are unavailable or slimming cannot safely
+    produce a complete result; the current bidder's document is always passed through unchanged.
+    """
+    if not bid_id:
+        return None
+    try:
+        project_doc = get_project_doc(project_id, tenant)
+        if project_doc is None or project_doc.get("ocr_status") != "ready":
+            return None
+        bid = get_bid_doc(project_id, bid_id, tenant)
+        if bid is None or bid.get("ocr_status") != "ready" or not bid.get("ocr_text"):
+            return None
+        bidder = bid.get("bidder_name") or bid["bid_id"]
+        tender_text = project_doc["ocr_text"]
+        criteria = _parse_stored_criteria(project_doc.get("criteria"))
+        if criteria is not None:
+            slim_text = build_slim_tender_context(tender_text, criteria, file_name=project_id)
+            if slim_text is not None:
+                tender_text = slim_text
+        parts: list[str] = [
+            f"=== 招标文件底稿 ===\n{tender_text}",
+            f"=== 投标文件（{bidder}）底稿 ===\n{bid['ocr_text']}",
+        ]
+        return "\n\n".join(parts)
+    except Exception:
+        logger.warning("_load_doc_layer_context_slim failed, falling back", exc_info=True)
+        return None
+
+
 async def _wait_doc_layer_ready(project_id: str, bid_id: str, tenant: str) -> None:
     """短轮询等招标层 + 当前家投标层 OCR 都到终态（ready/failed），供评标复用预热 OCR、免重 OCR。
 
@@ -155,9 +205,10 @@ async def run_tender_evaluation(
         # ~5min。兜底超时/失败 → 回落 inline(不死等)。
         if bid_id:
             await _wait_doc_layer_ready(project_id, bid_id, tenant)
-        doc_layer_text = await asyncio.to_thread(
-            _load_doc_layer_context, project_id, bid_id, tenant
+        loader = _load_doc_layer_context_slim if _tender_slim_context_enabled() else (
+            _load_doc_layer_context
         )
+        doc_layer_text = await asyncio.to_thread(loader, project_id, bid_id, tenant)
 
     if doc_layer_text is not None:
         ocr_block: str | None = doc_layer_text
