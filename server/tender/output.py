@@ -117,6 +117,8 @@ def _has_failed_eligibility(extracted: Any) -> bool:
 # ── 解释文本规范化（tender：服务端重算得分小结 + 脱内部术语 + 资格不通过前缀）────────────
 
 _USER_SUMMARY_MARKER = "得分小结："
+_EVIDENCE_CHAIN_FIELDS = ("source", "finding", "conclusion")
+_SCORING_HIT_KEYS = ("award_hits", "deduction_hits")
 _TECH_TERM_REPLACEMENTS = (
     ("manual_review_reason", "复核原因"),
     ("manual_review", "需人工复核"),
@@ -218,6 +220,65 @@ def _is_tender_explanation_output(output: dict[str, Any]) -> bool:
     return isinstance(extracted, dict) and (
         "scoring" in extracted or "eligibility_checks" in extracted
     )
+
+
+def _is_empty_evidence_chain(value: Any) -> bool:
+    """Return whether a normalized evidence chain carries no non-blank evidence."""
+    if value is None:
+        return True
+    if not isinstance(value, list):
+        return False
+    return not any(
+        isinstance(item, dict)
+        and any(str(item.get(field) or "").strip() for field in _EVIDENCE_CHAIN_FIELDS)
+        for item in value
+    )
+
+
+def _evidence_entry_from_hit(item: dict[str, Any], hit: dict[str, Any]) -> dict[str, str] | None:
+    """Map one scoring hit to the common evidence-chain shape, if it has content."""
+    evidence = hit.get("evidence")
+    evidence = evidence if isinstance(evidence, dict) else hit
+    source = evidence.get("source") or hit.get("source")
+    finding = evidence.get("quote") or evidence.get("finding") or hit.get("finding")
+    conclusion = hit.get("conclusion") or item.get("basis") or evidence.get("conclusion")
+    entry = {field: str(value or "") for field, value in (
+        ("source", source),
+        ("finding", finding),
+        ("conclusion", conclusion),
+    )}
+    return entry if any(entry.values()) else None
+
+
+def _derive_scoring_evidence(extracted: Any) -> list[dict[str, str]]:
+    """Collect scoring evidence, keeping score-moving hits before zero-point hits."""
+    if not isinstance(extracted, dict) or not isinstance(extracted.get("scoring"), list):
+        return []
+    prioritized: list[dict[str, str]] = []
+    fallback: list[dict[str, str]] = []
+    for item in extracted["scoring"]:
+        if not isinstance(item, dict):
+            continue
+        for hits_key in _SCORING_HIT_KEYS:
+            hits = item.get(hits_key)
+            if not isinstance(hits, list):
+                continue
+            for hit in hits:
+                if not isinstance(hit, dict):
+                    continue
+                entry = _evidence_entry_from_hit(item, hit)
+                if entry is None:
+                    continue
+                target = prioritized if _hit_moves_score(hit, hits_key) else fallback
+                target.append(entry)
+    return prioritized + fallback
+
+
+def _derive_tender_evidence_chain(output: dict[str, Any]) -> None:
+    """Fill an empty tender evidence chain from deterministic scoring-hit evidence."""
+    if not _is_empty_evidence_chain(output.get("evidence_chain")):
+        return
+    output["evidence_chain"] = _derive_scoring_evidence(output.get("extracted_data"))
 
 
 def _finalize_user_explanation(output: dict[str, Any]) -> None:
@@ -552,6 +613,8 @@ def normalize_tender_result(
             structured_output["verdict"] = "rejected"
     structured_output = normalize_audit_result(structured_output, request_id)
     if isinstance(structured_output, dict):
+        if structured_output.get("evidence_chain") is None:
+            structured_output["evidence_chain"] = []
         _normalize_optional_plan(structured_output)
     return structured_output
 
@@ -574,11 +637,12 @@ def enrich_tender_result(structured_output: StructuredJSON) -> StructuredJSON:
     """
     structured_output = enrich_audit_decision(structured_output)
     if isinstance(structured_output, dict):
+        _derive_tender_evidence_chain(structured_output)
         _finalize_user_explanation(structured_output)
     return structured_output
 
 
-from server.tender.evidence import resolve_audit_evidence  # noqa: E402
+from server.tender.evidence import _hit_moves_score, resolve_audit_evidence  # noqa: E402
 
 register_schema_processor(
     TENDER_OUTPUT_SCHEMA_NAME,
