@@ -15,7 +15,7 @@ dependencies = [
     "httpx>=0.28.1",
     "jsonschema>=4.23.0",
     "python-dotenv>=1.0.1",
-    "python-multipart>=0.0.30",
+    "python-multipart>=0.0.31",
     "typer>=0.12.0",
     "uvicorn>=0.30.0",
 ]
@@ -28,7 +28,7 @@ ocr = [
     "openpyxl>=3.1",
     "python-docx>=1.1",
     "pymupdf>=1.26",
-    "pypdf>=5.0",
+    "pypdf>=6.13.3",
     "certifi>=2024.0",  # 线上 OCR(OCR_CLOUD=1)urllib HTTPS 验证 CA 包；缺则 macOS 等环境证书验证失败
 ]
 
