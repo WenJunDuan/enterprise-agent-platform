@@ -5,7 +5,7 @@ version: "9.6.4"
 
 # === PACE 路由状态 ===
 path: "System" # 文档智能 program 2026-07-doc-intelligence 立项：四波次 D1-D11（地基/质量/结构/体验），旧 tender-program 已收口(S7/S9 结转,S8 用户推迟)
-stage: "impl" # 2026-07-19: D11 立项(current sprint=tender-discipline-residuals); Batch B codex 并行实现中(worktree d11-b), Batch A 待 critic 定稿再 launch, Batch C 条件项(C1 gateway/C2-R7 待授权); 106f506 docs push 仍 plan-gated 待 ship 窗口
+stage: "ship" # 2026-07-19: D11 Batch A+B DONE+merged(7d237ab,review 三件套 PASS,920 绿);用户显式要 push→切 ship 过 pre-bash-guard;delivery-gate validateRoadmap 中程必挂=proposals.md 结构性 bug,不伪造 manifest/tdd-evidence
 current_sprint_slug: "2026-07-18-tender-discipline-residuals" # D11(立项 2026-07-19; 前 D3 prompt-single-source 已 done+归档)
 current_roadmap_slug: "2026-07-doc-intelligence"
 skip_polish: false
@@ -49,7 +49,7 @@ counts:
   issues_count: 0
   refactors_count: 0
   systems_count: 6
-  reviews_count: 57
+  reviews_count: 58
   cleanup_count: 1
   compound:
     learning: 12

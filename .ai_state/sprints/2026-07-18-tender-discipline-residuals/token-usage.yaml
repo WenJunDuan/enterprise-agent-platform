@@ -1,14 +1,14 @@
 sprint_slug: 2026-07-18-tender-discipline-residuals
-updated_at: "2026-07-19T03:00:24.316Z"
+updated_at: "2026-07-19T03:09:18.207Z"
 status: "ok"
 totals:
-  cache_creation_input_tokens: 3544347
-  cache_read_input_tokens: 81565563
-  cached_input_tokens: 85109910
-  input_tokens: 171861
-  output_tokens: 1089126
+  cache_creation_input_tokens: 3620692
+  cache_read_input_tokens: 89585078
+  cached_input_tokens: 93205770
+  input_tokens: 190048
+  output_tokens: 1141154
   reasoning_output_tokens: 26
-  total_tokens: 1260987
+  total_tokens: 1331202
 by_model:
   "<synthetic>":
     calls: 1
@@ -20,14 +20,14 @@ by_model:
     reasoning_output_tokens: 0
     total_tokens: 0
   "claude-opus-4-8":
-    calls: 240
-    cache_creation_input_tokens: 2158721
-    cache_read_input_tokens: 65965495
-    cached_input_tokens: 68124216
-    input_tokens: 111169
-    output_tokens: 1010614
+    calls: 255
+    cache_creation_input_tokens: 2235066
+    cache_read_input_tokens: 73985010
+    cached_input_tokens: 76220076
+    input_tokens: 129356
+    output_tokens: 1062642
     reasoning_output_tokens: 0
-    total_tokens: 1121783
+    total_tokens: 1191998
   "claude-sonnet-5":
     calls: 294
     cache_creation_input_tokens: 1385626
@@ -58,14 +58,14 @@ by_stage:
       reasoning_output_tokens: 0
       total_tokens: 0
     "claude-opus-4-8":
-      calls: 240
-      cache_creation_input_tokens: 2158721
-      cache_read_input_tokens: 65965495
-      cached_input_tokens: 68124216
-      input_tokens: 111169
-      output_tokens: 1010614
+      calls: 255
+      cache_creation_input_tokens: 2235066
+      cache_read_input_tokens: 73985010
+      cached_input_tokens: 76220076
+      input_tokens: 129356
+      output_tokens: 1062642
       reasoning_output_tokens: 0
-      total_tokens: 1121783
+      total_tokens: 1191998
     "claude-sonnet-5":
       calls: 294
       cache_creation_input_tokens: 1385626
@@ -7589,5 +7589,215 @@ records:
     output_tokens: 10
     reasoning_output_tokens: 0
     total_tokens: 12
+  - fingerprint: "0c38bd9a23c07abf"
+    platform: "cc"
+    stage: "impl"
+    source_type: "transcript_path"
+    source_id: "/Users/mi_manchi/.claude/projects/-Users-mi-manchi-workspace-enterprise-agent-platform/56bc3a72-ce0b-4d64-b8bd-810ea2ef6e22.jsonl"
+    timestamp: "2026-07-19T03:01:20.118Z"
+    model: "claude-opus-4-8"
+    cache_creation_input_tokens: 3453
+    cache_read_input_tokens: 525700
+    cached_input_tokens: 529153
+    input_tokens: 1621
+    output_tokens: 3877
+    reasoning_output_tokens: 0
+    total_tokens: 5498
+  - fingerprint: "a90ed223622deca8"
+    platform: "cc"
+    stage: "impl"
+    source_type: "transcript_path"
+    source_id: "/Users/mi_manchi/.claude/projects/-Users-mi-manchi-workspace-enterprise-agent-platform/56bc3a72-ce0b-4d64-b8bd-810ea2ef6e22.jsonl"
+    timestamp: "2026-07-19T03:01:22.678Z"
+    model: "claude-opus-4-8"
+    cache_creation_input_tokens: 3453
+    cache_read_input_tokens: 525700
+    cached_input_tokens: 529153
+    input_tokens: 1621
+    output_tokens: 3877
+    reasoning_output_tokens: 0
+    total_tokens: 5498
+  - fingerprint: "533e28c580464b14"
+    platform: "cc"
+    stage: "impl"
+    source_type: "transcript_path"
+    source_id: "/Users/mi_manchi/.claude/projects/-Users-mi-manchi-workspace-enterprise-agent-platform/56bc3a72-ce0b-4d64-b8bd-810ea2ef6e22.jsonl"
+    timestamp: "2026-07-19T03:01:27.281Z"
+    model: "claude-opus-4-8"
+    cache_creation_input_tokens: 3453
+    cache_read_input_tokens: 525700
+    cached_input_tokens: 529153
+    input_tokens: 1621
+    output_tokens: 3877
+    reasoning_output_tokens: 0
+    total_tokens: 5498
+  - fingerprint: "a217501e5396076b"
+    platform: "cc"
+    stage: "impl"
+    source_type: "transcript_path"
+    source_id: "/Users/mi_manchi/.claude/projects/-Users-mi-manchi-workspace-enterprise-agent-platform/56bc3a72-ce0b-4d64-b8bd-810ea2ef6e22.jsonl"
+    timestamp: "2026-07-19T03:01:59.335Z"
+    model: "claude-opus-4-8"
+    cache_creation_input_tokens: 5996
+    cache_read_input_tokens: 529153
+    cached_input_tokens: 535149
+    input_tokens: 4338
+    output_tokens: 1426
+    reasoning_output_tokens: 0
+    total_tokens: 5764
+  - fingerprint: "a9b90515c4f6c96a"
+    platform: "cc"
+    stage: "impl"
+    source_type: "transcript_path"
+    source_id: "/Users/mi_manchi/.claude/projects/-Users-mi-manchi-workspace-enterprise-agent-platform/56bc3a72-ce0b-4d64-b8bd-810ea2ef6e22.jsonl"
+    timestamp: "2026-07-19T03:02:00.665Z"
+    model: "claude-opus-4-8"
+    cache_creation_input_tokens: 5996
+    cache_read_input_tokens: 529153
+    cached_input_tokens: 535149
+    input_tokens: 4338
+    output_tokens: 1426
+    reasoning_output_tokens: 0
+    total_tokens: 5764
+  - fingerprint: "7b3af01c5504d387"
+    platform: "cc"
+    stage: "impl"
+    source_type: "transcript_path"
+    source_id: "/Users/mi_manchi/.claude/projects/-Users-mi-manchi-workspace-enterprise-agent-platform/56bc3a72-ce0b-4d64-b8bd-810ea2ef6e22.jsonl"
+    timestamp: "2026-07-19T03:02:02.853Z"
+    model: "claude-opus-4-8"
+    cache_creation_input_tokens: 5996
+    cache_read_input_tokens: 529153
+    cached_input_tokens: 535149
+    input_tokens: 4338
+    output_tokens: 1426
+    reasoning_output_tokens: 0
+    total_tokens: 5764
+  - fingerprint: "680df28996c4be57"
+    platform: "cc"
+    stage: "impl"
+    source_type: "transcript_path"
+    source_id: "/Users/mi_manchi/.claude/projects/-Users-mi-manchi-workspace-enterprise-agent-platform/56bc3a72-ce0b-4d64-b8bd-810ea2ef6e22.jsonl"
+    timestamp: "2026-07-19T03:05:37.428Z"
+    model: "claude-opus-4-8"
+    cache_creation_input_tokens: 6007
+    cache_read_input_tokens: 535149
+    cached_input_tokens: 541156
+    input_tokens: 75
+    output_tokens: 3963
+    reasoning_output_tokens: 0
+    total_tokens: 4038
+  - fingerprint: "bc46b845f5591efd"
+    platform: "cc"
+    stage: "impl"
+    source_type: "transcript_path"
+    source_id: "/Users/mi_manchi/.claude/projects/-Users-mi-manchi-workspace-enterprise-agent-platform/56bc3a72-ce0b-4d64-b8bd-810ea2ef6e22.jsonl"
+    timestamp: "2026-07-19T03:05:39.359Z"
+    model: "claude-opus-4-8"
+    cache_creation_input_tokens: 6007
+    cache_read_input_tokens: 535149
+    cached_input_tokens: 541156
+    input_tokens: 75
+    output_tokens: 3963
+    reasoning_output_tokens: 0
+    total_tokens: 4038
+  - fingerprint: "babb924bbcbe6c13"
+    platform: "cc"
+    stage: "impl"
+    source_type: "transcript_path"
+    source_id: "/Users/mi_manchi/.claude/projects/-Users-mi-manchi-workspace-enterprise-agent-platform/56bc3a72-ce0b-4d64-b8bd-810ea2ef6e22.jsonl"
+    timestamp: "2026-07-19T03:05:41.967Z"
+    model: "claude-opus-4-8"
+    cache_creation_input_tokens: 6007
+    cache_read_input_tokens: 535149
+    cached_input_tokens: 541156
+    input_tokens: 75
+    output_tokens: 3963
+    reasoning_output_tokens: 0
+    total_tokens: 4038
+  - fingerprint: "7dcbe013e60a4908"
+    platform: "cc"
+    stage: "impl"
+    source_type: "transcript_path"
+    source_id: "/Users/mi_manchi/.claude/projects/-Users-mi-manchi-workspace-enterprise-agent-platform/56bc3a72-ce0b-4d64-b8bd-810ea2ef6e22.jsonl"
+    timestamp: "2026-07-19T03:06:05.135Z"
+    model: "claude-opus-4-8"
+    cache_creation_input_tokens: 6007
+    cache_read_input_tokens: 535149
+    cached_input_tokens: 541156
+    input_tokens: 75
+    output_tokens: 3963
+    reasoning_output_tokens: 0
+    total_tokens: 4038
+  - fingerprint: "8140e42e32354c46"
+    platform: "cc"
+    stage: "impl"
+    source_type: "transcript_path"
+    source_id: "/Users/mi_manchi/.claude/projects/-Users-mi-manchi-workspace-enterprise-agent-platform/56bc3a72-ce0b-4d64-b8bd-810ea2ef6e22.jsonl"
+    timestamp: "2026-07-19T03:07:32.082Z"
+    model: "claude-opus-4-8"
+    cache_creation_input_tokens: 4290
+    cache_read_input_tokens: 541156
+    cached_input_tokens: 545446
+    input_tokens: 2
+    output_tokens: 5463
+    reasoning_output_tokens: 0
+    total_tokens: 5465
+  - fingerprint: "5a1a415ef2df4107"
+    platform: "cc"
+    stage: "impl"
+    source_type: "transcript_path"
+    source_id: "/Users/mi_manchi/.claude/projects/-Users-mi-manchi-workspace-enterprise-agent-platform/56bc3a72-ce0b-4d64-b8bd-810ea2ef6e22.jsonl"
+    timestamp: "2026-07-19T03:07:33.274Z"
+    model: "claude-opus-4-8"
+    cache_creation_input_tokens: 4290
+    cache_read_input_tokens: 541156
+    cached_input_tokens: 545446
+    input_tokens: 2
+    output_tokens: 5463
+    reasoning_output_tokens: 0
+    total_tokens: 5465
+  - fingerprint: "a3af12d58114df2a"
+    platform: "cc"
+    stage: "impl"
+    source_type: "transcript_path"
+    source_id: "/Users/mi_manchi/.claude/projects/-Users-mi-manchi-workspace-enterprise-agent-platform/56bc3a72-ce0b-4d64-b8bd-810ea2ef6e22.jsonl"
+    timestamp: "2026-07-19T03:07:39.404Z"
+    model: "claude-opus-4-8"
+    cache_creation_input_tokens: 4290
+    cache_read_input_tokens: 541156
+    cached_input_tokens: 545446
+    input_tokens: 2
+    output_tokens: 5463
+    reasoning_output_tokens: 0
+    total_tokens: 5465
+  - fingerprint: "47a30628fad509d0"
+    platform: "cc"
+    stage: "impl"
+    source_type: "transcript_path"
+    source_id: "/Users/mi_manchi/.claude/projects/-Users-mi-manchi-workspace-enterprise-agent-platform/56bc3a72-ce0b-4d64-b8bd-810ea2ef6e22.jsonl"
+    timestamp: "2026-07-19T03:08:07.797Z"
+    model: "claude-opus-4-8"
+    cache_creation_input_tokens: 5550
+    cache_read_input_tokens: 545446
+    cached_input_tokens: 550996
+    input_tokens: 2
+    output_tokens: 1939
+    reasoning_output_tokens: 0
+    total_tokens: 1941
+  - fingerprint: "4a74cd8b2dad1a57"
+    platform: "cc"
+    stage: "impl"
+    source_type: "transcript_path"
+    source_id: "/Users/mi_manchi/.claude/projects/-Users-mi-manchi-workspace-enterprise-agent-platform/56bc3a72-ce0b-4d64-b8bd-810ea2ef6e22.jsonl"
+    timestamp: "2026-07-19T03:08:28.265Z"
+    model: "claude-opus-4-8"
+    cache_creation_input_tokens: 5550
+    cache_read_input_tokens: 545446
+    cached_input_tokens: 550996
+    input_tokens: 2
+    output_tokens: 1939
+    reasoning_output_tokens: 0
+    total_tokens: 1941
 notes:
   []
