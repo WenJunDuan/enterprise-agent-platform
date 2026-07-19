@@ -20,6 +20,13 @@ ensure_local_layout()
 
 DEFAULT_TENANT_KEYS_RAW = '{"default":"sk-default"}'
 _DEFAULT_TENANT_KEY_WARNING_EMITTED = False
+_DEFAULT_TENDER_TIMEOUT_SECONDS = 3600.0
+_DEFAULT_OCR_CLOUD_MAX_WAIT_SECONDS = 1200.0
+_OCR_TIMEOUT_BUDGET_RATIO = 0.5
+_CACHE_V2_STARTUP_NOTE = (
+    "OCR cache v2 active: the first rerun after deployment re-runs OCR once per file; "
+    "subsequent reruns use the cached result."
+)
 
 
 def _normalize_custom_headers(value: str) -> str:
@@ -278,6 +285,38 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
+def _env_float_from(
+    name: str, default: float, environ: Mapping[str, str] | None = None
+) -> float:
+    """Read a finite-precision timeout from an environment mapping with a safe default."""
+    env = environ if environ is not None else os.environ
+    raw = (env.get(name) or "").strip()
+    if not raw:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        return default
+
+
+def validate_tender_ocr_timeout_budget(environ: Mapping[str, str] | None = None) -> None:
+    """Warn when cloud OCR can consume more than half of the tender timeout budget."""
+    tender_timeout = _env_float_from(
+        "TENDER_TIMEOUT_SEC", _DEFAULT_TENDER_TIMEOUT_SECONDS, environ
+    )
+    ocr_wait = _env_float_from(
+        "OCR_VL_CLOUD_MAX_WAIT", _DEFAULT_OCR_CLOUD_MAX_WAIT_SECONDS, environ
+    )
+    if ocr_wait > _OCR_TIMEOUT_BUDGET_RATIO * tender_timeout:
+        logging.warning(
+            "OCR_VL_CLOUD_MAX_WAIT=%ss exceeds %.0f%% of TENDER_TIMEOUT_SEC=%ss; "
+            "reduce OCR wait or increase tender timeout.",
+            ocr_wait,
+            _OCR_TIMEOUT_BUDGET_RATIO * 100,
+            tender_timeout,
+        )
+
+
 def load_tenant_keys() -> dict[str, str]:
     """Load tenant API keys from environment."""
     global _DEFAULT_TENANT_KEY_WARNING_EMITTED
@@ -319,6 +358,8 @@ class AppSettings:
 @lru_cache(maxsize=1)
 def get_app_settings() -> AppSettings:
     """Read stable runtime settings for the local serve layer."""
+    validate_tender_ocr_timeout_budget()
+    logging.info(_CACHE_V2_STARTUP_NOTE)
     return AppSettings(
         api_host=os.getenv("APP_SERVER_HOST", "127.0.0.1"),
         api_port=_env_int("APP_SERVER_PORT", 8000),
