@@ -3,16 +3,20 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any, Callable
 
 from server.common.agent_bridge import run_agent_full
 from server.common.json_bridge import run_agent_json
 
+
 def _serialize_command_argument(argument: str) -> str:
     normalized = str(argument).strip()
     if not normalized:
         return ""
-    if any(char.isspace() for char in normalized) or any(char in normalized for char in {'"', "\\"}):
+    if any(char.isspace() for char in normalized) or any(
+        char in normalized for char in {'"', "\\"}
+    ):
         return json.dumps(normalized, ensure_ascii=False)
     return normalized
 
@@ -23,9 +27,7 @@ def build_command_prompt(command_name: str, *arguments: str, context: str | None
     ``context`` 非空时附在命令后（P4：注入确定性 OCR 底稿，模型无需再 Read 文件）。
     """
     suffix = " ".join(
-        serialized
-        for arg in arguments
-        if (serialized := _serialize_command_argument(arg))
+        serialized for arg in arguments if (serialized := _serialize_command_argument(arg))
     )
     command = f"/{command_name} {suffix}".strip()
     return f"{command}\n\n{context}" if context else command
@@ -49,6 +51,7 @@ async def run_command_json(
     context: str | None = None,
     on_progress: Callable[[str], None] | None = None,
     evidence_source: str | None = None,
+    case_root: Path | None = None,
     **opts: Any,
 ):
     """Invoke a Claude slash command and return structured JSON output.
@@ -67,5 +70,6 @@ async def run_command_json(
         archive_to_results=archive_to_results,
         on_progress=on_progress,
         evidence_source=evidence_source,
+        case_root=case_root,
         **opts,
     )

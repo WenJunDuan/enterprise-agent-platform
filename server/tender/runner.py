@@ -18,6 +18,7 @@ import asyncio
 import json
 import logging
 import os
+from pathlib import Path
 from typing import Any, Callable
 
 from server.common.command_adapter import run_command_json
@@ -38,6 +39,7 @@ TENDER_OCR_PURPOSE = (
     "【评分标准/评标办法/评分细则/扣分细则/加分项/废标与资格条款】等表格："
     "保留表格的行列结构与每一行的分值数字，不要合并或省略任何评分/扣分行。"
 )
+
 
 # P2 评标读层开关：TENDER_READ_DOC_LAYER=1 (默认) 先读 tender_doc_store;
 # =0 回落原串行 ocr_preprocess_block（兜底，不破现有路径）。
@@ -184,6 +186,7 @@ async def run_tender_evaluation(
     project_id: str | None = None,
     bid_id: str | None = None,
     on_progress: Callable[[str], None] | None = None,
+    case_root: Path | None = None,
     model: str | None = None,
 ) -> tuple[Any, Any]:
     """Run one tender evaluation with OCR/read-layer context preloaded + criteria injection.
@@ -205,8 +208,10 @@ async def run_tender_evaluation(
         # ~5min。兜底超时/失败 → 回落 inline(不死等)。
         if bid_id:
             await _wait_doc_layer_ready(project_id, bid_id, tenant)
-        loader = _load_doc_layer_context_slim if _tender_slim_context_enabled() else (
-            _load_doc_layer_context
+        loader = (
+            _load_doc_layer_context_slim
+            if _tender_slim_context_enabled()
+            else (_load_doc_layer_context)
         )
         doc_layer_text = await asyncio.to_thread(loader, project_id, bid_id, tenant)
 
@@ -250,8 +255,7 @@ async def run_tender_evaluation(
                 except (ValueError, TypeError):
                     readable = stored_criteria
                 criteria_block = (
-                    "\n\n=== 已解析评分标准 criteria（S1 直接采用，勿重新解析）===\n"
-                    + readable
+                    "\n\n=== 已解析评分标准 criteria（S1 直接采用，勿重新解析）===\n" + readable
                 )
                 context = context + criteria_block
         except Exception:
@@ -262,6 +266,10 @@ async def run_tender_evaluation(
     # 故这条兜底路径只在 eval CLI / 部署机手动调参场景生效。
     resolved_model = (model or get_tender_eval_settings().model or "").strip()
     model_kwargs: dict[str, str] = {"model": resolved_model} if resolved_model else {}
+    # 有意的安全设计（D11 TA4）：case_root 恒绑定本案目录，因此受 ocr-page
+    # PreToolUse hook 约束的 Bash 对每次评标都可用——任一评标都可能需要低清页重识别。
+    # hook 是唯一闸；这是显式设计，不是 case_root 默认回填带来的副作用。
+    evaluation_case_root = case_root if case_root is not None else Path(directory_path)
 
     # 契约失败重试（对齐 audit runner）：deepseek 文本模式偶发不出 JSON / 写坏 JSON，重跑可成功。
     # OCR 预处理在循环外只做一次（慢且确定性），仅重试模型调用。
@@ -281,6 +289,7 @@ async def run_tender_evaluation(
                 # 给结论校验闸做出处回查。**传 ocr_block 而非 context**——context 尾部已追加 criteria
                 # 注入块 + OCR 头注释，会干扰 tier/page 解析（design critic blind-spot C）。
                 evidence_source=ocr_block,
+                case_root=evaluation_case_root,
                 on_progress=on_progress,  # 思考流式：agent 文本片段实时回调给 worker
                 effort=_TENDER_EFFORT,  # 评标 per-call 扩展思考（不全局默认，避免拖慢 audit）
                 # 遗留①：开 include_partial_messages → 端点逐字吐 StreamEvent partial，on_progress

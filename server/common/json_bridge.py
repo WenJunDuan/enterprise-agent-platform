@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from pathlib import Path
 from typing import Any, Callable
 
 from claude_agent_sdk import (
@@ -136,6 +137,7 @@ async def run_agent_json(
     archive_to_results: bool = True,
     on_progress: Callable[[str], None] | None = None,
     evidence_source: str | None = None,
+    case_root: Path | None = None,
     **opts: Any,
 ) -> tuple[StructuredJSON, AgentRunMeta]:
     """Run Claude and return the parsed JSON object.
@@ -166,7 +168,7 @@ async def run_agent_json(
     session_logger = SessionLogger(current_session_id, request_id, prompt, started_at, tenant)
     warn_if_context_may_truncate(prompt)
     output_opts = {"output_format": build_output_format(schema_name)} if structured else {}
-    options = build_options(**output_opts, **opts)
+    options = build_options(case_root=case_root, **output_opts, **opts)
     cli_stderr: list[str] = []
     options.stderr = cli_stderr.append
 
