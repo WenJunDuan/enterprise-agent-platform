@@ -114,6 +114,11 @@ def test_normalize_optional_plan_drops_invalid():
     assert "plan" not in out["extracted_data"]  # 形不对的可选 plan 丢弃，不抛
 
 
+def test_normalize_tender_result_stamps_tender_reviewer():
+    out = to.normalize_tender_result({"verdict": "manual_review"})
+    assert out["reviewed_by"] == "tender-evaluator"
+
+
 def _scoring_hit(*, awarded: int, source: str, quote: str) -> dict:
     return {
         "award_id": "性能参数",
