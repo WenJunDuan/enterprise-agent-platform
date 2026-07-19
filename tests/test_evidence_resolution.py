@@ -609,8 +609,10 @@ def test_pipeline_with_evidence_source_runs_resolution(monkeypatch):
     out = apply_schema_semantics(
         TENDER_OUTPUT_SCHEMA_NAME, _full_audit_result(), evidence_source=INLINE_CORPUS
     )
-    # 传底稿 → 编造 quote 被回查降级 + verdict 升级 + 摘要写入
-    assert out["extracted_data"]["evidence_resolution"]["unresolved"] == 1
+    # 派生顶层 evidence_chain 与 scoring hit 都会被 resolve 标注；同一原文在两个展示位置
+    # 各计一次，但评分项只按 scoring hit 的路径降级一次。
+    assert out["extracted_data"]["evidence_resolution"]["unresolved"] == 2
+    assert out["evidence_chain"][0]["resolution"]["status"] == "unresolved"
     assert out["extracted_data"]["scoring"][0]["status"] == "manual_review"
     assert out["verdict"] == "manual_review"
     assert out["result"] is False
