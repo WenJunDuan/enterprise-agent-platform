@@ -12,12 +12,17 @@ from __future__ import annotations
 
 import logging
 import os
+import re
+import sys
 import uuid
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, AsyncIterator
 
 from claude_agent_sdk import (
     ClaudeAgentOptions,
+    HookCallback,
+    HookMatcher,
     ResultMessage,
     SystemMessage,
     query,
@@ -55,6 +60,22 @@ _DEFAULT_CHARS_PER_TOKEN = 1.5
 # 预留输出 token 默认（对齐 build_options 的 CLAUDE_CODE_MAX_OUTPUT_TOKENS 兜底）。
 _DEFAULT_RESERVED_OUTPUT_TOKENS = 32000
 
+_OCR_PAGE_PREFIX = "uv run python .claude/skills/ocr-page/ocr.py"
+_OCR_PAGE_SHELL_META = frozenset(";&|$(){}<>\r\n" + chr(96))
+_OCR_PAGE_MAX_NUMBER = sys.maxsize
+_OCR_PAGE_FILE_TOKEN = (
+    r"""(?:["][^"'\\;&|$()\{\}<>\x60*?\[\]!\r\n]+["]"""
+    r"""|['][^"'\\;&|$()\{\}<>\x60*?\[\]!\r\n]+[']"""
+    r"""|[^"'\\\s;&|$()\{\}<>\x60*?\[\]!\r\n]+)"""
+)
+_OCR_PAGE_SPEC = r"[0-9]+(?:-[0-9]+)?"
+_OCR_PAGE_COMMAND_RE = re.compile(
+    rf"{re.escape(_OCR_PAGE_PREFIX)}[ \t]+(?P<file>{_OCR_PAGE_FILE_TOKEN})"
+    rf"(?:[ \t]+(?:--pages[ \t]+(?P<pages_before>{_OCR_PAGE_SPEC})"
+    rf"(?:[ \t]+--seal)?|--seal(?:[ \t]+--pages[ \t]+"
+    rf"(?P<pages_after>{_OCR_PAGE_SPEC}))?))?"
+)
+
 
 class ClaudeRuntimeError(RuntimeError):
     """Raised when a Claude request never produces a terminal result."""
@@ -90,9 +111,7 @@ def _estimate_prompt_tokens(prompt: str) -> int:
     return int(len(prompt) / chars_per_token)
 
 
-def warn_if_context_may_truncate(
-    prompt: str, *, model: str | None = None
-) -> dict[str, Any] | None:
+def warn_if_context_may_truncate(prompt: str, *, model: str | None = None) -> dict[str, Any] | None:
     """当预估输入 token + 预留输出 token 超过声明的模型上下文窗口时，记 WARNING。
 
     S7 截断防护：平台默认模型可切成窗口远小于 V4Pro[1M] 的 Flash，而评标会把数百页
@@ -133,6 +152,102 @@ def warn_if_context_may_truncate(
     }
 
 
+def _ocr_hook_result(decision: str, reason: str) -> dict[str, Any]:
+    """Build the SDK PreToolUse response used by the ocr-page trust boundary."""
+    return {
+        "hookSpecificOutput": {
+            "hookEventName": "PreToolUse",
+            "permissionDecision": decision,
+            "permissionDecisionReason": reason,
+        }
+    }
+
+
+def _unquote_ocr_file(file_token: str) -> str:
+    """Remove the one optional shell quote pair accepted by the command grammar."""
+    if len(file_token) >= 2 and file_token[0] == file_token[-1] and file_token[0] in "\"'":
+        return file_token[1:-1]
+    return file_token
+
+
+def _validate_ocr_pages(page_spec: str | None) -> str | None:
+    """Validate page syntax, ordering, positivity, and native-integer bounds."""
+    if page_spec is None:
+        return None
+    try:
+        bounds = tuple(int(part) for part in page_spec.split("-"))
+    except ValueError:
+        return "pages must contain bounded positive integers"
+    if len(bounds) not in {1, 2} or any(
+        page <= 0 or page > _OCR_PAGE_MAX_NUMBER for page in bounds
+    ):
+        return "pages must contain bounded positive integers"
+    if len(bounds) == 2 and bounds[0] > bounds[1]:
+        return "page range start must not exceed its end"
+    return None
+
+
+def _validate_ocr_file(file_token: str, case_root: Path) -> str | None:
+    """Resolve the file and require an existing regular file inside the real case root."""
+    raw_file = _unquote_ocr_file(file_token)
+    if "\x00" in raw_file:
+        return "ocr-page file path contains a NUL byte"
+    file_path = Path(raw_file)
+    if not file_path.is_absolute():
+        return "ocr-page file path must be absolute"
+    try:
+        root_real = Path(os.path.realpath(case_root))
+        file_real = Path(os.path.realpath(file_path))
+    except (OSError, ValueError):
+        return "ocr-page file path cannot be resolved"
+    if not root_real.is_dir():
+        return "case root is not an existing directory"
+    if not file_real.is_relative_to(root_real):
+        return "ocr-page file resolves outside the case root"
+    if not file_real.is_file():
+        return "ocr-page file is not an existing regular file"
+    return None
+
+
+def _validate_ocr_command(command: str, case_root: Path) -> str | None:
+    """Validate one complete Bash command against the ocr-page grammar and boundary."""
+    shell_meta = next((char for char in command if char in _OCR_PAGE_SHELL_META), None)
+    if shell_meta is not None:
+        return f"shell metacharacter {shell_meta!r} is not allowed"
+    match = re.fullmatch(_OCR_PAGE_COMMAND_RE, command)
+    if match is None:
+        return "command is not an exact ocr-page invocation"
+    file_reason = _validate_ocr_file(match.group("file"), case_root)
+    if file_reason is not None:
+        return file_reason
+    page_spec = match.group("pages_before") or match.group("pages_after")
+    return _validate_ocr_pages(page_spec)
+
+
+def _make_ocr_page_hook(case_root: Path) -> HookCallback:
+    """Create a fail-closed Bash PreToolUse hook bound to one canonical case root."""
+    normalized_root = Path(os.path.realpath(case_root))
+
+    async def check_ocr_page(
+        input_data: dict[str, Any], _tool_use_id: str | None, _context: Any
+    ) -> dict[str, Any]:
+        """Allow only a validated ocr-page command from the bound case."""
+        if input_data.get("tool_name") != "Bash":
+            return _ocr_hook_result("deny", "only Bash is supported by this hook")
+        tool_input = input_data.get("tool_input")
+        command = tool_input.get("command") if isinstance(tool_input, dict) else None
+        if not isinstance(command, str):
+            return _ocr_hook_result("deny", "Bash command is missing or not a string")
+        reason = _validate_ocr_command(command, normalized_root)
+        return (
+            _ocr_hook_result("allow", "validated ocr-page command")
+            if reason is None
+            else (_ocr_hook_result("deny", reason))
+        )
+
+    return check_ocr_page
+
+
 @dataclass(slots=True)
 class AgentRunMeta:
     request_id: str
@@ -161,8 +276,8 @@ class AgentRunMeta:
     output_tokens: int = 0
 
 
-def build_options(**overrides: Any) -> ClaudeAgentOptions:
-    """Create a shared SDK options object for all entrypoints."""
+def build_options(*, case_root: Path | None = None, **overrides: Any) -> ClaudeAgentOptions:
+    """Create SDK options, optionally exposing Bash behind the ocr-page trust boundary."""
     # 兜底进 env：这两项原本靠 setting_sources=["project"] 从 .claude/settings.json 加载；
     # 内联审核会改用 setting_sources=[] 精简系统提示，放进 env 才不会丢掉长超时与降噪。
     os.environ.setdefault("API_TIMEOUT_MS", "3000000")
@@ -207,6 +322,20 @@ def build_options(**overrides: Any) -> ClaudeAgentOptions:
     if env_effort:
         defaults["effort"] = env_effort
     defaults.update(overrides)
+    if case_root is not None:
+        tools = list(defaults.get("tools") or _AGENT_TOOLS)
+        if "Bash" not in tools:
+            tools.append("Bash")
+        allowed_tools = list(defaults.get("allowed_tools") or tools)
+        if "Bash" not in allowed_tools:
+            allowed_tools.append("Bash")
+        defaults["tools"] = tools
+        defaults["allowed_tools"] = allowed_tools
+        defaults["hooks"] = {
+            "PreToolUse": [
+                HookMatcher(matcher="Bash", hooks=[_make_ocr_page_hook(Path(case_root))])
+            ]
+        }
     # env 或 per-call override 的 effort 统一校验：仅合法档位保留，非法/空一律剔除不致 CLI 报错。
     effort = str(defaults.get("effort") or "").strip().lower()
     if effort in _VALID_EFFORTS:
@@ -261,6 +390,7 @@ async def run_agent(
     continue_recent: bool = False,
     request_id: str | None = None,
     tenant: str | None = None,
+    case_root: Path | None = None,
     **opts: Any,
 ) -> AsyncIterator[dict[str, Any]]:
     """Run the SDK query stream and forward structured events."""
@@ -272,7 +402,7 @@ async def run_agent(
     )
     session_logger = SessionLogger(current_session_id, request_id, prompt, started_at, tenant)
     warn_if_context_may_truncate(prompt)
-    options = build_options(**opts)
+    options = build_options(case_root=case_root, **opts)
     cli_stderr: list[str] = []
     options.stderr = cli_stderr.append
 
