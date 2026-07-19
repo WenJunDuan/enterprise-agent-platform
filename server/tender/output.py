@@ -613,6 +613,7 @@ def normalize_tender_result(
             structured_output["verdict"] = "rejected"
     structured_output = normalize_audit_result(structured_output, request_id)
     if isinstance(structured_output, dict):
+        structured_output["reviewed_by"] = "tender-evaluator"
         if structured_output.get("evidence_chain") is None:
             structured_output["evidence_chain"] = []
         _normalize_optional_plan(structured_output)
