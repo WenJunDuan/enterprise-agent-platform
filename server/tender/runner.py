@@ -266,6 +266,9 @@ async def run_tender_evaluation(
     # 故这条兜底路径只在 eval CLI / 部署机手动调参场景生效。
     resolved_model = (model or get_tender_eval_settings().model or "").strip()
     model_kwargs: dict[str, str] = {"model": resolved_model} if resolved_model else {}
+    # 有意的安全设计（D11 TA4）：case_root 恒绑定本案目录，因此受 ocr-page
+    # PreToolUse hook 约束的 Bash 对每次评标都可用——任一评标都可能需要低清页重识别。
+    # hook 是唯一闸；这是显式设计，不是 case_root 默认回填带来的副作用。
     evaluation_case_root = case_root if case_root is not None else Path(directory_path)
 
     # 契约失败重试（对齐 audit runner）：deepseek 文本模式偶发不出 JSON / 写坏 JSON，重跑可成功。
