@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from copy import deepcopy
 
 import pytest
 
@@ -111,6 +112,197 @@ def test_normalize_optional_plan_drops_invalid():
     out = {"extracted_data": {"plan": {"not": "valid-plan-shape"}}}
     to._normalize_optional_plan(out)
     assert "plan" not in out["extracted_data"]  # 形不对的可选 plan 丢弃，不抛
+
+
+def test_normalize_tender_result_stamps_tender_reviewer():
+    out = to.normalize_tender_result({"verdict": "manual_review"})
+    assert out["reviewed_by"] == "tender-evaluator"
+
+
+def _scoring_hit(*, awarded: int, source: str, quote: str) -> dict:
+    return {
+        "award_id": "性能参数",
+        "awarded": awarded,
+        "evidence": {"source": source, "quote": quote},
+    }
+
+
+@pytest.mark.parametrize("chain", [None, [], [{"source": "", "finding": "", "conclusion": ""}]])
+def test_enrich_derives_evidence_chain_for_empty_chain(chain):
+    out = {
+        "verdict": "approved",
+        "evidence_chain": chain,
+        "extracted_data": {
+            "scoring": [
+                {
+                    "item": "技术参数",
+                    "basis": "性能参数满足要求，得 3 分",
+                    "award_hits": [_scoring_hit(awarded=3, source="投标文件第6页", quote="塔吊两台")],
+                }
+            ]
+        },
+    }
+    to.enrich_tender_result(out)
+    assert out["evidence_chain"] == [
+        {
+            "source": "投标文件第6页",
+            "finding": "塔吊两台",
+            "conclusion": "性能参数满足要求，得 3 分",
+        }
+    ]
+
+
+def test_enrich_derives_when_chain_is_missing():
+    out = {
+        "verdict": "approved",
+        "extracted_data": {
+            "scoring": [
+                {
+                    "item": "业绩",
+                    "basis": "符合业绩要求，得 2 分",
+                    "award_hits": [_scoring_hit(awarded=2, source="投标文件第12页", quote="合同金额")],
+                }
+            ]
+        },
+    }
+    to.enrich_tender_result(out)
+    assert out["evidence_chain"][0]["source"] == "投标文件第12页"
+
+
+def test_enrich_does_not_overwrite_nonempty_evidence_chain():
+    existing = [{"source": "招标文件第3页", "finding": "评分办法", "conclusion": "按该办法评分"}]
+    out = {
+        "verdict": "approved",
+        "evidence_chain": deepcopy(existing),
+        "extracted_data": {
+            "scoring": [
+                {
+                    "basis": "不应覆盖",
+                    "award_hits": [_scoring_hit(awarded=2, source="投标文件第12页", quote="合同金额")],
+                }
+            ]
+        },
+    }
+    to.enrich_tender_result(out)
+    assert out["evidence_chain"] == existing
+
+
+def test_enrich_skips_missing_scoring():
+    out = {"verdict": "approved", "evidence_chain": []}
+    to.enrich_tender_result(out)
+    assert out["evidence_chain"] == []
+
+
+def test_enrich_prioritizes_nonzero_hit_and_preserves_page_anchor():
+    out = {
+        "verdict": "approved",
+        "evidence_chain": [],
+        "extracted_data": {
+            "scoring": [
+                {
+                    "basis": "基础分与加分均已核对",
+                    "award_hits": [
+                        _scoring_hit(awarded=0, source="投标文件第4页", quote="常规参数"),
+                        _scoring_hit(awarded=3, source="投标文件第18页【第18页】", quote="检测报告") ,
+                    ],
+                }
+            ]
+        },
+    }
+    to.enrich_tender_result(out)
+    assert out["evidence_chain"][0]["source"] == "投标文件第18页【第18页】"
+    assert out["evidence_chain"][1]["source"] == "投标文件第4页"
+
+
+def test_unresolved_derived_evidence_does_not_change_verdict_or_scoring(monkeypatch):
+    from server.common.contract import apply_schema_semantics
+    from server.tender.output import TENDER_OUTPUT_SCHEMA_NAME
+
+    monkeypatch.setattr("server.common.output_contracts._load_known_rule_ids", lambda: set())
+    before = {
+        "status": "scored",
+        "score": 3,
+        "award_hits": [
+            {
+                "awarded": 3,
+                "source": "投标文件第99页",
+                "finding": "底稿不存在的原文",
+                "conclusion": "该项得 3 分",
+            }
+        ],
+    }
+    out = {
+        "claim_id": "T-1",
+        "verdict": "approved",
+        "explanation": "评分完成",
+        "reasons": [],
+        "policy_refs": ["tender_evalmethod_001"],
+        "risk_score": 20,
+        "extracted_data": {"scoring": [deepcopy(before)]},
+        "evidence_chain": [],
+        "reviewed_by": "tender-evaluator",
+        "timestamp": "2026-06-22T00:00:00Z",
+    }
+
+    result = apply_schema_semantics(
+        TENDER_OUTPUT_SCHEMA_NAME,
+        out,
+        evidence_source="### 文件: 投标文件.pdf\n【第 1 页】\n其他内容",
+    )
+
+    assert result["evidence_chain"][0]["resolution"]["status"] == "unresolved"
+    assert result["verdict"] == "approved"
+    assert result["extracted_data"]["scoring"][0] == before
+
+
+def test_second_enrich_after_downgrade_does_not_duplicate_derived_evidence(monkeypatch):
+    """F4 回归守卫：unresolved 承重 award_hit → downgrade → verdict 翻 manual_review →
+    ``evidence.py`` 在 verdict 翻转时二次调 ``enrich_tender_result``；空链派生须幂等——只派生
+    一次、无重复条目（防 lazy-import seam 静默失真复发，见
+    compound/2026-07-18-learning-lazy-import-behavioral-seam）。"""
+    from server.common.contract import apply_schema_semantics
+    from server.tender.output import TENDER_OUTPUT_SCHEMA_NAME
+
+    monkeypatch.setenv("EVIDENCE_RESOLUTION_DOWNGRADE", "1")
+    monkeypatch.setattr("server.common.output_contracts._load_known_rule_ids", lambda: set())
+    out = {
+        "claim_id": "T-F4",
+        "verdict": "approved",
+        "explanation": "评分完成，得 21 分",
+        "reasons": [],
+        "policy_refs": ["tender_evalmethod_001"],
+        "risk_score": 20,
+        "extracted_data": {
+            "scoring": [
+                {
+                    "item": "技术参数指标",
+                    "max": 25,
+                    "score": 21,
+                    "status": "scored",
+                    "score_mode": "additive",
+                    "award_hits": [
+                        _scoring_hit(awarded=21, source="投标文件第6页【第6页】", quote="不可核验的承重原文"),
+                    ],
+                }
+            ]
+        },
+        "evidence_chain": [],
+        "reviewed_by": "tender-evaluator",
+        "timestamp": "2026-06-22T00:00:00Z",
+    }
+
+    result = apply_schema_semantics(
+        TENDER_OUTPUT_SCHEMA_NAME,
+        out,
+        evidence_source="### 文件: 投标文件.pdf\n【第 1 页】\n完全不含承重引文的其他内容",
+    )
+
+    # 承重 award_hit 核不实 → 降级 → verdict 翻 manual_review → 触发 evidence.py 二次 enrich
+    assert result["verdict"] == "manual_review"
+    assert result["extracted_data"]["scoring"][0]["score"] is None
+    # F4 核心：二次 enrich 幂等，空链只派生一次、无重复条目
+    assert len(result["evidence_chain"]) == 1
+    assert result["evidence_chain"][0]["finding"] == "不可核验的承重原文"
 
 
 # ── T5 (G2/F3): 自注册回归 —— 隔离子进程，不被同进程内其它测试的 import 顺序掩盖 ──────
