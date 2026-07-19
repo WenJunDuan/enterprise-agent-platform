@@ -26,9 +26,38 @@
    SOCKS 代理坑增补进 compound/2026-06-25-trick-codex-proxy-hangs-streaming.md。
 9. **收口**(用户指令): worktree/分支/stash 复核全清, main 推 origin, 文档完善, design.md 预案备妥。
 
+## 续: E2 拍板→D3+D10 全流程收口(同会话后半)
+
+10. **E2 用户拍方向 b**(Python 单源+D10 直连立项)→ design 定稿 → critic round1 NEEDS_REVISION
+    (2P0+3P1+2P2)全应答并入 design → 主 agent 判 ready 进 impl。
+11. **impl**(generator+worktree, T1-T5): audit.md 薄壳(判断纪律单源+首步强制 Read runner.py)/
+    直连 server/audit/direct.py(AUDIT_DIRECT_CONNECT 门控默认关, trust_env=False, 归档接缝, 回落
+    分流)/耗时指标落 AgentRunMeta/vision POC/runbook。
+12. **review 三件套**: reviewer 无 P0(3 P1+1 P2)+ spec PASS + evaluator PASS。
+13. **F1-F4 修复**(原 generator 会话中断被停, 主 agent 在 worktree 收尾, 有 D1 先例): 凭据分传
+    (api_key/auth_token 按存在性分传, 不折叠)/传输类分类收窄(仅 401/429/5xx 回落, 4xx 原样传播)/
+    opts 转发 fail-fast/超时注释。→ merge **13ec8b1**(893 绿)。
+14. **真网关四项验收全过**(acceptance.md): flag off 893 绿 / on-off 对照直连 16.7s vs CLI 52.8s
+    (×32%<70%)verdict 一致 / CC 路径 /audit 一致 / **T4 vision POC=deepseek-v4-flash 不支持
+    vision→D10② 附件预嵌降 backlog**。
+15. **Bash 安全 Hotfix 53e4bce**(critic 发现+主 agent SDK 源码坐实): 生产 agent 子进程 tools=None→
+    CLI 默认含 Bash+bypassPermissions 全放行=评标处理攻击者可控投标 PDF 的 RCE 面; 显式设 tools
+    白名单 6 项(排除 Bash/Edit), 895 绿 + CLI 审核实跑限定后正常。铁律[Hotfix 免审议]。
+16. **push origin 304b624**(切 ship 窗口推、推毕回 plan); worktree/分支/stash 全清仅 main。
+
+## 本 sprint 交付总账
+
+- **D3(prompt 单源)= DONE**: audit.md 薄壳, 判断纪律单源化, .claude expense 资产标注非生产真相源。
+- **D10①③④ = DONE**: 直连路径(flag 门控默认关)/耗时指标/runbook; **D10② vision 降 backlog**
+  (网关模型不支持, 待部署机换 vision 模型) → items.yaml D10 status=in_progress。
+- 附带: prompt-闸矛盾修复 ship(60d860c)、Bash 安全 Hotfix(53e4bce)、D11 先行设计+critic 应答
+  (5f96a0f, 待立项)。
+
 ## 悬决(下一会话入口)
 
-- **E2 拍板(用户)**: a=command 单源 / b=Python 单源+D10 直连立项(主 agent 推荐 b, 论证=route-note
-  「E2 拍板包」)。拍板后按 design.md(DRAFT)进 critic → impl。
-- proposals.md 两条 delivery-gate 矛盾待裁。
-- 窗口并行可起: E3 D11 / E4 dependabot; 部署机窗口: D8 runbook + V4Pro 基线锁硬门。
+- **D11 立项**: design 定稿级+critic 九条应答已在册(sprints/2026-07-18-tender-discipline-residuals/
+  design.md); 批次 A opus 安全轮(R4 ocr-page wiring, PreToolUse hooks 白名单)/批次 B codex 确定性
+  (F04 evidence_chain 派生/R5 schema/R6 config)/C 条件项(glm 需网关可达/R7 前端需授权)。
+- **E4 dependabot**(6 high)可并行。
+- proposals.md 两条 delivery-gate 9.9.3 ship 契约结构性矛盾待用户裁。
+- 部署机窗口: D8 runbook 四指标 / V4Pro 基线锁一致性硬门(=D4 前置)/ D10② vision 模型。

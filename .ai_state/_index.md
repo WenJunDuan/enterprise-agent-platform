@@ -5,7 +5,7 @@ version: "9.6.4"
 
 # === PACE 路由状态 ===
 path: "System" # 文档智能 program 2026-07-doc-intelligence 立项：四波次 D1-D11（地基/质量/结构/体验），旧 tender-program 已收口(S7/S9 结转,S8 用户推迟)
-stage: "ship" # 2026-07-18 推送窗口(用户指令): D3+D10 验收 PASS+Bash Hotfix 全落地, 推 origin; 推毕会话收口(用户开新会话)
+stage: "plan" # 2026-07-18: D3+D10 已 merge+验收+push(304b624 origin 同步); 回 plan 等 D11 立项/E4 dependabot(用户开新会话); 9.9.3 ship 契约结构性问题见 proposals.md
 current_sprint_slug: "2026-07-18-prompt-single-source" # D3(spike 完场+缺陷①修复 ship; 前 sprint 2026-07-16-tender-feature-package 已归档)
 current_roadmap_slug: "2026-07-doc-intelligence"
 skip_polish: false
