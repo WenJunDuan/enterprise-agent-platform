@@ -5,7 +5,7 @@ version: "9.6.4"
 
 # === PACE 路由状态 ===
 path: "System" # 文档智能 program 2026-07-doc-intelligence 立项：四波次 D1-D11（地基/质量/结构/体验），旧 tender-program 已收口(S7/S9 结转,S8 用户推迟)
-stage: "review" # 2026-07-18: D3+D10 T1-T5+F1-F4 merge(13ec8b1)+真网关四项验收 PASS+Bash 安全 Hotfix(53e4bce); review 三件套 PASS(reviewer 无P0/spec/evaluator);待 push(9.9.3 ship 契约结构性问题见 proposals.md)
+stage: "ship" # 2026-07-18 推送窗口(用户指令): D3+D10 验收 PASS+Bash Hotfix 全落地, 推 origin; 推毕会话收口(用户开新会话)
 current_sprint_slug: "2026-07-18-prompt-single-source" # D3(spike 完场+缺陷①修复 ship; 前 sprint 2026-07-16-tender-feature-package 已归档)
 current_roadmap_slug: "2026-07-doc-intelligence"
 skip_polish: false
@@ -393,6 +393,7 @@ slug 拆分为独立 sprint 目录；`lessons.md` 整体保留为
 - `docs/` — 项目参考文档 (开发指南 / 前端对接 / audit-skills)，非状态机文件
 
 ## 历史 (由 pace-continuator hook 自动追加, 最多保留近 10 条)
+- `2026-07-19 00:26:42`: stage=review sprint=2026-07-18-prompt-single-source turn-end
 - `2026-07-18 08:22:59`: stage=impl sprint=2026-07-18-prompt-single-source turn-end
 - `2026-07-18 06:57:42`: stage=plan sprint=2026-07-18-prompt-single-source turn-end
 - `2026-07-18 06:28:29`: stage=ship sprint=2026-07-18-prompt-single-source turn-end
@@ -402,7 +403,6 @@ slug 拆分为独立 sprint 目录；`lessons.md` 整体保留为
 - `2026-07-02 02:29:53`: stage=design sprint=2026-07-02-eval-tender-scaffold turn-end
 - `2026-07-01 04:52:37`: stage=ship sprint=2026-06-tender-program turn-end
 - `2026-06-29 07:51:02`: stage=design sprint=2026-06-26-tender-domain-cleanup turn-end
-- `2026-06-25 16:05:57`: stage=ship sprint=2026-06-25-tender-report-dimensions turn-end
 
 
 - 2026-06-02 [migrate] v9.6.2(legacy flat) → v9.6.4. 备份见 `.ai_state.backup-*`。
