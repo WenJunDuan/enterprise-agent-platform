@@ -209,7 +209,7 @@ items:
     effort: M
     wave: 1
     depends_on: [D1, D2]
-    status: pending
+    status: in_progress # 2026-07-19: Batch A(R4 ocr-page 安全接线:case_root 围栏+PreToolUse 白名单+对抗 TDD)+Batch B(F04 evidence_chain/R5 reviewed_by/R6 config) 全 merge 回 main(7d237ab;codex 并行实现+主agent review 三件套 PASS,评 4.55/4.7,920 绿+ruff 净,worktree/分支已清)。linchpin(bypassPermissions 下 PreToolUse deny 真生效)真网关集成测试证实。**C1/glm DESCOPED**(用户 2026-07-19:内网隔离部署用 DeepSeek/qwen 不用 glm)。**C2/R7 前端 null guard BLOCKED**(待用户 agent-front 授权,可挂 D9)。push 仍 ship-gated
     redzone: partial-agent-front
     note: >
       收口 2026-06-23 judgment-discipline sprint 六项账外残留（细节见该 sprint design.md）。
