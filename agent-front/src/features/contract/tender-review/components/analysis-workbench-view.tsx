@@ -3,6 +3,7 @@ import { Brain, FileText, MapPin, Printer } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import type {
+  ProjectInfo,
   ReviewCategory,
   ReviewItem,
   ReviewBidder,
@@ -35,8 +36,18 @@ const viewLabels: Record<TenderReviewMode, string> = {
   compare: '风险对比',
 }
 
+const emptyProjectInfo: ProjectInfo = {
+  name: '—',
+  code: '—',
+  method: '—',
+  controlPrice: '—',
+  reviewDate: '—',
+  reportNo: '—',
+}
+
 export function AnalysisWorkbenchView(props: AnalysisWorkbenchViewProps) {
   const viewLabel = viewLabels[props.mode] ?? '辅助评审'
+  const projectInfo = props.data.projectInfo ?? emptyProjectInfo
 
   return (
     <div className='overflow-hidden rounded-xl border bg-background'>
@@ -55,7 +66,7 @@ export function AnalysisWorkbenchView(props: AnalysisWorkbenchViewProps) {
               <span className='text-foreground'>{viewLabel}</span>
             </div>
             <h2 className='mt-1 truncate text-xl font-semibold'>
-              {props.data.projectInfo.name}
+              {projectInfo.name ?? '—'}
             </h2>
           </div>
           <div className='flex shrink-0 items-center gap-2'>
@@ -104,10 +115,11 @@ export function AnalysisWorkbenchView(props: AnalysisWorkbenchViewProps) {
 
 /** 概要/详细共用：取当前选中投标人名（无则兜底首个 / 占位）。 */
 function selectedBidderName(props: AnalysisWorkbenchViewProps): string {
+  const bidders = props.data.reviewBidders ?? []
   const bidder =
-    props.data.reviewBidders.find(
+    bidders.find(
       (item) => item.id === props.selectedBidderId
-    ) ?? props.data.reviewBidders[0]
+    ) ?? bidders[0]
   return bidder?.name ?? '当前投标人'
 }
 
@@ -139,9 +151,11 @@ function BidderTabs({
   selectedBidderId,
   onBidder,
 }: AnalysisWorkbenchViewProps) {
+  const bidders = data.reviewBidders ?? []
+
   return (
     <div className='mt-3 flex gap-2 overflow-x-auto'>
-      {data.reviewBidders.map((bidder) => {
+      {bidders.map((bidder) => {
         const active = bidder.id === selectedBidderId
         return (
           <button
@@ -163,9 +177,9 @@ function BidderTabs({
                   : 'bg-muted text-muted-foreground'
               )}
             >
-              {bidder.tag}
+              {bidder.tag ?? '—'}
             </span>
-            {bidder.short}
+            {bidder.short ?? '—'}
             <span
               className={cn(
                 'text-xs font-semibold text-muted-foreground',
@@ -182,19 +196,30 @@ function BidderTabs({
 }
 
 function DetailWorkbench(props: AnalysisWorkbenchViewProps) {
+  const reviewBidders = props.data.reviewBidders ?? []
+  const categories = props.data.categories ?? []
+  const paragraphs = props.data.paragraphs ?? []
+  const scoringItems = props.data.scoringItems ?? []
+  const projectInfo = props.data.projectInfo ?? emptyProjectInfo
   const selectedBidder =
-    props.data.reviewBidders.find(
+    reviewBidders.find(
       (bidder) => bidder.id === props.selectedBidderId
     ) ??
-    props.data.reviewBidders[0] ??
+    reviewBidders[0] ??
     emptyBidder
   const activeCategory =
-    props.data.categories.find((category) => category.key === props.category) ??
-    props.data.categories[0]
-  const activeItem = activeCategory.items.find(
+    categories.find((category) => category.key === props.category) ??
+    categories[0] ?? {
+      key: props.category,
+      label: '暂无分类',
+      items: [],
+    }
+  const activeItems = activeCategory.items ?? []
+  const activeItem = activeItems.find(
     (item) => item.id === props.activeItemId
   )
-  const activeLoc = activeItem?.loc ?? -1
+  const activeLocValue = activeItem?.loc
+  const activeLoc = isFiniteNumber(activeLocValue) ? activeLocValue : -1
   const activeEvidenceRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -208,43 +233,52 @@ function DetailWorkbench(props: AnalysisWorkbenchViewProps) {
   return (
     <div className='grid min-h-[620px] xl:h-[calc(100vh-220px)] xl:min-h-[620px] xl:grid-cols-[288px_minmax(0,1.2fr)_minmax(340px,1fr)]'>
       <ScoringOverviewPanel
-        projectInfo={props.data.projectInfo}
+        projectInfo={projectInfo}
         bidderName={selectedBidder.name}
         scoreSummary={props.data.scoreSummary}
-        scoringItems={props.data.scoringItems}
+        scoringItems={scoringItems}
       />
 
       <section className='flex min-h-0 min-w-0 flex-col border-b xl:border-r xl:border-b-0'>
         <div className='flex shrink-0 gap-1 overflow-x-auto px-5 pt-4'>
-          {props.data.categories.map((category) => (
-            <button
-              key={category.key}
-              type='button'
-              className={cn(
-                'flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium',
-                category.key === props.category
-                  ? 'bg-primary/10 text-primary'
-                  : 'text-muted-foreground hover:bg-muted'
-              )}
-              onClick={() => props.onCategory(category.key)}
-            >
-              {category.label}
-              <span className='rounded-full bg-muted px-2 py-0.5 text-xs'>
-                {category.items.length}
-              </span>
-            </button>
-          ))}
+          {categories.map((category) => {
+            const items = category.items ?? []
+            return (
+              <button
+                key={category.key}
+                type='button'
+                className={cn(
+                  'flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium',
+                  category.key === props.category
+                    ? 'bg-primary/10 text-primary'
+                    : 'text-muted-foreground hover:bg-muted'
+                )}
+                onClick={() => props.onCategory(category.key)}
+              >
+                {category.label ?? '—'}
+                <span className='rounded-full bg-muted px-2 py-0.5 text-xs'>
+                  {items.length}
+                </span>
+              </button>
+            )
+          })}
         </div>
         <div className='min-h-0 flex-1 space-y-3 overflow-y-auto p-5'>
-          {activeCategory.items.map((item, index) => (
-            <ReviewItemCard
-              key={item.id}
-              item={item}
-              index={index + 1}
-              active={item.id === props.activeItemId}
-              onClick={() => props.onActiveItem(item.id)}
-            />
-          ))}
+          {activeItems.length > 0 ? (
+            activeItems.map((item, index) => (
+              <ReviewItemCard
+                key={item.id}
+                item={item}
+                index={index + 1}
+                active={item.id === props.activeItemId}
+                onClick={() => props.onActiveItem(item.id)}
+              />
+            ))
+          ) : (
+            <div className='rounded-lg border border-dashed p-4 text-sm text-muted-foreground'>
+              暂无详细分析数据。
+            </div>
+          )}
         </div>
       </section>
 
@@ -256,33 +290,44 @@ function DetailWorkbench(props: AnalysisWorkbenchViewProps) {
           </div>
         </div>
         <div className='min-h-0 flex-1 space-y-3 overflow-y-auto p-5'>
-          {props.data.paragraphs.map((paragraph) => {
-            const active = paragraph.loc === activeLoc
-            return (
-              <div
-                key={paragraph.loc}
-                ref={active ? activeEvidenceRef : undefined}
-                className={cn(
-                'rounded-lg border-l-4 bg-card p-4 text-sm shadow-sm',
-                active
-                    ? 'border-l-amber-500 bg-amber-50 dark:bg-amber-950/30'
-                    : 'border-l-transparent'
-                )}
-              >
+          {paragraphs.length > 0 ? (
+            paragraphs.map((paragraph, index) => {
+              const paragraphLoc = isFiniteNumber(paragraph.loc)
+                ? paragraph.loc
+                : undefined
+              const active = paragraphLoc != null && paragraphLoc === activeLoc
+              return (
                 <div
+                  key={paragraphLoc ?? `paragraph-${index}`}
+                  ref={active ? activeEvidenceRef : undefined}
                   className={cn(
-                    'mb-1 text-xs font-bold',
-                    active ? 'text-amber-700 dark:text-amber-300' : 'text-muted-foreground'
+                    'rounded-lg border-l-4 bg-card p-4 text-sm shadow-sm',
+                    active
+                      ? 'border-l-amber-500 bg-amber-50 dark:bg-amber-950/30'
+                      : 'border-l-transparent'
                   )}
                 >
-                  {paragraph.label}
+                  <div
+                    className={cn(
+                      'mb-1 text-xs font-bold',
+                      active
+                        ? 'text-amber-700 dark:text-amber-300'
+                        : 'text-muted-foreground'
+                    )}
+                  >
+                    {paragraph.label ?? '—'}
+                  </div>
+                  <div className='leading-6 text-muted-foreground'>
+                    {paragraph.text ?? '—'}
+                  </div>
                 </div>
-                <div className='leading-6 text-muted-foreground'>
-                  {paragraph.text}
-                </div>
-              </div>
-            )
-          })}
+              )
+            })
+          ) : (
+            <div className='rounded-lg border border-dashed p-4 text-sm text-muted-foreground'>
+              暂无证据与底稿。
+            </div>
+          )}
         </div>
       </section>
     </div>
@@ -301,6 +346,11 @@ function ReviewItemCard({
   onClick: () => void
 }) {
   const badge = getItemBadge(item)
+  const deductionHits = item.deductionHits ?? []
+  const awardHits = item.awardHits ?? []
+  const maxScore = isFiniteNumber(item.max) ? item.max : null
+  const gotScore = isFiniteNumber(item.got) ? item.got : null
+  const displayLoc = isFiniteNumber(item.loc) ? item.loc + 1 : '—'
 
   return (
     <button
@@ -321,16 +371,15 @@ function ReviewItemCard({
       </span>
       <span className='min-w-0 flex-1'>
         <span className='flex items-start justify-between gap-3'>
-          <span className='font-medium'>{item.title}</span>
+          <span className='font-medium'>{item.title ?? '—'}</span>
           <span className='flex shrink-0 items-center gap-2'>
-            {item.max != null ? (
+            {maxScore != null ? (
               <span className='text-xs font-semibold whitespace-nowrap'>
                 <b className='text-primary'>
-                  {item.got == null ? '—' : formatScore(item.got)}
+                  {gotScore == null ? '—' : formatScore(gotScore)}
                 </b>
                 <span className='text-muted-foreground'>
-                  {' '}
-                  / {formatScore(item.max)} 分
+                  {' '}/ {formatScore(maxScore)} 分
                 </span>
               </span>
             ) : null}
@@ -345,7 +394,7 @@ function ReviewItemCard({
           </span>
         </span>
         <span className='mt-1 block text-sm leading-6 text-muted-foreground'>
-          {item.desc}
+          {item.desc ?? '—'}
         </span>
         {item.manualReviewReason ? (
           <span className='mt-2 inline-flex w-fit items-center gap-1 rounded bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-950/40 dark:text-amber-300'>
@@ -353,22 +402,22 @@ function ReviewItemCard({
           </span>
         ) : null}
         {/* R2 扣分明细：逐条命中（扣分 + 原文 quote + 出处页），治"扣分项准确 + 上下文定位与显示" */}
-        {item.deductionHits?.length ? (
+        {deductionHits.length ? (
           <span className='mt-2 block space-y-1.5'>
             <span className='block text-xs font-semibold text-muted-foreground'>
-              问题依据（{item.deductionHits.length} 条）
+              问题依据（{deductionHits.length} 条）
             </span>
-            {item.deductionHits.map((hit, hitIndex) => (
+            {deductionHits.map((hit, hitIndex) => (
               <ScoreHitRow key={hitIndex} hit={hit} sign='deduct' />
             ))}
           </span>
         ) : null}
-        {item.awardHits?.length ? (
+        {awardHits.length ? (
           <span className='mt-2 block space-y-1.5'>
             <span className='block text-xs font-semibold text-muted-foreground'>
-              响应依据（{item.awardHits.length} 条）
+              响应依据（{awardHits.length} 条）
             </span>
-            {item.awardHits.map((hit, hitIndex) => (
+            {awardHits.map((hit, hitIndex) => (
               <ScoreHitRow key={hitIndex} hit={hit} sign='award' />
             ))}
           </span>
@@ -377,12 +426,12 @@ function ReviewItemCard({
           <Brain className='mt-0.5 size-3 shrink-0' />
           <span>
             <b>审核依据：</b>
-            {item.aiNote}
+            {item.aiNote ?? '—'}
           </span>
         </span>
         <span className='mt-2 flex items-center gap-1 text-xs font-medium text-primary'>
           <MapPin className='size-3' />
-          定位原文 · {item.loc + 1}
+          定位原文 · {displayLoc}
         </span>
       </span>
     </button>
@@ -404,7 +453,7 @@ function ScoreHitRow({ hit, sign }: { hit: ScoreHit; sign: 'deduct' | 'award' })
         >
           {sign === 'deduct' ? '问题' : '依据'}
         </b>
-        <span className='text-foreground'>{hit.condition}</span>
+        <span className='text-foreground'>{hit.condition ?? '—'}</span>
       </span>
       {hit.quote ? (
         <span className='mt-1 block border-l-2 border-l-amber-300 pl-2 leading-5 text-muted-foreground italic'>
@@ -462,11 +511,13 @@ function getItemBadge(item: ReviewItem) {
 }
 
 function CompareWorkbench({ data }: { data: TenderReviewMockData }) {
+  const reviewBidders = data.reviewBidders ?? []
   const cards = data.bidderCards ?? []
+  const projectInfo = data.projectInfo ?? emptyProjectInfo
   return (
     <div className='space-y-4 bg-muted/20 p-6'>
       <div className='text-sm text-muted-foreground'>
-        {data.reviewBidders.length} 家投标方 · {data.projectInfo.method} · 综合对比
+        {reviewBidders.length} 家投标方 · {projectInfo.method ?? '—'} · 综合对比
       </div>
       <BidderCompareCards cards={cards} />
     </div>
@@ -480,4 +531,8 @@ const emptyBidder: ReviewBidder = {
   short: '暂无',
   total: 0,
   rank: 0,
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value)
 }
