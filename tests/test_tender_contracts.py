@@ -25,7 +25,7 @@ _TENDER_CONTRACTS = [
 
 # tender 域在 manual_review 时会发出的 reason（CLAUDE.md tender 段 + design）：
 # 规则缺失 rule_gap、一致性冲突(拟派 PM≠业绩 PM / 姓名不一致) data_conflict。
-_TENDER_MANUAL_REVIEW_REASONS = {"rule_gap", "data_conflict"}
+_TENDER_MANUAL_REVIEW_REASONS = {"rule_gap", "data_conflict", "insufficient_evidence"}
 
 
 @pytest.mark.parametrize("schema_name", _TENDER_CONTRACTS)
@@ -42,6 +42,25 @@ def test_tender_manual_review_reasons_subset_of_audit_result_enum():
         f"tender 用到的 manual_review_reason 不在 common/audit-result 枚举里：{missing}；"
         f"枚举={sorted(enum)}"
     )
+
+
+@pytest.mark.parametrize("reason", sorted(_TENDER_MANUAL_REVIEW_REASONS))
+def test_tender_manual_review_reason_passes_schema(reason):
+    schema = load_output_schema(DEFAULT_OUTPUT_SCHEMA_NAME)
+    payload = {
+        "claim_id": "BID-001",
+        "verdict": "manual_review",
+        "explanation": "待人工核验",
+        "reasons": [],
+        "policy_refs": [],
+        "risk_score": 50,
+        "extracted_data": {},
+        "evidence_chain": [],
+        "reviewed_by": "tender-evaluator",
+        "timestamp": "2026-07-19T00:00:00Z",
+        "manual_review_reason": reason,
+    }
+    jsonschema.validate(payload, schema)
 
 
 def test_audit_result_verdict_enum_covers_tender_outcomes():

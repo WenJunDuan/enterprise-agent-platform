@@ -381,6 +381,32 @@ def test_enrich_no_policy_refs_detail_when_empty():
     assert "policy_refs_detail" not in out
 
 
+def test_tender_enrich_adds_policy_refs_detail(monkeypatch):
+    """TB2c：共享 policy_refs_detail 派生也必须覆盖 tender 组合 enrich。"""
+    monkeypatch.setattr(
+        _oc,
+        "_load_rule_details",
+        lambda: {
+            "tender_evalmethod_001": {
+                "rule_id": "tender_evalmethod_001",
+                "name": "评标依据",
+                "source_text": "按招标文件规定的评标标准和方法评标",
+            }
+        },
+    )
+    out = apply_schema_semantics(
+        TENDER_OUTPUT_SCHEMA_NAME,
+        _valid_audit_result(policy_refs=["tender_evalmethod_001"]),
+    )
+    assert out["policy_refs_detail"] == [
+        {
+            "rule_id": "tender_evalmethod_001",
+            "name": "评标依据",
+            "source_text": "按招标文件规定的评标标准和方法评标",
+        }
+    ]
+
+
 def test_load_rule_details_real_rules_if_present():
     """若本地有 knowledge/tender 规则，则真规则的 source_text 非空（gitignored，CI 无则跳过）。"""
     details = _oc._load_rule_details()
