@@ -1,0 +1,2 @@
+{"at": "2026-07-18T11:02:28.226691+00:00", "model": "deepseek-v4-flash", "expected_text": "AI42", "ok": true, "wall_s": 3.6, "stop_reason": "max_tokens", "response_text": "", "verdict": "inconclusive"}
+{"at": "2026-07-18T11:04:04.722546+00:00", "model": "deepseek-v4-flash", "expected_text": "AI42", "ok": true, "wall_s": 2.3, "stop_reason": "end_turn", "response_text": "无法看到图片内容。", "verdict": "unsupported"}
