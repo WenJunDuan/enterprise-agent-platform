@@ -37,3 +37,5 @@ tool-trace.jsonl
 .agents/
 .codex/
 AGENTS.md
+# Athena PACE 并行 worktree（codex/generator 隔离写区，临时，用完 git worktree remove）
+.claude/worktrees/

@@ -5,8 +5,8 @@ version: "9.6.4"
 
 # === PACE 路由状态 ===
 path: "System" # 文档智能 program 2026-07-doc-intelligence 立项：四波次 D1-D11（地基/质量/结构/体验），旧 tender-program 已收口(S7/S9 结转,S8 用户推迟)
-stage: "plan" # 2026-07-18: D3+D10 已 merge+验收+push(304b624 origin 同步); 回 plan 等 D11 立项/E4 dependabot(用户开新会话); 9.9.3 ship 契约结构性问题见 proposals.md
-current_sprint_slug: "2026-07-18-prompt-single-source" # D3(spike 完场+缺陷①修复 ship; 前 sprint 2026-07-16-tender-feature-package 已归档)
+stage: "impl" # 2026-07-19: D11 立项(current sprint=tender-discipline-residuals); Batch B codex 并行实现中(worktree d11-b), Batch A 待 critic 定稿再 launch, Batch C 条件项(C1 gateway/C2-R7 待授权); 106f506 docs push 仍 plan-gated 待 ship 窗口
+current_sprint_slug: "2026-07-18-tender-discipline-residuals" # D11(立项 2026-07-19; 前 D3 prompt-single-source 已 done+归档)
 current_roadmap_slug: "2026-07-doc-intelligence"
 skip_polish: false
 skip_architecture_check: false
@@ -53,7 +53,7 @@ counts:
   cleanup_count: 1
   compound:
     learning: 12
-    trick: 1
+    trick: 2
     decision: 7
     explore: 1
 # === Pointers (指向最新相关文件) ===
@@ -393,6 +393,8 @@ slug 拆分为独立 sprint 目录；`lessons.md` 整体保留为
 - `docs/` — 项目参考文档 (开发指南 / 前端对接 / audit-skills)，非状态机文件
 
 ## 历史 (由 pace-continuator hook 自动追加, 最多保留近 10 条)
+- `2026-07-19 01:13:36`: stage=impl sprint=2026-07-18-tender-discipline-residuals turn-end
+- `2026-07-19 00:32:32`: stage=plan sprint=2026-07-18-prompt-single-source turn-end
 - `2026-07-19 00:26:42`: stage=review sprint=2026-07-18-prompt-single-source turn-end
 - `2026-07-18 08:22:59`: stage=impl sprint=2026-07-18-prompt-single-source turn-end
 - `2026-07-18 06:57:42`: stage=plan sprint=2026-07-18-prompt-single-source turn-end
@@ -401,8 +403,6 @@ slug 拆分为独立 sprint 目录；`lessons.md` 整体保留为
 - `2026-07-15 09:51:55`: stage=review sprint=2026-07-02-eval-tender-scaffold turn-end
 - `2026-07-15 07:53:39`: stage=impl sprint=2026-07-02-eval-tender-scaffold turn-end
 - `2026-07-02 02:29:53`: stage=design sprint=2026-07-02-eval-tender-scaffold turn-end
-- `2026-07-01 04:52:37`: stage=ship sprint=2026-06-tender-program turn-end
-- `2026-06-29 07:51:02`: stage=design sprint=2026-06-26-tender-domain-cleanup turn-end
 
 
 - 2026-06-02 [migrate] v9.6.2(legacy flat) → v9.6.4. 备份见 `.ai_state.backup-*`。

@@ -15,3 +15,4 @@
 {"schema_version":1,"event":"SubagentStart","agent_id":"a5b1d18866085b5db","agent_type":"generator","sprint_slug":"2026-07-18-prompt-single-source","timestamp":"2026-07-18T08:56:50.473Z"}
 {"schema_version":1,"event":"SubagentStart","agent_id":"a8b3b0f2d3f937631","agent_type":"evaluator","sprint_slug":"2026-07-18-prompt-single-source","timestamp":"2026-07-18T10:54:45.144Z"}
 {"schema_version":1,"event":"SubagentStop","agent_id":"a8b3b0f2d3f937631","agent_type":"evaluator","sprint_slug":"2026-07-18-prompt-single-source","timestamp":"2026-07-18T10:57:44.452Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"a190b115f437b22a5","agent_type":"critic","sprint_slug":"2026-07-18-prompt-single-source","timestamp":"2026-07-19T00:53:47.450Z"}
