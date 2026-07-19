@@ -176,10 +176,19 @@ def build_options(**overrides: Any) -> ClaudeAgentOptions:
     guard = offline_guard_error()
     if guard:
         raise ClaudeRuntimeError(guard)
+    # 安全硬化（2026-07-18 Hotfix）：显式限定 agent 子进程的**可用**工具集，去掉 Bash/Edit。
+    # 原实现只设 allowed_tools（免提示放行清单）+ permission_mode=bypassPermissions（豁免全部
+    # 权限检查），但从不设 tools → CLI 走默认全量内置工具（含 Bash）且在 bypass 下全放行。
+    # 评标 agent 处理**攻击者可控**的投标 PDF，内容注入可诱导其执行 Bash = 命令注入/RCE 面
+    # （security-checklist P0）。tools 是「工具是否存在」的闸（≠ allowed_tools 的「免提示放行」），
+    # 限定为与 allowed_tools 一致的 6 项后 Bash 对子进程根本不存在。R4 接线 ocr-page 时再按
+    # PreToolUse 白名单开受控 Bash（D11 批次 A）。可逆、行为对现有 6 工具零影响。
+    _AGENT_TOOLS = ["Read", "Glob", "Grep", "Write", "Skill", "Task"]
     defaults: dict[str, Any] = {
         "cwd": str(PROJECT_ROOT),
         "setting_sources": ["project"],
-        "allowed_tools": ["Read", "Glob", "Grep", "Write", "Skill", "Task"],
+        "tools": _AGENT_TOOLS,
+        "allowed_tools": list(_AGENT_TOOLS),
         "permission_mode": "bypassPermissions",
         "max_turns": int(os.getenv("AUDIT_MAX_TURNS", "30")),
         "model": runtime["anthropic_model"],

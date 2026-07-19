@@ -32,6 +32,30 @@ def test_no_budget_cap_set():
     assert build_options().max_budget_usd is None
 
 
+# ── 安全硬化（2026-07-18 Hotfix）：agent 子进程工具面必须显式限定，去掉 Bash ──
+
+
+def test_tools_explicitly_restricted_no_bash():
+    """安全回归守卫：tools 必须显式设为白名单（不含 Bash / Edit）。
+
+    评标 agent 处理攻击者可控的投标 PDF，permission_mode=bypassPermissions 下若 tools=None
+    走 CLI 默认全量内置工具（含 Bash）= 命令注入/RCE 面。tools 是「工具是否存在」的闸，
+    必须显式限定；此测试防回归到 tools=None。
+    """
+    opts = build_options()
+    assert opts.tools is not None, "tools 必须显式限定，不可为 None（否则 CLI 默认含 Bash）"
+    assert "Bash" not in opts.tools
+    assert "Edit" not in opts.tools
+
+
+def test_tools_matches_allowed_tools_whitelist():
+    """tools（工具存在闸）与 allowed_tools（免提示放行）一致，均为审核/评标所需的 6 项。"""
+    expected = ["Read", "Glob", "Grep", "Write", "Skill", "Task"]
+    opts = build_options()
+    assert list(opts.tools) == expected
+    assert list(opts.allowed_tools) == expected
+
+
 # ── 推理强度（extended thinking）：评标/审核默认 xhigh，治 deepseek 判断随机性 ──
 
 
