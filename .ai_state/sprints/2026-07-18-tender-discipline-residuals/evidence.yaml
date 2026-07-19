@@ -1,0 +1,7 @@
+sprint_slug: "2026-07-18-tender-discipline-residuals"
+collected_evidence:
+  - tool_use_id: "toolu_0193fVfamdG4ABheBTYxv4wc"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/d11-r7/agent-front\necho \"===lint===\" && bun run lint 2>&1 | tail -6\necho \"===test===\" && bun test src/features/contract/tender-review/components/analysis-workbench-view.test.ts 2>&1 | tail -12"
+    timestamp: "2026-07-19T03:52:46.039Z"
