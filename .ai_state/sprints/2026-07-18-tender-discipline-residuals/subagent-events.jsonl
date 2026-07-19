@@ -7,3 +7,10 @@
 {"schema_version":1,"event":"SubagentStop","agent_id":"a99659f1305fe9778","agent_type":"reviewer","sprint_slug":"2026-07-18-tender-discipline-residuals","timestamp":"2026-07-19T01:39:14.471Z"}
 {"schema_version":1,"event":"SubagentStart","agent_id":"a0a8e8e9283bd1845","agent_type":"evaluator","sprint_slug":"2026-07-18-tender-discipline-residuals","timestamp":"2026-07-19T01:41:37.633Z"}
 {"schema_version":1,"event":"SubagentStop","agent_id":"a0a8e8e9283bd1845","agent_type":"evaluator","sprint_slug":"2026-07-18-tender-discipline-residuals","timestamp":"2026-07-19T01:46:24.727Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"af3d98c109d804b3d","agent_type":"reviewer","sprint_slug":"2026-07-18-tender-discipline-residuals","timestamp":"2026-07-19T01:54:25.080Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"aa1adc3c8861c2596","agent_type":"spec-compliance","sprint_slug":"2026-07-18-tender-discipline-residuals","timestamp":"2026-07-19T01:54:35.580Z"}
+{"schema_version":1,"event":"SubagentStop","agent_id":"aa1adc3c8861c2596","agent_type":"spec-compliance","sprint_slug":"2026-07-18-tender-discipline-residuals","timestamp":"2026-07-19T01:58:29.870Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"af3d98c109d804b3d","agent_type":"reviewer","sprint_slug":"2026-07-18-tender-discipline-residuals","timestamp":"2026-07-19T02:16:01.472Z"}
+{"schema_version":1,"event":"SubagentStop","agent_id":"af3d98c109d804b3d","agent_type":"reviewer","sprint_slug":"2026-07-18-tender-discipline-residuals","timestamp":"2026-07-19T02:24:18.641Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"a86fa9c51fe17c527","agent_type":"evaluator","sprint_slug":"2026-07-18-tender-discipline-residuals","timestamp":"2026-07-19T02:45:41.752Z"}
+{"schema_version":1,"event":"SubagentStop","agent_id":"a86fa9c51fe17c527","agent_type":"evaluator","sprint_slug":"2026-07-18-tender-discipline-residuals","timestamp":"2026-07-19T03:00:24.315Z"}
