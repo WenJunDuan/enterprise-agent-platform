@@ -2,3 +2,16 @@
 {"schema_version":1,"event":"SubagentStop","agent_id":"a5936e30b72369693","agent_type":"generator","sprint_slug":"2026-07-18-prompt-single-source","timestamp":"2026-07-18T06:17:56.356Z"}
 {"schema_version":1,"event":"SubagentStart","agent_id":"a51c91f3a02667f87","agent_type":"critic","sprint_slug":"2026-07-18-prompt-single-source","timestamp":"2026-07-18T07:12:44.168Z"}
 {"schema_version":1,"event":"SubagentStop","agent_id":"a51c91f3a02667f87","agent_type":"critic","sprint_slug":"2026-07-18-prompt-single-source","timestamp":"2026-07-18T07:20:43.005Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"a5b1d18866085b5db","agent_type":"generator","sprint_slug":"2026-07-18-prompt-single-source","timestamp":"2026-07-18T07:27:45.218Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"a5b1d18866085b5db","agent_type":"generator","sprint_slug":"2026-07-18-prompt-single-source","timestamp":"2026-07-18T08:00:48.218Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"a0c305af7be26e54a","agent_type":"critic","sprint_slug":"2026-07-18-prompt-single-source","timestamp":"2026-07-18T08:20:16.019Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"a8051eeb0a6bc0af9","agent_type":"reviewer","sprint_slug":"2026-07-18-prompt-single-source","timestamp":"2026-07-18T08:30:28.695Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"a6a8585358c1258fd","agent_type":"spec-compliance","sprint_slug":"2026-07-18-prompt-single-source","timestamp":"2026-07-18T08:30:37.201Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"a0c305af7be26e54a","agent_type":"critic","sprint_slug":"2026-07-18-prompt-single-source","timestamp":"2026-07-18T08:33:51.323Z"}
+{"schema_version":1,"event":"SubagentStop","agent_id":"a6a8585358c1258fd","agent_type":"spec-compliance","sprint_slug":"2026-07-18-prompt-single-source","timestamp":"2026-07-18T08:34:16.577Z"}
+{"schema_version":1,"event":"SubagentStop","agent_id":"a0c305af7be26e54a","agent_type":"critic","sprint_slug":"2026-07-18-prompt-single-source","timestamp":"2026-07-18T08:35:47.328Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"a8051eeb0a6bc0af9","agent_type":"reviewer","sprint_slug":"2026-07-18-prompt-single-source","timestamp":"2026-07-18T08:41:58.019Z"}
+{"schema_version":1,"event":"SubagentStop","agent_id":"a8051eeb0a6bc0af9","agent_type":"reviewer","sprint_slug":"2026-07-18-prompt-single-source","timestamp":"2026-07-18T08:44:11.594Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"a5b1d18866085b5db","agent_type":"generator","sprint_slug":"2026-07-18-prompt-single-source","timestamp":"2026-07-18T08:56:50.473Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"a8b3b0f2d3f937631","agent_type":"evaluator","sprint_slug":"2026-07-18-prompt-single-source","timestamp":"2026-07-18T10:54:45.144Z"}
+{"schema_version":1,"event":"SubagentStop","agent_id":"a8b3b0f2d3f937631","agent_type":"evaluator","sprint_slug":"2026-07-18-prompt-single-source","timestamp":"2026-07-18T10:57:44.452Z"}
