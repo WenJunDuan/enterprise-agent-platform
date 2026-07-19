@@ -209,7 +209,7 @@ items:
     effort: M
     wave: 1
     depends_on: [D1, D2]
-    status: in_progress # 2026-07-19: Batch A(R4 ocr-page 安全接线:case_root 围栏+PreToolUse 白名单+对抗 TDD)+Batch B(F04 evidence_chain/R5 reviewed_by/R6 config) 全 merge 回 main(7d237ab;codex 并行实现+主agent review 三件套 PASS,评 4.55/4.7,920 绿+ruff 净,worktree/分支已清)。linchpin(bypassPermissions 下 PreToolUse deny 真生效)真网关集成测试证实。**C1/glm DESCOPED**(用户 2026-07-19:内网隔离部署用 DeepSeek/qwen 不用 glm)。**C2/R7 前端 null guard BLOCKED**(待用户 agent-front 授权,可挂 D9)。push 仍 ship-gated
+    status: done # 2026-07-19: Batch A(R4 ocr-page 安全接线)+B(F04/R5/R6)+C2/R7(前端 null guard FE-01/02/03,闭合报告500潜根因) 全 merge 回 main(A=7d237ab/B=79b44a1/R7=412c583;codex 并行实现+主agent review。A/B 三件套 PASS 评 4.55/4.7,linchpin bypassPermissions deny 真网关证实;R7 主agent review+独立验 eslint净/build过/test绿)。**C1/glm DESCOPED**(用户 2026-07-19:内网隔离部署 DeepSeek/qwen 不用 glm)。串标围标识别/S8 不进本包。已 push origin(A+B=3bb9119;R7 随本轮)
     redzone: partial-agent-front
     note: >
       收口 2026-06-23 judgment-discipline sprint 六项账外残留（细节见该 sprint design.md）。

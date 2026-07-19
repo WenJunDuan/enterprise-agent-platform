@@ -5,7 +5,7 @@ version: "9.6.4"
 
 # === PACE 路由状态 ===
 path: "System" # 文档智能 program 2026-07-doc-intelligence 立项：四波次 D1-D11（地基/质量/结构/体验），旧 tender-program 已收口(S7/S9 结转,S8 用户推迟)
-stage: "ship" # 2026-07-19: D11 Batch A+B DONE+merged(7d237ab,review 三件套 PASS,920 绿);用户显式要 push→切 ship 过 pre-bash-guard;delivery-gate validateRoadmap 中程必挂=proposals.md 结构性 bug,不伪造 manifest/tdd-evidence
+stage: "ship" # 2026-07-19: D11 全交付(Batch A+B+C2/R7 merged 至 412c583,C1 descoped);R7 增量 push 窗口;delivery-gate 9.9.3 结构性 bug 见 proposals.md,不伪造 manifest/tdd-evidence
 current_sprint_slug: "2026-07-18-tender-discipline-residuals" # D11(立项 2026-07-19; 前 D3 prompt-single-source 已 done+归档)
 current_roadmap_slug: "2026-07-doc-intelligence"
 skip_polish: false
