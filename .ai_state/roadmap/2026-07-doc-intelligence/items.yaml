@@ -69,7 +69,7 @@ items:
     effort: M
     wave: 0
     depends_on: []
-    status: pending # 2026-07-18 spike DONE(sprints/2026-07-18-prompt-single-source/route-note.md):三模式时延中位差<6%=延迟不卡方向;command 侧成本+~35%;意外主发现=两源漂移已兑换成可靠性差(内联 4/6 漏 explanation vs command 1/7)+prompt-闸矛盾(runner.py:56 vs output_contracts.py:286,flash 下 golden placeholder-invoice 假红);B1(agent 自行读)1/3 verdict 漂移=淘汰,command 统一须 B2(context 注入)形态。待用户拍方向(与 D10 直连同场)
+    status: done # 2026-07-18 DONE(merge 13ec8b1+push 304b624):用户拍方向 b(Python 单源)。spike(route-note.md)三模式时延中位差<6%=延迟不卡方向;意外主发现=两源漂移兑换成可靠性差(内联 4/6 漏 explanation vs command 1/7)+prompt-闸矛盾(先修 ship 60d860c)。实施=audit.md 改薄壳(判断纪律单源 runner.py:AUDIT_INSTRUCTIONS,首步强制 Read);review 三件套 PASS+F1-F4 修复+真网关 CC 路径验收 verdict 与 Python 一致。.claude expense 资产已标注非生产真相源
     note: >
       先 spike：实测 expense 走 command 模式（setting_sources=["project"]）的延迟差值，
       与现 AUDIT_INSTRUCTIONS 内联对比 → 差值可接受则统一到 tender 模式（command 文件单一真相源），
@@ -188,7 +188,7 @@ items:
     effort: M
     wave: 1
     depends_on: [D3]
-    status: pending # 2026-07-18 ①直连 spike DONE(E1):直连比 CLI 快 40-60%(中位 19s vs ~31s)+网关 prompt cache 红利,verdict/refs 全对,CLI 独有故障类消除;证据与 E2 拍板包见 sprints/2026-07-18-prompt-single-source/route-note.md;待用户 E2 拍板(推荐 b=Python 单源+直连立项)后实施
+    status: in_progress # 2026-07-18 ①③④ DONE(merge 13ec8b1+push):①直连 server/audit/direct.py(AUDIT_DIRECT_CONNECT 门控默认关,trust_env=False 防代理坑,凭据分传,传输类回落/契约类不回落,归档接缝);③耗时/token 指标落 AgentRunMeta;④休眠资产 runbook。真网关四项验收 PASS(直连 16.7s vs CLI 52.8s=×32%,verdict 一致)。**②多模态附件预嵌=降级 backlog**(当前网关 deepseek-v4-flash 不支持 vision,POC 两次空回答),待部署机换 vision 模型后启;⑤热路径直连即①本身。剩 ② 未完故 in_progress
     note: >
       吸收 2026-06-12 quality backlog 账外剩余（③④⑤残），expense 域自此全部在册。
       ①热路径直连 spike：官方 anthropic SDK messages.create 直打网关，绕开 claude-agent-sdk
