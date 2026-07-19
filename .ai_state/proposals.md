@@ -15,6 +15,16 @@
 Stop 永远 block**。要么 validateRoadmap 应只在「roadmap 收官 ship」时触发/只校验 current sprint
 对应 item,要么 items.yaml 模板补齐字段并放宽 status 语义。**建议用户升级 Athena 或改 hook 时修此判定**。
 
+> **✅ FIXED 2026-07-19（用户授权改 hook）**：CC `~/.claude/hooks/delivery-gate.cjs:validateRoadmap` +
+> CX `~/.codex/hooks/delivery-gate.py:validate_roadmap_items` 同步改：① slug 接受 `slug:`|`roadmap_slug:`；
+> ② `total_items` 不再强制（由 item 数派生）；③ item 起始接受 `- id:`|`- slug:`、status 接受 `done`|`completed`；
+> ④ **核心**：只校验 current sprint 对应的那个 item（其 slug 是 sprint slug 尾段）为 done/completed，
+> 兄弟 pending item 不再挡；ad-hoc sprint（无匹配 item）不按 item status 挡；错 roadmap slug 仍 FAIL。
+> 隔离逻辑测试（CC .cjs + CX .py）D11(done)→PASS / D4(pending)→BLOCK / 错 slug→FAIL 全对；`node -c` + `py_compile` 净。
+> 备份 `delivery-gate.{cjs,py}.bak-20260719-*`。**注**：~/.claude 与 ~/.codex 非 git 仓、本机未见独立 Athena 源仓库
+> → 若另有 Athena dev/发布仓库，需把同一 diff 应用过去，否则下次 athena-migrate/setup 可能覆盖。
+> P2（System sprint 内 Bugfix 子范围）未动，仍待处置。
+
 ### P2 · System sprint 内的 Bugfix 子范围无收口通道
 
 本次实况: D3(System path)sprint 处于 plan(spike 完,待拍板),期间用户拍板修一个 7 行 prompt
