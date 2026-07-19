@@ -255,6 +255,56 @@ def test_unresolved_derived_evidence_does_not_change_verdict_or_scoring(monkeypa
     assert result["extracted_data"]["scoring"][0] == before
 
 
+def test_second_enrich_after_downgrade_does_not_duplicate_derived_evidence(monkeypatch):
+    """F4 回归守卫：unresolved 承重 award_hit → downgrade → verdict 翻 manual_review →
+    ``evidence.py`` 在 verdict 翻转时二次调 ``enrich_tender_result``；空链派生须幂等——只派生
+    一次、无重复条目（防 lazy-import seam 静默失真复发，见
+    compound/2026-07-18-learning-lazy-import-behavioral-seam）。"""
+    from server.common.contract import apply_schema_semantics
+    from server.tender.output import TENDER_OUTPUT_SCHEMA_NAME
+
+    monkeypatch.setenv("EVIDENCE_RESOLUTION_DOWNGRADE", "1")
+    monkeypatch.setattr("server.common.output_contracts._load_known_rule_ids", lambda: set())
+    out = {
+        "claim_id": "T-F4",
+        "verdict": "approved",
+        "explanation": "评分完成，得 21 分",
+        "reasons": [],
+        "policy_refs": ["tender_evalmethod_001"],
+        "risk_score": 20,
+        "extracted_data": {
+            "scoring": [
+                {
+                    "item": "技术参数指标",
+                    "max": 25,
+                    "score": 21,
+                    "status": "scored",
+                    "score_mode": "additive",
+                    "award_hits": [
+                        _scoring_hit(awarded=21, source="投标文件第6页【第6页】", quote="不可核验的承重原文"),
+                    ],
+                }
+            ]
+        },
+        "evidence_chain": [],
+        "reviewed_by": "tender-evaluator",
+        "timestamp": "2026-06-22T00:00:00Z",
+    }
+
+    result = apply_schema_semantics(
+        TENDER_OUTPUT_SCHEMA_NAME,
+        out,
+        evidence_source="### 文件: 投标文件.pdf\n【第 1 页】\n完全不含承重引文的其他内容",
+    )
+
+    # 承重 award_hit 核不实 → 降级 → verdict 翻 manual_review → 触发 evidence.py 二次 enrich
+    assert result["verdict"] == "manual_review"
+    assert result["extracted_data"]["scoring"][0]["score"] is None
+    # F4 核心：二次 enrich 幂等，空链只派生一次、无重复条目
+    assert len(result["evidence_chain"]) == 1
+    assert result["evidence_chain"][0]["finding"] == "不可核验的承重原文"
+
+
 # ── T5 (G2/F3): 自注册回归 —— 隔离子进程，不被同进程内其它测试的 import 顺序掩盖 ──────
 
 
