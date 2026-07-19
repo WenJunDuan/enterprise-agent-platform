@@ -40,3 +40,34 @@
 - Agent ID: a0a8e8e9283bd1845
 - Last message: All five F04-related assertions (empty chain, missing chain, no-overwrite, skip missing scoring, page-anchor priority) plus the idempotency guard (`test_second_enrich_after_downgrade_does_not_duplicat
 
+## 2026-07-19T01:54:25.081Z · reviewer
+- Event: SubagentStart
+- Agent ID: af3d98c109d804b3d
+
+## 2026-07-19T01:54:35.581Z · spec-compliance
+- Event: SubagentStart
+- Agent ID: aa1adc3c8861c2596
+
+## 2026-07-19T01:58:29.871Z · spec-compliance
+- Event: SubagentStop
+- Agent ID: aa1adc3c8861c2596
+- Last message: ## Spec Compliance (spec-compliance, 2026-07-19T02:05Z) 范围核实：`git log 106f506..d11-batch-a` = 1 commit (`9dee52a feat(security): gate tender ocr-page Bash calls`)。规范源 = `codex-a-prompt.md` TA0-TA4。逐项如
+
+## 2026-07-19T02:16:01.473Z · reviewer
+- Event: SubagentStart
+- Agent ID: af3d98c109d804b3d
+
+## 2026-07-19T02:24:18.643Z · reviewer
+- Event: SubagentStop
+- Agent ID: af3d98c109d804b3d
+- Last message: ## 安全 Review 结论 — D11 Batch A (`d11-batch-a` @ 9dee52a) ### 1. 总体判定 **有 findings，1 个 P0（阻塞 merge）**。正则/metachar/realpath 围栏本身经我独立构造 ~20 组对抗 payload 直接打 `_validate_ocr_command`/`_validate_ocr_file`/`_v
+
+## 2026-07-19T02:45:41.753Z · evaluator
+- Event: SubagentStart
+- Agent ID: a86fa9c51fe17c527
+
+## 2026-07-19T03:00:24.316Z · evaluator
+- Event: SubagentStop
+- Agent ID: a86fa9c51fe17c527
+- Last message: ## Evidence Cross-Check 独立核验（未信 self-report，直接跑/直接读原始产物）： | 声称 | 证据 | 判定 | |---|---|---| | F1(P0) 真 query() 集成测试锁死 bypassPermissions+deny linchpin | 读 `tests/test_ocr_page_hook_integration.py`（172 行，T
+

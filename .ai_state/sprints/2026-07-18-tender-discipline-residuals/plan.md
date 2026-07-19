@@ -61,8 +61,10 @@
 ---
 
 ## Batch C · 条件项（建 Task 标 `blocked` + 原因，铁律[Sisyphus] 允许 blocked 语义，critic F6）
-- **TC1 / glm 技术参数**：prompt 层加压 + `TENDER_EVAL_MODEL=glm` e2e。前置 = 本机网关可路由 glm；
-  不可达 → `status=blocked`（网关不可达，降部署机窗口）。
+- **TC1 / glm 技术参数**：**DESCOPED（用户 2026-07-19：内网隔离部署用 DeepSeek 或 qwen，不用 glm）**。
+  技术参数判 manual 是 glm 自身保守（compound `2026-06-23-gate-rescues-not-creates`）；DeepSeek 已在 R8 e2e
+  验证技术参数出真分 → glm 专属问题随选型消解，**不做 prompt 加压**（反过度工程：所选模型无此问题）。
+  qwen 行为未验，若部署机出现技术参数 manual 届时按模型单独处理。
 - **TC2 / R7 前端 null guard**：agent-front 红区，`status=blocked`（待用户显式授权）；授权后另立 codex worktree。
 
 ## Gate
