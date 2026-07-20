@@ -14,6 +14,7 @@ import shutil
 import subprocess
 import sys
 import unicodedata
+from collections.abc import Callable
 from pathlib import Path
 
 from server.ocr import OcrDependencyError
@@ -159,7 +160,9 @@ def read_legacy_word(path: Path) -> dict:
     return {"kind": "word", "blocks": [text] if text else [], "tables": []}
 
 
-def read_pdf_text(path: Path) -> dict:
+def read_pdf_text(
+    path: Path, *, on_page: Callable[[int, dict], None] | None = None
+) -> dict:
     """文本层 PDF 直读：pymupdf 阅读顺序文本 + ``find_tables`` 抽表。
 
     比 pypdf 的 ``extract_text``（按 PDF 流顺序拼字符）强在**阅读顺序 / 多栏 / 表格**——
@@ -167,10 +170,17 @@ def read_pdf_text(path: Path) -> dict:
 
     fitz 非线程安全，并行 OCR 时经【共享】``FITZ_LOCK`` 串行化（与 engine 渲染共用同一把锁，
     见 server/ocr/locks.py）。
+
+    Args:
+        path: PDF 文件路径。
+        on_page: 可选页级完成回调 ``(page_no, {"text": str})``（1-based 真实页号）。**buffer-
+            then-fire**：页文本先收集到本地 list，退出 ``with FITZ_LOCK`` 临界区后才逐条回放
+            ——回调绝不在持有 ``FITZ_LOCK`` 时被调用（D9 streaming-ocr T1，防锁竞争放大）。
     """
     fitz = _require("fitz", "pymupdf")
     blocks: list[str] = []
     tables: list[dict] = []
+    page_buffer: list[tuple[int, dict]] = []
     with FITZ_LOCK, fitz.open(str(path)) as document:
         # 超大 PDF（如数千页 BOQ）跳过逐页 find_tables（成本爆炸、收益边际，见模块注释）。
         run_find_tables = document.page_count <= _find_tables_max_pages()
@@ -179,8 +189,11 @@ def read_pdf_text(path: Path) -> dict:
                 "find_tables_skipped_large_pdf",
                 extra={"pages": document.page_count, "path": str(path)},
             )
-        for page in document:
-            blocks.append(page.get_text("text", sort=True) or "")
+        for page_no, page in enumerate(document, start=1):
+            text = page.get_text("text", sort=True) or ""
+            blocks.append(text)
+            if on_page is not None:
+                page_buffer.append((page_no, {"text": text}))
             if not run_find_tables:
                 continue
             try:
@@ -194,6 +207,9 @@ def read_pdf_text(path: Path) -> dict:
                 ]
                 if any(any(cell.strip() for cell in row) for row in rows):
                     tables.append({"rows": rows})
+    if on_page is not None:  # 锁已释放，此时才回放（buffer-then-fire）
+        for page_no, payload in page_buffer:
+            on_page(page_no, payload)
     return {"kind": "pdf_text", "blocks": blocks, "tables": tables}
 
 
@@ -201,8 +217,14 @@ def read_text(path: Path) -> dict:
     return {"kind": "text", "blocks": [path.read_text(encoding="utf-8", errors="ignore")]}
 
 
-def native_read(path: Path) -> dict:
-    """按扩展名分派到对应直读器。"""
+def native_read(
+    path: Path, *, on_page: Callable[[int, dict], None] | None = None
+) -> dict:
+    """按扩展名分派到对应直读器。
+
+    ``on_page`` 只对 ``read_pdf_text``（逐页循环）生效；excel/word/text 无页循环，页级回调
+    对它们不适用——调用方（``server.ocr.pipeline``）对这些格式退化为文件级单元（至少一次）。
+    """
     ext = path.suffix.lower()
     if ext in EXCEL_EXT:
         return read_excel(path)
@@ -211,5 +233,5 @@ def native_read(path: Path) -> dict:
     if ext in LEGACY_WORD_EXT:
         return read_legacy_word(path)
     if ext in PDF_EXT:
-        return read_pdf_text(path)
+        return read_pdf_text(path, on_page=on_page)
     return read_text(path)
