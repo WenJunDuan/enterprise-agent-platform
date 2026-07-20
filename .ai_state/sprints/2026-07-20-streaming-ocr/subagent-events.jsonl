@@ -1,0 +1,4 @@
+{"schema_version":1,"event":"SubagentStart","agent_id":"aae316bdbfc890e3c","agent_type":"critic","sprint_slug":"2026-07-20-streaming-ocr","timestamp":"2026-07-20T01:54:26.998Z"}
+{"schema_version":1,"event":"SubagentStop","agent_id":"aae316bdbfc890e3c","agent_type":"critic","sprint_slug":"2026-07-20-streaming-ocr","timestamp":"2026-07-20T02:00:43.931Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"aae316bdbfc890e3c","agent_type":"critic","sprint_slug":"2026-07-20-streaming-ocr","timestamp":"2026-07-20T02:03:05.097Z"}
+{"schema_version":1,"event":"SubagentStop","agent_id":"aae316bdbfc890e3c","agent_type":"critic","sprint_slug":"2026-07-20-streaming-ocr","timestamp":"2026-07-20T02:06:53.935Z"}
