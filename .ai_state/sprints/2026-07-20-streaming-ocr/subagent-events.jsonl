@@ -7,3 +7,7 @@
 {"schema_version":1,"event":"SubagentStart","agent_id":"a3f9c2363da94d20e","agent_type":"generator","sprint_slug":"2026-07-20-streaming-ocr","timestamp":"2026-07-20T03:33:30.813Z"}
 {"schema_version":1,"event":"SubagentStart","agent_id":"a5aea71d7e16eede3","agent_type":"generator","sprint_slug":"2026-07-20-streaming-ocr","timestamp":"2026-07-20T03:48:53.577Z"}
 {"schema_version":1,"event":"SubagentStop","agent_id":"a5aea71d7e16eede3","agent_type":"generator","sprint_slug":"2026-07-20-streaming-ocr","timestamp":"2026-07-20T04:10:38.356Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"a428d684a24b5d32d","agent_type":"generator","sprint_slug":"2026-07-20-streaming-ocr","timestamp":"2026-07-20T04:17:37.150Z"}
+{"schema_version":1,"event":"SubagentStop","agent_id":"a428d684a24b5d32d","agent_type":"generator","sprint_slug":"2026-07-20-streaming-ocr","timestamp":"2026-07-20T04:52:53.446Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"a428d684a24b5d32d","agent_type":"generator","sprint_slug":"2026-07-20-streaming-ocr","timestamp":"2026-07-20T04:55:43.079Z"}
+{"schema_version":1,"event":"SubagentStop","agent_id":"a428d684a24b5d32d","agent_type":"generator","sprint_slug":"2026-07-20-streaming-ocr","timestamp":"2026-07-20T05:06:23.133Z"}

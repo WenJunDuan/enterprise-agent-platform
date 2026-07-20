@@ -40,3 +40,21 @@
 - Agent ID: a5aea71d7e16eede3
 - Last message: ## Summary Implemented D9 T2 (jobs endpoint) + T3 (job worker) for page-level streaming OCR, strict TDD (red→green per commit), on top of the merged T1 pipeline callback seam. **Environment note:** th
 
+## 2026-07-20T04:17:37.151Z · generator
+- Event: SubagentStart
+- Agent ID: a428d684a24b5d32d
+
+## 2026-07-20T04:52:53.447Z · generator
+- Event: SubagentStop
+- Agent ID: a428d684a24b5d32d
+- Last message: T4 implementation is complete and committed (`.ai_state/_index.md` remains modified but untouched by me, as the parent agent owns that file). Final summary: ## Summary Implemented D9 T4 (agent-front p
+
+## 2026-07-20T04:55:43.080Z · generator
+- Event: SubagentStart
+- Agent ID: a428d684a24b5d32d
+
+## 2026-07-20T05:06:23.134Z · generator
+- Event: SubagentStop
+- Agent ID: a428d684a24b5d32d
+- Last message: Committed cleanly. The remaining `.ai_state` diffs/untracked file are hook-generated (token-usage tracking), not touched by me, and outside my mandate — left as-is for the main agent. ## Revision summ
+
