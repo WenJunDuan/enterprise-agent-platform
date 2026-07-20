@@ -43,8 +43,8 @@ T1 → T2/T3（可并行）→ T4（红区 worktree，依赖 T2 契约冻结）�
 ## 状态
 
 - [x] T1 pipeline 回调接缝 — merge ebf9113(main),931 passed/ruff 净;主 agent 独立验(buffer-then-fire 锁外/零kwarg透传/F3缓存补事件/G1排除全实证)
-- [ ] T2 jobs 端点
-- [ ] T3 job worker
+- [x] T2 jobs 端点 — POST/GET /ocr/jobs(routes/ocr_jobs.py),G2 路径派生+404,progress 固定 JSON
+- [x] T3 job worker — routes/ocr_job_worker.py(semaphore+三态+units.jsonl per-job lock append,progress 锁内单调),ocr_job_store.py;merge f36f537,952 passed/ruff 净;主 agent 独立验(路径派生/跨租户404/并发进度不回退全实证)
 - [ ] T4 agent-front 渐进渲染
 - [ ] T5 全量回归
 
