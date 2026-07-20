@@ -185,7 +185,15 @@ export interface SubmissionSummary {
 // 类型对齐 .claude/contracts/ocr/*.schema.json。后端 OCR HTTP 路由尚未实现，
 // 当前 OCR 页面使用 mock 数据；契约稳定，类型可直接复用到真实调用。
 
-export type OcrItemKind = 'excel' | 'word' | 'text' | 'pdf_text' | 'ocr' | 'seal' | 'manual' | 'error'
+export type OcrItemKind =
+  | 'excel'
+  | 'word'
+  | 'text'
+  | 'pdf_text'
+  | 'ocr'
+  | 'seal'
+  | 'manual'
+  | 'error'
 export type OcrRoute = 'native' | 'ocr' | 'manual'
 
 /** 识别底稿单文件产物，对应 ocr/extract-result.schema.json。 */
@@ -210,7 +218,13 @@ export interface OcrSeal {
   confidence?: number
 }
 
-export type FormComponent = 'single_line' | 'multi_line' | 'select' | 'number' | 'date' | 'sub_table'
+export type FormComponent =
+  | 'single_line'
+  | 'multi_line'
+  | 'select'
+  | 'number'
+  | 'date'
+  | 'sub_table'
 
 /** 回填到目标表单的单个字段，对应 ocr/form-fill.schema.json 的 fields[]。 */
 export interface FormFillField {
@@ -252,4 +266,42 @@ export interface OcrFillResponse {
   results: OcrExtractItem[]
   block: string
   fill: FormFillResult
+}
+
+// ── OCR 页级流式任务（POST/GET /ocr/jobs，D9 streaming-ocr T4）───────────
+//
+// 与同步 /ocr/extract、/ocr/fill 不同：提交立即 202 返回 request_id，识别在
+// 后台跑，客户端轮询 GET /ocr/jobs/{request_id} 拿渐进产出的 units（页级或
+// 文件级），不必等整份识别完成。当前不做表单回填（仅纯识别）。
+
+export type OcrJobStatusValue = 'queued' | 'running' | 'completed' | 'failed'
+
+/** 单个识别单元：page=null 表文件级产物（excel/word/整份失败等），否则为具体页号（1-based）。 */
+export interface OcrJobUnit {
+  file: string
+  page: number | null
+  status: string
+  payload: Record<string, unknown>
+  from_cache: boolean
+}
+
+export interface OcrJobProgress {
+  done: number
+  total: number
+}
+
+/** POST /ocr/jobs 的 202 响应。 */
+export interface OcrJobAcceptedResponse {
+  request_id: string
+  status: string
+  task_status_url: string
+}
+
+/** GET /ocr/jobs/{request_id} 的轮询响应：进度 + 已产出的 partial units。 */
+export interface OcrJobStatusResponse {
+  request_id: string
+  status: OcrJobStatusValue
+  progress: OcrJobProgress | null
+  results: OcrJobUnit[]
+  error_detail: string | null
 }

@@ -4,6 +4,8 @@ import type {
   HealthResponse,
   OcrExtractResponse,
   OcrFillResponse,
+  OcrJobAcceptedResponse,
+  OcrJobStatusResponse,
   SubmitAcceptedResponse,
 } from './types'
 
@@ -246,7 +248,10 @@ export async function fillOcr(
   // 不传 / 空 schema → 后端走自适应抽取（字段集由文档内容决定），不强塞固定表单。
   const hasSchema =
     formSchema != null &&
-    !(typeof formSchema === 'object' && Object.keys(formSchema as object).length === 0)
+    !(
+      typeof formSchema === 'object' &&
+      Object.keys(formSchema as object).length === 0
+    )
   if (hasSchema) body.append('form_schema', JSON.stringify(formSchema))
   for (const file of files) body.append('files', file)
   const res = await fetch(url(`/ocr/fill${runSeal ? '?run_seal=true' : ''}`), {
@@ -255,4 +260,35 @@ export async function fillOcr(
     body,
   })
   return handleResponse<OcrFillResponse>(res)
+}
+
+// ── OCR 页级流式任务（POST/GET /ocr/jobs，D9 T4）────────────────────────
+//
+// 与 extractOcr/fillOcr 的同步一次性响应不同：提交立即 202 返回 request_id，
+// 识别在后台跑，GET 轮询拿渐进产出的 units。/ocr/jobs 当前不消费 form_schema
+// （纯识别任务化，不做表单回填，见 server/routes/ocr_jobs.py 端点 docstring），
+// 故这里不暴露 schema 形参——没有真实消费方的参数不加（铁律[反过度工程]）。
+
+/** 提交页级流式 OCR 任务：202 立即返回 request_id，供轮询 getOcrJob。 */
+export async function submitOcrJob(
+  files: File[]
+): Promise<OcrJobAcceptedResponse> {
+  const body = new FormData()
+  for (const file of files) body.append('files', file)
+  const res = await fetch(url('/ocr/jobs'), {
+    method: 'POST',
+    headers: authHeaders(),
+    body,
+  })
+  return handleResponse<OcrJobAcceptedResponse>(res)
+}
+
+/** 轮询页级流式 OCR 任务状态 + 已产出的 partial 单元结果；未知 request_id 由 handleResponse 抛错（404）。 */
+export async function getOcrJob(
+  requestId: string
+): Promise<OcrJobStatusResponse> {
+  const res = await fetch(url(`/ocr/jobs/${encodeURIComponent(requestId)}`), {
+    headers: authHeaders(),
+  })
+  return handleResponse<OcrJobStatusResponse>(res)
 }
