@@ -5,7 +5,7 @@ version: "9.6.4"
 
 # === PACE 路由状态 ===
 path: "System" # 文档智能 program 2026-07-doc-intelligence 立项：四波次 D1-D11（地基/质量/结构/体验），旧 tender-program 已收口(S7/S9 结转,S8 用户推迟)
-stage: "impl" # 2026-07-20: D9 后端 T1+T2+T3 全 merge(ebf9113/f36f537,952 passed 主 agent 独立验),剩 T4 前端渐进渲染(agent-front 红区 worktree,已授权)+T5 全量回归。另记 D4 重定义倾向=OCR 拆独立服务(compound 2026-07-20)
+stage: "impl" # 2026-07-20: D9 impl 五任务全绿 merge(T1 ebf9113/T2+T3 f36f537/T4 3539392;后端 952 passed+前端 121 绿,主 agent 逐任务独立验)。下一步=review 三件套→runtime-verify→polish→ship(System 契约),待用户定节奏。D4 重定义倾向=OCR 拆独立服务(compound 2026-07-20)
 current_sprint_slug: "2026-07-20-streaming-ocr" # D9 页级流式 OCR(立项 2026-07-20; 前 D11 已 done+归档)
 current_roadmap_slug: "2026-07-doc-intelligence"
 skip_polish: false

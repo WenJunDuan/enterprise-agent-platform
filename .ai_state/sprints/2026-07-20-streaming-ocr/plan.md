@@ -45,8 +45,11 @@ T1 → T2/T3（可并行）→ T4（红区 worktree，依赖 T2 契约冻结）�
 - [x] T1 pipeline 回调接缝 — merge ebf9113(main),931 passed/ruff 净;主 agent 独立验(buffer-then-fire 锁外/零kwarg透传/F3缓存补事件/G1排除全实证)
 - [x] T2 jobs 端点 — POST/GET /ocr/jobs(routes/ocr_jobs.py),G2 路径派生+404,progress 固定 JSON
 - [x] T3 job worker — routes/ocr_job_worker.py(semaphore+三态+units.jsonl per-job lock append,progress 锁内单调),ocr_job_store.py;merge f36f537,952 passed/ruff 净;主 agent 独立验(路径派生/跨租户404/并发进度不回退全实证)
-- [ ] T4 agent-front 渐进渲染
-- [ ] T5 全量回归
+- [x] T4 agent-front 渐进渲染 — merge 3539392;流式识别模式(渐进四态)+保留回填,Tabs 双模式并存(用户拍板双能力,mode-state.ts reducer 跨模式隔离);build✓/eslint净/121测试绿,主 agent 独立验(回填模式恢复+三绿实证)
+- [x] T5 全量回归 — 后端 952 passed/ruff 净(main,T4 零后端回归)+前端 121 测试绿。**注**:前端无组件渲染测试设施(仓库零 DOM 测试先例),流式模式为纯逻辑 reducer 测试;真实 DOM 点击流验证留 runtime-verify
+
+## 待续
+D9 impl 五任务全绿。System 路径 ship 前置:review 三件套(reviewer+spec-compliance+evaluator)→ runtime-verify(实跑 /ocr/jobs + 前端点击流)→ polish → review-manifest.yaml。待用户定推进节奏。
 
 > T2+T3 合并为一个 generator 一次做完（共享 job 生命周期契约,耦合紧,避免并行 worktree 冲突）。
 
