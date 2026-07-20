@@ -306,47 +306,88 @@ def extract_one(
     return result
 
 
+def _emit_pages_from_blocks(blocks: list[str], on_page: _PageCallback) -> None:
+    """从最终确定的 ``blocks``（pdf_text 逐页 append，真实页号 = 下标 + 1）逐页触发
+    ``on_page``。供纯 native 路径与混合 PDF 子集增强路径复用（DRY，避免两处重复循环）。
+
+    review pass1 F1 修复核心：页级事件只在内容**最终确定**后发一次——不再有 native 先发
+    空白页、OCR/子集增强再对同页发真实内容的重复/过期问题。payload 结构对齐
+    ``native.read_pdf_text`` 的 on_page 契约（``{"text": ...}``）。空白页仍发（保留页号、内容
+    可空），与 ``_render_body`` 的页锚策略一致，不跳页导致页号错位。全程锁外触发（调用时
+    native/augment 已返回，FITZ_LOCK/云 OCR job 早已释放）。
+    """
+    for page_no, block in enumerate(blocks, start=1):
+        on_page(page_no, {"text": block})
+
+
+def _dispatch_native_pdf_text(
+    path: Path,
+    route: dict,
+    native: dict,
+    *,
+    run_seal: bool,
+    purpose: str | None,
+    on_page: _PageCallback | None,
+) -> dict:
+    """native pdf_text handler 的三路分支：font-only 回退 OCR / 混合 PDF 子集增强或整份回退 /
+    纯 native（抽出减 ``_dispatch_extract`` 圈复杂度，只服务 handler=="pdf_text"，SRP）。
+
+    页级事件时机（review pass1 F1 修复）：font-only / 混合整份回退只由 OCR 侧
+    ``_call_recognize_with_seal(..., on_page=on_page)`` 发（真实内容，不再有 native 重复）；
+    混合子集增强成功 / 纯 native 各自从最终 ``blocks`` 经 ``_emit_pages_from_blocks`` 发
+    （页锚真实、内容最终确定，不再有过期/重复）。
+    """
+    if not _has_extractable_text(native):
+        fallback = {
+            **route,
+            "route": "ocr",
+            "handler": "pdf_scan",
+            "note": "PDF 有字体但无可抽文本，回退 OCR",
+        }
+        return _call_recognize_with_seal(
+            path, fallback, run_seal=run_seal, purpose=purpose, on_page=on_page
+        )
+    # 混合 PDF（数字页 + 扫描页）：native 抽不到扫描页内容（空串被静默丢失）。空白页计数/
+    # 比例达阈值 → 只对扫描页做子集云 OCR 并回填（主路径，保数字页原生保真）；本地抽页失败
+    # 回退整份云 OCR（Layer 1）。gate 在 mixed_pdf：纯数字 PDF 的空白页是真空页，无内容可补。
+    if route.get("mixed_pdf") and _should_cloud_ocr_mixed_pdf(native.get("blocks", [])):
+        augmented = _augment_mixed_pdf_blocks(path, route, native, purpose=purpose)
+        if augmented is not None:
+            if on_page is not None:
+                _emit_pages_from_blocks(augmented["blocks"], on_page)
+            return augmented
+        fallback = {
+            **route,
+            "route": "ocr",
+            "handler": "pdf_scan",
+            "note": "混合 PDF 子集抽页失败，回退整份云 OCR 补回扫描页",
+        }
+        return _call_recognize_with_seal(
+            path, fallback, run_seal=run_seal, purpose=purpose, on_page=on_page
+        )
+    if on_page is not None:
+        _emit_pages_from_blocks(native.get("blocks", []), on_page)
+    return {**route, **native}
+
+
 def _dispatch_extract(
     path: Path, *, run_seal: bool, purpose: str | None, on_page: _PageCallback | None
 ) -> dict:
     """对单个文件分类并按路由直读 / OCR（``_extract_one_raw`` 主体，抽出以便调用方在异常路径
     也能统一触发单元事件）。
 
-    - font-only 扫描 PDF（有字体但 native 抽不到文本）回退 OCR，避免返回空结果。
-    - 异常向上传播（由 ``_extract_one_raw`` 统一捕获归一为 error，见其 docstring）。
+    异常向上传播（由 ``_extract_one_raw`` 统一捕获归一为 error，见其 docstring）。native 读取
+    **不即时**触发 ``on_page``（先读不流，见 ``_call_native_read(path, None)``）——pdf_text
+    handler 的页级事件时机交 ``_dispatch_native_pdf_text``（review pass1 F1 修复）；非 pdf_text
+    的 native（word/excel/text 无页结构）与 ocr/manual 路由不在此发，交 ``_extract_one_raw`` 的
+    "至少一次"文件级兜底（``page_emitted`` 语义不变）。
     """
     route = classify(path)
     if route["route"] == "native":
-        native = _call_native_read(path, on_page)
-        if route.get("handler") == "pdf_text" and not _has_extractable_text(native):
-            fallback = {
-                **route,
-                "route": "ocr",
-                "handler": "pdf_scan",
-                "note": "PDF 有字体但无可抽文本，回退 OCR",
-            }
-            return _call_recognize_with_seal(
-                path, fallback, run_seal=run_seal, purpose=purpose, on_page=on_page
-            )
-        # 混合 PDF（数字页 + 扫描页）：native 抽不到扫描页内容（空串被静默丢失）。空白页计数/
-        # 比例达阈值 → 只对扫描页做子集云 OCR 并回填（主路径，保数字页原生保真）；本地抽页失败
-        # 回退整份云 OCR（Layer 1）。gate 在 mixed_pdf：纯数字 PDF 的空白页是真空页，无内容可补。
-        if (
-            route.get("handler") == "pdf_text"
-            and route.get("mixed_pdf")
-            and _should_cloud_ocr_mixed_pdf(native.get("blocks", []))
-        ):
-            augmented = _augment_mixed_pdf_blocks(path, route, native, purpose=purpose)
-            if augmented is not None:
-                return augmented
-            fallback = {
-                **route,
-                "route": "ocr",
-                "handler": "pdf_scan",
-                "note": "混合 PDF 子集抽页失败，回退整份云 OCR 补回扫描页",
-            }
-            return _call_recognize_with_seal(
-                path, fallback, run_seal=run_seal, purpose=purpose, on_page=on_page
+        native = _call_native_read(path, None)
+        if route.get("handler") == "pdf_text":
+            return _dispatch_native_pdf_text(
+                path, route, native, run_seal=run_seal, purpose=purpose, on_page=on_page
             )
         return {**route, **native}
     if route["route"] == "ocr":
