@@ -14,6 +14,11 @@ export interface OcrUploadFile {
   file?: File
 }
 
+// 模式 A「识别+回填」(同步 /ocr/fill) 的提交阶段——恢复自改动前的 workbench（模式切换双能力
+// 并存，2026-07-20 用户拍板）。模式 B「流式识别」用 job-model.ts 的 OcrJobPhase，两套阶段
+// 语义不同（同步一次性 vs 轮询终态），不强行合并成一个联合类型。
+export type RecognizePhase = 'idle' | 'recognizing' | 'done' | 'error'
+
 export type ConfidenceLevel = 'high' | 'medium' | 'low'
 
 /**
