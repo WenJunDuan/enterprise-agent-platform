@@ -89,6 +89,11 @@ def _ocr_max_workers() -> int:
 OCR_MAX_WORKERS = _ocr_max_workers()
 
 
+# D9 streaming-ocr T2/T3: canonical sidecar filename — single source of truth so the job
+# worker (writer) and jobs GET route (reader) agree with the exclusion list below without
+# each re-hardcoding the literal string (DRY).
+OCR_JOB_UNITS_FILENAME = "units.jsonl"
+
 # P1-4: sidecar files written by materialize_upload_submission must not be OCR-processed.
 # audit-request.json is a metadata sidecar written into every submission dir — it is not
 # a user document and must be excluded to avoid polluting the extraction block.
@@ -96,7 +101,7 @@ OCR_MAX_WORKERS = _ocr_max_workers()
 # worker into the same case_dir _iter_files rglobs (T3). Same failure mode as audit-request.json
 # — without exclusion a job retry / `/ocr/extract` directory-mode rerun over that dir would
 # classify→read_text the sidecar as a regular file and pollute the extraction block/unit count.
-_OCR_EXCLUDED_FILENAMES: frozenset[str] = frozenset({"audit-request.json", "units.jsonl"})
+_OCR_EXCLUDED_FILENAMES: frozenset[str] = frozenset({"audit-request.json", OCR_JOB_UNITS_FILENAME})
 
 
 def _iter_files(case_dir: str) -> list[Path]:
@@ -116,6 +121,16 @@ def _iter_files(case_dir: str) -> list[Path]:
             continue
         files.append(p)
     return files
+
+
+def count_pending_files(case_dir: str) -> int:
+    """待处理文件数（排除 units.jsonl/audit-request.json 等 sidecar）。
+
+    供 job worker（D9 streaming-ocr T3）在启动时预估 ``total`` 单元数：每个文件至少触发一次
+    单元事件（``extract_one`` / ``_extract_one_raw`` 的"至少一次"契约），故文件数是 total_units
+    的一个下界估计（页级文件会触发更多单元，属"预估"而非精确值，见 design.md T2/T3 验收）。
+    """
+    return len(_iter_files(case_dir))
 
 
 # D9 streaming-ocr T1：单元事件回调。unit 形如 {"file", "page", "status", "payload",
