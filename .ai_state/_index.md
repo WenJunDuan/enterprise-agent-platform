@@ -123,6 +123,7 @@ D10 in_progress（②vision 附件预嵌 backlog，卡 vision 模型）；D4/D5/
 - `docs/` — 项目参考文档 (开发指南 / 前端对接 / audit-skills)，非状态机文件
 
 ## 历史 (由 pace-continuator hook 自动追加, 最多保留近 10 条)
+- `2026-07-20 11:08:44`: stage=polish sprint=2026-07-20-streaming-ocr turn-end
 - `2026-07-20 05:11:59`: stage=review sprint=2026-07-20-streaming-ocr turn-end
 - `2026-07-20 02:03:28`: stage=design sprint=2026-07-20-streaming-ocr turn-end
 - `2026-07-19 04:01:19`: stage=plan sprint=2026-07-18-tender-discipline-residuals turn-end
@@ -132,7 +133,6 @@ D10 in_progress（②vision 附件预嵌 backlog，卡 vision 模型）；D4/D5/
 - `2026-07-18 08:22:59`: stage=impl sprint=2026-07-18-prompt-single-source turn-end
 - `2026-07-18 06:57:42`: stage=plan sprint=2026-07-18-prompt-single-source turn-end
 - `2026-07-18 06:28:29`: stage=ship sprint=2026-07-18-prompt-single-source turn-end
-- `2026-07-16 03:27:43`: stage=design sprint=2026-07-16-tender-feature-package turn-end
 
 
 - 2026-06-02 [migrate] v9.6.2(legacy flat) → v9.6.4. 备份见 `.ai_state.backup-*`。
