@@ -9,6 +9,8 @@
 - 文件级回退：无页循环的路径（excel/word/text/OCR 失败）至少触发一次文件级事件。
 - G1：units.jsonl 边车加入排除名单，重跑 extract_dir 不计入 results/单元事件。
 - 并发：extract_dir 多文件并行时回调仍被正确调用（用自身锁的收集器验证）。
+- F1/F2（review pass1）：native→OCR 回退路径的页级单元不重复、不过期——font-only 扫描 PDF
+  回退、混合 PDF 子集增强成功、混合 PDF 子集失败回退整份 OCR 三个场景各自复现并守卫。
 """
 
 from __future__ import annotations
@@ -266,6 +268,158 @@ def test_extract_dir_rerun_over_units_jsonl_sidecar_excludes_it(tmp_path):
 
 
 # ── 并发：extract_dir 多文件并行时回调仍被正确调用（自身锁收集器）──────────
+
+
+# ── F1/F2（review pass1）：native→OCR 回退路径页级单元不重复、不过期 ────────────
+
+
+def test_font_only_fallback_emits_only_ocr_content_no_duplicate_pages(monkeypatch, tmp_path):
+    """font-only 扫描 PDF：native 抽不到文本回退 OCR。修复前 native 先发 2 个空白页事件，
+    OCR 再对同页发真实内容 → 4 条重复；修复后每页仅 1 条，内容来自 OCR。"""
+    import server.ocr.pipeline as pipeline_mod
+
+    pdf = tmp_path / "scan.pdf"
+    pdf.write_bytes(b"%PDF-fake")
+
+    monkeypatch.setattr(
+        pipeline_mod,
+        "classify",
+        lambda path: {"route": "native", "handler": "pdf_text", "mixed_pdf": False},
+    )
+    def fake_native_read(path, *, on_page=None):
+        # 模拟 read_pdf_text 真实行为：on_page 非 None 时逐页触发（buffer-then-fire，
+        # 但对调用方可见效果等价于返回前已发完）——复现"native 先发空白页"的 bug 前提。
+        blocks = ["", ""]
+        if on_page is not None:
+            for page_no, block in enumerate(blocks, start=1):
+                on_page(page_no, {"text": block})
+        return {"kind": "pdf_text", "blocks": blocks, "tables": []}
+
+    monkeypatch.setattr(pipeline_mod, "native_read", fake_native_read)
+
+    def fake_recognize(path, *, purpose=None, on_page=None):
+        pages = [
+            {"page_number": 1, "markdown": "真实内容-页1"},
+            {"page_number": 2, "markdown": "真实内容-页2"},
+        ]
+        if on_page is not None:
+            for page in pages:
+                on_page(page["page_number"], {"markdown": page["markdown"]})
+        return {"kind": "ocr", "pages": pages}
+
+    monkeypatch.setattr(pipeline_mod, "recognize", fake_recognize)
+
+    collector = _LockedCollector()
+    result = extract_one(pdf, on_unit_complete=collector)
+
+    assert result["kind"] == "ocr"
+    pages = [unit["page"] for unit in collector.units]
+    assert pages == [1, 2]  # 每页仅一条，不因先空后真而重复
+    assert collector.units[0]["payload"]["markdown"] == "真实内容-页1"
+    assert collector.units[1]["payload"]["markdown"] == "真实内容-页2"
+
+
+def test_mixed_pdf_subset_augment_success_emits_corrected_content_not_blank_native(
+    monkeypatch, tmp_path
+):
+    """混合 PDF 子集增强成功：扫描页最终事件内容须是 augmented 修正后的内容，而非
+    native 抽出的空白版（修复前 augment 分支未传 on_page，扫描页内容永不推流）。"""
+    import server.ocr.pipeline as pipeline_mod
+
+    pdf = tmp_path / "mixed.pdf"
+    pdf.write_bytes(b"%PDF-fake")
+    subset_marker = tmp_path / "subset.pdf"
+    subset_marker.write_bytes(b"%PDF-fake-subset")
+
+    monkeypatch.setattr(
+        pipeline_mod,
+        "classify",
+        lambda path: {"route": "native", "handler": "pdf_text", "mixed_pdf": True},
+    )
+    # block0 须 >=MAX_BLANK_CHARS(20) 非空白字符，才不被 _blank_page_count 判成空白页
+    # （否则会被子集 OCR 覆盖，混淆"保原生直读"的断言意图）。
+    native_blocks = ["这是原生数字页的完整文本内容，用于验证保留原生直读不被子集OCR覆盖测试用文本", "", ""]
+
+    def fake_native_read(path, *, on_page=None):
+        if on_page is not None:
+            for page_no, block in enumerate(native_blocks, start=1):
+                on_page(page_no, {"text": block})
+        return {"kind": "pdf_text", "blocks": list(native_blocks), "tables": []}
+
+    monkeypatch.setattr(pipeline_mod, "native_read", fake_native_read)
+    monkeypatch.setattr(
+        pipeline_mod, "extract_pdf_subset", lambda path, indices: subset_marker
+    )
+
+    def fake_subset_recognize(path, *, purpose=None, on_page=None):
+        return {
+            "kind": "ocr",
+            "pages": [
+                {"page_number": 1, "markdown": "修正后-页2内容"},
+                {"page_number": 2, "markdown": "修正后-页3内容"},
+            ],
+        }
+
+    monkeypatch.setattr(pipeline_mod, "recognize", fake_subset_recognize)
+
+    collector = _LockedCollector()
+    result = extract_one(pdf, on_unit_complete=collector)
+
+    assert result["kind"] == "pdf_text"
+    pages = [unit["page"] for unit in collector.units]
+    assert pages == [1, 2, 3]  # 页号真实、无重复
+    assert collector.units[0]["payload"]["text"] == native_blocks[0]  # 数字页保原生
+    assert collector.units[1]["payload"]["text"] == "修正后-页2内容"  # 非空白 native 版
+    assert collector.units[2]["payload"]["text"] == "修正后-页3内容"
+
+
+def test_mixed_pdf_subset_failure_falls_back_to_full_ocr_no_duplicate_pages(
+    monkeypatch, tmp_path
+):
+    """混合 PDF 子集抽页失败（如 fitz 缺失）：回退整份云 OCR。同页号仅一条，来自整份 OCR，
+    无 native 空白页重复。"""
+    import server.ocr.pipeline as pipeline_mod
+
+    pdf = tmp_path / "mixed2.pdf"
+    pdf.write_bytes(b"%PDF-fake")
+
+    monkeypatch.setattr(
+        pipeline_mod,
+        "classify",
+        lambda path: {"route": "native", "handler": "pdf_text", "mixed_pdf": True},
+    )
+    def fake_native_read(path, *, on_page=None):
+        blocks = ["数字页正文这里补足到二十字符以上防止被误判", "", ""]
+        if on_page is not None:
+            for page_no, block in enumerate(blocks, start=1):
+                on_page(page_no, {"text": block})
+        return {"kind": "pdf_text", "blocks": blocks, "tables": []}
+
+    monkeypatch.setattr(pipeline_mod, "native_read", fake_native_read)
+    monkeypatch.setattr(
+        pipeline_mod, "extract_pdf_subset", lambda path, indices: None
+    )  # ① 本地抽页失败 → 回退整份云 OCR
+
+    def fake_full_recognize(path, *, purpose=None, on_page=None):
+        pages = [
+            {"page_number": 1, "markdown": "整份OCR-页1"},
+            {"page_number": 2, "markdown": "整份OCR-页2"},
+            {"page_number": 3, "markdown": "整份OCR-页3"},
+        ]
+        if on_page is not None:
+            for page in pages:
+                on_page(page["page_number"], {"markdown": page["markdown"]})
+        return {"kind": "ocr", "pages": pages}
+
+    monkeypatch.setattr(pipeline_mod, "recognize", fake_full_recognize)
+
+    collector = _LockedCollector()
+    result = extract_one(pdf, on_unit_complete=collector)
+
+    assert result["kind"] == "ocr"
+    pages = [unit["page"] for unit in collector.units]
+    assert pages == [1, 2, 3]  # 同页号仅一条
+    assert collector.units[0]["payload"]["markdown"] == "整份OCR-页1"
 
 
 def test_extract_dir_parallel_callback_receives_one_event_per_file(tmp_path):
