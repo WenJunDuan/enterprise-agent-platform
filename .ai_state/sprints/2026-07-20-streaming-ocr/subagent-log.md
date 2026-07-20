@@ -27,3 +27,16 @@
 - Agent ID: a38da2b96ea17a2cb
 - Last message: T1（pipeline 回调接缝）已完成，严格 TDD red→green，全量回归绿、ruff 净。 ## 实现摘要 **接缝**：`extract_dir → extract_one（含缓存命中分支）→ _extract_one_raw → _dispatch_extract` 全链路贯穿 `on_unit_complete: Callable[[dict], None] | None = N
 
+## 2026-07-20T03:33:30.814Z · generator
+- Event: SubagentStart
+- Agent ID: a3f9c2363da94d20e
+
+## 2026-07-20T03:48:53.577Z · generator
+- Event: SubagentStart
+- Agent ID: a5aea71d7e16eede3
+
+## 2026-07-20T04:10:38.356Z · generator
+- Event: SubagentStop
+- Agent ID: a5aea71d7e16eede3
+- Last message: ## Summary Implemented D9 T2 (jobs endpoint) + T3 (job worker) for page-level streaming OCR, strict TDD (red→green per commit), on top of the merged T1 pipeline callback seam. **Environment note:** th
+
