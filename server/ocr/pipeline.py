@@ -406,12 +406,14 @@ def _extract_one_raw(
 ) -> dict:
     """对单个文件分类并按路由直读 / OCR；任何失败归一为 error（per-file 隔离）。
 
-    页级粒度自适应（D9 streaming-ocr T1，方案 A）：native pdf_text 与本地 paddle pipeline 走
-    buffer-then-fire（页结果在 ``_dispatch_extract`` 深处的 ``FITZ_LOCK``/``PADDLE_LOCK`` 内收集、
-    锁外回放，见 native.read_pdf_text / engine._recognize_via_paddle_pipeline docstring）；
-    VLM openai-compatible 识别循环锁外，逐页直接触发。若本次调用未产生任何页级事件（excel/word/
-    text/cloud 等无页循环路径，或识别失败），退化为**一次文件级**事件（"至少一次"，design 方案 A
-    粒度自适应兜底）。
+    页级粒度自适应（D9 streaming-ocr T1，方案 A；页级事件时机见 review pass1 F1 修复）：
+    - native pdf_text：读取完成后从**最终确定的 blocks** 逐页发（``_dispatch_native_pdf_text`` →
+      ``_emit_pages_from_blocks``）——纯 native 从 native blocks、混合子集增强从 augmented blocks，
+      font-only/整份回退则只由 OCR 侧发（不再有 native 先空后真的重复/过期）。全程锁外。
+    - OCR 路径：本地 paddle pipeline 走 buffer-then-fire（``PADDLE_LOCK`` 内收集、锁外回放，见
+      engine._recognize_via_paddle_pipeline）；VLM openai-compatible 识别循环锁外逐页直接触发。
+    - 无页循环路径（excel/word/text/cloud 整档）或识别失败：退化为**一次文件级**事件（"至少一次"，
+      design 方案 A 粒度自适应兜底，``page_emitted`` 语义）。
     """
     file_str = str(path)
     page_emitted = False
