@@ -5,7 +5,7 @@ version: "9.6.4"
 
 # === PACE 路由状态 ===
 path: "System" # 文档智能 program 2026-07-doc-intelligence 立项：四波次 D1-D11（地基/质量/结构/体验），旧 tender-program 已收口(S7/S9 结转,S8 用户推迟)
-stage: "review" # 2026-07-20: D9 pass1 REWORK(P0 F1)已修 merge 176e91c(_dispatch_native_pdf_text 抽出+native 不即时发+_emit_pages_from_blocks 从最终/augmented blocks 发,955 passed+F2 三回归,主 agent 独立验)。重跑 review pass2(reviewer 复核 F1 解决+spec)。pass1.md 存档
+stage: "polish" # 2026-07-20: D9 review PASS(pass1 独立 reviewer 发现 P0 F1+spec PASS→修 merge 176e91c→pass2 主 agent 复审 F1 解决/无新阻塞,955 passed)。进 polish(清 P2-a docstring 过时/P2-b read_pdf_text on_page 旁路+doc/security 扫描)→runtime-verify(需起服务)→ship。pass2.md 存档。pass2 独立子 agent 因断网中断不可恢复,由主 agent 复审(透明记录)
 current_sprint_slug: "2026-07-20-streaming-ocr" # D9 页级流式 OCR(立项 2026-07-20; 前 D11 已 done+归档)
 current_roadmap_slug: "2026-07-doc-intelligence"
 skip_polish: false
@@ -49,8 +49,8 @@ counts:
   issues_count: 0
   refactors_count: 0
   systems_count: 6
-  reviews_count: 59
-  cleanup_count: 1
+  reviews_count: 60
+  cleanup_count: 2
   compound:
     learning: 12
     trick: 2
@@ -59,12 +59,12 @@ counts:
 # === Pointers (指向最新相关文件) ===
 pointers:
   latest_design: "sprints/2026-07-18-tender-discipline-residuals/design.md" # D11 定稿(critic 九条应答, 2026-07-19 全交付);roadmap 见 roadmap/2026-07-doc-intelligence/
-  latest_review: "sprints/2026-07-20-streaming-ocr/reviews/pass1.md" # D9 pass1=REWORK(P0 F1 流式回退路径重复/过期页级单元;spec PASS),待 F1 修复后 pass2
+  latest_review: "sprints/2026-07-20-streaming-ocr/reviews/pass2.md" # D9 pass2=PASS(F1 修复复审,主 agent;pass1 独立 reviewer 发现 P0+spec PASS);2 P2 留 polish
   latest_cleanup: "sprints/2026-06-19-contract-audit-feature/cleanup-pass.md"
   latest_brainstorm: ""
   latest_decisions: ["compound/2026-07-20-decision-ocr-as-standalone-service.md", "compound/2026-07-16-decision-carve-f6-schema-split-from-d2.md", "compound/2026-07-16-decision-schema-split-tender.md", "compound/2026-07-15-decision-ocr-service-layer.md", "compound/2026-07-02-decision-ocr-routing-ladder.md"]
   latest_lessons: ["compound/2026-07-18-learning-prompt-gate-contradiction-literal-model.md", "compound/2026-07-18-learning-lazy-import-behavioral-seam.md", "compound/2026-07-15-learning-slots-dataclass-hollow-getattr.md", "compound/2026-07-01-learning-flash-tender-eval-inconsistency.md", "compound/2026-07-01-learning-adversarial-empirical-review-catches-text-leaks.md"]
-  latest_architecture_update: "2026-07-18T01:01:08.089Z"
+  latest_architecture_update: "2026-07-20T07:13:21.930Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
 next_action: "【2026-07-20 · _index 瘦身 ship + D9 立项 design 定稿(两轮 critic),待用户 GO impl】① .ai_state 整理 ship(1da3cb5 push):_index 62.7KB→12KB(next_action 只留两轮存档+叙事区裁剪+pointers 刷新指 D11),6 月快照/.DS_Store 清。② 部署机窗口交 codex(用户拍板):D8 runbook=sprints/2026-07-18-d8-transcript-slimming / D4 前置=D1 golden manifest+runbook / D10② vision=items.yaml 注记。③ **D9 页级流式 OCR 立项**(sprint 2026-07-20-streaming-ocr,stage=design 定稿):route-note=Feature 路径,depends_on D4 判软依赖解除(代码核验正交,用户拍 D9 先行),前提修正=**平台无 SSE**(grep 零命中,真实先例=TaskStore submit→poll)。design=方案 A(OCR 任务化 POST /ocr/jobs + 部分结果轮询,SSE 否决留流式二期;粒度自适应 native/VLM 页级、cloud 文件级)。critic round1=NEEDS_REVISION(F1 P0 TaskStore 无增量落点/F2 FITZ_LOCK 临界区/F3 缓存命中绕过+3P2)→Round2 应答=**units.jsonl 边车**(job case_dir 内 per-job lock append,TaskStore(ocr_jobs) 独立表+progress_message 存 {done,total} JSON 计数,不改共享 schema)+buffer-then-fire 锁外回调契约+缓存命中补 from_cache 事件+0单元即 completed/未知 404/recover_stale 保留 partial→critic round2=**APPROVE-WITH-CHANGES**(F1-F6 全 RESOLVED 代码实证;G1 P1=units.jsonl 会被 _iter_files 重扫当文档识别→定案加入 _OCR_EXCLUDED_FILENAMES+重扫不计入断言;G2=progress_message 格式钉死+路径一律服务端派生禁客户端传入,均已并入 design 收尾修订)。plan.md T1-T5 就绪:T1 接缝/T2 端点/T3 worker=黄区后端 subagent,T4 前端渐进渲染=agent-front 红区 worktree(已授权),T5 全量回归 920 基线;执行序 T1→T2/T3 并行→T4。**下一步=用户 GO 即进 impl(GO 前勿写代码)**;其余在册:部署机三项随 codex 窗口 / D8 复测标准量化与向量二期仍待拍 / D10② vision backlog。 ▽上轮存档▽ 【2026-07-20 · Athena harness 9.9.3 ship-契约结构性 bug 根治 + 双仓 push,会话收口】本会话为 harness 维护会话(未碰产品代码,测试基线仍 920 passed/2 skip/ruff 净不变)。收口旧 next_action 挂账 item ③(9.9.3 ship 契约: current_roadmap 非空即要求全 item completed=中程必挂),两修复+一文档全落地: **P1** validateRoadmap 只校验 current sprint 对应 item(slug 尾段匹配)为 done/completed,兄弟 pending 不再挡、错 roadmap 仍 FAIL(Rlues 40b0637); **P2③** ship 契约按变更面分级=轻门禁: 净 diff(对 upstream)≤60 行且仅触及文档/配置/依赖/.ai_state/测试(排除 hooks/settings/源码逻辑)→ 只校验 roadmap 一致性,跳过 review-manifest/tdd-evidence/三件套;源码/harness/超预算走完整契约 fail-closed;.ai_state 计入文件面不计入行预算(规避 token-usage 抖动误判)(Rlues f8c214c); **docs** stages.md ship 节载明 push 门禁合法放行(Rlues 60103b1)。四文件均落 cc+cx 装态(~/.claude+~/.codex)与源仓(Rlues/vibeCoding/{claude,codex}/9.9.3),源==装 diff 逐字节一致。验证: CC 真 hook 调用(stage=ship + .ai_state-only diff→空输出/exit0 轻门通过);CX py_compile + 分类端口 10/10 PASS。EAP .ai_state 记账 f4dac09(proposals P2→FIXED + 本 _index)。**push 正道(关键·替代'切 ship→推→回 plan'绕行)= `ATHENA_ALLOW_PUSH=1 git push`**——pre-bash-guard(CC 认内联 env / CX 认子串)直接放行,零状态篡改零伪造;github push 需加 `-c http.proxy=http://127.0.0.1:6152`(git 子进程不继承代理,报 SSL_ERROR_SYSCALL 即此,curl 能通即证网络 OK);见 memory athena-push-guard-allow-flag。**两仓(Rlues + EAP)origin 均同步无 ahead/behind**。**产品盘面(自 D11/E4 起未变,全卡外部)**: doc-intelligence D1/D2/D3/D6/D7/D8(代码)/D11 DONE + E4 dependabot DONE;D10 in_progress(①直连 ③耗时指标 ④runbook DONE,②vision 附件预嵌=backlog 卡 vision 模型);D4/D5/D9 pending。**下一步全卡部署机/用户方向,本机产品侧盘面见底**: ①部署机窗口=D8 runbook(TENDER_SLIM_CONTEXT=1 真标书跑 S7 harness 成本/时延/一致性跨度/policy_refs 四指标,达标再改默认值)+ D4 前置(V4Pro 基线锁一致性硬门)+ D10② vision 模型;②待用户拍=D8 复测通过标准量化 / D9(agent-front 红区授权,R7 已 done)/ 向量二期触发时机;③harness 侧已无残留。 ▽更早存档已裁剪(2026-07-20 整理)▽ 2026-07-19 及更早的会话收口存档见 git 历史(1da3cb5/8eb2a32 之前各版 _index.md)与对应 sprint 档案(sprints/*/design.md·route-note.md·acceptance.md)。"

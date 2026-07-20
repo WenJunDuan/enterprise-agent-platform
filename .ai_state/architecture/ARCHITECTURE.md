@@ -53,5 +53,12 @@ app (api/cli) → routes → ops → features(audit|tender) → ocr(服务层) �
   供 `server/ocr/rag.py::search` 带页锚出处检索（服务 tender S1 定位 + D8 底稿瘦身）；conn 注入、零侵入既有表。
 - **OCR 结构化层（D6/D7，2026-07-18）**：`server/ocr/docstructure.py`（确定性章节树/语义标签/实体/跨页表格合并，
   页锚硬护栏）+ `server/ocr/rag.py`（分块+索引+FTS5 检索）+ `server/stores/rag_store.py`；均 ocr 服务层,不 import tender/audit。
+- **OCR 流式任务层（D9，2026-07-20）**：`POST/GET /ocr/jobs`（`server/routes/ocr_jobs.py`）+ job worker
+  （`server/routes/ocr_job_worker.py`：semaphore+超时+三态，与 audit_worker 同构）+ `TaskStore("ocr_jobs")` 独立表
+  （`server/stores/ocr_job_store.py`，不改共享 schema）。页级部分结果落 **`<case_dir>/units.jsonl` 边车**
+  （per-job lock append、单调不回退，已入 `_OCR_EXCLUDED_FILENAMES` 防被 `_iter_files` 重扫当文档）；
+  progress 存 `progress_message` 定长 JSON `{done,total}`；路径一律服务端 `build_case_dir` 派生（跨租户 404）。
+  `pipeline.extract_dir(on_unit_complete=...)` 回调接缝：native pdf_text 读后从最终 blocks 发、OCR 侧 buffer-then-fire，
+  默认 None 零行为。前端 OCR 工作台 Tabs 双模式（识别+回填 / 流式识别渐进渲染）。
 - 大 blob 留文件：会话 event 流、上传原件。
 - 详见 `sprints/2026-06-19-logging-and-storage/design-data-storage.md` + `architecture/system-tender-data-model.md`。
