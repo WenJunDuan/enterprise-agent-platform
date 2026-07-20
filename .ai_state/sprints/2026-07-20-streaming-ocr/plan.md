@@ -42,10 +42,12 @@ T1 → T2/T3（可并行）→ T4（红区 worktree，依赖 T2 契约冻结）�
 
 ## 状态
 
-- [ ] T1 pipeline 回调接缝
+- [x] T1 pipeline 回调接缝 — merge ebf9113(main),931 passed/ruff 净;主 agent 独立验(buffer-then-fire 锁外/零kwarg透传/F3缓存补事件/G1排除全实证)
 - [ ] T2 jobs 端点
 - [ ] T3 job worker
 - [ ] T4 agent-front 渐进渲染
 - [ ] T5 全量回归
+
+> T2+T3 合并为一个 generator 一次做完（共享 job 生命周期契约,耦合紧,避免并行 worktree 冲突）。
 
 **待用户 GO 后开工（GO 前勿写代码）。**

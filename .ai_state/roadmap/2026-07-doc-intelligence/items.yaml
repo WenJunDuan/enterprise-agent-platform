@@ -87,6 +87,12 @@ items:
     depends_on: [D1]
     status: pending
     note: >
+      **2026-07-20 重定义倾向（用户）**：D4 从「进程内 EngineRegistry」→「建**独立 OCR 路由服务**
+      （直读+路由+模型池全内聚），本项目 ocr 调用改指向其单一 API（文件字节→结构化底稿带页锚）」。
+      更大但更干净；前置不变（V4Pro 基线锁硬门+模型池实测能力画像）；D9 不阻塞（流式 job 端点将来
+      改代理 OCR 服务流，契约+前端复用）。硬约束：页锚保真+对齐 doc-structure.schema.json+种子=现
+      server/ocr/ 不重写。详见 compound/2026-07-20-decision-ocr-as-standalone-service.md，D4 窗口正式确认。
+      ——以下为原进程内方案锚点（若确认拆服务，迁入新 repo 作种子）——
       前置：D1 一致性阈值已锁硬门（警告模式不得跨 Wave 存活，critic F4）。
       **模型池定案（用户 2026-07-02，部署机三模型）**：①PaddleOCR 经典管道=便宜快打底
       （清晰印刷页默认）；②PaddleOCR-VL=复杂版面/表格/低清升级层（现主力）；

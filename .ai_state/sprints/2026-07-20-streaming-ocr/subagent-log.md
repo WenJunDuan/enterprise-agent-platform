@@ -18,3 +18,12 @@
 - Agent ID: aae316bdbfc890e3c
 - Last message: ## VERDICT: APPROVE-WITH-CHANGES Round 2 的存储/并发/边界修订均可对代码实证核验为真，F1-F6 逐条判定如下；同时在核验 F1 落点时发现一个 Round 2 新引入、尚未处理的具体正确性缺口（G1），需要在进入 impl 前补入 design（不必再开一轮 critic，属于同轮内可闭合的收尾修订）。 ### F1-F6 逐条判定 **F1 — RES
 
+## 2026-07-20T03:01:03.679Z · generator
+- Event: SubagentStart
+- Agent ID: a38da2b96ea17a2cb
+
+## 2026-07-20T03:23:48.723Z · generator
+- Event: SubagentStop
+- Agent ID: a38da2b96ea17a2cb
+- Last message: T1（pipeline 回调接缝）已完成，严格 TDD red→green，全量回归绿、ruff 净。 ## 实现摘要 **接缝**：`extract_dir → extract_one（含缓存命中分支）→ _extract_one_raw → _dispatch_extract` 全链路贯穿 `on_unit_complete: Callable[[dict], None] | None = N
+
