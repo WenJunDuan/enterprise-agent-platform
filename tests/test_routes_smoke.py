@@ -24,6 +24,9 @@ _BASELINE_ROUTES: list[tuple[str, tuple[str, ...]]] = [
     ("/health", ("GET",)),
     ("/ocr/extract", ("POST",)),
     ("/ocr/fill", ("POST",)),
+    # D9 页级流式 OCR（2026-07-20 新增：任务化提交 + 轮询 partial results）
+    ("/ocr/jobs", ("POST",)),
+    ("/ocr/jobs/{request_id}", ("GET",)),
     ("/openapi.json", ("GET", "HEAD")),
     ("/redoc", ("GET", "HEAD")),
     # tender 评标路由（2026-06-19 T2 新增；2026-06-20 补 list/retry/delete + 招标项目资源 + Phase2 compare）
