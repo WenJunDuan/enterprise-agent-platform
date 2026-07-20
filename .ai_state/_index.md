@@ -5,7 +5,7 @@ version: "9.6.4"
 
 # === PACE 路由状态 ===
 path: "System" # 文档智能 program 2026-07-doc-intelligence 立项：四波次 D1-D11（地基/质量/结构/体验），旧 tender-program 已收口(S7/S9 结转,S8 用户推迟)
-stage: "impl" # 2026-07-20: D9 impl 五任务全绿 merge(T1 ebf9113/T2+T3 f36f537/T4 3539392;后端 952 passed+前端 121 绿,主 agent 逐任务独立验)。下一步=review 三件套→runtime-verify→polish→ship(System 契约),待用户定节奏。D4 重定义倾向=OCR 拆独立服务(compound 2026-07-20)
+stage: "review" # 2026-07-20: D9 pass1 REWORK(P0 F1)已修 merge 176e91c(_dispatch_native_pdf_text 抽出+native 不即时发+_emit_pages_from_blocks 从最终/augmented blocks 发,955 passed+F2 三回归,主 agent 独立验)。重跑 review pass2(reviewer 复核 F1 解决+spec)。pass1.md 存档
 current_sprint_slug: "2026-07-20-streaming-ocr" # D9 页级流式 OCR(立项 2026-07-20; 前 D11 已 done+归档)
 current_roadmap_slug: "2026-07-doc-intelligence"
 skip_polish: false
@@ -49,7 +49,7 @@ counts:
   issues_count: 0
   refactors_count: 0
   systems_count: 6
-  reviews_count: 58
+  reviews_count: 59
   cleanup_count: 1
   compound:
     learning: 12
@@ -59,7 +59,7 @@ counts:
 # === Pointers (指向最新相关文件) ===
 pointers:
   latest_design: "sprints/2026-07-18-tender-discipline-residuals/design.md" # D11 定稿(critic 九条应答, 2026-07-19 全交付);roadmap 见 roadmap/2026-07-doc-intelligence/
-  latest_review: "sprints/2026-07-18-tender-discipline-residuals/reviews/pass1-batch-b.md" # D11 batch A/B 三件套 PASS(4.55/4.7, 2026-07-19);同目录 pass1-batch-a.md
+  latest_review: "sprints/2026-07-20-streaming-ocr/reviews/pass1.md" # D9 pass1=REWORK(P0 F1 流式回退路径重复/过期页级单元;spec PASS),待 F1 修复后 pass2
   latest_cleanup: "sprints/2026-06-19-contract-audit-feature/cleanup-pass.md"
   latest_brainstorm: ""
   latest_decisions: ["compound/2026-07-20-decision-ocr-as-standalone-service.md", "compound/2026-07-16-decision-carve-f6-schema-split-from-d2.md", "compound/2026-07-16-decision-schema-split-tender.md", "compound/2026-07-15-decision-ocr-service-layer.md", "compound/2026-07-02-decision-ocr-routing-ladder.md"]
@@ -123,6 +123,7 @@ D10 in_progress（②vision 附件预嵌 backlog，卡 vision 模型）；D4/D5/
 - `docs/` — 项目参考文档 (开发指南 / 前端对接 / audit-skills)，非状态机文件
 
 ## 历史 (由 pace-continuator hook 自动追加, 最多保留近 10 条)
+- `2026-07-20 05:11:59`: stage=review sprint=2026-07-20-streaming-ocr turn-end
 - `2026-07-20 02:03:28`: stage=design sprint=2026-07-20-streaming-ocr turn-end
 - `2026-07-19 04:01:19`: stage=plan sprint=2026-07-18-tender-discipline-residuals turn-end
 - `2026-07-19 01:13:36`: stage=impl sprint=2026-07-18-tender-discipline-residuals turn-end
@@ -132,7 +133,6 @@ D10 in_progress（②vision 附件预嵌 backlog，卡 vision 模型）；D4/D5/
 - `2026-07-18 06:57:42`: stage=plan sprint=2026-07-18-prompt-single-source turn-end
 - `2026-07-18 06:28:29`: stage=ship sprint=2026-07-18-prompt-single-source turn-end
 - `2026-07-16 03:27:43`: stage=design sprint=2026-07-16-tender-feature-package turn-end
-- `2026-07-15 09:51:55`: stage=review sprint=2026-07-02-eval-tender-scaffold turn-end
 
 
 - 2026-06-02 [migrate] v9.6.2(legacy flat) → v9.6.4. 备份见 `.ai_state.backup-*`。

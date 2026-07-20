@@ -58,3 +58,42 @@
 - Agent ID: a428d684a24b5d32d
 - Last message: Committed cleanly. The remaining `.ai_state` diffs/untracked file are hook-generated (token-usage tracking), not touched by me, and outside my mandate — left as-is for the main agent. ## Revision summ
 
+## 2026-07-20T05:11:30.513Z · reviewer
+- Event: SubagentStart
+- Agent ID: afc77b7f32216b0d3
+
+## 2026-07-20T05:11:44.641Z · spec-compliance
+- Event: SubagentStart
+- Agent ID: a77fb22be41f2b06b
+
+## 2026-07-20T05:16:17.876Z · spec-compliance
+- Event: SubagentStop
+- Agent ID: a77fb22be41f2b06b
+- Last message: Based on the verification above (Read of design.md/plan.md, full diff review of every changed file, and running the 32 new backend tests + 47 new frontend logic tests, all green), here is the spec-com
+
+## 2026-07-20T05:23:49.225Z · reviewer
+- Event: SubagentStart
+- Agent ID: afc77b7f32216b0d3
+
+## 2026-07-20T05:25:33.014Z · reviewer
+- Event: SubagentStop
+- Agent ID: afc77b7f32216b0d3
+- Last message: ## Review Pass — 结构化 findings ### 0. 疑点判定：`_call_native_read` / `_call_recognize` / `_call_recognize_with_seal` 三个薄包装是否过度设计 **结论：不是过度设计，是合理的兼容接缝，不需要改。** 判据（铁律[反过度工程]）「删掉该抽象后测试仍全绿且无真实调用方 = 过度」不成立： - 删掉
+
+## 2026-07-20T05:29:57.089Z · generator
+- Event: SubagentStart
+- Agent ID: a48b2496eb5ecf9ef
+
+## 2026-07-20T05:42:54.998Z · generator
+- Event: SubagentStop
+- Agent ID: a48b2496eb5ecf9ef
+- Last message: ## Summary Fixed D9 review pass1 P0 F1 (streaming content fidelity) with strict TDD and added the F2 regression tests. **Root cause**: `_dispatch_extract` in `server/ocr/pipeline.py` fired `on_page` i
+
+## 2026-07-20T05:49:42.571Z · reviewer
+- Event: SubagentStart
+- Agent ID: a1ad0e6901803bf66
+
+## 2026-07-20T05:49:51.664Z · spec-compliance
+- Event: SubagentStart
+- Agent ID: aa202c8abf59c9ade
+

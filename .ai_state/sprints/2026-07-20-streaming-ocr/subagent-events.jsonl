@@ -11,3 +11,12 @@
 {"schema_version":1,"event":"SubagentStop","agent_id":"a428d684a24b5d32d","agent_type":"generator","sprint_slug":"2026-07-20-streaming-ocr","timestamp":"2026-07-20T04:52:53.446Z"}
 {"schema_version":1,"event":"SubagentStart","agent_id":"a428d684a24b5d32d","agent_type":"generator","sprint_slug":"2026-07-20-streaming-ocr","timestamp":"2026-07-20T04:55:43.079Z"}
 {"schema_version":1,"event":"SubagentStop","agent_id":"a428d684a24b5d32d","agent_type":"generator","sprint_slug":"2026-07-20-streaming-ocr","timestamp":"2026-07-20T05:06:23.133Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"afc77b7f32216b0d3","agent_type":"reviewer","sprint_slug":"2026-07-20-streaming-ocr","timestamp":"2026-07-20T05:11:30.512Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"a77fb22be41f2b06b","agent_type":"spec-compliance","sprint_slug":"2026-07-20-streaming-ocr","timestamp":"2026-07-20T05:11:44.640Z"}
+{"schema_version":1,"event":"SubagentStop","agent_id":"a77fb22be41f2b06b","agent_type":"spec-compliance","sprint_slug":"2026-07-20-streaming-ocr","timestamp":"2026-07-20T05:16:17.875Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"afc77b7f32216b0d3","agent_type":"reviewer","sprint_slug":"2026-07-20-streaming-ocr","timestamp":"2026-07-20T05:23:49.225Z"}
+{"schema_version":1,"event":"SubagentStop","agent_id":"afc77b7f32216b0d3","agent_type":"reviewer","sprint_slug":"2026-07-20-streaming-ocr","timestamp":"2026-07-20T05:25:33.014Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"a48b2496eb5ecf9ef","agent_type":"generator","sprint_slug":"2026-07-20-streaming-ocr","timestamp":"2026-07-20T05:29:57.088Z"}
+{"schema_version":1,"event":"SubagentStop","agent_id":"a48b2496eb5ecf9ef","agent_type":"generator","sprint_slug":"2026-07-20-streaming-ocr","timestamp":"2026-07-20T05:42:54.997Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"a1ad0e6901803bf66","agent_type":"reviewer","sprint_slug":"2026-07-20-streaming-ocr","timestamp":"2026-07-20T05:49:42.570Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"aa202c8abf59c9ade","agent_type":"spec-compliance","sprint_slug":"2026-07-20-streaming-ocr","timestamp":"2026-07-20T05:49:51.663Z"}
