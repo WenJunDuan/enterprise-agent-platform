@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -91,7 +92,11 @@ OCR_MAX_WORKERS = _ocr_max_workers()
 # P1-4: sidecar files written by materialize_upload_submission must not be OCR-processed.
 # audit-request.json is a metadata sidecar written into every submission dir — it is not
 # a user document and must be excluded to avoid polluting the extraction block.
-_OCR_EXCLUDED_FILENAMES: frozenset[str] = frozenset({"audit-request.json"})
+# units.jsonl (D9 streaming-ocr G1): per-job partial-results sidecar appended by the OCR job
+# worker into the same case_dir _iter_files rglobs (T3). Same failure mode as audit-request.json
+# — without exclusion a job retry / `/ocr/extract` directory-mode rerun over that dir would
+# classify→read_text the sidecar as a regular file and pollute the extraction block/unit count.
+_OCR_EXCLUDED_FILENAMES: frozenset[str] = frozenset({"audit-request.json", "units.jsonl"})
 
 
 def _iter_files(case_dir: str) -> list[Path]:
@@ -113,14 +118,64 @@ def _iter_files(case_dir: str) -> list[Path]:
     return files
 
 
+# D9 streaming-ocr T1：单元事件回调。unit 形如 {"file", "page", "status", "payload",
+# "from_cache"}（page=None 表文件级单元）。默认 None＝现行为逐字节不变。
+UnitCallback = Callable[[dict], None]
+_PageCallback = Callable[[int, dict], None]
+
+
+def _make_unit(*, file: str, page: int | None, status: str, payload: dict, from_cache: bool) -> dict:
+    """组装单元事件 dict（页级/文件级统一 schema，见 design.md 单元事件回调签名）。"""
+    return {"file": file, "page": page, "status": status, "payload": payload, "from_cache": from_cache}
+
+
+def _call_native_read(path: Path, on_page: _PageCallback | None) -> dict:
+    """调 ``native_read``，``on_page=None`` 时按原始（无 on_page 形参）签名调用。
+
+    保持默认路径调用字节不变（T1 硬约束）：既是行为契约，也让存量测试里把 ``native_read``
+    monkeypatch 成旧签名（如 ``lambda path: {...}``）的 mock 无需改动即可继续通过。
+    """
+    if on_page is None:
+        return native_read(path)
+    return native_read(path, on_page=on_page)
+
+
+def _call_recognize(path: Path, *, purpose: str | None, on_page: _PageCallback | None) -> dict:
+    """调 ``recognize``，理由同 ``_call_native_read``（存量 mock 兼容）。"""
+    if on_page is None:
+        return recognize(path, purpose=purpose)
+    return recognize(path, purpose=purpose, on_page=on_page)
+
+
 def _recognize_with_seal(
-    path: Path, route: dict, *, run_seal: bool, purpose: str | None = None
+    path: Path,
+    route: dict,
+    *,
+    run_seal: bool,
+    purpose: str | None = None,
+    on_page: _PageCallback | None = None,
 ) -> dict:
     """走 OCR 引擎识别（可选印章），合并分诊信息。purpose 透传给 OCR 引擎做场景化识别。"""
-    result = {**route, **recognize(path, purpose=purpose)}
+    result = {**route, **_call_recognize(path, purpose=purpose, on_page=on_page)}
     if run_seal:
         result["seals"] = recognize_seal(path).get("seals", [])
     return result
+
+
+def _call_recognize_with_seal(
+    path: Path,
+    route: dict,
+    *,
+    run_seal: bool,
+    purpose: str | None,
+    on_page: _PageCallback | None,
+) -> dict:
+    """调 ``_recognize_with_seal``，``on_page=None`` 时按原始签名调用（存量 mock 兼容，理由同
+    ``_call_native_read``——测试里整体 monkeypatch ``_recognize_with_seal`` 为旧签名的场景）。
+    """
+    if on_page is None:
+        return _recognize_with_seal(path, route, run_seal=run_seal, purpose=purpose)
+    return _recognize_with_seal(path, route, run_seal=run_seal, purpose=purpose, on_page=on_page)
 
 
 def _has_extractable_text(native: dict) -> bool:
@@ -200,82 +255,173 @@ def _augment_mixed_pdf_blocks(
     }
 
 
-def extract_one(path: Path, *, run_seal: bool = False, purpose: str | None = None) -> dict:
+def extract_one(
+    path: Path,
+    *,
+    run_seal: bool = False,
+    purpose: str | None = None,
+    on_unit_complete: UnitCallback | None = None,
+) -> dict:
     """对单个文件识别（带按文件内容 sha256 的结果缓存，P1）。
 
     缓存命中（重评 / 重试 / 换评分标准时同一文件）直接返回，跳过 OCR/直读——格式无关，慢的
     扫描件收益最大。键含 purpose/run_seal（影响识别）。识别失败（可能临时故障）不缓存。
+
+    Args:
+        path: 待识别文件路径。
+        run_seal: 是否附加印章识别。
+        purpose: 场景化识别目的，透传给 OCR 引擎。
+        on_unit_complete: 可选单元完成回调（D9 streaming-ocr T1）。默认 ``None``＝现行为逐字节
+            不变。缓存命中分支也会触发**一次文件级**事件（``from_cache=True``），F3：不能因命中
+            而漏事件，否则调用方（job worker）done_units 计数会卡住。
     """
     cached = ocr_cache.get_cached(path, purpose=purpose, run_seal=run_seal)
     if cached is not None:
         cached["path"] = str(path)  # 同内容不同文件名时 path 取当前文件
+        if on_unit_complete is not None:
+            on_unit_complete(
+                _make_unit(file=str(path), page=None, status="ok", payload=cached, from_cache=True)
+            )
         return cached
-    result = _extract_one_raw(path, run_seal=run_seal, purpose=purpose)
+    result = _extract_one_raw(
+        path, run_seal=run_seal, purpose=purpose, on_unit_complete=on_unit_complete
+    )
     if result.get("kind") != "error":
         ocr_cache.put_cached(path, purpose=purpose, run_seal=run_seal, result=result)
     return result
 
 
-def _extract_one_raw(path: Path, *, run_seal: bool = False, purpose: str | None = None) -> dict:
-    """对单个文件分类并按路由直读 / OCR；任何失败归一为 error（per-file 隔离）。
+def _dispatch_extract(
+    path: Path, *, run_seal: bool, purpose: str | None, on_page: _PageCallback | None
+) -> dict:
+    """对单个文件分类并按路由直读 / OCR（``_extract_one_raw`` 主体，抽出以便调用方在异常路径
+    也能统一触发单元事件）。
 
     - font-only 扫描 PDF（有字体但 native 抽不到文本）回退 OCR，避免返回空结果。
-    - 任何异常（损坏文件 / 缺引擎 / 解析错误）归一为 kind=error，单个失败不拖垮整批。
+    - 异常向上传播（由 ``_extract_one_raw`` 统一捕获归一为 error，见其 docstring）。
     """
+    route = classify(path)
+    if route["route"] == "native":
+        native = _call_native_read(path, on_page)
+        if route.get("handler") == "pdf_text" and not _has_extractable_text(native):
+            fallback = {
+                **route,
+                "route": "ocr",
+                "handler": "pdf_scan",
+                "note": "PDF 有字体但无可抽文本，回退 OCR",
+            }
+            return _call_recognize_with_seal(
+                path, fallback, run_seal=run_seal, purpose=purpose, on_page=on_page
+            )
+        # 混合 PDF（数字页 + 扫描页）：native 抽不到扫描页内容（空串被静默丢失）。空白页计数/
+        # 比例达阈值 → 只对扫描页做子集云 OCR 并回填（主路径，保数字页原生保真）；本地抽页失败
+        # 回退整份云 OCR（Layer 1）。gate 在 mixed_pdf：纯数字 PDF 的空白页是真空页，无内容可补。
+        if (
+            route.get("handler") == "pdf_text"
+            and route.get("mixed_pdf")
+            and _should_cloud_ocr_mixed_pdf(native.get("blocks", []))
+        ):
+            augmented = _augment_mixed_pdf_blocks(path, route, native, purpose=purpose)
+            if augmented is not None:
+                return augmented
+            fallback = {
+                **route,
+                "route": "ocr",
+                "handler": "pdf_scan",
+                "note": "混合 PDF 子集抽页失败，回退整份云 OCR 补回扫描页",
+            }
+            return _call_recognize_with_seal(
+                path, fallback, run_seal=run_seal, purpose=purpose, on_page=on_page
+            )
+        return {**route, **native}
+    if route["route"] == "ocr":
+        return _call_recognize_with_seal(
+            path, route, run_seal=run_seal, purpose=purpose, on_page=on_page
+        )
+    return {**route, "kind": "manual"}
+
+
+def _extract_one_raw(
+    path: Path,
+    *,
+    run_seal: bool = False,
+    purpose: str | None = None,
+    on_unit_complete: UnitCallback | None = None,
+) -> dict:
+    """对单个文件分类并按路由直读 / OCR；任何失败归一为 error（per-file 隔离）。
+
+    页级粒度自适应（D9 streaming-ocr T1，方案 A）：native pdf_text 与本地 paddle pipeline 走
+    buffer-then-fire（页结果在 ``_dispatch_extract`` 深处的 ``FITZ_LOCK``/``PADDLE_LOCK`` 内收集、
+    锁外回放，见 native.read_pdf_text / engine._recognize_via_paddle_pipeline docstring）；
+    VLM openai-compatible 识别循环锁外，逐页直接触发。若本次调用未产生任何页级事件（excel/word/
+    text/cloud 等无页循环路径，或识别失败），退化为**一次文件级**事件（"至少一次"，design 方案 A
+    粒度自适应兜底）。
+    """
+    file_str = str(path)
+    page_emitted = False
+    on_page: _PageCallback | None = None
+
+    if on_unit_complete is not None:
+        # on_page 只在真有回调时才构造成非 None——保持 on_unit_complete=None（默认）时
+        # on_page 全链路仍是 None，_call_native_read/_call_recognize_with_seal 才会走
+        # "不多传 kwarg" 分支，与存量对 native_read/_recognize_with_seal 的旧签名 mock 兼容。
+        def _on_page(page_no: int, payload: dict) -> None:
+            nonlocal page_emitted
+            page_emitted = True
+            on_unit_complete(
+                _make_unit(file=file_str, page=page_no, status="ok", payload=payload, from_cache=False)
+            )
+
+        on_page = _on_page
+
     try:
-        route = classify(path)
-        if route["route"] == "native":
-            native = native_read(path)
-            if route.get("handler") == "pdf_text" and not _has_extractable_text(native):
-                fallback = {
-                    **route,
-                    "route": "ocr",
-                    "handler": "pdf_scan",
-                    "note": "PDF 有字体但无可抽文本，回退 OCR",
-                }
-                return _recognize_with_seal(path, fallback, run_seal=run_seal, purpose=purpose)
-            # 混合 PDF（数字页 + 扫描页）：native 抽不到扫描页内容（空串被静默丢失）。空白页计数/
-            # 比例达阈值 → 只对扫描页做子集云 OCR 并回填（主路径，保数字页原生保真）；本地抽页失败
-            # 回退整份云 OCR（Layer 1）。gate 在 mixed_pdf：纯数字 PDF 的空白页是真空页，无内容可补。
-            if (
-                route.get("handler") == "pdf_text"
-                and route.get("mixed_pdf")
-                and _should_cloud_ocr_mixed_pdf(native.get("blocks", []))
-            ):
-                augmented = _augment_mixed_pdf_blocks(path, route, native, purpose=purpose)
-                if augmented is not None:
-                    return augmented
-                fallback = {
-                    **route,
-                    "route": "ocr",
-                    "handler": "pdf_scan",
-                    "note": "混合 PDF 子集抽页失败，回退整份云 OCR 补回扫描页",
-                }
-                return _recognize_with_seal(path, fallback, run_seal=run_seal, purpose=purpose)
-            return {**route, **native}
-        if route["route"] == "ocr":
-            return _recognize_with_seal(path, route, run_seal=run_seal, purpose=purpose)
-        return {**route, "kind": "manual"}
+        result = _dispatch_extract(path, run_seal=run_seal, purpose=purpose, on_page=on_page)
     except Exception as exc:  # per-file 隔离：损坏 / 缺引擎 / 解析错误都归一为 error
         logger.warning("extract failed for %s: %s", path, exc)
-        return {"path": str(path), "kind": "error", "route": "manual", "error": str(exc)}
+        result = {"path": file_str, "kind": "error", "route": "manual", "error": str(exc)}
+
+    if on_unit_complete is not None and not page_emitted:
+        status = "error" if result.get("kind") == "error" else "ok"
+        on_unit_complete(
+            _make_unit(file=file_str, page=None, status=status, payload=result, from_cache=False)
+        )
+    return result
 
 
-def extract_dir(case_dir: str, *, run_seal: bool = False, purpose: str | None = None) -> list[dict]:
+def extract_dir(
+    case_dir: str,
+    *,
+    run_seal: bool = False,
+    purpose: str | None = None,
+    on_unit_complete: UnitCallback | None = None,
+) -> list[dict]:
     """对目录下每个文件跑确定性识别（多文件并行），返回结构化产物列表（不调模型）。
 
     多文件时用线程池并行——扫描件走云 OCR 是 job-poll IO 等待，串行十几个标书文件会数分钟
     甚至超时，并行把墙钟压到"最慢单个"。``ThreadPoolExecutor.map`` 保持文件顺序（底稿组装依赖
     顺序）；``extract_one`` 已 per-file 隔离（异常归 error），并行不互相拖垮。并发度 = min(
     ``OCR_MAX_WORKERS``, 文件数)。单文件直接同步（不值得开池）。
+
+    Args:
+        on_unit_complete: 可选单元完成回调，透传给每个 ``extract_one``（D9 streaming-ocr T1）。
+            默认 ``None``＝现行为逐字节不变。多文件并行时回调会从多个 worker 线程并发触发——
+            本函数只保证回调被正确调用且携带正确 unit，回调本身的线程安全由调用方负责。
     """
     files = _iter_files(case_dir)
     if len(files) <= 1:
-        return [extract_one(path, run_seal=run_seal, purpose=purpose) for path in files]
+        return [
+            extract_one(path, run_seal=run_seal, purpose=purpose, on_unit_complete=on_unit_complete)
+            for path in files
+        ]
     workers = min(OCR_MAX_WORKERS, len(files))
     with ThreadPoolExecutor(max_workers=workers) as pool:
         return list(
-            pool.map(lambda path: extract_one(path, run_seal=run_seal, purpose=purpose), files)
+            pool.map(
+                lambda path: extract_one(
+                    path, run_seal=run_seal, purpose=purpose, on_unit_complete=on_unit_complete
+                ),
+                files,
+            )
         )
 
 
