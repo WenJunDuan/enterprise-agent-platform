@@ -40,6 +40,7 @@ from server.platform.logging_setup import (
 from server.platform.paths import PROJECT_ROOT
 from server.routes.deps import TENANT_KEYS, verify_tenant  # noqa: F401  re-export
 from server.stores.audit_task_store import recover_stale_audit_tasks
+from server.stores.ocr_job_store import recover_stale_ocr_jobs
 from server.stores.tender_task_store import recover_stale_tender_tasks
 
 configure_logging(
@@ -63,6 +64,9 @@ async def app_lifespan(_: FastAPI):
     install_access_log_filter()  # 清 uvicorn access log 噪音（/health 健康探测刷屏等）
     recover_stale_audit_tasks(settings.audit_task_running_timeout_seconds)
     recover_stale_tender_tasks(settings.audit_task_running_timeout_seconds)
+    # D9 streaming-ocr T3 F5：units.jsonl 是独立文件，recover_stale 只改 TaskStore 行
+    # （不碰文件系统），故沿用同一超时预算即可安全复用（不需要独立 config，无第二次消费需求）。
+    recover_stale_ocr_jobs(settings.audit_task_running_timeout_seconds)
     yield
 
 
@@ -263,10 +267,12 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 from server.routes import audit as _audit_routes  # noqa: E402
 from server.routes import health as _health_routes  # noqa: E402
 from server.routes import ocr as _ocr_routes  # noqa: E402
+from server.routes import ocr_jobs as _ocr_jobs_routes  # noqa: E402
 from server.routes import tender as _tender_routes  # noqa: E402
 
 app.include_router(_audit_routes.router, prefix="/audit")
 app.include_router(_ocr_routes.router, prefix="/ocr")
+app.include_router(_ocr_jobs_routes.router, prefix="/ocr")
 app.include_router(_tender_routes.router, prefix="/tender")
 app.include_router(_health_routes.router)
 
