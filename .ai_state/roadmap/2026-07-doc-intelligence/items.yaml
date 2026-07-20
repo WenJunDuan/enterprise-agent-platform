@@ -179,7 +179,7 @@ items:
     effort: M
     wave: 3
     depends_on: [] # 原 [D4]:2026-07-20 判为执行序软依赖并解除(streaming 接缝在 pipeline/routes 层,engine 选型在 engine.recognize() 内部,正交;用户拍板 D9 先行),核验见 sprints/2026-07-20-streaming-ocr/route-note.md
-    status: in_progress # 2026-07-20 立项:sprint 2026-07-20-streaming-ocr,design Round 1 落盘(方案 A=OCR 任务化+部分结果轮询,SSE 否决留二期;粒度自适应 native/VLM 页级、cloud 文件级)
+    status: in_progress # 2026-07-20 代码全交付+review PASS+polish 完成,已 merge+push origin(至 3d80836)。design 两轮 critic→impl T1-T5(后端 952+前端 121 绿)→review pass1 REWORK(P0 F1 流式回退重复/过期页级单元)→修 176e91c→pass2 PASS(955 passed)→polish(2 P2 清/defer)。**唯一剩 runtime-verify**:用户 mac mini 亲自部署实跑 /ocr/jobs 流式+前端点击流,codex 规整日志回传作实跑证据→主 agent 收口 runtime-verify.md+ship 契约。sprint 2026-07-20-streaming-ocr
     redzone: agent-front
     note: >
       用户拍板=页级部分结果流。后端：pipeline 改 async generator 页级 yield，复用平台 SSE
