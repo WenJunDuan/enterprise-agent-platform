@@ -14,8 +14,6 @@ export interface OcrUploadFile {
   file?: File
 }
 
-export type RecognizePhase = 'idle' | 'recognizing' | 'done' | 'error'
-
 export type ConfidenceLevel = 'high' | 'medium' | 'low'
 
 /**
@@ -33,14 +31,20 @@ export function confidenceLevel(confidence: number): ConfidenceLevel {
 }
 
 // 置信度配色 + 文字标签：颜色之外保留文字，避免靠颜色单独传达信息（a11y）。
-export const CONFIDENCE_STYLE: Record<ConfidenceLevel, { bg: string; text: string; label: string }> = {
+export const CONFIDENCE_STYLE: Record<
+  ConfidenceLevel,
+  { bg: string; text: string; label: string }
+> = {
   high: { bg: 'bg-green-50', text: 'text-green-700', label: '高' },
   medium: { bg: 'bg-amber-50', text: 'text-amber-700', label: '中' },
   low: { bg: 'bg-red-50', text: 'text-red-700', label: '低' },
 }
 
 // 识别底稿 route 的中文标签 + 配色。
-export const ROUTE_STYLE: Record<OcrRoute, { label: string; bg: string; text: string }> = {
+export const ROUTE_STYLE: Record<
+  OcrRoute,
+  { label: string; bg: string; text: string }
+> = {
   native: { label: '原生直读', bg: 'bg-blue-50', text: 'text-blue-700' },
   ocr: { label: 'OCR 识别', bg: 'bg-purple-50', text: 'text-purple-700' },
   manual: { label: '转人工', bg: 'bg-gray-100', text: 'text-gray-600' },
@@ -59,6 +63,6 @@ export function formatFieldValue(value: unknown): string {
   if (value == null || value === '') return '—'
   if (typeof value === 'number') return value.toLocaleString('zh-CN')
   if (typeof value === 'boolean') return value ? '是' : '否'
-  if (Array.isArray(value)) return value.map(v => String(v)).join('、')
+  if (Array.isArray(value)) return value.map((v) => String(v)).join('、')
   return String(value)
 }
