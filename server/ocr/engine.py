@@ -20,6 +20,7 @@ import tempfile
 import time
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from pathlib import Path
 
 from server.ocr import OcrDependencyError, OcrError
@@ -214,8 +215,22 @@ def _call_openai_compatible_vlm(*, data_url: str, prompt: str) -> str:
         raise OcrDependencyError(f"OCR VLM 返回结构异常：{payload!r}") from exc
 
 
-def _recognize_via_openai_compatible(path: Path, *, purpose: str | None = None) -> dict:
-    """LiteLLM/OpenAI-compatible fallback：让已部署 PaddleOCR-VL 读取图片页面。"""
+def _recognize_via_openai_compatible(
+    path: Path,
+    *,
+    purpose: str | None = None,
+    on_page: Callable[[int, dict], None] | None = None,
+) -> dict:
+    """LiteLLM/OpenAI-compatible fallback：让已部署 PaddleOCR-VL 读取图片页面。
+
+    Args:
+        path: 待识别文件路径（PDF 或图片）。
+        purpose: 场景化识别目的，追加进 prompt。
+        on_page: 可选页级完成回调 ``(page_no, {"markdown": str})``。识别循环本就在
+            ``FITZ_LOCK``/``PADDLE_LOCK`` 之外（``_render_pdf_pages`` 已在其内部完成渲染并
+            释放锁后才返回），故每页识别完成即可**直接触发**，无需 buffer-then-fire（D9 T1）。
+            单图片文件无页概念，不触发——由调用方退化为文件级单元。
+    """
     if not OCR_VL_SERVER_URL or not OCR_VL_MODEL_NAME:
         raise OcrDependencyError(
             "OCR_VL_SERVER_URL / OCR_VL_MODEL_NAME 未配置，无法调用远端 OCR VLM"
@@ -226,17 +241,15 @@ def _recognize_via_openai_compatible(path: Path, *, purpose: str | None = None) 
         # 场景化识别目的（如评标：完整还原评分标准/扣分细则/废标条款表格）——追加在通用提取指令后。
         prompt = f"{prompt}\n{purpose}"
     if path.suffix.lower() == ".pdf":
-        pages = [
-            {
-                "markdown": _call_openai_compatible_vlm(
-                    data_url=_image_data_url(page["content"], page["mime_type"]),
-                    prompt=f"{prompt}\nThis image is page {page['page_number']} of the PDF.",
-                ),
-                "layout": [],
-                "page_number": page["page_number"],
-            }
-            for page in _render_pdf_pages(path)
-        ]
+        pages = []
+        for page in _render_pdf_pages(path):
+            markdown = _call_openai_compatible_vlm(
+                data_url=_image_data_url(page["content"], page["mime_type"]),
+                prompt=f"{prompt}\nThis image is page {page['page_number']} of the PDF.",
+            )
+            pages.append({"markdown": markdown, "layout": [], "page_number": page["page_number"]})
+            if on_page is not None:
+                on_page(page["page_number"], {"markdown": markdown})
     else:
         markdown = _call_openai_compatible_vlm(
             data_url=_image_data_url(path.read_bytes(), _mime_type(path)),
@@ -269,27 +282,43 @@ def _page_confidence(layout: list) -> float | None:
     return min(scores) if scores else None
 
 
-def _recognize_via_paddle_pipeline(path: Path, *, purpose: str | None = None) -> dict:
+def _recognize_via_paddle_pipeline(
+    path: Path,
+    *,
+    purpose: str | None = None,
+    on_page: Callable[[int, dict], None] | None = None,
+) -> dict:
     """扫描件 → 每页 markdown + 版面 + 置信度（PaddleOCR-VL 完整 pipeline）。
 
     注：purpose 对本地 paddle pipeline 暂不生效（固定版面 OCR，无自定义 prompt 注入点）。
+
+    Args:
+        on_page: 可选页级完成回调 ``(page_no, {"markdown", "layout", "confidence"})``。
+            **buffer-then-fire**：页结果先收集到本地 list，退出 ``with PADDLE_LOCK`` 临界区
+            后才逐条回放——回调绝不在持有 ``PADDLE_LOCK`` 时被调用（D9 T1，同 native.read_pdf_text
+            纪律，防并行 OCR 下锁竞争被放大）。
     """
     _ = purpose  # 本地 pipeline 暂无 prompt 注入点，显式忽略避免误导。
     # 本地 PaddleOCR pipeline 非线程安全（全局 predictor/GPU/runtime），并行 OCR 时经 PADDLE_LOCK
     # 串行化（codex P1-4）。predict + 结果物化都在锁内，防 res 惰性求值跨线程触发 paddle。
+    page_buffer: list[tuple[int, dict]] = []
     with PADDLE_LOCK:
         results = _build_vl_pipeline().predict(str(path))
         pages = []
-        for res in results:
+        for page_no, res in enumerate(results, start=1):
             data = res.json if hasattr(res, "json") else {}
             layout = data.get("parsing_res_list", data.get("layout", []))
-            pages.append(
-                {
-                    "markdown": _page_markdown(res),
-                    "layout": layout,
-                    "confidence": _page_confidence(layout),
-                }
-            )
+            page_payload = {
+                "markdown": _page_markdown(res),
+                "layout": layout,
+                "confidence": _page_confidence(layout),
+            }
+            pages.append(page_payload)
+            if on_page is not None:
+                page_buffer.append((page_no, page_payload))
+    if on_page is not None:  # 锁已释放，此时才回放（buffer-then-fire）
+        for page_no, payload in page_buffer:
+            on_page(page_no, payload)
     return {"kind": "ocr", "pipeline_version": OCR_VL_PIPELINE_VERSION, "pages": pages}
 
 
@@ -461,7 +490,12 @@ def extract_pdf_subset(path: Path, page_indices: list[int]) -> Path | None:
         return None
 
 
-def recognize(path: Path, *, purpose: str | None = None) -> dict:
+def recognize(
+    path: Path,
+    *,
+    purpose: str | None = None,
+    on_page: Callable[[int, dict], None] | None = None,
+) -> dict:
     """扫描件识别。
 
     OCR_CLOUD=1 走线上 PaddleOCR-VL 云服务（job-poll）；否则默认走 LiteLLM/OpenAI-compatible
@@ -470,12 +504,17 @@ def recognize(path: Path, *, purpose: str | None = None) -> dict:
 
     purpose：场景化识别目的（如评标），仅 OpenAI-compatible 路径注入进 prompt 生效；
     云 job API / 本地 paddle pipeline 为固定版面 OCR，接受参数但暂不注入（见各自 docstring）。
+
+    on_page：可选页级完成回调（D9 streaming-ocr T1）。云 job-poll 路径（服务端整档返回，
+    见 ``_recognize_via_paddle_cloud`` docstring）无中间页可透出，**不接受** on_page——
+    该路径粒度为文件级单元，由调用方（``server.ocr.pipeline``）在拿到整份结果后退化为
+    一次文件级事件。
     """
     if OCR_CLOUD:  # 显式开关优先：=1 走线上云服务（job-poll），与 litellm/本地解耦
         return _recognize_via_paddle_cloud(path, purpose=purpose)
     if OCR_VL_SERVER_URL and not OCR_VL_USE_PADDLE_PIPELINE:
-        return _recognize_via_openai_compatible(path, purpose=purpose)
-    return _recognize_via_paddle_pipeline(path, purpose=purpose)
+        return _recognize_via_openai_compatible(path, purpose=purpose, on_page=on_page)
+    return _recognize_via_paddle_pipeline(path, purpose=purpose, on_page=on_page)
 
 
 def recognize_seal(path: Path) -> dict:
