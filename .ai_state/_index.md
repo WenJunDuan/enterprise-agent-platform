@@ -5,7 +5,7 @@ version: "9.6.4"
 
 # === PACE 路由状态 ===
 path: "System" # 文档智能 program 2026-07-doc-intelligence 立项：四波次 D1-D11（地基/质量/结构/体验），旧 tender-program 已收口(S7/S9 结转,S8 用户推迟)
-stage: "design" # 2026-07-20: D9 design 定稿(critic 两轮:round1 NEEDS_REVISION→round2 APPROVE-WITH-CHANGES,G1/G2 已并入收尾修订),plan.md T1-T5 就绪,待用户 GO 进 impl(GO 前勿写代码)
+stage: "impl" # 2026-07-20: 用户 GO,D9 进 impl。design 两轮 critic 定稿,plan T1-T5;T1 pipeline 回调接缝开工(黄区 generator,TDD)。另记 D4 重定义倾向=OCR 拆独立服务(compound 2026-07-20-decision-ocr-as-standalone-service)
 current_sprint_slug: "2026-07-20-streaming-ocr" # D9 页级流式 OCR(立项 2026-07-20; 前 D11 已 done+归档)
 current_roadmap_slug: "2026-07-doc-intelligence"
 skip_polish: false
@@ -54,7 +54,7 @@ counts:
   compound:
     learning: 12
     trick: 2
-    decision: 7
+    decision: 8
     explore: 1
 # === Pointers (指向最新相关文件) ===
 pointers:
@@ -62,7 +62,7 @@ pointers:
   latest_review: "sprints/2026-07-18-tender-discipline-residuals/reviews/pass1-batch-b.md" # D11 batch A/B 三件套 PASS(4.55/4.7, 2026-07-19);同目录 pass1-batch-a.md
   latest_cleanup: "sprints/2026-06-19-contract-audit-feature/cleanup-pass.md"
   latest_brainstorm: ""
-  latest_decisions: ["compound/2026-07-16-decision-carve-f6-schema-split-from-d2.md", "compound/2026-07-16-decision-schema-split-tender.md", "compound/2026-07-15-decision-ocr-service-layer.md", "compound/2026-07-02-decision-ocr-routing-ladder.md", "compound/2026-06-20-decision-verification-gate-and-scaffolding.md"]
+  latest_decisions: ["compound/2026-07-20-decision-ocr-as-standalone-service.md", "compound/2026-07-16-decision-carve-f6-schema-split-from-d2.md", "compound/2026-07-16-decision-schema-split-tender.md", "compound/2026-07-15-decision-ocr-service-layer.md", "compound/2026-07-02-decision-ocr-routing-ladder.md"]
   latest_lessons: ["compound/2026-07-18-learning-prompt-gate-contradiction-literal-model.md", "compound/2026-07-18-learning-lazy-import-behavioral-seam.md", "compound/2026-07-15-learning-slots-dataclass-hollow-getattr.md", "compound/2026-07-01-learning-flash-tender-eval-inconsistency.md", "compound/2026-07-01-learning-adversarial-empirical-review-catches-text-leaks.md"]
   latest_architecture_update: "2026-07-18T01:01:08.089Z"
 
