@@ -110,3 +110,48 @@ collected_evidence:
     result: pass
     command: "WT=/Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a428d684a24b5d32d/agent-front; echo \"=== build ===\" && (cd \"$WT\" && bun run build 2>&1 | tail -3) && echo \"=== lint ===\" && (cd \"$WT\" && bun run lint 2>&1 | tail -3) && echo \"=== test ===\" && (cd \"$WT\" && bun test 2>&1 | tail -4) && echo \"=== 我的 shell 仍在主项目根(未被污染) ===\" && pwd"
     timestamp: "2026-07-20T05:07:25.132Z"
+  - tool_use_id: "toolu_01DigrVE2k9CfQsefoTXn49n"
+    tool: "Bash"
+    result: pass
+    command: "python -m pytest tests/test_ocr_streaming_callback.py tests/test_ocr_job_worker.py tests/test_ocr_job_routes.py -q 2>&1 | tail -40"
+    timestamp: "2026-07-20T05:13:08.308Z"
+  - tool_use_id: "toolu_01RwLXJEX3srCsc7qfXhnaHh"
+    tool: "Bash"
+    result: pass
+    command: "(poetry run pytest tests/test_ocr_streaming_callback.py tests/test_ocr_job_worker.py tests/test_ocr_job_routes.py -q 2>&1 | tail -60) || (source .venv/bin/activate 2>/dev/null; pytest tests/test_ocr_streaming_callback.py tests/test_ocr_job_worker.py tests/test_ocr_job_routes.py -q 2>&1 | tail -60)"
+    timestamp: "2026-07-20T05:13:18.552Z"
+  - tool_use_id: "toolu_01Sd8LfmtxwSpHf8cscbEJwd"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/agent-front && which bun && bun test src/features/ocr/workbench/job-model.test.ts src/features/ocr/workbench/mode-state.test.ts src/features/audit/api.test.ts 2>&1 | tail -30"
+    timestamp: "2026-07-20T05:15:21.201Z"
+  - tool_use_id: "toolu_01PyLM3BsnPdTc8SKAS2UZy8"
+    tool: "Bash"
+    result: pass
+    command: "python -m pytest tests/test_ocr_streaming_callback.py -q 2>&1 | tail -20"
+    timestamp: "2026-07-20T05:53:27.652Z"
+  - tool_use_id: "toolu_01CRJYwMyQQkTYLp5UiLa3QG"
+    tool: "Bash"
+    result: pass
+    command: "git show 3539392:server/ocr/pipeline.py > /tmp/pipeline_old.py && cp server/ocr/pipeline.py /tmp/pipeline_new_backup.py && cp /tmp/pipeline_old.py server/ocr/pipeline.py && python -m pytest tests/test_ocr_streaming_callback.py -k \"font_only_fallback or subset_augment_success or subset_failure\" -q 2>&1 | tail -60"
+    timestamp: "2026-07-20T05:53:29.493Z"
+  - tool_use_id: "toolu_01PKWJVYA4h1FMdp5GWNLFMF"
+    tool: "Bash"
+    result: pass
+    command: "pwd; ls .venv/bin | grep -i pytest; source .venv/bin/activate 2>/dev/null; python -m pytest tests/test_ocr_streaming_callback.py -k \"font_only_fallback or subset_augment_success or subset_failure\" -q 2>&1 | tail -80"
+    timestamp: "2026-07-20T05:53:45.244Z"
+  - tool_use_id: "toolu_01Qa2ZofZvEAWnaRU2KmYfHU"
+    tool: "Bash"
+    result: pass
+    command: "cp /tmp/pipeline_new_backup.py server/ocr/pipeline.py && git diff --stat server/ocr/pipeline.py && python -m pytest tests/test_ocr_streaming_callback.py -q 2>&1 | tail -20"
+    timestamp: "2026-07-20T05:55:35.884Z"
+  - tool_use_id: "toolu_01GYbaA9VodBXgfS2hzAEBua"
+    tool: "Bash"
+    result: pass
+    command: "source .venv/bin/activate && git diff --stat server/ocr/pipeline.py && python -m pytest tests/test_ocr_streaming_callback.py -q 2>&1 | tail -20"
+    timestamp: "2026-07-20T05:55:45.151Z"
+  - tool_use_id: "toolu_01DbEnpew6RdS3wDEwmKm7DQ"
+    tool: "Bash"
+    result: pass
+    command: "source .venv/bin/activate && python -m pytest tests/ -k \"ocr\" -q 2>&1 | tail -30"
+    timestamp: "2026-07-20T05:55:57.801Z"

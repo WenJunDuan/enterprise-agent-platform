@@ -51,6 +51,11 @@ T1 → T2/T3（可并行）→ T4（红区 worktree，依赖 T2 契约冻结）�
 ## 待续
 D9 impl 五任务全绿。System 路径 ship 前置:review 三件套(reviewer+spec-compliance+evaluator)→ runtime-verify(实跑 /ocr/jobs + 前端点击流)→ polish → review-manifest.yaml。待用户定推进节奏。
 
+## 用户指定收尾动作(2026-07-20)
+D9 彻底 ship 收口后,用 **fable5**(claude-fable-5)对**全局代码 + .ai_state** 做一遍扫描:
+代码侧=架构一致性/跨模块债/D9 OCR job 层与 tender·audit 耦合面;
+.ai_state 侧=roadmap vs 实际盘面对齐/pointers·决策档陈旧漂移/D4 拆服务倾向对后续 item 影响。
+
 > T2+T3 合并为一个 generator 一次做完（共享 job 生命周期契约,耦合紧,避免并行 worktree 冲突）。
 
 **待用户 GO 后开工（GO 前勿写代码）。**
