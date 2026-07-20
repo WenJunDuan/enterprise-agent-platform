@@ -36,6 +36,17 @@ tdd-evidence 红绿时间戳+AC mapping),对 prompt 文本修复无法诚实产�
 `path=Bugfix/Hotfix` 或专用标记); ② 子范围修复另立独立 Bugfix sprint slug(切换 current_sprint_slug
 走 fix-note.md 轻契约); ③ ship 契约按变更面分级(≤N 行 no-harness 变更走轻门)。
 
+### P2 已修复 (2026-07-20, 采纳方向③)
+
+delivery-gate 增设**轻门禁**: ship 时若净 diff(对 upstream)≤60 行且仅触及文档/配置/依赖/
+.ai_state/测试(排除 hooks/settings/源码逻辑),只校验 roadmap 一致性,跳过 review-manifest/
+tdd-evidence/三件套;源码/harness/超预算仍走完整契约(fail-closed)。.ai_state 计入文件面但不计入
+行预算(规避 token-usage 抖动误判)。四文件均落地: ~/.claude + ~/.codex 安装态 + Rlues/vibeCoding/
+{claude,codex}/9.9.3 源仓。验证: CC 真 hook 调用(stage=ship + .ai_state-only diff → 空输出/exit0
+轻门通过);CX py_compile + 分类端口 10/10 PASS;源==装 diff 一致。已 push Rlues f8c214c(P2)+
+40b0637(P1),origin/main 同步。**push 正道**(替代"切 ship→推→回 plan"): pre-bash-guard 认
+`ATHENA_ALLOW_PUSH=1` 环境标(hook line 300),对非 sprint/源仓维护性 push 直接放行,零状态篡改零伪造。
+
 ### 本会话处置(不绕过, 如实记账)
 
 stage 由 ship 回退 plan(sprint 本体确未 ship, 之前切 ship 是记账错误); 修复本体已 push

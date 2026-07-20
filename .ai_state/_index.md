@@ -5,7 +5,7 @@ version: "9.6.4"
 
 # === PACE 路由状态 ===
 path: "System" # 文档智能 program 2026-07-doc-intelligence 立项：四波次 D1-D11（地基/质量/结构/体验），旧 tender-program 已收口(S7/S9 结转,S8 用户推迟)
-stage: "plan" # 2026-07-19: D11 全交付 + E4 dependabot 修复(8 包升级/pip-audit 零漏洞)全 push origin(6cbfc2b 同步);本机盘面见底(D4/D5/D9/D8-runbook 卡部署机),等用户方向;delivery-gate 9.9.3 结构性 bug 见 proposals.md
+stage: "plan" # 2026-07-20: 9.9.3 ship 契约结构性 bug 已根治(P1 validateRoadmap 中程必挂 + P2③ 轻门禁 + stages.md 合法推送指引;四文件 cc/cx 装态+源仓全落地,Rlues push 40b0637/f8c214c/60103b1);push 正道=ATHENA_ALLOW_PUSH=1(见 memory)。前情 2026-07-19: D11 全交付 + E4 dependabot 全 push origin(6cbfc2b);本机盘面见底(D4/D5/D9/D8-runbook 卡部署机),等用户方向
 current_sprint_slug: "2026-07-18-tender-discipline-residuals" # D11(立项 2026-07-19; 前 D3 prompt-single-source 已 done+归档)
 current_roadmap_slug: "2026-07-doc-intelligence"
 skip_polish: false
