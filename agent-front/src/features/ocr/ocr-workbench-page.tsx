@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useReducer } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { FileSearch, FileUp, Loader2, Play, Sparkles, X } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -19,9 +19,10 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
-import { getOcrJob, submitOcrJob } from '@/features/audit/api'
+import { fillOcr, getOcrJob, submitOcrJob } from '@/features/audit/api'
 import type {
   FormFillResult,
   OcrExtractItem,
@@ -38,6 +39,11 @@ import {
 } from './workbench/job-model'
 import { MOCK_EXTRACT_ITEMS, MOCK_FORM_FILL } from './workbench/mock-data'
 import {
+  createInitialOcrWorkbenchState,
+  ocrWorkbenchReducer,
+  type OcrWorkbenchMode,
+} from './workbench/mode-state'
+import {
   CONFIDENCE_STYLE,
   ROUTE_STYLE,
   confidenceLevel,
@@ -46,39 +52,42 @@ import {
   type OcrUploadFile,
 } from './workbench/shared'
 
-const IN_PROGRESS_PHASES = new Set<OcrJobPhase>([
+// 2026-07-20 用户拍板：不下线回填，改为「识别+回填」(模式 A，默认) + 「流式识别」(模式 B) 双能力
+// 并存，一个 Tabs 切换驱动 ocrWorkbenchReducer（见 workbench/mode-state.ts）。模式 A 完整恢复
+// 改动前的 fillOcr 同步提交 → FillPanel 渲染路径；模式 B 是 D9 streaming-ocr T4 的渐进渲染实现。
+
+const NO_REAL_FILES_MESSAGE = '请先选择真实文件，或使用“加载示例”预览。'
+const NO_REAL_FILES_MESSAGE_STREAM = '请先选择真实文件。'
+
+const STREAM_BUSY_PHASES = new Set<OcrJobPhase>([
   'submitting',
   'queued',
   'running',
 ])
 
-function isBusyPhase(phase: OcrJobPhase): boolean {
-  return IN_PROGRESS_PHASES.has(phase)
-}
-
 function UploadCard({
   files,
-  phase,
+  busy,
+  description,
   onAddFiles,
   onRemoveFile,
   onRecognize,
   onLoadSample,
 }: {
   files: OcrUploadFile[]
-  phase: OcrJobPhase
+  busy: boolean
+  description: string
   onAddFiles: (files: FileList | null) => void
   onRemoveFile: (id: string) => void
   onRecognize: () => void
-  onLoadSample: () => void
+  /** 未传时不渲染「加载示例」——模式 B（流式识别）没有可复用的同步 mock 形态，不硬凑。 */
+  onLoadSample?: () => void
 }) {
-  const busy = isBusyPhase(phase)
   return (
     <Card>
       <CardHeader>
         <CardTitle>文档上传</CardTitle>
-        <CardDescription>
-          上传合同、PDF、Excel 或图片后按页渐进识别。
-        </CardDescription>
+        <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent className='space-y-4'>
         <label className='flex min-h-40 cursor-pointer flex-col items-center justify-center gap-3 rounded-lg border border-dashed bg-muted/20 p-6 text-center'>
@@ -100,10 +109,12 @@ function UploadCard({
             <Play className='size-4' />
             {busy ? '识别中' : '开始识别'}
           </Button>
-          <Button variant='outline' onClick={onLoadSample} disabled={busy}>
-            <Sparkles className='size-4' />
-            加载示例
-          </Button>
+          {onLoadSample ? (
+            <Button variant='outline' onClick={onLoadSample} disabled={busy}>
+              <Sparkles className='size-4' />
+              加载示例
+            </Button>
+          ) : null}
         </div>
 
         <div className='space-y-2'>
@@ -140,204 +151,83 @@ function UploadCard({
   )
 }
 
-/** 「加载示例」演示专用：复用同步 /ocr/fill 响应形态渲染（保留原有整文件识别底稿展示）。 */
-function MockExtractPanel({ items }: { items: OcrExtractItem[] }) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>识别底稿（示例）</CardTitle>
-        <CardDescription>
-          按文件展示直读、OCR、转人工或错误状态。
-        </CardDescription>
-      </CardHeader>
-      <CardContent className='space-y-3'>
-        {items.map((item, index) => {
-          const route = item.route ? ROUTE_STYLE[item.route] : null
-          return (
-            <div
-              key={`${item.path}-${index}`}
-              className='space-y-3 rounded-md border p-4'
-            >
-              <div className='flex flex-wrap items-center justify-between gap-2'>
-                <div className='min-w-0'>
-                  <div className='truncate font-medium'>{item.path}</div>
-                  <div className='text-xs text-muted-foreground'>
-                    {item.kind}
-                  </div>
-                </div>
-                {route ? (
-                  <Badge className={`${route.bg} ${route.text}`}>
-                    {route.label}
-                  </Badge>
-                ) : null}
-              </div>
-              {item.error ? (
-                <Alert variant='destructive'>
-                  <AlertDescription>{item.error}</AlertDescription>
-                </Alert>
-              ) : null}
-              {item.note ? (
-                <p className='text-sm text-muted-foreground'>{item.note}</p>
-              ) : null}
-              {item.blocks?.length ? (
-                <pre className='max-h-48 overflow-auto rounded-md bg-muted/40 p-3 text-xs'>
-                  {item.blocks.join('\n\n')}
-                </pre>
-              ) : null}
-              {item.tables?.length ? (
-                <div className='text-sm text-muted-foreground'>
-                  {item.tables.length} 个表格已识别
-                </div>
-              ) : null}
-              {item.pages?.length ? (
-                <div className='text-sm text-muted-foreground'>
-                  {item.pages.length} 页 OCR Markdown
-                </div>
-              ) : null}
-            </div>
-          )
-        })}
-      </CardContent>
-    </Card>
-  )
-}
-
-function JobUnitBlock({ unit }: { unit: OcrJobUnit }) {
-  const payload = unit.payload ?? {}
-  const errorText = unitErrorText(payload)
-  const content = unitDisplayText(payload)
-  const label = unit.page != null ? `第 ${unit.page} 页` : '整份文件'
-  return (
-    <div className='space-y-2'>
-      <div className='flex items-center gap-2 text-xs text-muted-foreground'>
-        <span>{label}</span>
-        {unit.status === 'error' ? (
-          <Badge variant='destructive'>识别失败</Badge>
-        ) : null}
-        {unit.from_cache ? <Badge variant='outline'>命中缓存</Badge> : null}
-      </div>
-      {errorText ? (
-        <Alert variant='destructive'>
-          <AlertDescription>{errorText}</AlertDescription>
-        </Alert>
-      ) : content ? (
-        <pre className='max-h-48 overflow-auto rounded-md bg-muted/40 p-3 text-xs'>
-          {content}
-        </pre>
-      ) : (
-        <p className='text-sm text-muted-foreground'>暂无可展示文本。</p>
-      )}
-    </div>
-  )
-}
-
-function JobFileGroupCard({ group }: { group: OcrJobFileGroup }) {
-  return (
-    <div className='space-y-3 rounded-md border p-4'>
-      <div className='truncate font-medium'>{group.file}</div>
-      {group.units.map((unit, index) => (
-        <JobUnitBlock
-          key={`${group.file}-${unit.page ?? 'file'}-${index}`}
-          unit={unit}
-        />
-      ))}
-    </div>
-  )
-}
-
-/** 页级流式识别底稿：来一个 unit 就渲一个（partial），不等全部完成；四态显式处理（ui-guidelines）。 */
-function JobResultsPanel({
-  phase,
-  progress,
-  errorDetail,
-  fileGroups,
-  onRetry,
-}: {
-  phase: OcrJobPhase
-  progress: { done: number; total: number } | null
-  errorDetail: string | null
-  fileGroups: OcrJobFileGroup[]
-  onRetry: () => void
-}) {
-  const loading = isBusyPhase(phase)
-  const loadingLabel =
-    phase === 'submitting'
-      ? '提交中…'
-      : phase === 'queued'
-        ? '排队中…'
-        : '识别中…'
-
+/** 模式 A「识别+回填」左栏：按文件展示同步 /ocr/fill 的识别底稿（恢复自改动前的 workbench）。 */
+function ExtractPanel({ items }: { items: OcrExtractItem[] }) {
   return (
     <Card>
       <CardHeader>
         <CardTitle>识别底稿</CardTitle>
         <CardDescription>
-          按文件 / 页渐进展示识别结果，页锚原样保真，不等全部完成再显示。
+          按文件展示直读、OCR、转人工或错误状态。
         </CardDescription>
       </CardHeader>
       <CardContent className='space-y-3'>
-        {loading ? (
-          <div
-            role='status'
-            className='flex items-center gap-2 text-sm text-muted-foreground'
-          >
-            <Loader2 className='size-4 animate-spin' aria-hidden='true' />
-            <span>
-              {loadingLabel}
-              {progress ? `（已完成 ${progress.done}/${progress.total}）` : ''}
-            </span>
+        {items.length === 0 ? (
+          <div className='rounded-md border p-4 text-sm text-muted-foreground'>
+            暂无识别结果。
           </div>
-        ) : null}
-
-        {phase === 'failed' ? (
-          <Alert variant='destructive'>
-            <FileSearch className='size-4' />
-            <AlertTitle>识别失败</AlertTitle>
-            <AlertDescription className='space-y-2'>
-              <p>{errorDetail ?? '任务未找到或已失效，请重新识别。'}</p>
-              <Button size='sm' variant='outline' onClick={onRetry}>
-                重试
-              </Button>
-            </AlertDescription>
-          </Alert>
-        ) : null}
-
-        {fileGroups.length === 0 ? (
-          phase === 'completed' ? (
-            <div className='rounded-md border p-4 text-sm text-muted-foreground'>
-              未识别到内容，请检查上传文件是否有效。
-            </div>
-          ) : phase === 'idle' ? (
-            <div className='rounded-md border p-4 text-sm text-muted-foreground'>
-              暂无识别结果。
-            </div>
-          ) : null
         ) : (
-          fileGroups.map((group) => (
-            <JobFileGroupCard key={group.file} group={group} />
-          ))
+          items.map((item, index) => {
+            const route = item.route ? ROUTE_STYLE[item.route] : null
+            return (
+              <div
+                key={`${item.path}-${index}`}
+                className='space-y-3 rounded-md border p-4'
+              >
+                <div className='flex flex-wrap items-center justify-between gap-2'>
+                  <div className='min-w-0'>
+                    <div className='truncate font-medium'>{item.path}</div>
+                    <div className='text-xs text-muted-foreground'>
+                      {item.kind}
+                    </div>
+                  </div>
+                  {route ? (
+                    <Badge className={`${route.bg} ${route.text}`}>
+                      {route.label}
+                    </Badge>
+                  ) : null}
+                </div>
+                {item.error ? (
+                  <Alert variant='destructive'>
+                    <AlertDescription>{item.error}</AlertDescription>
+                  </Alert>
+                ) : null}
+                {item.note ? (
+                  <p className='text-sm text-muted-foreground'>{item.note}</p>
+                ) : null}
+                {item.blocks?.length ? (
+                  <pre className='max-h-48 overflow-auto rounded-md bg-muted/40 p-3 text-xs'>
+                    {item.blocks.join('\n\n')}
+                  </pre>
+                ) : null}
+                {item.tables?.length ? (
+                  <div className='text-sm text-muted-foreground'>
+                    {item.tables.length} 个表格已识别
+                  </div>
+                ) : null}
+                {item.pages?.length ? (
+                  <div className='text-sm text-muted-foreground'>
+                    {item.pages.length} 页 OCR Markdown
+                  </div>
+                ) : null}
+              </div>
+            )
+          })
         )}
       </CardContent>
     </Card>
   )
 }
 
-function FillPanel({
-  fill,
-  isMock,
-}: {
-  fill: FormFillResult | null
-  isMock: boolean
-}) {
+/** 模式 A「识别+回填」右栏：/ocr/fill 的表单回填结果（恢复自改动前的 workbench）。 */
+function FillPanel({ fill }: { fill: FormFillResult | null }) {
   if (!fill) {
     return (
       <Card>
         <CardHeader>
           <CardTitle>回填结果</CardTitle>
           <CardDescription>
-            {isMock
-              ? '识别后展示字段置信度和付款节点子表。'
-              : '当前页面为纯识别渐进渲染，/ocr/jobs 暂不做表单回填。'}
+            识别后展示字段置信度和付款节点子表。
           </CardDescription>
         </CardHeader>
         <CardContent className='rounded-md border p-4 text-sm text-muted-foreground'>
@@ -448,114 +338,279 @@ function FillPanel({
   )
 }
 
-export function OcrWorkbenchPage() {
-  const [files, setFiles] = useState<OcrUploadFile[]>([])
-  const [jobId, setJobId] = useState<string | null>(null)
-  const [submitError, setSubmitError] = useState<string | null>(null)
-  const [mockItems, setMockItems] = useState<OcrExtractItem[]>([])
-  const [mockFill, setMockFill] = useState<FormFillResult | null>(null)
+function JobUnitBlock({ unit }: { unit: OcrJobUnit }) {
+  const payload = unit.payload ?? {}
+  const errorText = unitErrorText(payload)
+  const content = unitDisplayText(payload)
+  const label = unit.page != null ? `第 ${unit.page} 页` : '整份文件'
+  return (
+    <div className='space-y-2'>
+      <div className='flex items-center gap-2 text-xs text-muted-foreground'>
+        <span>{label}</span>
+        {unit.status === 'error' ? (
+          <Badge variant='destructive'>识别失败</Badge>
+        ) : null}
+        {unit.from_cache ? <Badge variant='outline'>命中缓存</Badge> : null}
+      </div>
+      {errorText ? (
+        <Alert variant='destructive'>
+          <AlertDescription>{errorText}</AlertDescription>
+        </Alert>
+      ) : content ? (
+        <pre className='max-h-48 overflow-auto rounded-md bg-muted/40 p-3 text-xs'>
+          {content}
+        </pre>
+      ) : (
+        <p className='text-sm text-muted-foreground'>暂无可展示文本。</p>
+      )}
+    </div>
+  )
+}
 
-  const submitMutation = useMutation({ mutationFn: submitOcrJob })
+function JobFileGroupCard({ group }: { group: OcrJobFileGroup }) {
+  return (
+    <div className='space-y-3 rounded-md border p-4'>
+      <div className='truncate font-medium'>{group.file}</div>
+      {group.units.map((unit, index) => (
+        <JobUnitBlock
+          key={`${group.file}-${unit.page ?? 'file'}-${index}`}
+          unit={unit}
+        />
+      ))}
+    </div>
+  )
+}
+
+/** 模式 B「流式识别」结果面板：来一个 unit 就渲一个（partial），不等全部完成；四态显式处理（ui-guidelines）。 */
+function JobResultsPanel({
+  phase,
+  progress,
+  errorDetail,
+  fileGroups,
+  onRetry,
+}: {
+  phase: OcrJobPhase
+  progress: { done: number; total: number } | null
+  errorDetail: string | null
+  fileGroups: OcrJobFileGroup[]
+  onRetry: () => void
+}) {
+  const loading = STREAM_BUSY_PHASES.has(phase)
+  const loadingLabel =
+    phase === 'submitting'
+      ? '提交中…'
+      : phase === 'queued'
+        ? '排队中…'
+        : '识别中…'
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>识别底稿（流式）</CardTitle>
+        <CardDescription>
+          按文件 / 页渐进展示识别结果，页锚原样保真，不等全部完成再显示。
+        </CardDescription>
+      </CardHeader>
+      <CardContent className='space-y-3'>
+        {loading ? (
+          <div
+            role='status'
+            className='flex items-center gap-2 text-sm text-muted-foreground'
+          >
+            <Loader2 className='size-4 animate-spin' aria-hidden='true' />
+            <span>
+              {loadingLabel}
+              {progress ? `（已完成 ${progress.done}/${progress.total}）` : ''}
+            </span>
+          </div>
+        ) : null}
+
+        {phase === 'failed' ? (
+          <Alert variant='destructive'>
+            <FileSearch className='size-4' />
+            <AlertTitle>识别失败</AlertTitle>
+            <AlertDescription className='space-y-2'>
+              <p>{errorDetail ?? '任务未找到或已失效，请重新识别。'}</p>
+              <Button size='sm' variant='outline' onClick={onRetry}>
+                重试
+              </Button>
+            </AlertDescription>
+          </Alert>
+        ) : null}
+
+        {fileGroups.length === 0 ? (
+          phase === 'completed' ? (
+            <div className='rounded-md border p-4 text-sm text-muted-foreground'>
+              未识别到内容，请检查上传文件是否有效。
+            </div>
+          ) : phase === 'idle' ? (
+            <div className='rounded-md border p-4 text-sm text-muted-foreground'>
+              暂无识别结果。
+            </div>
+          ) : null
+        ) : (
+          fileGroups.map((group) => (
+            <JobFileGroupCard key={group.file} group={group} />
+          ))
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+export function OcrWorkbenchPage() {
+  const [state, dispatch] = useReducer(
+    ocrWorkbenchReducer,
+    undefined,
+    createInitialOcrWorkbenchState
+  )
+
+  const fillSubmitMutation = useMutation({
+    mutationFn: (files: File[]) => fillOcr(files),
+  })
+  const streamSubmitMutation = useMutation({ mutationFn: submitOcrJob })
 
   const jobQuery = useQuery({
-    queryKey: ['ocr-job', jobId],
+    queryKey: ['ocr-job', state.stream.jobId],
     // 未知/跨租户 request_id → 404；轮询函数吞掉错误归一为 null，交 deriveOcrJobPhase/
     // ocrJobRefetchInterval 当终态处理（继承 tender-review activeEvalQuery 先例）。
-    queryFn: () => getOcrJob(jobId as string).catch(() => null),
-    enabled: Boolean(jobId),
+    queryFn: () => getOcrJob(state.stream.jobId as string).catch(() => null),
+    enabled: Boolean(state.stream.jobId),
     refetchInterval: (query) => ocrJobRefetchInterval(query.state.data),
   })
 
-  const phase = deriveOcrJobPhase({
-    isSubmitting: submitMutation.isPending,
-    jobId,
+  const streamPhase = deriveOcrJobPhase({
+    isSubmitting: streamSubmitMutation.isPending,
+    jobId: state.stream.jobId,
     jobData: jobQuery.data,
   })
-  const fileGroups = groupUnitsByFile(jobQuery.data?.results ?? [])
+  const streamFileGroups = groupUnitsByFile(jobQuery.data?.results ?? [])
 
   // 轮询状态 → 文件行状态同步（外部数据驱动 UI 展示，非用户交互触发，理由同
-  // use-tender-review-page.ts activeEvalQuery 的响应 effect）。
-  /* eslint-disable react-hooks/set-state-in-effect */
+  // use-tender-review-page.ts activeEvalQuery 的响应 effect）；只在流式模式挂载时同步，
+  // 离开流式模式后 state.stream 已被 switch_mode 清空，不需要再追。dispatch（非 useState
+  // setter）不触发 react-hooks/set-state-in-effect，故此处不需要 disable 注释。
   useEffect(() => {
-    if (phase === 'completed') {
-      setFiles((current) =>
-        current.map((file) => ({ ...file, status: 'done' }))
-      )
-    } else if (phase === 'failed') {
-      setFiles((current) =>
-        current.map((file) => ({ ...file, status: 'error' }))
-      )
-    }
-  }, [phase])
-  /* eslint-enable react-hooks/set-state-in-effect */
+    if (state.mode !== 'stream') return
+    if (streamPhase === 'completed')
+      dispatch({ type: 'stream/mark_files', status: 'done' })
+    else if (streamPhase === 'failed')
+      dispatch({ type: 'stream/mark_files', status: 'error' })
+  }, [state.mode, streamPhase])
 
-  function addFiles(fileList: FileList | null) {
+  function switchMode(mode: OcrWorkbenchMode) {
+    dispatch({ type: 'switch_mode', mode })
+  }
+
+  // ── 模式 A「识别+回填」──────────────────────────────────────────────
+  function addFillFiles(fileList: FileList | null) {
     if (!fileList) return
-    setFiles((current) => [
-      ...current,
-      ...Array.from(fileList).map((file) => ({
+    dispatch({
+      type: 'fill/add_files',
+      files: Array.from(fileList).map((file) => ({
         id: nextFileId(),
         name: file.name,
         size: file.size,
         status: 'pending' as const,
         file,
       })),
-    ])
+    })
   }
 
-  function removeFile(id: string) {
-    setFiles((current) => current.filter((file) => file.id !== id))
+  function removeFillFile(id: string) {
+    dispatch({ type: 'fill/remove_file', id })
   }
 
-  async function recognize() {
-    const realFiles = files
+  async function recognizeFill() {
+    const realFiles = state.fill.files
       .map((file) => file.file)
       .filter((file): file is File => Boolean(file))
     if (realFiles.length === 0) {
-      setSubmitError('请先选择真实文件，或使用“加载示例”预览。')
+      dispatch({
+        type: 'fill/submit_validation_error',
+        message: NO_REAL_FILES_MESSAGE,
+      })
       return
     }
 
-    setSubmitError(null)
-    setMockItems([])
-    setMockFill(null)
-    setJobId(null)
-    setFiles((current) =>
-      current.map((file) => ({ ...file, status: 'recognizing' }))
-    )
-
+    dispatch({ type: 'fill/submit_start' })
     try {
-      const accepted = await submitMutation.mutateAsync(realFiles)
-      setJobId(accepted.request_id)
+      // 自适应抽取：不传固定 form_schema，由后端按文档内容抽出字段集回填。
+      const response = await fillSubmitMutation.mutateAsync(realFiles)
+      dispatch({
+        type: 'fill/submit_success',
+        items: response.results,
+        fill: response.fill,
+      })
     } catch (recognizeError) {
-      setSubmitError(
-        recognizeError instanceof Error
-          ? recognizeError.message
-          : '识别提交失败'
-      )
-      setFiles((current) =>
-        current.map((file) => ({ ...file, status: 'error' }))
-      )
+      dispatch({
+        type: 'fill/submit_error',
+        message:
+          recognizeError instanceof Error ? recognizeError.message : '识别失败',
+      })
     }
   }
 
-  function loadSample() {
-    setSubmitError(null)
-    setJobId(null)
-    setMockItems(MOCK_EXTRACT_ITEMS)
-    setMockFill(MOCK_FORM_FILL)
-    setFiles(
-      MOCK_EXTRACT_ITEMS.map((item) => ({
+  function loadFillSample() {
+    dispatch({
+      type: 'fill/load_sample',
+      items: MOCK_EXTRACT_ITEMS,
+      fill: MOCK_FORM_FILL,
+      files: MOCK_EXTRACT_ITEMS.map((item) => ({
         id: nextFileId(),
         name: item.path.split('/').pop() || item.path,
         size: 0,
         status: 'done' as const,
         route: item.route,
-      }))
-    )
+      })),
+    })
   }
 
-  const isMock = mockItems.length > 0
+  // ── 模式 B「流式识别」──────────────────────────────────────────────
+  function addStreamFiles(fileList: FileList | null) {
+    if (!fileList) return
+    dispatch({
+      type: 'stream/add_files',
+      files: Array.from(fileList).map((file) => ({
+        id: nextFileId(),
+        name: file.name,
+        size: file.size,
+        status: 'pending' as const,
+        file,
+      })),
+    })
+  }
+
+  function removeStreamFile(id: string) {
+    dispatch({ type: 'stream/remove_file', id })
+  }
+
+  async function recognizeStream() {
+    const realFiles = state.stream.files
+      .map((file) => file.file)
+      .filter((file): file is File => Boolean(file))
+    if (realFiles.length === 0) {
+      dispatch({
+        type: 'stream/submit_validation_error',
+        message: NO_REAL_FILES_MESSAGE_STREAM,
+      })
+      return
+    }
+
+    dispatch({ type: 'stream/submit_start' })
+    try {
+      const accepted = await streamSubmitMutation.mutateAsync(realFiles)
+      dispatch({ type: 'stream/submit_accepted', jobId: accepted.request_id })
+    } catch (recognizeError) {
+      dispatch({
+        type: 'stream/submit_error',
+        message:
+          recognizeError instanceof Error
+            ? recognizeError.message
+            : '识别提交失败',
+      })
+    }
+  }
 
   return (
     <>
@@ -564,42 +619,73 @@ export function OcrWorkbenchPage() {
         <div>
           <h1 className='text-2xl font-semibold tracking-tight'>OCR 识别</h1>
           <p className='text-sm text-muted-foreground'>
-            上传材料后按页渐进生成识别底稿。
+            识别+回填一次性提交映射到目标表单，或按页流式渐进查看识别结果。
           </p>
         </div>
 
-        {submitError ? (
-          <Alert variant='destructive'>
-            <FileSearch className='size-4' />
-            <AlertTitle>提交失败</AlertTitle>
-            <AlertDescription>{submitError}</AlertDescription>
-          </Alert>
-        ) : null}
+        <Tabs
+          value={state.mode}
+          onValueChange={(value) => switchMode(value as OcrWorkbenchMode)}
+        >
+          <TabsList>
+            <TabsTrigger value='fill'>识别+回填</TabsTrigger>
+            <TabsTrigger value='stream'>流式识别</TabsTrigger>
+          </TabsList>
 
-        <div className='grid gap-4 xl:grid-cols-[420px_1fr]'>
-          <div className='space-y-4'>
-            <UploadCard
-              files={files}
-              phase={phase}
-              onAddFiles={addFiles}
-              onRemoveFile={removeFile}
-              onRecognize={() => void recognize()}
-              onLoadSample={loadSample}
-            />
-            {isMock ? (
-              <MockExtractPanel items={mockItems} />
-            ) : (
+          <TabsContent value='fill' className='space-y-5'>
+            {state.fill.error ? (
+              <Alert variant='destructive'>
+                <FileSearch className='size-4' />
+                <AlertTitle>识别失败</AlertTitle>
+                <AlertDescription>{state.fill.error}</AlertDescription>
+              </Alert>
+            ) : null}
+
+            <div className='grid gap-4 xl:grid-cols-[420px_1fr]'>
+              <div className='space-y-4'>
+                <UploadCard
+                  files={state.fill.files}
+                  busy={state.fill.phase === 'recognizing'}
+                  description='上传合同、PDF、Excel 或图片后同步识别并回填表单。'
+                  onAddFiles={addFillFiles}
+                  onRemoveFile={removeFillFile}
+                  onRecognize={() => void recognizeFill()}
+                  onLoadSample={loadFillSample}
+                />
+                <ExtractPanel items={state.fill.items} />
+              </div>
+              <FillPanel fill={state.fill.fill} />
+            </div>
+          </TabsContent>
+
+          <TabsContent value='stream' className='space-y-5'>
+            {state.stream.submitError ? (
+              <Alert variant='destructive'>
+                <FileSearch className='size-4' />
+                <AlertTitle>提交失败</AlertTitle>
+                <AlertDescription>{state.stream.submitError}</AlertDescription>
+              </Alert>
+            ) : null}
+
+            <div className='grid gap-4 xl:grid-cols-[420px_1fr]'>
+              <UploadCard
+                files={state.stream.files}
+                busy={STREAM_BUSY_PHASES.has(streamPhase)}
+                description='上传合同、PDF、Excel 或图片后按页渐进识别，不必等整份处理完成。'
+                onAddFiles={addStreamFiles}
+                onRemoveFile={removeStreamFile}
+                onRecognize={() => void recognizeStream()}
+              />
               <JobResultsPanel
-                phase={phase}
+                phase={streamPhase}
                 progress={jobQuery.data?.progress ?? null}
                 errorDetail={jobQuery.data?.error_detail ?? null}
-                fileGroups={fileGroups}
-                onRetry={() => void recognize()}
+                fileGroups={streamFileGroups}
+                onRetry={() => void recognizeStream()}
               />
-            )}
-          </div>
-          <FillPanel fill={mockFill} isMock={isMock} />
-        </div>
+            </div>
+          </TabsContent>
+        </Tabs>
       </Main>
     </>
   )
