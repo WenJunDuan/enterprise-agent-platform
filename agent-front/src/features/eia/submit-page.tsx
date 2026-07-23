@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/table'
 import { Header } from '@/components/layout/header'
 import { Main } from '@/components/layout/main'
+import { submitEiaBatch } from './api'
 import { CategoryUploadCard } from './components/category-upload-card'
 import { ReportCard } from './components/report-card'
 import { ReportSidePanel } from './components/report-side-panel'
@@ -60,16 +61,6 @@ function nextFileId(): string {
   return `eia-file-${Date.now()}-${fileIdCounter}`
 }
 
-/** 受理编号：本地生成的演示编号（无后端时的 mock-first 占位，接线时由后端下发）。 */
-function createBatchNo(): string {
-  const now = new Date()
-  const y = now.getFullYear()
-  const m = String(now.getMonth() + 1).padStart(2, '0')
-  const d = String(now.getDate()).padStart(2, '0')
-  const seq = String(Math.floor(Math.random() * 900) + 100)
-  return `HP-${y}${m}${d}-${seq}`
-}
-
 function buildReports(
   activeCategories: EiaCategory[],
   batchNo: string
@@ -94,7 +85,12 @@ export function EiaSubmitPage() {
     undefined,
     createInitialEiaWizardState
   )
-  const [batchNo, setBatchNo] = useState(createBatchNo)
+  const [batchNo, setBatchNo] = useState('')
+
+  // 受理编号经 api.ts 的 mock 接缝下发（真实后端接线后改由响应带回），页面层不再自己造号。
+  useEffect(() => {
+    void submitEiaBatch([]).then((result) => setBatchNo(result.batchNo))
+  }, [])
 
   const activeCategories = getActiveCategories(state.files)
   const totalFiles = getTotalFileCount(state.files)
@@ -154,7 +150,7 @@ export function EiaSubmitPage() {
 
   function resetWizard() {
     dispatch({ type: 'reset_wizard' })
-    setBatchNo(createBatchNo())
+    void submitEiaBatch([]).then((result) => setBatchNo(result.batchNo))
   }
 
   function downloadReport(report: EiaReport) {
