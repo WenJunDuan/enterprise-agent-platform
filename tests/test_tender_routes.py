@@ -739,3 +739,167 @@ def test_create_project_blank_tender_no_anonymous(client):
     assert p1.status_code == 200 and p2.status_code == 200, (p1.text, p2.text)
     assert p1.json()["project_id"] != p2.json()["project_id"]  # 匿名允许多条
     assert p1.json()["tender_no"] is None  # 空串归一为 None
+
+
+# ── X2: 案卷头信息（投标单位名称/项目名）留存与展示 ────────────────────────────
+
+
+def test_results_endpoint_exposes_agent_bidder_name(client):
+    """GET /projects/{id}/results 的 bidder_name = agent 从结论识别的名称（results 行拍平值）。"""
+    from server.stores.result_store import archive_result_payload
+
+    pid = _create_project(client, tender_no=f"R-{uuid.uuid4().hex[:8]}")["project_id"]
+    case = _make_dir_case("test-proj-bidder-name", pid)
+    try:
+        rid = client.post(
+            f"/tender/projects/{pid}/evaluate",
+            json={"mode": "directory", "directory_path": str(case)},
+            headers=_AUTH,
+        ).json()["request_id"]
+        archive_result_payload(
+            request_id=rid,
+            tenant="acme",
+            project_id=pid,
+            bid_id="bd-agent-1",
+            conversation_id="c1",
+            claude_session_id=None,
+            resume_session_id=None,
+            fork_from_session_id=None,
+            schema_name=EVAL_SCHEMA,
+            request_mode="structured",
+            result_subtype="success",
+            cost_usd=0.0,
+            prompt_preview="x",
+            response={
+                "verdict": "approved",
+                "claim_id": "BID-AGENT-1",
+                "extracted_data": {"bidder_info": {"bidder_name": "AI识别建设有限公司"}},
+            },
+        )
+        results = client.get(f"/tender/projects/{pid}/results", headers=_AUTH).json()
+        row = next(r for r in results if r["request_id"] == rid)
+        assert row["bidder_name"] == "AI识别建设有限公司"
+    finally:
+        shutil.rmtree(case, ignore_errors=True)
+
+
+def test_roster_hand_filled_bidder_name_overrides_agent_name(client):
+    """手填优先端到端：roster 的 bidder_name 手填非空时以手填为准（非默认值路径断言）。"""
+    from server.stores.result_store import archive_result_payload
+    from server.stores.tender_doc_store import upsert_bid_doc
+
+    pid = _create_project(client, tender_no=f"R-{uuid.uuid4().hex[:8]}")["project_id"]
+    case = _make_dir_case("test-proj-bidder-hand", pid)
+    try:
+        rid = client.post(
+            f"/tender/projects/{pid}/evaluate",
+            json={"mode": "directory", "directory_path": str(case)},
+            headers=_AUTH,
+        ).json()["request_id"]
+        archive_result_payload(
+            request_id=rid,
+            tenant="acme",
+            project_id=pid,
+            bid_id="bd-hand-1",
+            conversation_id="c1",
+            claude_session_id=None,
+            resume_session_id=None,
+            fork_from_session_id=None,
+            schema_name=EVAL_SCHEMA,
+            request_mode="structured",
+            result_subtype="success",
+            cost_usd=0.0,
+            prompt_preview="x",
+            response={
+                "verdict": "approved",
+                "claim_id": "BID-HAND-1",
+                "extracted_data": {"bidder_info": {"bidder_name": "AI识别的公司名"}},
+            },
+        )
+        upsert_bid_doc(
+            project_id=pid,
+            bid_id="bd-hand-1",
+            tenant="acme",
+            bidder_name="用户手填公司名",
+            bid_files="[]",
+        )
+        detail = client.get(f"/tender/projects/{pid}", headers=_AUTH).json()
+        bid = next(b for b in detail["bids"] if b["request_id"] == rid)
+        assert bid["bidder_name"] == "用户手填公司名"
+    finally:
+        shutil.rmtree(case, ignore_errors=True)
+
+
+def test_roster_falls_back_to_agent_name_without_hand_fill(client):
+    """无手填时 roster 回退到 agent 识别名称（非空转分支的另一半：agent baseline 可达）。"""
+    from server.stores.result_store import archive_result_payload
+
+    pid = _create_project(client, tender_no=f"R-{uuid.uuid4().hex[:8]}")["project_id"]
+    case = _make_dir_case("test-proj-bidder-noHand", pid)
+    try:
+        rid = client.post(
+            f"/tender/projects/{pid}/evaluate",
+            json={"mode": "directory", "directory_path": str(case)},
+            headers=_AUTH,
+        ).json()["request_id"]
+        archive_result_payload(
+            request_id=rid,
+            tenant="acme",
+            project_id=pid,
+            bid_id="bd-nohand-1",
+            conversation_id="c1",
+            claude_session_id=None,
+            resume_session_id=None,
+            fork_from_session_id=None,
+            schema_name=EVAL_SCHEMA,
+            request_mode="structured",
+            result_subtype="success",
+            cost_usd=0.0,
+            prompt_preview="x",
+            response={
+                "verdict": "approved",
+                "claim_id": "BID-NOHAND-1",
+                "extracted_data": {"bidder_info": {"bidder_name": "AI识别公司无手填"}},
+            },
+        )
+        detail = client.get(f"/tender/projects/{pid}", headers=_AUTH).json()
+        bid = next(b for b in detail["bids"] if b["request_id"] == rid)
+        assert bid["bidder_name"] == "AI识别公司无手填"
+    finally:
+        shutil.rmtree(case, ignore_errors=True)
+
+
+def test_roster_bid_id_none_degrades_without_crash(client):
+    """退化路径：结论 bid_id=None（非 prewarm 直提场景）时 roster 正常退化，不崩，bidder_name 为空。"""
+    from server.stores.result_store import archive_result_payload
+
+    pid = _create_project(client, tender_no=f"R-{uuid.uuid4().hex[:8]}")["project_id"]
+    case = _make_dir_case("test-proj-bidder-noBidId", pid)
+    try:
+        rid = client.post(
+            f"/tender/projects/{pid}/evaluate",
+            json={"mode": "directory", "directory_path": str(case)},
+            headers=_AUTH,
+        ).json()["request_id"]
+        archive_result_payload(
+            request_id=rid,
+            tenant="acme",
+            project_id=pid,
+            bid_id=None,
+            conversation_id="c1",
+            claude_session_id=None,
+            resume_session_id=None,
+            fork_from_session_id=None,
+            schema_name=EVAL_SCHEMA,
+            request_mode="structured",
+            result_subtype="success",
+            cost_usd=0.0,
+            prompt_preview="x",
+            response={"verdict": "approved", "claim_id": "BID-NOBID-1"},
+        )
+        detail = client.get(f"/tender/projects/{pid}", headers=_AUTH)
+        assert detail.status_code == 200, detail.text
+        bid = next(b for b in detail.json()["bids"] if b["request_id"] == rid)
+        assert bid["bidder_name"] is None
+    finally:
+        shutil.rmtree(case, ignore_errors=True)
