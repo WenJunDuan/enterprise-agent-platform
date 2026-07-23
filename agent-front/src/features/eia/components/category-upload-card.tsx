@@ -1,4 +1,12 @@
-import { FileUp, X } from 'lucide-react'
+import {
+  Droplets,
+  FileUp,
+  Mountain,
+  Volume2,
+  Wind,
+  X,
+  type LucideIcon,
+} from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import {
   Card,
@@ -8,7 +16,35 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { formatFileSize } from '../format'
-import type { EiaCategoryDef, EiaUploadFile } from '../types'
+import type { EiaCategory, EiaCategoryDef, EiaUploadFile } from '../types'
+
+// 四类要素的语义色 icon(用户 2026-07-23:水土气声用带颜色的 icon,颜色克制复用)。
+// 仅染 icon 方块,双主题各给一档亮度,不外溢到卡片其他部位。
+const CATEGORY_ICON: Record<
+  EiaCategory,
+  { Icon: LucideIcon; className: string }
+> = {
+  water: {
+    Icon: Droplets,
+    className:
+      'border-sky-500/40 bg-sky-500/10 text-sky-600 dark:text-sky-400',
+  },
+  soil: {
+    Icon: Mountain,
+    className:
+      'border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400',
+  },
+  air: {
+    Icon: Wind,
+    className:
+      'border-teal-500/40 bg-teal-500/10 text-teal-600 dark:text-teal-400',
+  },
+  noise: {
+    Icon: Volume2,
+    className:
+      'border-violet-500/40 bg-violet-500/10 text-violet-600 dark:text-violet-400',
+  },
+}
 
 /**
  * 提交向导第一步的单个分类上传卡（水/土/气/声）。每类可多选、可留空，
@@ -25,12 +61,17 @@ export function CategoryUploadCard({
   onAddFiles: (fileList: FileList | null) => void
   onRemoveFile: (id: string) => void
 }) {
+  const { Icon: CategoryIcon, className: iconClassName } =
+    CATEGORY_ICON[def.key]
   return (
     <Card>
       <CardHeader>
         <div className='flex items-center gap-3'>
-          <span className='flex size-9 flex-none items-center justify-center rounded-md border-2 border-primary text-lg font-semibold text-primary'>
-            {def.glyph}
+          <span
+            className={`flex size-9 flex-none items-center justify-center rounded-md border-2 ${iconClassName}`}
+            aria-hidden='true'
+          >
+            <CategoryIcon className='size-5' />
           </span>
           <div className='min-w-0 flex-1'>
             <CardTitle>{def.title}</CardTitle>
