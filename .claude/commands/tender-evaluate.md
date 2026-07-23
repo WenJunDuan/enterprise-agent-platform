@@ -42,7 +42,7 @@ allowed-tools: Read, Glob, Skill, Task
 
 ### S2 事实抽取（先资格证明，再评分证据）
 - 按 `extracted_data.criteria` 的 `eligibility_rules[]` 与各评分项所需证据（及可选 `plan` 标注的"需读章节"），逐个/分批 `Read` 相关投标文件，抽取评标所需事实，对齐 `.claude/contracts/tender/extract-result.schema.json`。**读取优先级：先资格审查证明文件 / 主体资格 / 资质证书 / 项目负责人资格 / 信用承诺 / 主体库导入材料，再读评分项所需的业绩、技术、报价等材料。**
-  - 投标人、统一社会信用代码、法定代表人
+  - 投标人、统一社会信用代码、法定代表人。**投标单位案卷头**（`bidder_name`/`credit_code`/`source_refs`）以投标函/营业执照原文为准，钉入 `extracted_data.bidder_info`（对齐 `.claude/contracts/tender/bidder-info.schema.json`），识别不到的字段省略，不编造。
   - 拟派项目负责人：姓名 / 注册证号 / 出处（文件+页）
   - 业绩：每条 `项目名称 / 项目经理 / 出处（文件+页）`
   - 投标报价（**钉入 `extracted_data.bid_price` = `{amount: 数值, currency: "CNY"}`**，供后续多家价格横比统一收集）、章节-页码索引
@@ -109,6 +109,7 @@ allowed-tools: Read, Glob, Skill, Task
    - **整个回复必须是单个 JSON 对象**：**首字符是 `{`、末字符是 `}`**；分析/思考只能写在 `<think></think>` 内，`</think>` 之后只准有这一个 JSON 对象；**禁止任何英文散文、要点列表或 JSON 之外的解释性文字**（违反会致服务端解析失败、整单评标失败）。
    - **JSON 合法性（极重要，违反会致解析失败）**：字符串值内引用项目名 / 项目号 / 投标人 / 评分项时，**一律用中文引号「」或『』**，**严禁在字符串值里用半角双引号 `"`**（会提前闭合字符串、破坏 JSON）；确需则转义为 `\"`。例：写 `"未响应「华为南通」项目"`，不要写 `"未响应"华为南通"项目"`。
 7. 评标只用本地规则与制度文件，不使用训练记忆中的规则，不编造缺失的规则、附件或评分依据。
+8. 结论须钉入 `extracted_data.bidder_info`（投标单位名称以投标函/营业执照原文为准，附 `source_refs` 页锚，对齐 `.claude/contracts/tender/bidder-info.schema.json`）与 `extracted_data.tender_info`（招标底稿/已注入 criteria 上下文可得时，对齐 `.claude/contracts/tender/tender-info.schema.json`，取 `project_name`/`tender_no`/`tenderee` 等子集即可）。**识别不到的字段省略，不编造**（保守原则）。
 
 ## 单投标人边界与多投标人追加
 

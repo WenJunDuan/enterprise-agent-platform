@@ -1,0 +1,24 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "bidder_info",
+  "description": "投标单位案卷头信息：从投标文件（投标函/营业执照等）一次性识别的投标人身份信息，全字段 optional string。识别不到的字段省略，不编造。用于结论展示与只填空回填（人工手填优先，agent 识别只填空）。",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "bidder_name": {
+      "type": "string",
+      "description": "投标人名称（全称），以投标函或营业执照原文为准，如「某某建设工程有限公司」。"
+    },
+    "credit_code": {
+      "type": "string",
+      "description": "统一社会信用代码（如可识别），如「91110000MA00XXXXXX」。"
+    },
+    "source_refs": {
+      "type": "array",
+      "description": "出处页锚点列表，如「投标函【第3页】」「营业执照【第5页】」。",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}
