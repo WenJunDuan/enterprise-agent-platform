@@ -253,7 +253,7 @@ export function EiaSubmitPage() {
         ) : null}
 
         {state.step === 2 ? (
-          <Card className='max-w-3xl'>
+          <Card>
             <CardContent className='space-y-4'>
               <h2 className='text-lg font-semibold'>核对材料清单</h2>
               <Table>
