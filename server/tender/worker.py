@@ -17,7 +17,11 @@ import os
 
 from server.platform.logging_setup import logging_context
 from server.stores.request_store import utc_now
-from server.stores.tender_doc_store import get_project_doc, update_project_doc_criteria
+from server.stores.tender_doc_store import (
+    backfill_bid_doc_bidder_name,
+    get_project_doc,
+    update_project_doc_criteria,
+)
 from server.stores.tender_task_store import update_tender_progress, upsert_tender_task
 from server.tender.runner import run_tender_evaluation as _run_evaluation
 
@@ -167,6 +171,16 @@ async def _execute_inner(
                 await asyncio.to_thread(
                     _backfill_criteria, project_id, tenant, criteria
                 )
+            # X2：投标单位名称只填空回填（bids 层），挂靠同一 completed 分支。
+            # bid_id=None（散单/非 prewarm）时无法定位 (project_id, bid_id) 行，安全跳过。
+            if project_id and bid_id and isinstance(payload, dict):
+                bidder_info = (payload.get("extracted_data") or {}).get("bidder_info") or {}
+                bidder_name = (
+                    bidder_info.get("bidder_name") if isinstance(bidder_info, dict) else None
+                )
+                await asyncio.to_thread(
+                    _backfill_bidder_name, project_id, bid_id, tenant, bidder_name
+                )
             finished_at = utc_now()
             await asyncio.to_thread(
                 upsert_tender_task,
@@ -294,6 +308,40 @@ def _backfill_criteria(
         logger.warning(
             "tender_criteria_backfill_failed",
             extra={"project_id": project_id, "tenant": tenant or "default"},
+            exc_info=True,
+        )
+
+
+def _backfill_bidder_name(
+    project_id: str | None,
+    bid_id: str | None,
+    tenant: str,
+    bidder_name: object,
+) -> None:
+    """只填空回填投标单位名称到 bids 层（X2，挂靠 _backfill_criteria 同一 completed 分支）。
+
+    评标 completed 后，若 payload.extracted_data.bidder_info.bidder_name 存在，调本函数
+    尝试写入 tender_bid_docs.bidder_name（手填优先，任何情况下不覆盖非空手填，见
+    tender_doc_store.backfill_bid_doc_bidder_name 的三键原子 UPDATE 语义）。
+
+    Args:
+        project_id: 招标项目 ID；为 None（散单）时直接返回。
+        bid_id: 投标文档 ID；为 None（散单/非 prewarm）时无法定位行，直接返回。
+        tenant: 租户作用域。
+        bidder_name: agent 识别到的投标单位名称；为 None/空时跳过（不编造）。
+    """
+    if not project_id or not bid_id or not bidder_name:
+        return
+    try:
+        backfill_bid_doc_bidder_name(project_id, bid_id, tenant, str(bidder_name))
+        logger.info(
+            "tender_bidder_name_backfilled",
+            extra={"project_id": project_id, "bid_id": bid_id, "tenant": tenant or "default"},
+        )
+    except Exception:
+        logger.warning(
+            "tender_bidder_name_backfill_failed",
+            extra={"project_id": project_id, "bid_id": bid_id, "tenant": tenant or "default"},
             exc_info=True,
         )
 

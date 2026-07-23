@@ -219,7 +219,7 @@ export function buildTenderReviewData({
           ...mappedProjects.filter((item) => item.id !== projectData.id),
         ]
       : mappedProjects,
-    projectInfo: buildProjectInfo(activeProject, compare),
+    projectInfo: buildProjectInfo(activeProject, compare, selectedResult),
     tenderFiles: [],
     uploadBidders: [],
     reviewBidders,
@@ -338,24 +338,74 @@ function getTopCompareScore(compare?: TenderCompareResponse | null) {
   return toNumber(ranked[0]?.total_score)
 }
 
+/**
+ * X2：散单案卷头（无 project 实体，如 legacy `/tender/evaluate` 直提场景）——
+ * 从结论 `extracted_data.tender_info` 取项目名 + 招标编号渲染标题；无 project 且
+ * 无 tender_info 时维持原占位（缺省隐藏，不额外展示）。有 project 时区1既有展示不动。
+ */
+function buildCaseHeaderFromTenderInfo(result?: AuditResult | null) {
+  const extracted = result?.extracted_data
+  const tenderInfo = isRecord(extracted) && isRecord(extracted.tender_info)
+    ? extracted.tender_info
+    : null
+  return {
+    name: toText(tenderInfo?.project_name) || '',
+    code: toText(tenderInfo?.tender_no) || '',
+  }
+}
+
 function buildProjectInfo(
   project?: TenderProjectResponse | TenderProjectDetailResponse | null,
-  compare?: TenderCompareResponse | null
+  compare?: TenderCompareResponse | null,
+  selectedResult?: AuditResult | null
 ): ProjectInfo {
   const date =
     compare?.computed_at || project?.updated_at || project?.created_at || ''
   const id = project?.project_id || 'new'
+  const caseHeader = project ? null : buildCaseHeaderFromTenderInfo(selectedResult)
   return {
     name:
       project?.title?.trim() ||
       project?.tender_no?.trim() ||
+      caseHeader?.name ||
       EMPTY_PROJECT_TITLE,
-    code: project?.tender_no?.trim() || (project ? project.project_id : '-'),
+    code:
+      project?.tender_no?.trim() ||
+      (project ? project.project_id : caseHeader?.code || '-'),
     method: project?.method?.trim() || compare?.result.method || DEFAULT_METHOD,
     controlPrice: project?.control_price?.trim() || '-',
     reviewDate: formatChineseDate(date),
     reportNo: `TR-${formatDate(date).replaceAll('-', '')}-${id.slice(0, 8)}`,
   }
+}
+
+/**
+ * X2：按 claim_id 建两条独立展示名索引，供 resolveBidderDisplayName 的优先级链消费。
+ *
+ * - handNameByClaim：手填名，来自 roster（``project.bids[].bidder_name``，后端已按
+ *   手填优先 join ``tender_bid_docs`` 解析——手填非空即用手填，无手填回退 agent 名）。
+ * - summaryNameByClaim：results 链新透出的 agent 识别名（``resultSummaries[].bidder_name``，
+ *   ``extracted_data.bidder_info.bidder_name`` 拍平值，不含手填 join）。
+ *
+ * 两条索引口径不同、来源独立，三处调用点（compare / summaries / selectedResult 单投标人）
+ * 统一从这两个 Map 取值，避免此前"summaries 合并塌缩成单一 bidder_name 字段"导致的语义混淆。
+ */
+function buildBidderNameIndexes(
+  project: TenderProjectResponse | TenderProjectDetailResponse | null,
+  resultSummaries: TenderProjectResultSummary[]
+) {
+  const detailBids = isTenderProjectDetailOrNull(project) ? project.bids : []
+  const handNameByClaim = new Map<string, string>()
+  detailBids.forEach((bid) => {
+    const name = toText(bid.bidder_name)
+    if (bid.claim_id && name) handNameByClaim.set(bid.claim_id, name)
+  })
+  const summaryNameByClaim = new Map<string, string>()
+  resultSummaries.forEach((summary) => {
+    const name = toText(summary.bidder_name)
+    if (summary.claim_id && name) summaryNameByClaim.set(summary.claim_id, name)
+  })
+  return { detailBids, handNameByClaim, summaryNameByClaim }
 }
 
 function buildReviewBidders(
@@ -366,6 +416,11 @@ function buildReviewBidders(
   resultDetails: AuditResult[] = []
 ): ReviewBidder[] {
   const displayNameByClaim = buildBidderDisplayNameMap(resultDetails)
+  const { detailBids, handNameByClaim, summaryNameByClaim } = buildBidderNameIndexes(
+    project,
+    resultSummaries
+  )
+
   if (compare?.result.bidders.length) {
     const bidders = [...compare.result.bidders]
       .sort(
@@ -374,8 +429,10 @@ function buildReviewBidders(
           (right.rank ?? Number.MAX_SAFE_INTEGER)
       )
       .map((bidder, index) => {
-        const name = resolveBidderDisplayName({
+        const { name, source, sourceRefs } = resolveBidderDisplayName({
           claimId: bidder.claim_id,
+          bidderName: handNameByClaim.get(bidder.claim_id),
+          summaryBidderName: summaryNameByClaim.get(bidder.claim_id),
           result: resultDetails.find(
             (result) => toText(result.claim_id) === bidder.claim_id
           ),
@@ -389,12 +446,13 @@ function buildReviewBidders(
           short: shortenBidderName(name),
           total: toNumber(bidder.total_score) ?? 0,
           rank: bidder.rank ?? index + 1,
+          nameSource: source,
+          nameSourceRefs: sourceRefs,
         }
       })
     return rankReviewBiddersByScore(bidders)
   }
 
-  const detailBids = isTenderProjectDetailOrNull(project) ? project.bids : []
   const summaries = resultSummaries.length
     ? resultSummaries
     : detailBids.map((bid) => ({
@@ -409,13 +467,13 @@ function buildReviewBidders(
       const result =
         findResultForSummary(summary, resultDetails) ??
         findResultForSummary(summary, selectedResult ? [selectedResult] : [])
-      const name = resolveBidderDisplayName({
-        claimId:
-          summary.claim_id ||
-          (selectedResult?.claim_id && index === 0
-            ? selectedResult.claim_id
-            : ''),
-        bidderName: summary.bidder_name,
+      const claimId =
+        summary.claim_id ||
+        (selectedResult?.claim_id && index === 0 ? selectedResult.claim_id : '')
+      const { name, source, sourceRefs } = resolveBidderDisplayName({
+        claimId,
+        bidderName: claimId ? handNameByClaim.get(claimId) : undefined,
+        summaryBidderName: claimId ? summaryNameByClaim.get(claimId) : undefined,
         result,
         mappedName: summary.claim_id
           ? displayNameByClaim.get(summary.claim_id)
@@ -430,14 +488,18 @@ function buildReviewBidders(
         short: shortenBidderName(name),
         total: getResultTotalScore(result),
         rank: index + 1,
+        nameSource: source,
+        nameSourceRefs: sourceRefs,
       }
     })
     return rankReviewBiddersByScore(bidders)
   }
 
   if (selectedResult?.claim_id) {
-    const name = resolveBidderDisplayName({
+    const { name, source, sourceRefs } = resolveBidderDisplayName({
       claimId: selectedResult.claim_id,
+      bidderName: handNameByClaim.get(selectedResult.claim_id),
+      summaryBidderName: summaryNameByClaim.get(selectedResult.claim_id),
       result: selectedResult,
       fallback: '投标人 1',
     })
@@ -449,6 +511,8 @@ function buildReviewBidders(
         short: shortenBidderName(name),
         total: getResultTotalScore(selectedResult),
         rank: 1,
+        nameSource: source,
+        nameSourceRefs: sourceRefs,
       },
     ]
   }
@@ -1452,40 +1516,70 @@ function buildBidderDisplayNameMap(results: AuditResult[]) {
   return map
 }
 
+type ResolvedBidderName = {
+  name: string
+  /** 来源标注：manual=用户手填、agent=AI 识别、unknown=兜底（claim_id/占位，不展示标注）。 */
+  source: 'manual' | 'agent' | 'unknown'
+  /** AI 识别名的出处页锚（仅 source=agent 且能定位到 bidder_info 时有值）。 */
+  sourceRefs?: string[]
+}
+
+/**
+ * 展示名优先级链（X2：手填优先于 agent 猜测，倒正此前 agent 名压手填名的现状）。
+ *
+ * 顺序：手填（roster/summary 的 bidder_name，来自用户上传表单或文档层）→ results 链
+ * 新透出的 agent 识别名（summaryBidderName）→ 结论 extracted_data 派生名
+ * （extractBidderCompanyName，首选 bidder_info.bidder_name）→ 历史 claim 映射名
+ * （mappedName）→ claimId → fallback。返回值带来源标注，供界面区分"手填/AI 识别"。
+ */
 function resolveBidderDisplayName({
   claimId,
   bidderName,
+  summaryBidderName,
   result,
   mappedName,
   fallback,
 }: {
   claimId?: string | null
   bidderName?: string | null
+  summaryBidderName?: string | null
   result?: AuditResult | null
   mappedName?: string
   fallback: string
-}) {
-  const candidates = [
-    mappedName,
-    extractBidderCompanyName(result),
-    bidderName,
-    claimId,
-    fallback,
+}): ResolvedBidderName {
+  const candidates: Array<{
+    value?: string | null
+    source: ResolvedBidderName['source']
+  }> = [
+    { value: bidderName, source: 'manual' },
+    { value: summaryBidderName, source: 'agent' },
+    { value: extractBidderCompanyName(result), source: 'agent' },
+    { value: mappedName, source: 'agent' },
+    { value: claimId, source: 'unknown' },
   ]
-  return (
-    candidates
-      .map((candidate) => toText(candidate))
-      .find((candidate) => candidate && !looksLikeCreditCode(candidate)) ||
-    fallback
-  )
+  for (const candidate of candidates) {
+    const text = toText(candidate.value)
+    if (text && !looksLikeCreditCode(text)) {
+      return {
+        name: text,
+        source: candidate.source,
+        sourceRefs:
+          candidate.source === 'agent' ? extractBidderSourceRefs(result) : undefined,
+      }
+    }
+  }
+  return { name: fallback, source: 'unknown' }
 }
 
 function extractBidderCompanyName(result?: AuditResult | null) {
   const extracted = result?.extracted_data
   if (!isRecord(extracted)) return ''
 
+  const bidderInfo = isRecord(extracted.bidder_info) ? extracted.bidder_info : null
+  // 历史兼容次选：旧数据/其它猜测键（本字段引入前留存的结论仍需正确展示名称）。
   const bidder = isRecord(extracted.bidder) ? extracted.bidder : null
   const directCandidates = [
+    bidderInfo?.bidder_name,
     bidder?.name,
     bidder?.company_name,
     bidder?.bidder_name,
@@ -1502,6 +1596,17 @@ function extractBidderCompanyName(result?: AuditResult | null) {
       .map((candidate) => toText(candidate))
       .find((candidate) => candidate && !looksLikeCreditCode(candidate)) || ''
   )
+}
+
+/** AI 识别名的出处页锚（`extracted_data.bidder_info.source_refs`），供 hover 展示，识别不到则空。 */
+function extractBidderSourceRefs(result?: AuditResult | null): string[] | undefined {
+  const extracted = result?.extracted_data
+  if (!isRecord(extracted)) return undefined
+  const bidderInfo = isRecord(extracted.bidder_info) ? extracted.bidder_info : null
+  const refs = bidderInfo?.source_refs
+  if (!Array.isArray(refs)) return undefined
+  const texts = refs.map((ref) => toText(ref)).filter((ref): ref is string => Boolean(ref))
+  return texts.length > 0 ? texts : undefined
 }
 
 function looksLikeCreditCode(value: string) {

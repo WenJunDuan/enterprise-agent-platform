@@ -274,3 +274,90 @@ def test_bid_doc_missing_returns_none():
     from server.stores.tender_doc_store import get_bid_doc
 
     assert get_bid_doc(_pid(), _bid(), "t1") is None
+
+
+# ── X2: bidder_name_source 迁移 + backfill_bid_doc_bidder_name（回填三态）────────
+
+
+def test_bid_doc_row_has_bidder_name_source_column_and_defaults_none():
+    """迁移幂等：新行 bidder_name_source 默认 None（手填时不打 agent_extracted 标记）。"""
+    from server.stores.tender_doc_store import get_bid_doc, upsert_bid_doc
+
+    pid = _pid()
+    bid_id = _bid()
+    upsert_bid_doc(project_id=pid, bid_id=bid_id, tenant="t1", bidder_name="手填公司", bid_files="[]")
+    row = get_bid_doc(pid, bid_id, "t1")
+    assert row is not None
+    assert row["bidder_name"] == "手填公司"
+    assert row["bidder_name_source"] is None
+
+
+def test_backfill_bidder_name_fills_when_empty():
+    """状态①：空 → 填（agent 识别到名称，原字段为空）。"""
+    from server.stores.tender_doc_store import (
+        backfill_bid_doc_bidder_name,
+        get_bid_doc,
+        upsert_bid_doc,
+    )
+
+    pid = _pid()
+    bid_id = _bid()
+    upsert_bid_doc(project_id=pid, bid_id=bid_id, tenant="t1", bidder_name=None, bid_files="[]")
+    backfill_bid_doc_bidder_name(pid, bid_id, "t1", "某某建设工程有限公司")
+    row = get_bid_doc(pid, bid_id, "t1")
+    assert row is not None
+    assert row["bidder_name"] == "某某建设工程有限公司"
+    assert row["bidder_name_source"] == "agent_extracted"
+
+
+def test_backfill_bidder_name_does_not_overwrite_hand_filled():
+    """状态②：手填 → 不覆盖（任何情况下手填名优先）。"""
+    from server.stores.tender_doc_store import (
+        backfill_bid_doc_bidder_name,
+        get_bid_doc,
+        upsert_bid_doc,
+    )
+
+    pid = _pid()
+    bid_id = _bid()
+    upsert_bid_doc(project_id=pid, bid_id=bid_id, tenant="t1", bidder_name="用户手填公司", bid_files="[]")
+    backfill_bid_doc_bidder_name(pid, bid_id, "t1", "agent 识别的另一个名字")
+    row = get_bid_doc(pid, bid_id, "t1")
+    assert row is not None
+    assert row["bidder_name"] == "用户手填公司"
+    assert row["bidder_name_source"] is None
+
+
+def test_backfill_bidder_name_skips_when_no_bidder_info(monkeypatch):
+    """状态③：无 bidder_info（agent 未识别到）→ 跳过，不写坏已有空值。"""
+    from server.stores.tender_doc_store import (
+        backfill_bid_doc_bidder_name,
+        get_bid_doc,
+        upsert_bid_doc,
+    )
+
+    pid = _pid()
+    bid_id = _bid()
+    upsert_bid_doc(project_id=pid, bid_id=bid_id, tenant="t1", bidder_name=None, bid_files="[]")
+    backfill_bid_doc_bidder_name(pid, bid_id, "t1", None)
+    row = get_bid_doc(pid, bid_id, "t1")
+    assert row is not None
+    assert row["bidder_name"] is None
+    assert row["bidder_name_source"] is None
+
+
+def test_backfill_bidder_name_is_tenant_scoped():
+    """三键 WHERE 隔离：跨租户不得回填别的租户的行（安全边界）。"""
+    from server.stores.tender_doc_store import (
+        backfill_bid_doc_bidder_name,
+        get_bid_doc,
+        upsert_bid_doc,
+    )
+
+    pid = _pid()
+    bid_id = _bid()
+    upsert_bid_doc(project_id=pid, bid_id=bid_id, tenant="t-scope-a", bidder_name=None, bid_files="[]")
+    backfill_bid_doc_bidder_name(pid, bid_id, "t-scope-b", "跨租户不该写入")
+    row = get_bid_doc(pid, bid_id, "t-scope-a")
+    assert row is not None
+    assert row["bidder_name"] is None

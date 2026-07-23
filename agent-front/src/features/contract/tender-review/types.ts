@@ -83,6 +83,10 @@ export type ReviewBidder = {
   short: string
   total: number
   rank: number
+  /** X2：展示名来源——手填（manual）/ AI 识别（agent）/ 无法判断来源（unknown，不展示标注）。 */
+  nameSource?: 'manual' | 'agent' | 'unknown'
+  /** X2：AI 识别名的出处页锚（`extracted_data.bidder_info.source_refs`），source=agent 时 hover 展示。 */
+  nameSourceRefs?: string[]
 }
 
 /** 单条扣分/加分命中（R2：逐条展示"哪条命中/扣几分/原文/出处页"）。 */

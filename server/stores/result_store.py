@@ -26,6 +26,8 @@ class ResultRecord:
     result_file: str
     tenant: str | None = None
     project_id: str | None = None  # 招标项目分组键（tender）；非 tender 域留空
+    bid_id: str | None = None  # results↔bids join key（tender）；非 tender 域留空
+    bidder_name: str | None = None  # agent 识别的投标单位名称（tender）；非 tender 域留空
     claude_session_id: str | None = None
     session_id: str | None = None
     resume_session_id: str | None = None
@@ -103,6 +105,8 @@ class SQLiteResultStore:
         "result_file",
         "tenant",
         "project_id",
+        "bid_id",
+        "bidder_name",
         "claude_session_id",
         "session_id",
         "resume_session_id",
@@ -268,6 +272,8 @@ class SQLiteResultStore:
                     result_file TEXT NOT NULL,
                     tenant TEXT,
                     project_id TEXT,
+                    bid_id TEXT,
+                    bidder_name TEXT,
                     claude_session_id TEXT,
                     session_id TEXT,
                     resume_session_id TEXT,
@@ -294,6 +300,10 @@ class SQLiteResultStore:
                 connection.execute("ALTER TABLE results ADD COLUMN payload TEXT")
             if "project_id" not in existing_columns:
                 connection.execute("ALTER TABLE results ADD COLUMN project_id TEXT")
+            if "bid_id" not in existing_columns:
+                connection.execute("ALTER TABLE results ADD COLUMN bid_id TEXT")
+            if "bidder_name" not in existing_columns:
+                connection.execute("ALTER TABLE results ADD COLUMN bidder_name TEXT")
             connection.executescript(
                 """
                 CREATE INDEX IF NOT EXISTS idx_results_tenant_created
@@ -332,20 +342,29 @@ def archive_result_payload(
     response: StructuredJSON,
     created_at: str | None = None,
     project_id: str | None = None,
+    bid_id: str | None = None,
 ) -> ResultRecord:
     """Persist a structured result and return its metadata record.
 
     ``project_id`` 是 tender 招标项目分组键，由调用链显式透传（codex P1.3：显式参数，
     不走 ``**opts`` 以免被当成 SDK 选项）；非 tender 域留 None。
+
+    ``bid_id``（X2）是 results↔``tender_bid_docs`` 的 join key，同样显式透传、非 tender
+    域留 None。``bidder_name`` 从 ``response.extracted_data.bidder_info.bidder_name``
+    拍平（agent 识别的投标单位名称；识别不到则留 None，不编造）。
     """
     created_at = created_at or datetime.now(timezone.utc).isoformat()
     claim_id = response.get("claim_id") if isinstance(response, dict) else None
     verdict = response.get("verdict") if isinstance(response, dict) else None
     manual_review_reason = response.get("manual_review_reason") if isinstance(response, dict) else None
+    extracted_data = response.get("extracted_data") if isinstance(response, dict) else None
+    bidder_info = extracted_data.get("bidder_info") if isinstance(extracted_data, dict) else None
+    bidder_name = bidder_info.get("bidder_name") if isinstance(bidder_info, dict) else None
     payload = {
         "request_id": request_id,
         "tenant": tenant,
         "project_id": project_id,
+        "bid_id": bid_id,
         "conversation_id": conversation_id,
         "claude_session_id": claude_session_id,
         "resume_session_id": resume_session_id,
@@ -362,6 +381,8 @@ def archive_result_payload(
         request_id=request_id,
         tenant=tenant,
         project_id=project_id,
+        bid_id=bid_id,
+        bidder_name=str(bidder_name) if bidder_name else None,
         conversation_id=conversation_id,
         claude_session_id=claude_session_id,
         session_id=claude_session_id,
