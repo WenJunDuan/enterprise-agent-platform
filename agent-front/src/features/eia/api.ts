@@ -34,8 +34,3 @@ export async function submitEiaBatch(
 export async function listEiaCases(): Promise<EiaCase[]> {
   return MOCK_EIA_CASES
 }
-
-/** 单个案件详情；未命中返回 null，交调用方按「案件不存在」处理，不臆造数据。 */
-export async function getEiaCase(id: string): Promise<EiaCase | null> {
-  return MOCK_EIA_CASES.find((item) => item.id === id) ?? null
-}
