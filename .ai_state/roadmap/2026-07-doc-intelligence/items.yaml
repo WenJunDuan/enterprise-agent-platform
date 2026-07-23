@@ -251,7 +251,7 @@ items:
     effort: M
     wave: 0
     depends_on: []
-    status: in_progress # 2026-07-23 design 三轮 critic 定稿(R3 PASS);T1(8baef0f)/T2(5fbf482)/T3(d6bc5cc)在分支 worktree-agent-a9ea79174969a5183 未 merge——实为 sonnet-5 所写(generator.md pin 压过 opus 覆盖,违约),处置待用户拍板;T2 主 agent 独立验 981 passed+ruff 净;T4 未跑。深研定版=本期钉 bidder_info/tender_info,项目经理/工期/质保/有效期入观察清单。详见 sprint route-note/design 追记
+    status: done # 2026-07-23 用户拍板合入:merge 4329d91(T1 契约 8baef0f/T2 服务端 5fbf482/T3 前端 d6bc5cc),主 agent 补跑 T4 四证据全绿(后端 981 passed/2 skip+ruff 净;前端 155 pass 含 T3 新增 9 条优先级链测试+build+eslint 净),分支已清。模型违约(sonnet 所写)经用户知情后拍板接受;独立 review 双审未跑(用户令直接合并,留 backlog 可后补)。深研定版=本期钉 bidder_info/tender_info,项目经理/工期/质保/有效期入观察清单
     note: >
       根因链(2026-07-23 主 agent 排查,file:line 证据):①命令输出纪律只要求标识语义——claim_id
       (优先信用代码次名称,tender-evaluate.md:104)/tender_project_id(优先编号次项目名),无展示字段;
