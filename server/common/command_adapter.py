@@ -47,6 +47,7 @@ async def run_command_json(
     *arguments: str,
     schema_name: str | None,
     project_id: str | None = None,
+    bid_id: str | None = None,
     archive_to_results: bool = True,
     context: str | None = None,
     on_progress: Callable[[str], None] | None = None,
@@ -58,6 +59,8 @@ async def run_command_json(
 
     ``project_id`` 显式透传到归档（tender 招标项目分组键）；显式参数而非 ``**opts``，
     避免被下游 ``build_options`` 当成 SDK 选项（codex P1.3）。
+    ``bid_id``（X2）同理显式透传到归档（results↔``tender_bid_docs`` join key）；显式参数
+    而非 ``**opts``，默认 None，非 tender 调用方零行为变化。
     ``archive_to_results=False`` 时结论不进 ``results`` 表（compare 用，codex P1.1）。
     ``context`` 附在命令后（P4：注入确定性 OCR 底稿，**喂模型**）。
     ``evidence_source`` 透传给 evidence-resolution 闸（R1，**喂校验**，不进 prompt）；显式命名
@@ -67,6 +70,7 @@ async def run_command_json(
         build_command_prompt(command_name, *arguments, context=context),
         schema_name=schema_name,
         project_id=project_id,
+        bid_id=bid_id,
         archive_to_results=archive_to_results,
         on_progress=on_progress,
         evidence_source=evidence_source,

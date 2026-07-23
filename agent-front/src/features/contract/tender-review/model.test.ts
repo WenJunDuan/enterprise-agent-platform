@@ -681,6 +681,211 @@ describe('contract tender review model', () => {
     })
   })
 
+  // ── X2: 案卷头信息 — 展示名优先级链（手填 > agent 结果链 > 结论内 bidder_info > 映射 > claim_id > 兜底）──
+
+  test('X2 priority chain: hand-filled bidder name (roster) wins over agent-recognized name', () => {
+    const data = buildTenderReviewData({
+      project: {
+        project_id: 'project-x2-hand',
+        tender_no: 'X2-001',
+        title: '案卷头优先级项目',
+        tenderee: null,
+        method: '综合评估法',
+        control_price: null,
+        funding_type: null,
+        status: 'done',
+        created_at: '2026-07-01T00:00:00+00:00',
+        updated_at: '2026-07-01T00:00:00+00:00',
+        bidder_count: 1,
+        // roster 层：后端已按手填优先解析（手填非空即用手填），此处即"手填值"。
+        bids: [
+          {
+            request_id: 'req-hand',
+            claim_id: 'CLAIM-HAND-1',
+            bidder_name: '用户手填公司名',
+            status: 'completed',
+            verdict: 'approved',
+          },
+        ],
+        recommended_bidder: null,
+        compare_stale: false,
+      },
+      resultSummaries: [
+        {
+          request_id: 'req-hand',
+          claim_id: 'CLAIM-HAND-1',
+          // results 链：agent 识别的名称（应被手填名压过）。
+          bidder_name: 'agent识别的另一个名字',
+          verdict: 'approved',
+        },
+      ],
+      resultDetails: [
+        {
+          claim_id: 'CLAIM-HAND-1',
+          verdict: 'approved',
+          extracted_data: {
+            bidder_info: { bidder_name: 'agent识别的又一个名字' },
+          },
+        },
+      ],
+    })
+    expect(data.reviewBidders.map((bidder) => bidder.name)).toEqual([
+      '用户手填公司名',
+    ])
+  })
+
+  test('X2 priority chain: results-chain agent name wins when no hand-filled name available', () => {
+    const data = buildTenderReviewData({
+      resultSummaries: [
+        {
+          request_id: 'req-agent',
+          claim_id: 'CLAIM-AGENT-1',
+          // 无手填（roster 未提供 bids/project），仅 results 链有 agent 识别名。
+          bidder_name: 'agent识别的公司名',
+          verdict: 'approved',
+        },
+      ],
+      resultDetails: [
+        {
+          claim_id: 'CLAIM-AGENT-1',
+          verdict: 'approved',
+          extracted_data: {
+            // 结论内也有 bidder_info，但 results 链的 summaryBidderName 优先级更高。
+            bidder_info: { bidder_name: '结论内的公司名' },
+          },
+        },
+      ],
+    })
+    expect(data.reviewBidders.map((bidder) => bidder.name)).toEqual([
+      'agent识别的公司名',
+    ])
+  })
+
+  test('X2 priority chain: extracted_data.bidder_info.bidder_name preferred over legacy guess keys', () => {
+    const data = buildTenderReviewData({
+      selectedResult: {
+        claim_id: 'CLAIM-BIDINFO-1',
+        verdict: 'approved',
+        extracted_data: {
+          bidder_info: { bidder_name: '案卷头首选公司名' },
+          bidder: { name: '旧猜测键公司名' },
+        },
+      },
+    })
+    expect(data.reviewBidders.map((bidder) => bidder.name)).toEqual([
+      '案卷头首选公司名',
+    ])
+  })
+
+  test('X2 priority chain: legacy extracted_data.bidder.name still works as fallback (no regression)', () => {
+    const data = buildTenderReviewData({
+      selectedResult: {
+        claim_id: 'CLAIM-LEGACY-1',
+        verdict: 'approved',
+        extracted_data: {
+          bidder: { name: '仅有旧猜测键的公司名' },
+        },
+      },
+    })
+    expect(data.reviewBidders.map((bidder) => bidder.name)).toEqual([
+      '仅有旧猜测键的公司名',
+    ])
+  })
+
+  test('X2 priority chain: falls back to claim_id when no name signal is available at all', () => {
+    const data = buildTenderReviewData({
+      selectedResult: {
+        claim_id: 'CLAIM-NONE-1',
+        verdict: 'manual_review',
+      },
+    })
+    expect(data.reviewBidders.map((bidder) => bidder.name)).toEqual([
+      'CLAIM-NONE-1',
+    ])
+  })
+
+  test('X2 case header: 散单 (no project entity) renders projectInfo from extracted_data.tender_info', () => {
+    const data = buildTenderReviewData({
+      selectedResult: {
+        claim_id: 'CLAIM-CASEHEADER-1',
+        verdict: 'approved',
+        extracted_data: {
+          tender_info: {
+            project_name: '某市智慧城市综合管理平台建设项目',
+            tender_no: 'ZBZS-2026-007',
+          },
+        },
+      },
+    })
+    expect(data.projectInfo).toMatchObject({
+      name: '某市智慧城市综合管理平台建设项目',
+      code: 'ZBZS-2026-007',
+    })
+  })
+
+  test('X2 case header: 散单 without tender_info keeps existing placeholder (缺省隐藏，不新增展示)', () => {
+    const data = buildTenderReviewData({
+      selectedResult: {
+        claim_id: 'CLAIM-CASEHEADER-2',
+        verdict: 'approved',
+      },
+    })
+    expect(data.projectInfo.name).toBe('新建招投标项目')
+  })
+
+  test('X2 name source annotation: manual (roster hand-filled) is tagged nameSource=manual', () => {
+    const data = buildTenderReviewData({
+      project: {
+        project_id: 'project-x2-source-manual',
+        tender_no: 'X2-SRC-1',
+        title: '来源标注项目',
+        tenderee: null,
+        method: '综合评估法',
+        control_price: null,
+        funding_type: null,
+        status: 'done',
+        created_at: '2026-07-01T00:00:00+00:00',
+        updated_at: '2026-07-01T00:00:00+00:00',
+        bidder_count: 1,
+        bids: [
+          {
+            request_id: 'req-src-manual',
+            claim_id: 'CLAIM-SRC-MANUAL',
+            bidder_name: '手填来源公司',
+            status: 'completed',
+            verdict: 'approved',
+          },
+        ],
+        recommended_bidder: null,
+        compare_stale: false,
+      },
+    })
+    expect(data.reviewBidders[0]).toMatchObject({
+      name: '手填来源公司',
+      nameSource: 'manual',
+    })
+  })
+
+  test('X2 name source annotation: agent-derived name is tagged nameSource=agent with source_refs', () => {
+    const data = buildTenderReviewData({
+      selectedResult: {
+        claim_id: 'CLAIM-SRC-AGENT',
+        verdict: 'approved',
+        extracted_data: {
+          bidder_info: {
+            bidder_name: 'AI识别来源公司',
+            source_refs: ['投标函【第3页】'],
+          },
+        },
+      },
+    })
+    expect(data.reviewBidders[0]).toMatchObject({
+      name: 'AI识别来源公司',
+      nameSource: 'agent',
+      nameSourceRefs: ['投标函【第3页】'],
+    })
+  })
+
   test('buildTenderReviewData ranks bidder tabs by total score without compare', () => {
     const data = buildTenderReviewData({
       project: {

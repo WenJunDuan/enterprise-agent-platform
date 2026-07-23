@@ -283,6 +283,7 @@ async def run_tender_evaluation(
                 request_id=request_id,
                 tenant=tenant,
                 project_id=project_id,  # 显式透传 → 结论落 results.project_id（codex P1.3）
+                bid_id=bid_id,  # X2：显式透传 → 结论落 results.bid_id（bids 层手填回填 join key）
                 conversation_id=new_conversation_id(),
                 context=context,
                 # R1 evidence-resolution：透传**原始底稿** ocr_block（带 ### 文件:/【第N页】 锚点）

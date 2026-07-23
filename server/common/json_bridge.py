@@ -134,6 +134,7 @@ async def run_agent_json(
     request_id: str | None = None,
     tenant: str | None = None,
     project_id: str | None = None,
+    bid_id: str | None = None,
     archive_to_results: bool = True,
     on_progress: Callable[[str], None] | None = None,
     evidence_source: str | None = None,
@@ -153,6 +154,10 @@ async def run_agent_json(
     ``evidence_source``（可选，R1）= 本案底稿文本，透传给 ``apply_schema_semantics`` 的
     evidence-resolution 闸做出处回查。**显式命名参数**（不进 ``**opts``）——否则会漂进
     ``build_options`` 被当未知 SDK 选项报错（codex P2）。不传 → 闸跳过，行为不变。
+
+    ``bid_id``（X2，可选）= results↔``tender_bid_docs`` 的 join key，随结论透传给
+    ``archive_result_payload``。**显式命名参数**（同 ``project_id``/``evidence_source``
+    先例，不进 ``**opts``）；默认 None，非 tender 调用方零行为变化。
     """
     # 不变量（codex R1 P2）：schema_name 为空 = 无命名 schema（仅文本模式 passthrough，见
     # apply_schema_semantics）。structured=True 仍会 build_output_format(schema_name)→ None 会崩，
@@ -288,6 +293,7 @@ async def run_agent_json(
                     request_id=request_id,
                     tenant=tenant,
                     project_id=project_id,
+                    bid_id=bid_id,
                     conversation_id=conversation_id,
                     claude_session_id=final_claude_session_id,
                     resume_session_id=resolved_resume_session_id,
