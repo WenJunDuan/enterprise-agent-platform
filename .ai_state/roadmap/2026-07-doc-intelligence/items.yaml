@@ -229,6 +229,42 @@ items:
       D1 回归闸护航。串标围标识别（产品级扩展）与 S8（用户推迟）不进本包。
     refs: ["sprints/2026-06-23-tender-judgment-discipline/design.md", "compound/2026-06-23-learning-gate-rescues-not-creates.md"]
 
+  - id: X1
+    slug: eia-domain-page
+    stream: feature
+    title: "环评智检域前端迁移:design/ 静态稿 → agent-front 第四业务域(排 OCR 上),mock-first"
+    effort: M
+    wave: 0
+    depends_on: []
+    status: done # 2026-07-23 全流程收口:design 两轮 critic 定稿→opus worktree T1-T4(API 断连断点续跑)→主 agent 独立验→merge 2d8d822→review pass1(reviewer 0 P0/1 P1/2 P2 + spec CONCERNS M1)→修复 53fd7ac(死导出/魔数/统计条派生)→VERDICT PASS(reviews/pass1.md)。146 pass/build ✓/eslint 净。残留:F3 页面容器长度(polish 酌情)/F7 分页选中回退(接后端时)。后端真分析域出界另议(design.md 方案 C)
+    redzone: agent-front
+    note: >
+      导航 MENU_GROUP_ORDER 插「智能环评检测」于 OCR 前 + /eia(三步向导:分类上传→确认→
+      流式分析→分类报告)+ /eia/desk(受理工作台)。features/eia/ mock-first,api.ts 留后端接缝
+      (将来复用 /ocr/jobs 任务化+轮询先例)。验收与任务分解见 sprint design.md。
+    refs: ["design/index.html", "sprints/2026-07-23-eia-domain-page/design.md"]
+
+  - id: X2
+    slug: tender-case-header-retention
+    stream: feature
+    title: "tender 结论案卷头信息留存与展示:项目名称/投标单位名从分析产物钉入契约→回填→前端展示 + 评标 agent 字段完整性深研"
+    effort: M
+    wave: 0
+    depends_on: []
+    status: in_progress # 2026-07-23 design 三轮 critic 定稿(R3 PASS);T1(8baef0f)/T2(5fbf482)/T3(d6bc5cc)在分支 worktree-agent-a9ea79174969a5183 未 merge——实为 sonnet-5 所写(generator.md pin 压过 opus 覆盖,违约),处置待用户拍板;T2 主 agent 独立验 981 passed+ruff 净;T4 未跑。深研定版=本期钉 bidder_info/tender_info,项目经理/工期/质保/有效期入观察清单。详见 sprint route-note/design 追记
+    note: >
+      根因链(2026-07-23 主 agent 排查,file:line 证据):①命令输出纪律只要求标识语义——claim_id
+      (优先信用代码次名称,tender-evaluate.md:104)/tender_project_id(优先编号次项目名),无展示字段;
+      ②audit-result.schema extracted_data 自由形,无 tender_info 案卷头节;③worker.py:180 仅存
+      claim_id 进 results 行,不回填 bids.bidder_name;④前端展示名唯一来源=上传表单手填
+      (routes/tender/docs.py:128),未填 fallback bid_id(runner.py:100),agent 识别结果无通路。
+      整改方向:契约加 extracted_data.tender_info{project_name,bidder_name,credit_code?,source_refs
+      页锚}(识别不到=null+说明,不编造)→ 命令输出纪律加节 → worker 回填 bids.bidder_name(仅空时,
+      标 agent_extracted 来源,不覆盖手填)+results 冗余展示名 → 前端详情/列表展示(标来源)。
+      **另含用户要求的深研项**:通盘审视评标 agent"分析中拿到但结论不留存"的字段面
+      (bid_price 已有钉入先例,工期/质保/项目经理等候选),design 时定完整清单。
+    refs: ["用户 2026-07-23 反馈", ".claude/commands/tender-evaluate.md:104", "server/tender/worker.py:180", "server/routes/tender/docs.py:128", ".claude/contracts/tender/tender-info.schema.json"]
+
 backlog:
   - "向量检索增强（bge-m3 自托管+离线打包）——结构化检索命中率不足或需历史案例语义检索时触发"
   - "识别-评标流水线重叠（流式二期）"
