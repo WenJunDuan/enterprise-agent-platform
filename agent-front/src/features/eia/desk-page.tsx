@@ -42,6 +42,24 @@ export function EiaDeskPage() {
   const selectedCase =
     cases.find((item) => item.id === effectiveSelectedId) ?? null
 
+  // 头部统计（spec M1 补齐）：静态稿 deskStats 为硬编码演示数字，这里改从案件列表
+  // 实时派生，接真实后端后无需返工。
+  const deskStats: Array<{ label: string; value: number }> = [
+    { label: '受理案件', value: cases.length },
+    {
+      label: '分析中',
+      value: cases.filter((item) => item.status === 'AI 分析中').length,
+    },
+    {
+      label: '报告编制',
+      value: cases.filter((item) => item.status === '报告编制').length,
+    },
+    {
+      label: '已出报告',
+      value: cases.filter((item) => item.status === '已出具').length,
+    },
+  ]
+
   function handlePreReview(eiaCase: EiaCase) {
     toast(`${eiaCase.id} 已进入预审，预审意见将同步至案件详情`)
   }
@@ -54,13 +72,27 @@ export function EiaDeskPage() {
     <>
       <Header fixed />
       <Main className='space-y-5'>
-        <div>
-          <p className='mb-1 text-xs tracking-wide text-primary uppercase'>
-            受理工作台
-          </p>
-          <h1 className='text-2xl font-semibold tracking-tight'>
-            检测报告受理列表
-          </h1>
+        <div className='flex flex-wrap items-end justify-between gap-4'>
+          <div>
+            <p className='mb-1 text-xs tracking-wide text-primary uppercase'>
+              受理工作台
+            </p>
+            <h1 className='text-2xl font-semibold tracking-tight'>
+              检测报告受理列表
+            </h1>
+          </div>
+          <div className='flex gap-6'>
+            {deskStats.map((stat) => (
+              <div key={stat.label} className='border-l-2 pl-3'>
+                <div className='text-xl font-semibold tabular-nums'>
+                  {stat.value}
+                </div>
+                <div className='text-xs tracking-wide text-muted-foreground uppercase'>
+                  {stat.label}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
 
         {casesQuery.isPending ? (
