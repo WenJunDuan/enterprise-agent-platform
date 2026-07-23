@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
+import { Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -25,6 +26,7 @@ import {
   EIA_CATEGORY_FINDINGS,
   EIA_CATEGORY_GLYPH,
   EIA_CATEGORY_STREAM_LINES,
+  MOCK_EIA_SAMPLE_FILES,
 } from './model/mock-data'
 import {
   buildStreamScript,
@@ -139,6 +141,10 @@ export function EiaSubmitPage() {
     dispatch({ type: 'remove_file', category, id })
   }
 
+  function loadSample() {
+    dispatch({ type: 'load_sample', files: MOCK_EIA_SAMPLE_FILES })
+  }
+
   function startAnalysis() {
     const uploadedFiles = activeCategories.flatMap((category) =>
       state.files[category].flatMap((item) => (item.file ? [item.file] : []))
@@ -211,6 +217,12 @@ export function EiaSubmitPage() {
 
         {state.step === 1 ? (
           <>
+            <div className='flex justify-end'>
+              <Button variant='outline' onClick={loadSample}>
+                <Sparkles className='size-4' />
+                填充示例
+              </Button>
+            </div>
             <div className='grid gap-4 md:grid-cols-2'>
               {EIA_CATEGORIES.map((def) => (
                 <CategoryUploadCard
@@ -223,13 +235,13 @@ export function EiaSubmitPage() {
               ))}
             </div>
             <div className='flex items-center justify-end gap-3 border-t pt-4'>
-              <span className='text-xs text-muted-foreground'>
-                {step1Blocked
-                  ? '请至少在任意一个类别中上传一份材料'
-                  : `已选 ${activeCategories
-                      .map((category) => EIA_CATEGORY_GLYPH[category])
-                      .join('、')} 共 ${totalFiles} 份，可进入确认`}
-              </span>
+              {step1Blocked ? null : (
+                <span className='text-xs text-muted-foreground'>
+                  {`已选 ${activeCategories
+                    .map((category) => EIA_CATEGORY_GLYPH[category])
+                    .join('、')} 共 ${totalFiles} 份，可进入确认`}
+                </span>
+              )}
               <Button
                 disabled={step1Blocked}
                 onClick={() => dispatch({ type: 'to_step2' })}
