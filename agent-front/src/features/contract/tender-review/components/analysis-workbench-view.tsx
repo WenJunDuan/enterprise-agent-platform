@@ -180,6 +180,10 @@ function BidderTabs({
               {bidder.tag ?? '—'}
             </span>
             {bidder.short ?? '—'}
+            <BidderNameSourceBadge
+              source={bidder.nameSource}
+              sourceRefs={bidder.nameSourceRefs}
+            />
             <span
               className={cn(
                 'text-xs font-semibold text-muted-foreground',
@@ -192,6 +196,34 @@ function BidderTabs({
         )
       })}
     </div>
+  )
+}
+
+/**
+ * X2：投标单位名称旁的来源标注——手填（用户上传时填写）/ AI 识别（agent 从投标文件识别）。
+ * AI 识别时 hover 展示出处页锚（`source_refs`），便于人工回查；来源不明（unknown，兜底
+ * claim_id/占位名）时不展示标注，避免误导。
+ */
+function BidderNameSourceBadge({
+  source,
+  sourceRefs,
+}: {
+  source?: 'manual' | 'agent' | 'unknown'
+  sourceRefs?: string[]
+}) {
+  if (source !== 'manual' && source !== 'agent') return null
+  const label = source === 'manual' ? '手填' : 'AI 识别'
+  const title =
+    source === 'agent' && sourceRefs?.length
+      ? `出处：${sourceRefs.join('；')}`
+      : undefined
+  return (
+    <span
+      className='rounded bg-muted px-1 py-0.5 text-[10px] font-normal text-muted-foreground'
+      title={title}
+    >
+      {label}
+    </span>
   )
 }
 
