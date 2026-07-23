@@ -459,6 +459,16 @@ export type TenderInfo = {
   funding_hint?: string | null
 }
 
+/**
+ * X2：投标单位案卷头信息（结论 `extracted_data.bidder_info`，对齐
+ * `.claude/contracts/tender/bidder-info.schema.json`，全字段 optional）。
+ */
+export type TenderBidderInfo = {
+  bidder_name?: string | null
+  credit_code?: string | null
+  source_refs?: string[] | null
+}
+
 /** GET /tender/projects/{id}/tender-doc 响应。 */
 export type TenderDocInfoResponse = {
   ocr_status: OcrStatus
