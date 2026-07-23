@@ -24,6 +24,7 @@ from server.routes.tender.tasks import TenderSubmitAcceptedResponse, _submit_bid
 from server.routes.upload_helpers import remove_project_submission_dir, remove_submission_dir
 from server.stores.result_store import get_result_payload_by_request_id, list_results_by_project
 from server.stores.tender_compare_store import get_compare_result, is_stale
+from server.stores.tender_doc_store import get_bid_doc
 from server.stores.tender_project_store import (
     DEFAULT_PROJECT_SCENARIO,
     count_active_bids,
@@ -67,6 +68,7 @@ class TenderProjectResponse(BaseModel):
 class TenderProjectBid(BaseModel):
     request_id: str
     claim_id: str | None = None
+    bidder_name: str | None = None  # X2：手填优先，无手填时回退 agent 识别名称
     status: str  # completed / running / accepted / failed
     verdict: str | None = None
 
@@ -94,6 +96,23 @@ def _public_project(record: dict[str, Any]) -> TenderProjectResponse:
     )
 
 
+def _roster_bidder_name(tenant: str, project_id: str, result_row: dict[str, Any]) -> str | None:
+    """X2：该投标行的展示名——手填优先（join ``tender_bid_docs``），无手填回退 agent 识别名称。
+
+    手填=``tender_bid_docs.bidder_name``（用户上传时填写，或后续在文档层补录）；agent 名=
+    ``results.bidder_name``（本次结论 ``extracted_data.bidder_info.bidder_name`` 拍平值）。
+    无 ``bid_id``（非 prewarm 直提场景）时无法定位 ``tender_bid_docs`` 行，直接退化到 agent 名。
+    """
+    bid_id = result_row.get("bid_id")
+    if bid_id:
+        doc = get_bid_doc(project_id, str(bid_id), tenant)
+        hand_name = doc.get("bidder_name") if doc else None
+        if hand_name:
+            return str(hand_name)
+    agent_name = result_row.get("bidder_name")
+    return str(agent_name) if agent_name else None
+
+
 def _project_bid_roster(tenant: str, project_id: str) -> list[TenderProjectBid]:
     """招标项目投标人名册 = ``results.project_id``(已完成,durable) ∪ 活跃 ``tender_tasks``(在途)。
 
@@ -108,6 +127,7 @@ def _project_bid_roster(tenant: str, project_id: str) -> list[TenderProjectBid]:
             TenderProjectBid(
                 request_id=rid,
                 claim_id=r.get("claim_id"),
+                bidder_name=_roster_bidder_name(tenant, project_id, r),
                 status="completed",
                 verdict=r.get("verdict"),
             )
@@ -276,6 +296,9 @@ async def get_tender_project_results(
         {
             "request_id": r["request_id"],
             "claim_id": r.get("claim_id"),
+            # X2：agent 从结论识别的投标单位名称（results 行拍平值，无手填 join——
+            # 手填优先的展示名见 roster `/projects/{id}` 的 TenderProjectBid.bidder_name）。
+            "bidder_name": r.get("bidder_name"),
             "verdict": r.get("verdict"),
             "manual_review_reason": r.get("manual_review_reason"),
             "created_at": r.get("created_at"),

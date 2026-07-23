@@ -90,6 +90,16 @@ def _initialize_schema() -> None:
             conn.execute(
                 "ALTER TABLE tender_project_docs ADD COLUMN tender_info TEXT"
             )
+        # X2 migration: tender_bid_docs 加 bidder_name_source，区分手填(NULL)/
+        # agent 回填(agent_extracted)，供只填空回填判优先级（手填任何情况下不被覆盖）。
+        existing_bid_cols = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(tender_bid_docs)").fetchall()
+        }
+        if "bidder_name_source" not in existing_bid_cols:
+            conn.execute(
+                "ALTER TABLE tender_bid_docs ADD COLUMN bidder_name_source TEXT"
+            )
 
 
 _initialize_schema()
@@ -339,6 +349,37 @@ def update_bid_doc_ocr(
             WHERE project_id = ? AND bid_id = ? AND tenant = ?
             """,
             (ocr_text, status, utc_now(), project_id, bid_id, tenant),
+        )
+
+
+def backfill_bid_doc_bidder_name(
+    project_id: str, bid_id: str, tenant: str, bidder_name: str | None
+) -> None:
+    """只填空回填投标单位名称（X2：手填优先，任何情况下不覆盖非空手填）。
+
+    评标 completed 后，若 agent 从结论 ``extracted_data.bidder_info.bidder_name`` 识别到
+    投标单位名称，调本函数尝试回填 ``tender_bid_docs.bidder_name``。三键 WHERE
+    （project_id + bid_id + tenant）对齐 :class:`update_bid_doc_extracted` 既有跨租户隔离
+    纪律；且仅当现有 ``bidder_name`` 为空（NULL 或空串）才写入，写入同时打
+    ``bidder_name_source='agent_extracted'`` 标记（手填=NULL，永不覆盖）。
+
+    Args:
+        project_id: Parent tender project identifier.
+        bid_id: Bid document identifier.
+        tenant: Tenant scope — WHERE clause includes tenant to prevent cross-tenant writes.
+        bidder_name: Agent 识别到的投标单位名称；None/空串时不做任何写入（不编造）。
+    """
+    if not bidder_name:
+        return
+    with connect_sqlite(PLATFORM_DB_FILE, immediate=True) as conn:
+        conn.execute(
+            """
+            UPDATE tender_bid_docs
+            SET bidder_name = ?, bidder_name_source = 'agent_extracted', updated_at = ?
+            WHERE project_id = ? AND bid_id = ? AND tenant = ?
+                AND (bidder_name IS NULL OR bidder_name = '')
+            """,
+            (bidder_name, utc_now(), project_id, bid_id, tenant),
         )
 
 
