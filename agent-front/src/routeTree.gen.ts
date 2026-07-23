@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
 import { Route as AuthenticatedOcrRouteImport } from './routes/_authenticated/ocr'
+import { Route as AuthenticatedEiaRouteImport } from './routes/_authenticated/eia'
 import { Route as AuthenticatedContractsRouteImport } from './routes/_authenticated/contracts'
 import { Route as AuthenticatedAuditRouteImport } from './routes/_authenticated/audit'
 import { Route as errors503RouteImport } from './routes/(errors)/503'
@@ -22,6 +23,7 @@ import { Route as errors401RouteImport } from './routes/(errors)/401'
 import { Route as authOtpRouteImport } from './routes/(auth)/otp'
 import { Route as AuthenticatedSettingsRouteRouteImport } from './routes/_authenticated/settings/route'
 import { Route as AuthenticatedSettingsIndexRouteImport } from './routes/_authenticated/settings/index'
+import { Route as AuthenticatedEiaIndexRouteImport } from './routes/_authenticated/eia/index'
 import { Route as AuthenticatedContractsIndexRouteImport } from './routes/_authenticated/contracts/index'
 import { Route as AuthenticatedAuditIndexRouteImport } from './routes/_authenticated/audit/index'
 import { Route as AuthenticatedSettingsNotificationsRouteImport } from './routes/_authenticated/settings/notifications'
@@ -29,6 +31,7 @@ import { Route as AuthenticatedSettingsDisplayRouteImport } from './routes/_auth
 import { Route as AuthenticatedSettingsAppearanceRouteImport } from './routes/_authenticated/settings/appearance'
 import { Route as AuthenticatedSettingsAccountRouteImport } from './routes/_authenticated/settings/account'
 import { Route as AuthenticatedErrorsErrorRouteImport } from './routes/_authenticated/errors/$error'
+import { Route as AuthenticatedEiaDeskRouteImport } from './routes/_authenticated/eia/desk'
 import { Route as AuthenticatedContractsTenderRouteImport } from './routes/_authenticated/contracts/tender'
 import { Route as AuthenticatedAuditSubmitRouteImport } from './routes/_authenticated/audit/submit'
 import { Route as AuthenticatedSectionPageRouteImport } from './routes/_authenticated/$section/$page'
@@ -51,6 +54,11 @@ const AuthenticatedIndexRoute = AuthenticatedIndexRouteImport.update({
 const AuthenticatedOcrRoute = AuthenticatedOcrRouteImport.update({
   id: '/ocr',
   path: '/ocr',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedEiaRoute = AuthenticatedEiaRouteImport.update({
+  id: '/eia',
+  path: '/eia',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedContractsRoute = AuthenticatedContractsRouteImport.update({
@@ -105,6 +113,11 @@ const AuthenticatedSettingsIndexRoute =
     path: '/',
     getParentRoute: () => AuthenticatedSettingsRouteRoute,
   } as any)
+const AuthenticatedEiaIndexRoute = AuthenticatedEiaIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AuthenticatedEiaRoute,
+} as any)
 const AuthenticatedContractsIndexRoute =
   AuthenticatedContractsIndexRouteImport.update({
     id: '/',
@@ -146,6 +159,11 @@ const AuthenticatedErrorsErrorRoute =
     path: '/errors/$error',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedEiaDeskRoute = AuthenticatedEiaDeskRouteImport.update({
+  id: '/desk',
+  path: '/desk',
+  getParentRoute: () => AuthenticatedEiaRoute,
+} as any)
 const AuthenticatedContractsTenderRoute =
   AuthenticatedContractsTenderRouteImport.update({
     id: '/tender',
@@ -212,10 +230,12 @@ export interface FileRoutesByFullPath {
   '/503': typeof errors503Route
   '/audit': typeof AuthenticatedAuditRouteWithChildren
   '/contracts': typeof AuthenticatedContractsRouteWithChildren
+  '/eia': typeof AuthenticatedEiaRouteWithChildren
   '/ocr': typeof AuthenticatedOcrRoute
   '/$section/$page': typeof AuthenticatedSectionPageRoute
   '/audit/submit': typeof AuthenticatedAuditSubmitRoute
   '/contracts/tender': typeof AuthenticatedContractsTenderRouteWithChildren
+  '/eia/desk': typeof AuthenticatedEiaDeskRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/settings/account': typeof AuthenticatedSettingsAccountRoute
   '/settings/appearance': typeof AuthenticatedSettingsAppearanceRoute
@@ -223,6 +243,7 @@ export interface FileRoutesByFullPath {
   '/settings/notifications': typeof AuthenticatedSettingsNotificationsRoute
   '/audit/': typeof AuthenticatedAuditIndexRoute
   '/contracts/': typeof AuthenticatedContractsIndexRoute
+  '/eia/': typeof AuthenticatedEiaIndexRoute
   '/settings/': typeof AuthenticatedSettingsIndexRoute
   '/audit/tasks/$taskId': typeof AuthenticatedAuditTasksTaskIdRoute
   '/contracts/tender/detail': typeof AuthenticatedContractsTenderDetailRoute
@@ -243,6 +264,7 @@ export interface FileRoutesByTo {
   '/$section/$page': typeof AuthenticatedSectionPageRoute
   '/audit/submit': typeof AuthenticatedAuditSubmitRoute
   '/contracts/tender': typeof AuthenticatedContractsTenderRouteWithChildren
+  '/eia/desk': typeof AuthenticatedEiaDeskRoute
   '/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/settings/account': typeof AuthenticatedSettingsAccountRoute
   '/settings/appearance': typeof AuthenticatedSettingsAppearanceRoute
@@ -250,6 +272,7 @@ export interface FileRoutesByTo {
   '/settings/notifications': typeof AuthenticatedSettingsNotificationsRoute
   '/audit': typeof AuthenticatedAuditIndexRoute
   '/contracts': typeof AuthenticatedContractsIndexRoute
+  '/eia': typeof AuthenticatedEiaIndexRoute
   '/settings': typeof AuthenticatedSettingsIndexRoute
   '/audit/tasks/$taskId': typeof AuthenticatedAuditTasksTaskIdRoute
   '/contracts/tender/detail': typeof AuthenticatedContractsTenderDetailRoute
@@ -270,11 +293,13 @@ export interface FileRoutesById {
   '/(errors)/503': typeof errors503Route
   '/_authenticated/audit': typeof AuthenticatedAuditRouteWithChildren
   '/_authenticated/contracts': typeof AuthenticatedContractsRouteWithChildren
+  '/_authenticated/eia': typeof AuthenticatedEiaRouteWithChildren
   '/_authenticated/ocr': typeof AuthenticatedOcrRoute
   '/_authenticated/': typeof AuthenticatedIndexRoute
   '/_authenticated/$section/$page': typeof AuthenticatedSectionPageRoute
   '/_authenticated/audit/submit': typeof AuthenticatedAuditSubmitRoute
   '/_authenticated/contracts/tender': typeof AuthenticatedContractsTenderRouteWithChildren
+  '/_authenticated/eia/desk': typeof AuthenticatedEiaDeskRoute
   '/_authenticated/errors/$error': typeof AuthenticatedErrorsErrorRoute
   '/_authenticated/settings/account': typeof AuthenticatedSettingsAccountRoute
   '/_authenticated/settings/appearance': typeof AuthenticatedSettingsAppearanceRoute
@@ -282,6 +307,7 @@ export interface FileRoutesById {
   '/_authenticated/settings/notifications': typeof AuthenticatedSettingsNotificationsRoute
   '/_authenticated/audit/': typeof AuthenticatedAuditIndexRoute
   '/_authenticated/contracts/': typeof AuthenticatedContractsIndexRoute
+  '/_authenticated/eia/': typeof AuthenticatedEiaIndexRoute
   '/_authenticated/settings/': typeof AuthenticatedSettingsIndexRoute
   '/_authenticated/audit/tasks/$taskId': typeof AuthenticatedAuditTasksTaskIdRoute
   '/_authenticated/contracts/tender/detail': typeof AuthenticatedContractsTenderDetailRoute
@@ -303,10 +329,12 @@ export interface FileRouteTypes {
     | '/503'
     | '/audit'
     | '/contracts'
+    | '/eia'
     | '/ocr'
     | '/$section/$page'
     | '/audit/submit'
     | '/contracts/tender'
+    | '/eia/desk'
     | '/errors/$error'
     | '/settings/account'
     | '/settings/appearance'
@@ -314,6 +342,7 @@ export interface FileRouteTypes {
     | '/settings/notifications'
     | '/audit/'
     | '/contracts/'
+    | '/eia/'
     | '/settings/'
     | '/audit/tasks/$taskId'
     | '/contracts/tender/detail'
@@ -334,6 +363,7 @@ export interface FileRouteTypes {
     | '/$section/$page'
     | '/audit/submit'
     | '/contracts/tender'
+    | '/eia/desk'
     | '/errors/$error'
     | '/settings/account'
     | '/settings/appearance'
@@ -341,6 +371,7 @@ export interface FileRouteTypes {
     | '/settings/notifications'
     | '/audit'
     | '/contracts'
+    | '/eia'
     | '/settings'
     | '/audit/tasks/$taskId'
     | '/contracts/tender/detail'
@@ -360,11 +391,13 @@ export interface FileRouteTypes {
     | '/(errors)/503'
     | '/_authenticated/audit'
     | '/_authenticated/contracts'
+    | '/_authenticated/eia'
     | '/_authenticated/ocr'
     | '/_authenticated/'
     | '/_authenticated/$section/$page'
     | '/_authenticated/audit/submit'
     | '/_authenticated/contracts/tender'
+    | '/_authenticated/eia/desk'
     | '/_authenticated/errors/$error'
     | '/_authenticated/settings/account'
     | '/_authenticated/settings/appearance'
@@ -372,6 +405,7 @@ export interface FileRouteTypes {
     | '/_authenticated/settings/notifications'
     | '/_authenticated/audit/'
     | '/_authenticated/contracts/'
+    | '/_authenticated/eia/'
     | '/_authenticated/settings/'
     | '/_authenticated/audit/tasks/$taskId'
     | '/_authenticated/contracts/tender/detail'
@@ -412,6 +446,13 @@ declare module '@tanstack/react-router' {
       path: '/ocr'
       fullPath: '/ocr'
       preLoaderRoute: typeof AuthenticatedOcrRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/eia': {
+      id: '/_authenticated/eia'
+      path: '/eia'
+      fullPath: '/eia'
+      preLoaderRoute: typeof AuthenticatedEiaRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/contracts': {
@@ -484,6 +525,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSettingsIndexRouteImport
       parentRoute: typeof AuthenticatedSettingsRouteRoute
     }
+    '/_authenticated/eia/': {
+      id: '/_authenticated/eia/'
+      path: '/'
+      fullPath: '/eia/'
+      preLoaderRoute: typeof AuthenticatedEiaIndexRouteImport
+      parentRoute: typeof AuthenticatedEiaRoute
+    }
     '/_authenticated/contracts/': {
       id: '/_authenticated/contracts/'
       path: '/'
@@ -532,6 +580,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/errors/$error'
       preLoaderRoute: typeof AuthenticatedErrorsErrorRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/eia/desk': {
+      id: '/_authenticated/eia/desk'
+      path: '/desk'
+      fullPath: '/eia/desk'
+      preLoaderRoute: typeof AuthenticatedEiaDeskRouteImport
+      parentRoute: typeof AuthenticatedEiaRoute
     }
     '/_authenticated/contracts/tender': {
       id: '/_authenticated/contracts/tender'
@@ -681,10 +736,24 @@ const AuthenticatedContractsRouteWithChildren =
     AuthenticatedContractsRouteChildren,
   )
 
+interface AuthenticatedEiaRouteChildren {
+  AuthenticatedEiaDeskRoute: typeof AuthenticatedEiaDeskRoute
+  AuthenticatedEiaIndexRoute: typeof AuthenticatedEiaIndexRoute
+}
+
+const AuthenticatedEiaRouteChildren: AuthenticatedEiaRouteChildren = {
+  AuthenticatedEiaDeskRoute: AuthenticatedEiaDeskRoute,
+  AuthenticatedEiaIndexRoute: AuthenticatedEiaIndexRoute,
+}
+
+const AuthenticatedEiaRouteWithChildren =
+  AuthenticatedEiaRoute._addFileChildren(AuthenticatedEiaRouteChildren)
+
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedSettingsRouteRoute: typeof AuthenticatedSettingsRouteRouteWithChildren
   AuthenticatedAuditRoute: typeof AuthenticatedAuditRouteWithChildren
   AuthenticatedContractsRoute: typeof AuthenticatedContractsRouteWithChildren
+  AuthenticatedEiaRoute: typeof AuthenticatedEiaRouteWithChildren
   AuthenticatedOcrRoute: typeof AuthenticatedOcrRoute
   AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
   AuthenticatedSectionPageRoute: typeof AuthenticatedSectionPageRoute
@@ -695,6 +764,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedSettingsRouteRoute: AuthenticatedSettingsRouteRouteWithChildren,
   AuthenticatedAuditRoute: AuthenticatedAuditRouteWithChildren,
   AuthenticatedContractsRoute: AuthenticatedContractsRouteWithChildren,
+  AuthenticatedEiaRoute: AuthenticatedEiaRouteWithChildren,
   AuthenticatedOcrRoute: AuthenticatedOcrRoute,
   AuthenticatedIndexRoute: AuthenticatedIndexRoute,
   AuthenticatedSectionPageRoute: AuthenticatedSectionPageRoute,

@@ -1,5 +1,12 @@
 import type { AuthUser } from '@/types/auth'
-import { ClipboardList, FileSearch, History, ScanText } from 'lucide-react'
+import {
+  ClipboardList,
+  FileSearch,
+  FlaskConical,
+  History,
+  Inbox,
+  ScanText,
+} from 'lucide-react'
 import type { NavGroup, NavItem } from '@/components/layout/types'
 import {
   filterNavigationGroupsByVisibility,
@@ -12,7 +19,12 @@ import type { TenderScenario } from '@/features/contract/tender-review/types'
 
 const DEFAULT_AVATAR = '/avatars/01.png'
 
-const MENU_GROUP_ORDER = ['智能招投标审核', '智能报销审核', '智能 OCR'] as const
+const MENU_GROUP_ORDER = [
+  '智能招投标审核',
+  '智能报销审核',
+  '智能环评检测',
+  '智能 OCR',
+] as const
 
 const STATIC_BREADCRUMBS: Record<string, BreadcrumbConfig[]> = {
   '/': [{ label: '智能报销审核' }, { label: '报销审核' }],
@@ -22,6 +34,8 @@ const STATIC_BREADCRUMBS: Record<string, BreadcrumbConfig[]> = {
     { label: '报销审核', href: '/audit' },
     { label: '新建报销审核' },
   ],
+  '/eia': [{ label: '智能环评检测' }, { label: '提交检测报告' }],
+  '/eia/desk': [{ label: '智能环评检测' }, { label: '受理工作台' }],
   '/ocr': [{ label: '智能 OCR' }, { label: 'OCR 识别' }],
   '/contracts': [{ label: '智能招投标审核' }, { label: '评审列表' }],
   '/contracts/tender/list': [
@@ -83,6 +97,18 @@ function getDomainNavGroups(
         title: '报销审核',
         url: '/audit',
         icon: ClipboardList,
+      },
+    ],
+    智能环评检测: [
+      {
+        title: '提交检测报告',
+        url: '/eia',
+        icon: FlaskConical,
+      },
+      {
+        title: '受理工作台',
+        url: '/eia/desk',
+        icon: Inbox,
       },
     ],
     '智能 OCR': [
