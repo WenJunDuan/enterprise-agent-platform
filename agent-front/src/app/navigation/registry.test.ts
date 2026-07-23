@@ -10,12 +10,13 @@ import {
 } from './tender-scenarios'
 
 describe('navigation registry', () => {
-  test('orders tender audit before reimbursement and OCR menus', () => {
+  test('orders tender audit, reimbursement, EIA detection before OCR menus', () => {
     const groups = buildNavigationGroups(null)
 
     expect(groups.map((group) => group.title)).toEqual([
       '智能招投标审核',
       '智能报销审核',
+      '智能环评检测',
       '智能 OCR',
     ])
   })
@@ -79,6 +80,20 @@ describe('navigation registry', () => {
     ])
   })
 
+  test('adds the EIA detection group with submit and desk entries, before OCR', () => {
+    const groups = buildNavigationGroups(null)
+    const eiaGroup = groups.find((group) => group.title === '智能环评检测')
+
+    expect(eiaGroup?.items.map((item) => item.title)).toEqual([
+      '提交检测报告',
+      '受理工作台',
+    ])
+    expect(eiaGroup?.items.map((item) => item.url)).toEqual([
+      '/eia',
+      '/eia/desk',
+    ])
+  })
+
   test('renames OCR group while keeping OCR entry title', () => {
     const groups = buildNavigationGroups(null)
     const ocrGroup = groups.find((group) => group.title === '智能 OCR')
@@ -98,6 +113,7 @@ describe('navigation registry', () => {
     expect(groups.map((group) => group.title)).toEqual([
       '智能招投标审核',
       '智能报销审核',
+      '智能环评检测',
     ])
   })
 
@@ -121,6 +137,7 @@ describe('navigation registry', () => {
     expect(groups.map((group) => group.title)).toEqual([
       '智能招投标审核',
       '智能报销审核',
+      '智能环评检测',
       '智能 OCR',
     ])
   })
@@ -158,6 +175,17 @@ describe('navigation registry', () => {
     expect(getBreadcrumbsForPath('/ocr')).toEqual([
       { label: '智能 OCR' },
       { label: 'OCR 识别' },
+    ])
+  })
+
+  test('uses EIA detection breadcrumbs for submit and desk routes', () => {
+    expect(getBreadcrumbsForPath('/eia')).toEqual([
+      { label: '智能环评检测' },
+      { label: '提交检测报告' },
+    ])
+    expect(getBreadcrumbsForPath('/eia/desk')).toEqual([
+      { label: '智能环评检测' },
+      { label: '受理工作台' },
     ])
   })
 })
