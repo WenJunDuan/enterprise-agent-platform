@@ -1,0 +1,72 @@
+sprint_slug: "2026-07-23-tender-case-header"
+collected_evidence:
+  - tool_use_id: "toolu_017JeXecYcNcNG377ECXuKtQ"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a9ea79174969a5183/agent-front && bun test src/features/contract/tender-review/model.test.ts 2>&1 | tail -100"
+    timestamp: "2026-07-23T04:08:19.128Z"
+  - tool_use_id: "toolu_01GtKHVTRshV6iBU3n3VnG1D"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a9ea79174969a5183/agent-front && bun test src/features/contract/tender-review/model.test.ts -t \"X2 priority chain\" 2>&1 | tail -60"
+    timestamp: "2026-07-23T04:08:24.469Z"
+  - tool_use_id: "toolu_01Fudx1pHjsXwvJLqkX4Rskv"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a9ea79174969a5183/agent-front && bun test src/features/contract/tender-review/model.test.ts 2>&1 | tail -60"
+    timestamp: "2026-07-23T04:09:20.573Z"
+  - tool_use_id: "toolu_01C1ZY1n5omrVut3pXtcVHcP"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a9ea79174969a5183/agent-front && bun test 2>&1 | tail -40"
+    timestamp: "2026-07-23T04:09:24.282Z"
+  - tool_use_id: "toolu_01W2rcKzuip77N5PUN9Vmkbf"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a9ea79174969a5183/agent-front && bun test 2>&1 | tail -40"
+    timestamp: "2026-07-23T04:09:46.666Z"
+  - tool_use_id: "toolu_017amuGoDioUx26aHBh7dosi"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a9ea79174969a5183/agent-front && bun test src/features/contract/tender-review 2>&1 | tail -40"
+    timestamp: "2026-07-23T04:11:35.714Z"
+  - tool_use_id: "toolu_01GAcDZNYacprSDgXM1Akn2w"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a9ea79174969a5183/agent-front && bun test src/features/contract/tender-review/model.test.ts 2>&1 | tail -30"
+    timestamp: "2026-07-23T04:12:01.143Z"
+  - tool_use_id: "toolu_01MWeXqNK4eSdVWd7mrhYNvA"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a9ea79174969a5183/agent-front && bun test src/features/contract/tender-review 2>&1 | tail -30"
+    timestamp: "2026-07-23T04:12:27.271Z"
+  - tool_use_id: "toolu_01SHosPmQuWPEqx3fZYBoNEe"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a9ea79174969a5183/agent-front && bun test src/features/contract/tender-review/model.test.ts -t \"case header\" 2>&1 | tail -40"
+    timestamp: "2026-07-23T04:12:58.511Z"
+  - tool_use_id: "toolu_01YLHdftUjQ1LhSQLCEgfMgJ"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a9ea79174969a5183/agent-front && bun test src/features/contract/tender-review 2>&1 | tail -30"
+    timestamp: "2026-07-23T04:13:22.292Z"
+  - tool_use_id: "toolu_01WoEvfzXsvrVjUPu9Hn67Az"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a9ea79174969a5183/agent-front && bun test 2>&1 | tail -20"
+    timestamp: "2026-07-23T04:13:25.751Z"
+  - tool_use_id: "toolu_01RbiYfPbrUkxcQAVneAmyCi"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a9ea79174969a5183/agent-front && npm run build 2>&1 | tail -60"
+    timestamp: "2026-07-23T04:13:34.471Z"
+  - tool_use_id: "toolu_016bbMoEvb6vBC9rJeU6BW9d"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a9ea79174969a5183/agent-front && npm run lint 2>&1 | tail -60"
+    timestamp: "2026-07-23T04:13:41.894Z"
+  - tool_use_id: "toolu_01C4adjev8DTrfXoX54y2v2J"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a9ea79174969a5183/agent-front && npm run lint; echo \"EXIT_CODE=$?\""
+    timestamp: "2026-07-23T04:13:58.140Z"

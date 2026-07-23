@@ -1,0 +1,17 @@
+{"schema_version":1,"event":"SubagentStart","agent_id":"aac0756f4412f828e","agent_type":"critic","sprint_slug":"2026-07-23-eia-domain-page","timestamp":"2026-07-23T02:11:12.353Z"}
+{"schema_version":1,"event":"SubagentStop","agent_id":"aac0756f4412f828e","agent_type":"critic","sprint_slug":"2026-07-23-eia-domain-page","timestamp":"2026-07-23T02:35:07.261Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"aac0756f4412f828e","agent_type":"critic","sprint_slug":"2026-07-23-eia-domain-page","timestamp":"2026-07-23T02:36:32.894Z"}
+{"schema_version":1,"event":"SubagentStop","agent_id":"aac0756f4412f828e","agent_type":"critic","sprint_slug":"2026-07-23-eia-domain-page","timestamp":"2026-07-23T02:37:57.244Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"a7f377aaf41cd1280","agent_type":"generator","sprint_slug":"2026-07-23-eia-domain-page","timestamp":"2026-07-23T02:40:23.721Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"a7f377aaf41cd1280","agent_type":"generator","sprint_slug":"2026-07-23-eia-domain-page","timestamp":"2026-07-23T03:02:06.476Z"}
+{"schema_version":1,"event":"SubagentStop","agent_id":"a7f377aaf41cd1280","agent_type":"generator","sprint_slug":"2026-07-23-eia-domain-page","timestamp":"2026-07-23T03:15:23.921Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"ac90dbb2929c3f1ea","agent_type":"reviewer","sprint_slug":"2026-07-23-eia-domain-page","timestamp":"2026-07-23T03:17:55.266Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"a6a005120d232433a","agent_type":"spec-compliance","sprint_slug":"2026-07-23-eia-domain-page","timestamp":"2026-07-23T03:18:03.382Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"aa41143ec80bbeed1","agent_type":"critic","sprint_slug":"2026-07-23-eia-domain-page","timestamp":"2026-07-23T03:20:51.611Z"}
+{"schema_version":1,"event":"SubagentStop","agent_id":"a6a005120d232433a","agent_type":"spec-compliance","sprint_slug":"2026-07-23-eia-domain-page","timestamp":"2026-07-23T03:21:47.942Z"}
+{"schema_version":1,"event":"SubagentStop","agent_id":"aa41143ec80bbeed1","agent_type":"critic","sprint_slug":"2026-07-23-eia-domain-page","timestamp":"2026-07-23T03:29:32.305Z"}
+{"schema_version":1,"event":"SubagentStop","agent_id":"ac90dbb2929c3f1ea","agent_type":"reviewer","sprint_slug":"2026-07-23-eia-domain-page","timestamp":"2026-07-23T03:30:08.594Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"aa41143ec80bbeed1","agent_type":"critic","sprint_slug":"2026-07-23-eia-domain-page","timestamp":"2026-07-23T03:32:54.211Z"}
+{"schema_version":1,"event":"SubagentStop","agent_id":"aa41143ec80bbeed1","agent_type":"critic","sprint_slug":"2026-07-23-eia-domain-page","timestamp":"2026-07-23T03:37:23.700Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"aa41143ec80bbeed1","agent_type":"critic","sprint_slug":"2026-07-23-eia-domain-page","timestamp":"2026-07-23T03:38:46.301Z"}
+{"schema_version":1,"event":"SubagentStop","agent_id":"aa41143ec80bbeed1","agent_type":"critic","sprint_slug":"2026-07-23-eia-domain-page","timestamp":"2026-07-23T03:42:34.320Z"}
