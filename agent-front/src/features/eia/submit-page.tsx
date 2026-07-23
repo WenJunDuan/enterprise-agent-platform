@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -26,7 +25,6 @@ import {
   EIA_CATEGORY_FINDINGS,
   EIA_CATEGORY_GLYPH,
   EIA_CATEGORY_STREAM_LINES,
-  MOCK_EIA_SAMPLE_FILES,
 } from './model/mock-data'
 import {
   buildStreamScript,
@@ -85,12 +83,9 @@ export function EiaSubmitPage() {
     undefined,
     createInitialEiaWizardState
   )
+  // 受理编号是「确认提交」后才由 api.ts 接缝下发的分析期数据(真实后端接线后改由响应带回),
+  // 未提交前页面不展示、不预造号。
   const [batchNo, setBatchNo] = useState('')
-
-  // 受理编号经 api.ts 的 mock 接缝下发（真实后端接线后改由响应带回），页面层不再自己造号。
-  useEffect(() => {
-    void submitEiaBatch([]).then((result) => setBatchNo(result.batchNo))
-  }, [])
 
   const activeCategories = getActiveCategories(state.files)
   const totalFiles = getTotalFileCount(state.files)
@@ -144,13 +139,19 @@ export function EiaSubmitPage() {
     dispatch({ type: 'remove_file', category, id })
   }
 
-  function loadSample() {
-    dispatch({ type: 'load_sample', files: MOCK_EIA_SAMPLE_FILES })
+  function startAnalysis() {
+    const uploadedFiles = activeCategories.flatMap((category) =>
+      state.files[category].flatMap((item) => (item.file ? [item.file] : []))
+    )
+    void submitEiaBatch(uploadedFiles).then((result) =>
+      setBatchNo(result.batchNo)
+    )
+    dispatch({ type: 'start_analysis' })
   }
 
   function resetWizard() {
     dispatch({ type: 'reset_wizard' })
-    void submitEiaBatch([]).then((result) => setBatchNo(result.batchNo))
+    setBatchNo('')
   }
 
   function downloadReport(report: EiaReport) {
@@ -181,13 +182,7 @@ export function EiaSubmitPage() {
             </h1>
             <p className='mt-1 max-w-prose text-sm text-muted-foreground'>
               按水、土、气、声分类上传检测材料——每类可上传一到多个文件，也可留空。
-              系统按已上传类别逐项进行 AI 分析，并分别出具分析报告。
             </p>
-          </div>
-          <div className='flex gap-2'>
-            <Badge variant='outline'>材料 {totalFiles}</Badge>
-            <Badge variant='outline'>类别 {activeCategories.length}</Badge>
-            <Badge variant='outline'>受理编号 {batchNo}</Badge>
           </div>
         </div>
 
@@ -216,12 +211,6 @@ export function EiaSubmitPage() {
 
         {state.step === 1 ? (
           <>
-            <div className='flex justify-end'>
-              <Button variant='outline' onClick={loadSample}>
-                <Sparkles className='size-4' />
-                加载示例
-              </Button>
-            </div>
             <div className='grid gap-4 md:grid-cols-2'>
               {EIA_CATEGORIES.map((def) => (
                 <CategoryUploadCard
@@ -298,9 +287,7 @@ export function EiaSubmitPage() {
                 >
                   返回修改
                 </Button>
-                <Button onClick={() => dispatch({ type: 'start_analysis' })}>
-                  确认提交，开始 AI 分析
-                </Button>
+                <Button onClick={startAnalysis}>确认提交，开始 AI 分析</Button>
               </div>
             </CardContent>
           </Card>
