@@ -21,7 +21,8 @@ _CACHE_DIR = DATA_ROOT / "ocr-cache"
 # 缓存 schema 版本：产物结构变更时 bump，使旧缓存自动失效。
 # v2：混合 PDF 子集 OCR 回填（扫描页内容进 blocks）。旧 v1 对混合 PDF 缓存的是纯 native 产物
 # （扫描页空白），与新键不同的 result——若不 bump，同内容文件命中旧缓存会绕过子集 OCR。
-_CACHE_VERSION = "v2"
+# v3：文档分诊/老 Word 读取路径修复。旧缓存可能把可直读的 .doc 固化成 manual，必须整体失效。
+_CACHE_VERSION = "v3"
 
 
 def _engine_fingerprint() -> str:
