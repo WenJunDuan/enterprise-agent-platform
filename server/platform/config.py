@@ -24,7 +24,7 @@ _DEFAULT_TENDER_TIMEOUT_SECONDS = 3600.0
 _DEFAULT_OCR_CLOUD_MAX_WAIT_SECONDS = 1200.0
 _OCR_TIMEOUT_BUDGET_RATIO = 0.5
 _CACHE_V2_STARTUP_NOTE = (
-    "OCR cache v2 active: the first rerun after deployment re-runs OCR once per file; "
+    "OCR cache v3 active: the first rerun after deployment re-runs OCR once per file; "
     "subsequent reruns use the cached result."
 )
 
