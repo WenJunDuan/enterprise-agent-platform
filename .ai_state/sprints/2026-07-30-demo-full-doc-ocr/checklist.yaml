@@ -44,8 +44,8 @@ tasks:
   - id: T6
     title: "demo 备份、同步、双镜像构建部署、格式验收、导出与清理"
     design_ref: "design.md KD6, AC8-AC10"
-    status: in_progress
-    evidence_tool_use_ids: []
-    files_changed: []
-    completed_at: ""
-    blocked_by: ""
+    status: completed
+    evidence_tool_use_ids: ["chunk:188822-runtime-shape-unchanged", "chunk:b13219-running-dual-24-format-smoke", "chunk:0b312b-macro-safety-ok", "chunk:265211-isolated-load-verify-ok", "chunk:165680-backup-tags-removed-old-tars-preserved", "chunk:48c09c-final-deploy-gate-ok", "chunk:254537-local-1160-pass-quality-green"]
+    files_changed: ["Dockerfile", "agent-front/deploy/Containerfile.agent-backend", "deploy/TROUBLESHOOTING.md", ".ai_state/compound/2026-07-30-learning-document-ingestion-deployment-evidence.md", ".ai_state/sprints/2026-07-30-demo-full-doc-ocr/checklist.yaml", ".ai_state/_index.md"]
+    completed_at: "2026-07-30"
+    blocked_by: "T5"

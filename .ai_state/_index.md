@@ -5,7 +5,7 @@ version: "9.6.4"
 
 # === PACE 路由状态 ===
 path: "System" # 2026-07-30 demo 完整文档格式/OCR/criteria/双容器部署
-stage: "ship" # polish PASS；T6 demo 备份/双镜像构建部署/成品镜像验收进行中
+stage: "ship" # T1-T6 完成；0730b2 双镜像部署、运行中双 OCR/24 格式验收、导出与清理全绿
 current_sprint_slug: "2026-07-30-demo-full-doc-ocr"
 current_roadmap_slug: ""
 skip_polish: false
@@ -67,7 +67,7 @@ pointers:
   latest_architecture_update: "2026-07-30T12:28:00Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "ship: 执行 T6 demo 配置保护校验、旧双镜像备份、代码同步、0730b2 双镜像构建部署、镜像内双 OCR/24 格式/宏安全验收、导出与临时 tag 清理"
+next_action: ""
 last_subagent: "codex-exec" # tender-report-dimensions D0-D5 headless (codex 0.142.1, gpt-5.5)；必须 env -u HTTP_PROXY -u HTTPS_PROXY 否则 streaming API 挂起，见 compound/2026-06-25-trick-codex-proxy-hangs-streaming.md
 last_subagent_at: "2026-06-25T00:00:00.000Z"
 active_worktrees: ["/Users/mac/workspace/enterprise-agent-platform-demo-full-doc-ocr-0730"]

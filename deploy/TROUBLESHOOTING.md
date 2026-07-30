@@ -226,7 +226,7 @@
    ```
 
 2. 后端镜像内验证架构和固定依赖：xlrd、pyxlsb、python-pptx、pdfplumber、PaddlePaddle 3.2.2、
-   PaddleOCR 3.7.0、PaddleX 3.7.2 均可 import；`soffice --version`、
+   PaddleOCR 3.7.0、PaddleX 3.7.2 均可 import；`command -v ps`（来自 `procps`）、`soffice --version`、
    `tesseract --list-langs`（含 `chi_sim`、`eng`）、`fc-list`（含 Noto CJK、Liberation2）实际成功。
    `OCR_VL_USE_PADDLE_PIPELINE=0` 是 ARM64 默认；import 成功不能冒充本地 Paddle pipeline smoke。
 3. 显式设置 `OCR_VL_USE_PADDLE_PIPELINE=1` 的启动 smoke 单独记录，失败不得影响默认远端 LiteLLM
@@ -245,12 +245,13 @@
 
 ### H5. 真实格式/OCR 矩阵
 
-准备每种 canonical 后缀恰好一个真实 fixture（包含中文、表格/正文；至少一份扫描件），在新后端
-容器的同一 env/网络下运行：
+准备每种 canonical 后缀恰好一个真实 fixture（包含中文、表格/正文；至少一份扫描件）。生成物检查在
+目标项目的**源码检出**中运行；成品后端只携带前端 `dist`，不携带 TypeScript 源码，不能在镜像内跑
+`generate_document_formats.py --check`。其余 smoke 在新后端容器的同一 env/网络下运行：
 
 ```bash
 set -o pipefail
-python scripts/generate_document_formats.py --check
+(cd "$PROJECT_DIR" && python3 scripts/generate_document_formats.py --check)
 # The former single document-format-smoke.json is replaced by two engine-specific records below.
 
 # Round 1: use the demo environment's real LiteLLM/PaddleOCR-VL endpoint.
@@ -334,3 +335,31 @@ Debian ARM64 后端成品镜像内重新执行；结果为 `status=ok`、`side_e
    只删除 `agent-backend:backup-$STAMP`、`agent-front:backup-$STAMP` 两个临时 backup tag。
 3. 不删除旧镜像 tar、SHA、inspect、日志或恢复说明；它们在观察期结束前持续保留。不得执行
    `docker image prune -a`，不得删除 `0730b1`/旧 image ID，除非另有明确的观察期清理授权。
+
+隔离 load 的 data-root 必须放在容量足够的项目磁盘并优先使用 `overlay2`。不要在小容量 tmpfs 上用
+`vfs` 验证多层大镜像：`vfs` 会展开每一层，归档只有约 2.3 GB 也可能耗尽 31 GB tmpfs。
+
+### H7. 2026-07-30 实际部署结果与教训
+
+本次已完成 `agent-backend:0730b2` / `agent-front:0730b2` 部署，运行 image ID 分别为
+`sha256:2f7067aee290...`、`sha256:e66a6de49d3f...`。固定容器名、env 键集合、挂载、网络、端口、
+CPU/内存、restart policy 与旧容器严格一致；后端 `/health` 和前端 `/` 均为 HTTP 200。
+
+- 演示机配置未被仓库覆盖：`MODEL_BASE_URL=http://litellm:4000`、`OCR_CLOUD=0`、
+  `OCR_VL_SERVER_URL=http://litellm:4000/v1`、`OCR_VL_MODEL_NAME=paddleocr`、
+  `OCR_VL_USE_PADDLE_PIPELINE=0`。env、Compose、knowledge/data/logs 与本地私有设置均保留。
+- 运行中后端的两轮 24 格式矩阵全部成功且 `from_cache=false`：默认轮 PNG 为
+  `openai-compatible-vlm/degraded=false`，故障注入轮为 `tesseract/degraded=true`。可选
+  `OCR_VL_USE_PADDLE_PIPELINE=1` 启动探测也成功创建 `PaddleOCRVL`。
+- Debian ARM64 宏安全验收为 `status=ok`、`side_effect_created=false`、
+  `profile_removed=true`、`residual_processes=[]`。最初成品缺 `ps` 导致验收脚本无法检查残留进程，
+  因此两个后端 Dockerfile 都固定安装 `procps`；只装 LibreOffice 并不等于验收环境完整。
+- 目标 Docker legacy builder 不支持 `--progress=plain`，且默认 `docker0` 缺失；构建改用
+  `docker build --network=host`，没有为构建重启正式 Docker daemon。
+- `-p 9999:9999` 与 `-p 0.0.0.0:9999:9999` 对外行为相同，但 inspect 的 `HostIp` 字面不同。
+  为让参数 diff 真正零漂移，重建时显式写出 `0.0.0.0`。
+- 新镜像导出位于项目 `docker-export/`：后端 SHA-256
+  `fe64b23ba82d9a52abaa887cde6d0979070ca35f37bf42de6641167a64d4b44f`，前端 SHA-256
+  `5dddd68ea5244fa43a1facf2f28887fddf0b3d33a21733d75304b548e0eacf8c`；隔离 `overlay2` daemon
+  load 后 ID/架构一致。临时 backup tag 已删除，`0730b1` 标签与旧 tar 继续保留。
+- 完整证据目录：`/opt/application/audit-agent/backups/pre-0730b2-20260730-203137/deploy-evidence/`。
