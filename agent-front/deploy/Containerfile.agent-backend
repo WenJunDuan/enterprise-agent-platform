@@ -60,6 +60,7 @@ RUN if [ "$INSTALL_OS_DEPS" = "1" ]; then \
         libreoffice-calc \
         libreoffice-impress \
         libreoffice-writer \
+        procps \
         tesseract-ocr \
         tesseract-ocr-chi-sim \
         tesseract-ocr-eng \

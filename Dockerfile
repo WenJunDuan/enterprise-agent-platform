@@ -77,6 +77,7 @@ RUN apt-get update \
       libreoffice-calc \
       libreoffice-impress \
       libreoffice-writer \
+      procps \
       tesseract-ocr \
       tesseract-ocr-chi-sim \
       tesseract-ocr-eng; fi \

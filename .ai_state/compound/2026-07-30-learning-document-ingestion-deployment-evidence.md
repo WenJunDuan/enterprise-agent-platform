@@ -36,6 +36,12 @@ LibreOffice、Tesseract 与 Paddle 依赖；扫描标书、旧 Office 和 PPT �
    同步前后比较目标配置 hash。
 6. 替换前按实际 image ID 导出双镜像并验证 SHA/load；成功后再导出新镜像，临时 backup tag 可删，
    原旧版本 tag 保留观察期回滚。
+7. 宏安全 smoke 依赖 `ps` 检查残留进程；slim 镜像须显式安装 `procps`，否则转换成功也不能证明清理。
+8. legacy builder 不支持 BuildKit 参数且默认 bridge 可能缺失；构建期可用 `--network=host`，不要为此
+   重启承载正式容器的 Docker daemon。
+9. 容器参数要比较 inspect 结构而非只看可达性；端口 `HostIp` 应显式写 `0.0.0.0` 避免字面漂移。
+10. 生成物检查属于源码/build 门禁；只携带前端 `dist` 的后端成品镜像不应被要求读取 TypeScript 源码。
+11. 大镜像隔离 load 不要在 tmpfs 上使用 `vfs`；选择容量足够的磁盘与独立 `overlay2` data-root。
 
 ## 相关引用
 
