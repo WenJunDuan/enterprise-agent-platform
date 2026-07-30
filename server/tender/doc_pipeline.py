@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 
 from server.common.command_adapter import run_command_json
 from server.ocr.pipeline import is_ocr_text_valid, prewarm_and_text
@@ -24,10 +25,16 @@ from server.stores.tender_doc_store import (
     update_project_doc_ocr,
 )
 from server.stores.tender_project_store import update_project_fields_if_empty
+from server.tender.context_slim import build_preextract_tender_context
 # re-export：server.routes.tender 从本模块 import TENDER_OCR_PURPOSE（既有引用点不变）。
 from server.tender.runner import TENDER_OCR_PURPOSE as TENDER_OCR_PURPOSE
 
 logger = logging.getLogger(__name__)
+
+
+def _tender_slim_context_enabled() -> bool:
+    """Return True when the opt-in tender context slimming path is enabled."""
+    return os.getenv("TENDER_SLIM_CONTEXT", "0").lower() in {"1", "true", "yes"}
 
 # TENDER_OCR_PURPOSE 挪家 server/tender/runner.py（D1 T2 方案 i 接缝）：评标 OCR 与本模块的上传
 # 预热 OCR 共用同一目的字符串，evaluation 核心下沉后常量随之下沉，本模块改 import 复用（routes→
@@ -183,9 +190,14 @@ async def extract_project_doc_info(
         ocr_text: The OCR text already extracted — injected as command context.
         tenant: Tenant scope for all DB writes.
     """
+    extraction_text = ocr_text
+    if _tender_slim_context_enabled():
+        slim_text = build_preextract_tender_context(ocr_text, file_name=case_path)
+        if slim_text is not None:
+            extraction_text = slim_text
     context = (
         "=== 招标文件 OCR 底稿（确定性预处理，优先用此文本，无需再 Read 文件）===\n"
-        + ocr_text
+        + extraction_text
     )
     try:
         payload, _meta = await run_command_json(

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import uuid
 
 import pytest
@@ -593,6 +594,86 @@ def test_extract_project_doc_info_invalid_tender_info_dropped_criteria_ready(mon
     row = get_project_doc(pid, tenant)
     assert row["criteria_status"] == "ready"  # criteria 合法 → ready
     assert row["tender_info"] is None  # 非法 tender_info 被丢弃
+
+
+def test_extract_project_doc_info_slims_initial_ocr_context_with_budget(monkeypatch):
+    """Initial criteria extraction must fit the configured input + output budget."""
+    import server.tender.doc_pipeline as tender_module
+    from server.stores.tender_doc_store import get_project_doc, upsert_project_doc
+    from server.stores.tender_project_store import get_or_create_project
+
+    monkeypatch.setenv("TENDER_SLIM_CONTEXT", "1")
+    monkeypatch.setenv("MODEL_CONTEXT_WINDOW", "100000")
+    monkeypatch.setenv("CLAUDE_CODE_MAX_OUTPUT_TOKENS", "2000")
+    tenant = "t-extract-initial-slim"
+    pid = get_or_create_project(tenant=tenant, tender_no=f"ES-{uuid.uuid4().hex[:8]}")[
+        "project_id"
+    ]
+    upsert_project_doc(project_id=pid, tenant=tenant, tender_files="[]", ocr_status="ready")
+    ocr_text = (
+        "### 文件: 招标文件.pdf (kind=pdf_text, route=native)\n"
+        "项目名称：城市更新项目\n招标人：某市建设局\n"
+        "# 第一章 项目说明\n"
+        + "无关正文\n" * 40000
+        + "# 第二章 评标办法\n评分标准：技术方案最高得 60 分。\n"
+        "# 第三章 资格审查与符合性审查\n资格审查和符合性审查要求。\n"
+        "# 第四章 废标与否决条款\n废标情形和否决投标条款。\n"
+    )
+    calls: dict[str, str] = {}
+
+    async def fake_run_command_json(command_name, *args, **kwargs):
+        calls["context"] = kwargs["context"]
+        return SAMPLE_EXTRACT_PAYLOAD, _meta_for("rid-initial-slim")
+
+    monkeypatch.setattr(tender_module, "run_command_json", fake_run_command_json)
+
+    asyncio.run(tender_module.extract_project_doc_info(pid, "/fake/path", ocr_text, tenant))
+
+    context = calls["context"]
+    estimated_messages = math.ceil(len(context) / 1.5)
+    assert estimated_messages + 2000 + 4096 <= 100000
+    assert "项目名称：城市更新项目" in context
+    assert "评分标准：技术方案最高得 60 分" in context
+    assert "资格审查和符合性审查要求" in context
+    assert "废标情形和否决投标条款" in context
+    assert "无关正文" not in context
+
+    row = get_project_doc(pid, tenant)
+    assert row is not None
+    assert row["criteria_status"] == "ready"
+    assert row["ocr_status"] == "ready"
+
+
+def test_extract_project_doc_info_keeps_small_unstructured_ocr_behavior(monkeypatch):
+    """Slimming must fall back to the original context for small/unstructured OCR."""
+    import server.tender.doc_pipeline as tender_module
+    from server.stores.tender_doc_store import get_project_doc, upsert_project_doc
+    from server.stores.tender_project_store import get_or_create_project
+
+    monkeypatch.setenv("TENDER_SLIM_CONTEXT", "1")
+    monkeypatch.setenv("MODEL_CONTEXT_WINDOW", "100000")
+    monkeypatch.setenv("CLAUDE_CODE_MAX_OUTPUT_TOKENS", "2000")
+    tenant = "t-extract-small-fallback"
+    pid = get_or_create_project(tenant=tenant, tender_no=f"EU-{uuid.uuid4().hex[:8]}")[
+        "project_id"
+    ]
+    upsert_project_doc(project_id=pid, tenant=tenant, tender_files="[]", ocr_status="ready")
+    ocr_text = "### 文件: 招标文件.pdf (kind=pdf_text, route=native)\n普通 OCR 正文"
+    calls: dict[str, str] = {}
+
+    async def fake_run_command_json(command_name, *args, **kwargs):
+        calls["context"] = kwargs["context"]
+        return SAMPLE_EXTRACT_PAYLOAD, _meta_for("rid-small-fallback")
+
+    monkeypatch.setattr(tender_module, "run_command_json", fake_run_command_json)
+
+    asyncio.run(tender_module.extract_project_doc_info(pid, "/fake/path", ocr_text, tenant))
+
+    assert calls["context"] == "=== 招标文件 OCR 底稿（确定性预处理，优先用此文本，无需再 Read 文件）===\n" + ocr_text
+    row = get_project_doc(pid, tenant)
+    assert row is not None
+    assert row["criteria_status"] == "ready"
+    assert row["ocr_status"] == "ready"
 
 
 # ──────────────────────────────────────────────────────────────────────────────

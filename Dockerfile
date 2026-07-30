@@ -28,13 +28,16 @@ WORKDIR /app
 
 # Dependency layer (kept separate for build-cache reuse). Mirrors pyproject.toml.
 RUN pip install \
+      "anthropic>=0.117.0" \
       "claude-agent-sdk>=0.2.88" \
       "fastapi>=0.115.0" \
+      "httpx>=0.28.1" \
       "jsonschema>=4.23.0" \
       "python-dotenv>=1.0.1" \
       "python-multipart>=0.0.30" \
       "typer>=0.12.0" \
-      "uvicorn>=0.30.0"
+      "uvicorn>=0.30.0" \
+      "certifi>=2024.0"
 
 # 可选 OCR 依赖层（文档识别 multi-ocr）。仅 --build-arg WITH_OCR=1 时装：
 # - paddlepaddle + paddleocr[doc-parser]：保留完整 PaddleOCRVL pipeline 能力；

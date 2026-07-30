@@ -9,16 +9,190 @@ evaluation_method）——两者都是 D6 docstructure._TAG_KEYWORDS 现成的�
 
 from __future__ import annotations
 
+import os
+import re
 import sqlite3
 from typing import Any
 
-from server.ocr.docstructure import build_doc_structure
+from server.ocr.docstructure import build_doc_structure, chapter_heading
 from server.ocr.rag import index_document, search
+from server.platform.config import resolve_model_context_window
 
 _ELIGIBILITY_TAG = "qualification_review"
 _EVALUATION_TAG = "evaluation_method"
 # 每条 criteria 项检索几个 chunk：给到"整章+相邻子节"的量级，过大会让去重后仍逼近全量。
 _CHUNKS_PER_QUERY = 3
+
+# 首次 criteria 抽取尚无 criteria 可供检索，因此按 docstructure 的标题识别结果保留
+# 招标前置信息和评标相关章节。额外的"废标/否决"关键词不能只依赖现有语义 tag：它们
+# 常出现在资格/符合性章节的标题或条款标题中，但属于首次抽取的关键证据。
+_PREEXTRACT_KEYWORDS = (
+    "评标办法",
+    "评分标准",
+    "评分细则",
+    "评审办法",
+    "资格审查",
+    "资格评审",
+    "资格要求",
+    "初步评审",
+    "符合性审查",
+    "响应性审查",
+    "废标",
+    "否决",
+)
+_PAGE_ANCHOR_RE = re.compile(r"^\s*【第\s*\d+\s*页】")
+# OCR 文本以中文为主，按 1 字符≈1 token 估算，宁可少送也不让网关再次超窗。
+_DEFAULT_CHARS_PER_TOKEN = 1.0
+_DEFAULT_RESERVED_OUTPUT_TOKENS = 32000
+_DEFAULT_CONTEXT_MARGIN_TOKENS = 4096
+
+
+def _positive_float_env(name: str, default: float) -> float:
+    raw = (os.getenv(name) or "").strip()
+    try:
+        value = float(raw) if raw else default
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
+def _non_negative_int_env(name: str, default: int) -> int:
+    raw = (os.getenv(name) or "").strip()
+    try:
+        value = int(raw) if raw else default
+    except ValueError:
+        return default
+    return value if value >= 0 else default
+
+
+def _preextract_char_budget() -> int | None:
+    """Return a conservative OCR character budget, or None when the guard is disabled."""
+    window = resolve_model_context_window()
+    if window <= 0:
+        return None
+    raw_output = (os.getenv("CLAUDE_CODE_MAX_OUTPUT_TOKENS") or "").strip()
+    try:
+        reserved_output = int(raw_output) if raw_output else _DEFAULT_RESERVED_OUTPUT_TOKENS
+    except ValueError:
+        reserved_output = _DEFAULT_RESERVED_OUTPUT_TOKENS
+    if reserved_output < 0:
+        reserved_output = _DEFAULT_RESERVED_OUTPUT_TOKENS
+    # 留出命令/系统提示和估算误差空间；窗口越大，至少保留 2% 的 token 余量。
+    configured_margin = _non_negative_int_env(
+        "TENDER_CONTEXT_MARGIN_TOKENS", _DEFAULT_CONTEXT_MARGIN_TOKENS
+    )
+    margin = max(configured_margin, window // 50)
+    available_tokens = window - reserved_output - margin
+    chars_per_token = _positive_float_env(
+        "TENDER_CONTEXT_CHARS_PER_TOKEN", _DEFAULT_CHARS_PER_TOKEN
+    )
+    return max(0, int(available_tokens * chars_per_token))
+
+
+def _trim_context_block(block: str, limit: int) -> str:
+    """Trim one selected block while retaining both its heading-side and tail evidence."""
+    if len(block) <= limit:
+        return block
+    if limit <= 0:
+        return ""
+    marker = "\n...[章节中间内容省略，章节首尾保留]...\n"
+    if limit <= len(marker):
+        return block[:limit]
+    body_limit = limit - len(marker)
+    head = (body_limit * 2) // 3
+    return block[:head] + marker + block[-(body_limit - head) :]
+
+
+def _keyword_windows(lines: list[str]) -> list[tuple[int, int]]:
+    """Return small line windows around review-related OCR hits."""
+    hits = [
+        index
+        for index, line in enumerate(lines)
+        if any(keyword in line for keyword in _PREEXTRACT_KEYWORDS)
+    ]
+    windows: list[list[int]] = []
+    for index in hits:
+        start, end = max(0, index - 40), min(len(lines), index + 81)
+        if windows and start <= windows[-1][1]:
+            windows[-1][1] = max(windows[-1][1], end)
+        else:
+            windows.append([start, end])
+    return [(start, end) for start, end in windows]
+
+
+def build_preextract_tender_context(
+    tender_text: str, *, file_name: str | None = None
+) -> str | None:
+    """Build a bounded first-pass context before ``criteria`` exists.
+
+    ``None`` deliberately means "use the original OCR text": missing context-window config,
+    small text, or unrecognized structure therefore keep the pre-existing extraction behavior.
+    For a large structured document, keep the preface plus every title-matched review section;
+    section-aware fitting avoids dropping the entire scoring chapter through a blind tail cut.
+    """
+    budget = _preextract_char_budget()
+    if budget is None or len(tender_text) <= budget:
+        return None
+
+    lines = (tender_text or "").splitlines()
+    headings: list[tuple[int, str, int]] = []
+    for index, raw in enumerate(lines):
+        if raw.strip().startswith("### 文件:"):
+            continue
+        heading = chapter_heading(raw)
+        if heading is not None:
+            title, level = heading
+            headings.append((index, title, level))
+
+    selected: list[tuple[int, int]] = []
+    for heading_index, title, level in headings:
+        if any(keyword in title for keyword in _PREEXTRACT_KEYWORDS):
+            end = len(lines)
+            for next_index, _next_title, next_level in headings:
+                if next_index > heading_index and next_level <= level:
+                    end = next_index
+                    break
+            start = heading_index
+            if start > 0 and _PAGE_ANCHOR_RE.match(lines[start - 1]):
+                start -= 1
+            selected.append((start, end))
+
+    # OCR often loses heading markers while retaining the actual review terms. Keep local
+    # windows around those hits so a huge unstructured document still gets bounded instead
+    # of falling through to the original over-sized prompt.
+    if not selected:
+        selected = _keyword_windows(lines)
+    if not selected:
+        return _trim_context_block(tender_text, budget)
+
+    merged: list[list[int]] = []
+    for start, end in sorted(selected):
+        if merged and start <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], end)
+        else:
+            merged.append([start, end])
+
+    preface_end = headings[0][0] if headings else min(selected[0][0], 120)
+    prefix = "\n".join(lines[:preface_end])
+    sections = ["\n".join(lines[start:end]) for start, end in merged]
+    parts = [prefix, *sections]
+    full = "\n\n".join(part for part in parts if part)
+    if len(full) <= budget:
+        return full
+
+    # If selected chapters themselves exceed the budget, allocate space to every part. This
+    # preserves the preface and each relevant chapter instead of cutting at one global offset.
+    part_count = len(parts)
+    separator_budget = max(0, budget - max(0, part_count - 1) * 2)
+    prefix_limit = min(len(prefix), separator_budget // max(5, part_count))
+    remaining = separator_budget - prefix_limit
+    fitted = [_trim_context_block(prefix, prefix_limit)] if prefix else []
+    for index, section in enumerate(sections):
+        sections_left = len(sections) - index
+        limit = remaining // sections_left if sections_left else 0
+        fitted.append(_trim_context_block(section, limit))
+        remaining -= min(len(section), limit)
+    return "\n\n".join(part for part in fitted if part)
 
 
 def _criteria_queries(criteria: dict[str, Any]) -> list[tuple[str, str, str]]:
