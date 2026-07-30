@@ -191,8 +191,8 @@ _VALID_RISK_DIM_NAMES = {"invoice", "amount", "approval", "budget", "anomaly"}
 def _cleanse_risk_dimensions(output: dict[str, Any]) -> None:
     """Filter ``risk_dimensions`` in-place, keeping only schema-compliant items.
 
-    risk_dimensions 是可选的风险元数据。网关模型（qwen 等）给的格式常不规范——
-    不规范就清洗/丢弃，绝不因为一个可选字段让整单审核失败（核心是 verdict/explanation）。
+    risk_dimensions 是共享契约中的可选风险元数据。网关模型（qwen 等）给的格式常不规范——
+    公共调用链继续清洗/丢弃，由需要固定维度的业务域追加更严格的语义闸。
 
     Side-effect: mutates *output* directly (removes or filters ``risk_dimensions``).
     """
@@ -209,6 +209,22 @@ def _cleanse_risk_dimensions(output: dict[str, Any]) -> None:
         ]
     elif dimensions is not None:
         output.pop("risk_dimensions", None)
+
+
+def _validate_risk_dimensions(output: dict[str, Any]) -> None:
+    """Require the complete fixed dimension set for the expense-audit alias."""
+    _cleanse_risk_dimensions(output)
+    dimensions = output.get("risk_dimensions")
+    names = (
+        [dimension.get("name") for dimension in dimensions]
+        if isinstance(dimensions, list)
+        else []
+    )
+    if len(names) != len(_VALID_RISK_DIM_NAMES) or set(names) != _VALID_RISK_DIM_NAMES:
+        raise JSONContractError(
+            "audit result field `risk_dimensions` must contain exactly invoice, amount, "
+            "approval, budget, and anomaly."
+        )
 
 
 def _strip_unknown_policy_refs(output: dict[str, Any]) -> None:
@@ -380,7 +396,8 @@ def normalize_audit_result(
 
     1. 元数据：claim_id(缺→request_id)/reviewed_by/timestamp/extracted_data 默认值。
     2. reasons/policy_refs：对象→字符串（防前端崩 + 满足 string[] 契约）。
-    3. risk_dimensions：对象映射/0-100 量纲 → [{name∈枚举,score 0-10}]；非法项清除；空则丢(可选字段)。
+    3. risk_dimensions：对象映射/0-100 量纲 → [{name∈枚举,score 0-10}]；非法项清除，
+       后续契约要求固定五维完整。
 
     与 ``enrich_audit_decision`` 的分工：normalize 跑在硬 schema 校验**前**（只产 schema 内字段）；
     enrich 跑在校验**后**（派生 schema 外的 result/conclusion）。

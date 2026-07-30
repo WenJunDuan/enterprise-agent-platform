@@ -18,6 +18,7 @@ import asyncio
 import pytest
 
 from server.audit.direct import DirectContractError, DirectTransportError
+from server.audit.output import EXPENSE_OUTPUT_SCHEMA_NAME
 from server.common.agent_bridge import AgentRunMeta
 
 
@@ -51,6 +52,7 @@ def test_flag_off_never_touches_direct_entry(monkeypatch, tmp_path):
     seen = {}
 
     async def fake_run_agent_json(prompt, *, schema_name, request_id, tenant, **opts):
+        seen["schema_name"] = schema_name
         seen.update(opts)
         return {"verdict": "manual_review"}, _fake_meta(request_id, mode="cli")
 
@@ -66,6 +68,7 @@ def test_flag_off_never_touches_direct_entry(monkeypatch, tmp_path):
 
     assert output == {"verdict": "manual_review"}
     assert meta.claude_session_id == "sess-test"
+    assert seen["schema_name"] == EXPENSE_OUTPUT_SCHEMA_NAME
     assert seen["tools"] == []
     assert seen["allowed_tools"] == []
 

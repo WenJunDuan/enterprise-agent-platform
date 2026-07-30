@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import pytest
 
+from server.audit.output import EXPENSE_OUTPUT_SCHEMA_NAME
 from server.common.contract import (
     DEFAULT_OUTPUT_SCHEMA_NAME,
     JSONContractError,
@@ -65,6 +66,13 @@ def _valid_audit_result(**overrides) -> dict:
         "reasons": [],
         "policy_refs": ["EXPENSE-TRAVEL-001"],
         "risk_score": 10,
+        "risk_dimensions": [
+            {"name": "invoice", "score": 1},
+            {"name": "amount", "score": 2},
+            {"name": "approval", "score": 3},
+            {"name": "budget", "score": 4},
+            {"name": "anomaly", "score": 5},
+        ],
         "extracted_data": {},
         "evidence_chain": [],
         "reviewed_by": "expense-auditor",
@@ -84,6 +92,90 @@ def test_builtin_audit_schema_validates_and_enriches():
 def test_builtin_audit_schema_rejects_bad_verdict():
     with pytest.raises(JSONContractError):
         apply_schema_semantics(DEFAULT_OUTPUT_SCHEMA_NAME, {"verdict": "??", "explanation": "x"})
+
+
+@pytest.mark.parametrize(
+    "risk_dimensions",
+    [
+        pytest.param(None, id="missing"),
+        pytest.param([], id="empty"),
+        pytest.param([{"name": "invoice", "score": 5}], id="partial"),
+        pytest.param(
+            [
+                {"name": "invoice", "score": 1},
+                {"name": "amount", "score": 2},
+                {"name": "approval", "score": 3},
+                {"name": "budget", "score": 4},
+                {"name": "unknown", "score": 5},
+            ],
+            id="wrong-name-set",
+        ),
+        pytest.param(
+            [
+                {"name": "invoice", "score": 1},
+                {"name": "amount", "score": 2},
+                {"name": "approval", "score": 3},
+                {"name": "budget", "score": 4},
+                {"name": "budget", "score": 5},
+            ],
+            id="duplicate-name",
+        ),
+    ],
+)
+def test_audit_schema_rejects_incomplete_risk_dimensions(risk_dimensions):
+    payload = _valid_audit_result(risk_score=85)
+    if risk_dimensions is None:
+        payload.pop("risk_dimensions")
+    else:
+        payload["risk_dimensions"] = risk_dimensions
+
+    with pytest.raises(JSONContractError, match="risk_dimensions"):
+        apply_schema_semantics(EXPENSE_OUTPUT_SCHEMA_NAME, payload)
+
+
+def test_audit_schema_accepts_complete_risk_dimensions():
+    out = apply_schema_semantics(EXPENSE_OUTPUT_SCHEMA_NAME, _valid_audit_result())
+
+    assert {item["name"] for item in out["risk_dimensions"]} == {
+        "invoice",
+        "amount",
+        "approval",
+        "budget",
+        "anomaly",
+    }
+
+
+def test_common_schema_keeps_risk_dimensions_optional_for_other_domains():
+    """发票专属五维要求不得收紧 tender 等复用的公共审核契约。"""
+    payload = _valid_audit_result()
+    payload.pop("risk_dimensions")
+
+    out = apply_schema_semantics(DEFAULT_OUTPUT_SCHEMA_NAME, payload)
+
+    assert "risk_dimensions" not in out
+
+
+def test_complete_risk_dimensions_mapping_and_percentage_scores_are_normalized():
+    out = apply_schema_semantics(
+        EXPENSE_OUTPUT_SCHEMA_NAME,
+        _valid_audit_result(
+            risk_dimensions={
+                "invoice": 10,
+                "amount": 20,
+                "approval": 30,
+                "budget": 40,
+                "anomaly": 85,
+            }
+        ),
+    )
+
+    assert {item["name"]: item["score"] for item in out["risk_dimensions"]} == {
+        "invoice": 10,
+        "amount": 2,
+        "approval": 3,
+        "budget": 4,
+        "anomaly": 8,
+    }
 
 
 def test_disqualification_hits_coerce_verdict_to_rejected():
