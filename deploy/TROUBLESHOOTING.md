@@ -361,5 +361,10 @@ CPU/内存、restart policy 与旧容器严格一致；后端 `/health` 和前�
 - 新镜像导出位于项目 `docker-export/`：后端 SHA-256
   `fe64b23ba82d9a52abaa887cde6d0979070ca35f37bf42de6641167a64d4b44f`，前端 SHA-256
   `5dddd68ea5244fa43a1facf2f28887fddf0b3d33a21733d75304b548e0eacf8c`；隔离 `overlay2` daemon
-  load 后 ID/架构一致。临时 backup tag 已删除，`0730b1` 标签与旧 tar 继续保留。
-- 完整证据目录：`/opt/application/audit-agent/backups/pre-0730b2-20260730-203137/deploy-evidence/`。
+  load 后 ID/架构一致。`0730b2` 两个 tar 与 `SHA256SUMS-0730b2` 继续保留在演示项目目录。
+- 用户于 2026-07-30 明确授权结束观察期清理。删除前确认 `0730b1` 两个 image ID 没有被任何
+  运行或停止容器引用，且 `0730b2` 两个导出包再次校验为 `OK`；随后精确删除 1.2 GB 的
+  `backups/pre-0730b2-20260730-203137/`、`agent-backend:0730b1` 和
+  `agent-front:0730b1`（含已无引用的旧 image ID），没有执行全局 `image prune`。删除后旧 tag/ID
+  均不可 inspect，当前 `0730b2` 双容器仍运行，后端 `/health` 与前端 `/` 均为 HTTP 200，
+  新导出包再次校验为 `OK`。被删备份与旧镜像不可从本机 Docker 恢复。
