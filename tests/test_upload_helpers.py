@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+import io
+from pathlib import Path
+
 import pytest
 from fastapi import HTTPException
+from starlette.datastructures import FormData, UploadFile
 
 from server.routes.upload_helpers import (
     UNBOUND_PROJECT,
     build_case_dir,
+    materialize_upload_submission,
     tenant_submission_root,
+    validate_document_upload,
     validate_directory_case_path,
 )
 
@@ -60,6 +66,58 @@ def test_unbound_project_passes_whitelist():
     # codex P1.1：sentinel 无前导下划线，过白名单（否则 legacy tender 建目录会 400）。
     root = tenant_submission_root("acme")
     assert build_case_dir("acme", "tender", "rid", UNBOUND_PROJECT) == root / "tender" / "unbound" / "rid"
+
+
+def test_document_upload_rejects_unknown_extension_and_spoofed_magic():
+    with pytest.raises(HTTPException, match="Unsupported document format"):
+        validate_document_upload("payload.exe", b"MZ fake executable")
+    with pytest.raises(HTTPException, match="does not match"):
+        validate_document_upload("spoofed.pdf", b"MZ fake executable")
+    with pytest.raises(HTTPException, match="does not match"):
+        validate_document_upload("generic.docx", b"PK\x03\x04not-a-real-package")
+
+
+def test_document_upload_accepts_unicode_text_but_rejects_binary_text():
+    validate_document_upload("清单.csv", "项目,金额\n服务,880\n".encode())
+    validate_document_upload("说明.txt", "中文底稿\n第二行".encode("gb18030"))
+
+    with pytest.raises(HTTPException, match="does not match"):
+        validate_document_upload("binary.txt", b"valid-prefix\x00binary-tail")
+
+
+async def test_document_validation_is_opt_in_for_shared_audit_helper(tmp_path, monkeypatch):
+    monkeypatch.setattr("server.routes.upload_helpers.SUBMISSION_ROOT_DIR", tmp_path)
+    upload = UploadFile(file=io.BytesIO(b"domain-specific payload"), filename="custom.xyz")
+    form = FormData([("files", upload), ("mode", "upload")])
+
+    case_path = await materialize_upload_submission(
+        request_id="audit-case",
+        tenant="acme",
+        form_json=None,
+        form_data=form,
+        domain="audit",
+    )
+
+    assert (Path(case_path) / "custom.xyz").read_bytes() == b"domain-specific payload"
+
+
+async def test_document_validation_opt_in_rejects_tender_bypass(tmp_path, monkeypatch):
+    monkeypatch.setattr("server.routes.upload_helpers.SUBMISSION_ROOT_DIR", tmp_path)
+    upload = UploadFile(file=io.BytesIO(b"MZ fake executable"), filename="bypass.exe")
+    form = FormData([("files", upload)])
+
+    with pytest.raises(HTTPException, match="Unsupported document format"):
+        await materialize_upload_submission(
+            request_id="tender-case",
+            tenant="acme",
+            form_json=None,
+            form_data=form,
+            domain="tender",
+            project_id="tp-test",
+            validate_document_format=True,
+        )
+
+    assert not (tmp_path / "acme" / "tender" / "tp-test" / "tender-case").exists()
 
 
 # ── validate_directory_case_path 域/根安全 ─────────────────────────────────────

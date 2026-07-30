@@ -81,8 +81,8 @@ export type ReviewBidder = {
   tag: string
   name: string
   short: string
-  total: number
-  rank: number
+  total: number | null
+  rank: number | null
   /** X2：展示名来源——手填（manual）/ AI 识别（agent）/ 无法判断来源（unknown，不展示标注）。 */
   nameSource?: 'manual' | 'agent' | 'unknown'
   /** X2：AI 识别名的出处页锚（`extracted_data.bidder_info.source_refs`），source=agent 时 hover 展示。 */
@@ -105,7 +105,7 @@ export type ReviewItem = {
   aiNote: string
   status?: ReviewItemStatus
   got?: number
-  max?: number
+  max?: number | null
   /** R2 扣分明细：deduction-mode 项逐条扣分命中（含原文 quote + 出处页）。 */
   deductionHits?: ScoreHit[]
   /** R2 加分明细：additive-mode 项逐条加分命中。 */
@@ -125,7 +125,7 @@ export type ReviewCategoryData = {
 export type TenderScoringItem = {
   id: string
   item: string
-  max: number
+  max: number | null
   score: number | null
   status: TenderScoringStatus
   basis: string
@@ -180,7 +180,7 @@ export type ChecklistItem = {
 
 export type TenderScoreIssue = {
   item: string
-  max: number
+  max: number | null
   score: number | null
   status: TenderScoringStatus
   deduction: number | null
@@ -192,7 +192,7 @@ export type TenderScoreIssue = {
 export type TenderCompareScoreCell = {
   bidderId: string
   bidderName: string
-  max: number
+  max: number | null
   score: number | null
   status: TenderScoringStatus
   deduction: number | null
@@ -203,7 +203,7 @@ export type TenderCompareScoreCell = {
 export type TenderCompareScoreRow = {
   id: string
   item: string
-  max: number
+  max: number | null
   scoreCategory: TenderScoreCategory
   reviewDimension: TenderReviewDimension
   cells: TenderCompareScoreCell[]
@@ -230,14 +230,25 @@ export type TenderPolicyRef = {
   sourceText?: string
 }
 
+export type TenderScoreCategorySummary = {
+  category: TenderScoreCategory
+  knownMaxTotal: number
+  unknownMaxCount: number
+  maxTotal: number | null
+  score: number
+}
+
 export type TenderScoreSummary = {
-  maxTotal: number
+  knownMaxTotal: number
+  unknownMaxCount: number
+  maxTotal: number | null
   earnedTotal: number
   deductedTotal: number
   pendingTotal: number
   deductedItems: TenderScoreIssue[]
   rejectedItems: TenderScoreIssue[]
   pendingItems: TenderScoreIssue[]
+  categorySummaries: TenderScoreCategorySummary[]
 }
 
 // 风险对比"每家一卡"综合视图：一个投标人的符合性 checklist + 评分总览 + 关键风险。
@@ -246,8 +257,8 @@ export type BidderCard = {
   tag: string
   name: string
   short: string
-  total: number
-  rank: number
+  total: number | null
+  rank: number | null
   score: TenderScoreSummary
   checklist: ChecklistItem[]
   topIssues: IssueItem[]
@@ -264,7 +275,7 @@ export type CompareGroup = {
   rows: Array<{
     name: string
     max: number
-    cells: number[]
+    cells: Array<number | null>
   }>
 }
 

@@ -9,7 +9,6 @@ import { cn } from '@/lib/utils'
 import { formatScore } from '../format'
 import type {
   ProjectInfo,
-  TenderScoreCategory,
   TenderScoreSummary,
   TenderScoringItem,
 } from '../types'
@@ -23,6 +22,8 @@ type ScoringOverviewPanelProps = {
 }
 
 const EMPTY_SUMMARY: TenderScoreSummary = {
+  knownMaxTotal: 0,
+  unknownMaxCount: 0,
   maxTotal: 0,
   earnedTotal: 0,
   deductedTotal: 0,
@@ -30,6 +31,7 @@ const EMPTY_SUMMARY: TenderScoreSummary = {
   deductedItems: [],
   rejectedItems: [],
   pendingItems: [],
+  categorySummaries: [],
 }
 
 // 扣分明细一行：逐条扣分命中(带原文/出处) 或 整项失分/判0 的汇总行。
@@ -52,7 +54,7 @@ export function ScoringOverviewPanel({
   className,
 }: ScoringOverviewPanelProps) {
   const s = scoreSummary ?? EMPTY_SUMMARY
-  const categories = summarizeByCategory(scoringItems)
+  const categories = s.categorySummaries
   const losses = buildLossEntries(scoringItems)
 
   return (
@@ -68,7 +70,10 @@ export function ScoringOverviewPanel({
           <Building2 className='size-4 text-primary' />
           招标项目
         </div>
-        <div className='mt-2 truncate text-sm font-medium' title={projectInfo.name}>
+        <div
+          className='mt-2 truncate text-sm font-medium'
+          title={projectInfo.name}
+        >
           {projectInfo.name || '—'}
         </div>
         <dl className='mt-2 grid grid-cols-1 gap-1 text-xs text-muted-foreground'>
@@ -86,10 +91,26 @@ export function ScoringOverviewPanel({
           评分总览
         </div>
         <div className='mt-3 grid grid-cols-2 gap-2'>
-          <Stat label='实际得分' value={formatScore(s.earnedTotal)} tone='primary' big />
-          <Stat label='总分' value={formatScore(s.maxTotal)} />
-          <Stat label='已扣分' value={formatScore(s.deductedTotal)} tone='red' />
-          <Stat label='待核验' value={formatScore(s.pendingTotal)} tone='amber' />
+          <Stat
+            label='实际得分'
+            value={formatScore(s.earnedTotal)}
+            tone='primary'
+            big
+          />
+          <Stat
+            label='总分'
+            value={s.maxTotal == null ? '待确认' : formatScore(s.maxTotal)}
+          />
+          <Stat
+            label='已扣分'
+            value={formatScore(s.deductedTotal)}
+            tone='red'
+          />
+          <Stat
+            label='待核验'
+            value={formatScore(s.pendingTotal)}
+            tone='amber'
+          />
         </div>
         {categories.length > 0 ? (
           <div className='mt-3 space-y-1.5 border-t pt-3'>
@@ -98,9 +119,14 @@ export function ScoringOverviewPanel({
                 key={c.category}
                 className='flex items-center justify-between text-xs'
               >
-                <span className='text-muted-foreground'>{categoryLabel(c.category)}</span>
+                <span className='text-muted-foreground'>
+                  {categoryLabel(c.category)}
+                </span>
                 <span className='font-medium'>
-                  {formatScore(c.earned)} / {formatScore(c.max)}
+                  {formatScore(c.score)} /{' '}
+                  {c.maxTotal == null
+                    ? `待确认（已知 ${formatScore(c.knownMaxTotal)}）`
+                    : formatScore(c.maxTotal)}
                 </span>
               </div>
             ))}
@@ -108,7 +134,8 @@ export function ScoringOverviewPanel({
         ) : null}
         {s.pendingTotal > 0 ? (
           <p className='mt-3 text-xs leading-5 text-muted-foreground'>
-            待核验分不计入实际得分（价格横比 / 外部数据 / 现场答辩等需人工确认）。
+            待核验分不计入实际得分（价格横比 / 外部数据 /
+            现场答辩等需人工确认）。
           </p>
         ) : null}
       </div>
@@ -129,15 +156,22 @@ export function ScoringOverviewPanel({
         ) : (
           <div className='mt-3 space-y-2'>
             {losses.map((loss) => (
-              <div key={loss.key} className='rounded-lg bg-muted/40 p-2.5 text-xs'>
+              <div
+                key={loss.key}
+                className='rounded-lg bg-muted/40 p-2.5 text-xs'
+              >
                 <div className='flex items-start justify-between gap-2'>
-                  <span className='font-medium text-foreground'>{loss.item}</span>
+                  <span className='font-medium text-foreground'>
+                    {loss.item}
+                  </span>
                   <span className='shrink-0 font-semibold text-red-600 dark:text-red-300'>
                     {loss.reject ? '该项判 0' : loss.label}
                   </span>
                 </div>
                 {loss.detail ? (
-                  <div className='mt-1 leading-5 text-muted-foreground'>{loss.detail}</div>
+                  <div className='mt-1 leading-5 text-muted-foreground'>
+                    {loss.detail}
+                  </div>
                 ) : null}
                 {loss.quote ? (
                   <div className='mt-1 border-l-2 border-l-amber-300 pl-2 leading-5 text-muted-foreground italic'>
@@ -168,14 +202,23 @@ export function ScoringOverviewPanel({
           </div>
           <div className='mt-3 space-y-2'>
             {s.pendingItems.map((item, index) => (
-              <div key={`${item.item}-${index}`} className='rounded-lg bg-muted/40 p-2.5 text-xs'>
+              <div
+                key={`${item.item}-${index}`}
+                className='rounded-lg bg-muted/40 p-2.5 text-xs'
+              >
                 <div className='flex items-start justify-between gap-2'>
-                  <span className='font-medium text-foreground'>{item.item}</span>
+                  <span className='font-medium text-foreground'>
+                    {item.item}
+                  </span>
                   <span className='shrink-0 font-semibold text-amber-700 dark:text-amber-300'>
-                    满分 {formatScore(item.max)} · 待核验
+                    {item.max == null
+                      ? '未设分值 · 待核验'
+                      : `满分 ${formatScore(item.max)} · 待核验`}
                   </span>
                 </div>
-                <div className='mt-1 leading-5 text-muted-foreground'>{item.basis || '—'}</div>
+                <div className='mt-1 leading-5 text-muted-foreground'>
+                  {item.basis || '—'}
+                </div>
               </div>
             ))}
           </div>
@@ -189,7 +232,10 @@ function Meta({ label, value }: { label: string; value?: string }) {
   return (
     <div className='flex items-center justify-between gap-2'>
       <dt className='shrink-0'>{label}</dt>
-      <dd className='truncate text-right font-medium text-foreground' title={value || '—'}>
+      <dd
+        className='truncate text-right font-medium text-foreground'
+        title={value || '—'}
+      >
         {value || '—'}
       </dd>
     </div>
@@ -218,7 +264,13 @@ function Stat({
   return (
     <div className='rounded-lg bg-muted/50 p-3'>
       <div className='text-xs text-muted-foreground'>{label}</div>
-      <div className={cn('mt-1 font-semibold tracking-tight', big ? 'text-2xl' : 'text-xl', toneClass)}>
+      <div
+        className={cn(
+          'mt-1 font-semibold tracking-tight',
+          big ? 'text-2xl' : 'text-xl',
+          toneClass
+        )}
+      >
         {value}
       </div>
     </div>
@@ -250,11 +302,22 @@ function buildLossEntries(items: TenderScoringItem[]): LossEntry[] {
       return
     }
     if (reject) {
-      entries.push({ key: item.id, item: item.item, label: '该项判 0', reject: true, detail: item.basis })
+      entries.push({
+        key: item.id,
+        item: item.item,
+        label: '该项判 0',
+        reject: true,
+        detail: item.basis,
+      })
       return
     }
     // 无逐条命中但确有失分(如 pass_fail 得 0 / 客观项未满足) → 汇总一行。
-    if (item.status === 'scored' && item.score != null && item.score < item.max) {
+    if (
+      item.status === 'scored' &&
+      item.score != null &&
+      item.max != null &&
+      item.score < item.max
+    ) {
       entries.push({
         key: item.id,
         item: item.item,
@@ -267,29 +330,6 @@ function buildLossEntries(items: TenderScoringItem[]): LossEntry[] {
   return entries
 }
 
-function summarizeByCategory(items: TenderScoringItem[]) {
-  return (['business', 'technical'] as const)
-    .map((category) => {
-      const group = items.filter((item) => item.scoreCategory === category)
-      return {
-        category,
-        max: round(group.reduce((sum, item) => sum + item.max, 0)),
-        earned: round(
-          group.reduce(
-            (sum, item) =>
-              item.status === 'scored' && item.score != null ? sum + item.score : sum,
-            0
-          )
-        ),
-      }
-    })
-    .filter((group) => group.max > 0)
-}
-
-function categoryLabel(category: TenderScoreCategory): string {
+function categoryLabel(category: 'business' | 'technical'): string {
   return category === 'business' ? '商务标' : '技术标'
-}
-
-function round(n: number): number {
-  return Number(n.toFixed(1))
 }

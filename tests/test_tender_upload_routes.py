@@ -112,6 +112,29 @@ def test_upload_tender_doc_writes_to_store(client, monkeypatch):
     assert row["ocr_status"] == "running"
 
 
+def test_upload_tender_doc_rejects_unsupported_or_spoofed_files(client, monkeypatch):
+    import server.routes.tender.docs as tender_module
+
+    monkeypatch.setattr(tender_module, "_start_project_doc_ocr_task", lambda *a, **kw: None)
+    pid = _make_project(client)
+
+    unsupported = client.post(
+        f"/tender/projects/{pid}/tender-doc",
+        files=[("files", ("绕过前端.exe", b"MZ fake executable", "application/octet-stream"))],
+        headers=_AUTH,
+    )
+    spoofed = client.post(
+        f"/tender/projects/{pid}/tender-doc",
+        files=[("files", ("伪造.pdf", b"MZ fake executable", "application/pdf"))],
+        headers=_AUTH,
+    )
+
+    assert unsupported.status_code == 400
+    assert "Unsupported document format" in unsupported.json()["detail"]
+    assert spoofed.status_code == 400
+    assert "does not match" in spoofed.json()["detail"]
+
+
 # ── POST /tender/projects/{project_id}/bids ───────────────────────────────────
 
 

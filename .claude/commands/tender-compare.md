@@ -26,6 +26,7 @@ allowed-tools: Read
 
 ### 0. 前置：criteria 一致性
 - 若输入 `criteria_inconsistent: true`（各投标人评标时用的评分标准不一致）→ **不做横比排名**：所有 bidder `status: "manual_review"`、`rank: null`，`recommended: null`、`provisional: true`，`warnings` 写"各投标人评分标准(criteria)不一致，需人工核对评标办法后重评"，`explanation` 说明原因。直接产出该结论，不进下面步骤。
+- 若输入 `price_comparison_blocked: true`（价格项 `max` 未设或不合法）→ **不得把该项带入价格计算或排名**：所有 bidder `price_score/total_score/rank:null`、`status:"manual_review"`，`recommended:null`、`provisional:true`，warnings/explanation 明示“价格项满分待确认，转人工复核”。直接产出，不进下面步骤。
 
 ### 1. 认定有效投标
 - `verdict: "rejected"`（废标）的投标人**不参与价格评分与排名**，在输出里 `status: "rejected"`、`rank: null`、`note` 写明废标不参与。

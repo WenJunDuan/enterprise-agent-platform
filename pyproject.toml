@@ -25,10 +25,18 @@ dependencies = [
 # OCR 引擎 paddleocr[doc-parser] / paddlex 因需配 paddlepaddle-gpu(CUDA/昇腾专版)
 # 单独装，见 .claude/skills/multi-ocr/references/engines.md。
 ocr = [
-    "openpyxl>=3.1",
-    "python-docx>=1.1",
-    "pymupdf>=1.26",
-    "pypdf>=6.13.3",
+    "openpyxl==3.1.5",
+    "python-docx==1.2.0",
+    "xlrd==2.0.2",
+    "pyxlsb==1.0.10",
+    "python-pptx==1.0.2",
+    "Pillow==12.3.0",
+    "pymupdf==1.27.2.3",
+    "pypdf==6.14.2",
+    "pdfplumber==0.11.10",
+    "paddlepaddle==3.2.2",
+    "paddleocr[doc-parser]==3.7.0",
+    "paddlex==3.7.2",
     "certifi>=2024.0",  # 线上 OCR(OCR_CLOUD=1)urllib HTTPS 验证 CA 包；缺则 macOS 等环境证书验证失败
 ]
 

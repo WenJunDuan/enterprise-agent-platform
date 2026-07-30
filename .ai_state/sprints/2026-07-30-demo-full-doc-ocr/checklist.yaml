@@ -4,48 +4,48 @@ tasks:
   - id: T1
     title: "先写格式矩阵、Office 转换、Tesseract 与 criteria null 的失败测试"
     design_ref: "design.md AC1-AC6"
+    status: completed
+    evidence_tool_use_ids: ["agent:/root/ocr_core_impl:red-collection", "agent:/root/criteria_null_impl:red-3-failed", "agent:/root/formats_packaging_impl:red-5-failed"]
+    files_changed: ["tests/test_ocr_engine_fallback.py", "tests/test_ocr_office_convert.py", "tests/test_tender_compare.py", "tests/test_supported_document_formats.py"]
+    completed_at: "2026-07-30"
+    blocked_by: ""
+  - id: T2
+    title: "实现 native 多格式、Office 转 PDF 与 OCR 回退"
+    design_ref: "design.md KD1-KD3"
+    status: completed
+    evidence_tool_use_ids: ["agent:/root/ocr_core_impl:targeted-122-pass", "chunk:ac4a84"]
+    files_changed: ["server/ocr/formats.py", "server/ocr/office_convert.py", "server/ocr/page_render_worker.py", "server/ocr/classify.py", "server/ocr/native.py", "server/ocr/pipeline.py", "server/ocr/engine.py", "server/ocr/cache.py"]
+    completed_at: "2026-07-30"
+    blocked_by: "T1"
+  - id: T3
+    title: "修复 criteria manual/null 后端与前端语义"
+    design_ref: "design.md KD4"
+    status: completed
+    evidence_tool_use_ids: ["agent:/root/criteria_null_impl:targeted-214-pass", "chunk:bb0a95"]
+    files_changed: ["server/tender/doc_pipeline.py", "server/tender/output.py", "server/tender/compare_worker.py", ".claude/contracts/tender/criteria.schema.json", "agent-front/src/features/contract/tender-review/model.ts"]
+    completed_at: "2026-07-30"
+    blocked_by: "T1"
+  - id: T4
+    title: "补齐完整 ARM64 后端镜像依赖"
+    design_ref: "design.md KD5"
+    status: completed
+    evidence_tool_use_ids: ["agent:/root/formats_packaging_impl:lock-check", "chunk:fb02fa"]
+    files_changed: ["Dockerfile", "agent-front/deploy/Containerfile.agent-backend", "pyproject.toml", "uv.lock", ".dockerignore"]
+    completed_at: "2026-07-30"
+    blocked_by: "T2,T3"
+  - id: T5
+    title: "全量测试、交叉审查、polish 与架构文档"
+    design_ref: "design.md AC7"
+    status: completed
+    evidence_tool_use_ids: ["chunk:ac4a84", "chunk:fb02fa", "chunk:bb0a95", "reviews/pass1.md", "document:tdd-evidence.md#pass1", "agent:/root/ocr_core_impl:pass1-f4-f5-red-2-failed-1-passed", "agent:/root/ocr_core_impl:pass1-green-122-pass", "agent:/root/ocr_core_impl:pass1-full-1083-pass-2-skip", "agent:/root/formats_packaging_impl:pass1-f6-red-collection-2-errors", "agent:/root/formats_packaging_impl:pass1-f6-green-123-pass", "document:tdd-evidence.md#pass-2-rework", "agent:/root/ocr_core_impl:pass2-f1-f3-red-10-failed", "agent:/root/ocr_core_impl:pass2-f1-f3-green-10-pass", "agent:/root/ocr_core_impl:pass2-targeted-47-pass", "document:tdd-evidence.md#pass2-formats-packaging-macro-rework", "agent:/root/formats_packaging_impl:pass2-red-6-failed-16-pass", "agent:/root/formats_packaging_impl:pass2-green-22-pass", "agent:/root/formats_packaging_impl:pass2-extended-37-pass", "agent:/root/formats_packaging_impl:local-macro-safety-ok", "document:tdd-evidence.md#pass-3-rework-m3", "agent:/root/criteria_null_impl:pass3-current-f1-f2-green-8-pass", "agent:/root/criteria_null_impl:pass3-current-f3-green-1-pass", "agent:/root/criteria_null_impl:pass3-f1-red-49-pass-2-fail", "agent:/root/criteria_null_impl:pass3-f1-green-51-pass", "agent:/root/criteria_null_impl:pass3-frontend-full-164-pass-build-lint", "agent:/root/ocr_core_impl:pass3-f2-red-3-failed-1-pass", "agent:/root/ocr_core_impl:pass3-f2-webp-red-1-failed-1-pass", "agent:/root/ocr_core_impl:pass3-f2-green-88-pass", "evidence:document-format-smoke-local-arm64-24-of-24-ok", "document:tdd-evidence.md#pass-4-rework", "agent:/root/ocr_core_impl:pass4-f1-red-5-failed", "agent:/root/ocr_core_impl:pass4-f1-green-5-pass", "agent:/root/ocr_core_impl:pass4-targeted-109-pass", "agent:/root/ocr_core_impl:pass4-pdf-security-21-pass-2-skip", "agent:/root/formats_packaging_impl:pass4-scope-sha-red-2-failed", "agent:/root/formats_packaging_impl:pass4-scope-sha-green-2-pass", "document:tdd-evidence.md#pass-5-rework", "agent:/root/ocr_core_impl:pass5-f1-f2-red-13-failed-43-pass", "agent:/root/ocr_core_impl:pass5-resource-boundary-red-1-failed", "agent:/root/ocr_core_impl:pass5-ocr-smoke-green-70-pass", "agent:/root/criteria_null_impl:pass5-f3-red-4-failed", "agent:/root/criteria_null_impl:pass5-f3-green-4-pass", "agent:/root/criteria_null_impl:pass5-f3-file-44-pass", "agent:/root/criteria_null_impl:pass5-d1-red-1-failed-47-pass", "agent:/root/criteria_null_impl:pass5-d1-green-51-pass", "agent:/root/criteria_null_impl:pass5-frontend-full-164-pass-build-lint", "main-agent:pass5-targeted-quality-generator-help-diff-green", "document:tdd-evidence.md#最终独立回归", "main-agent:final-backend-1099-pass-2-skip", "main-agent:final-backend-quality-green", "main-agent:final-frontend-161-pass-build-lint-green", "main-agent:final-formats-37-pass-quality-green", "main-agent:final-backend-1105-pass-2-skip", "main-agent:final-quality-evidence-json-green", "main-agent:final-frontend-164-pass-build-lint-green", "main-agent:final-backend-1112-pass-2-skip", "main-agent:pass4-final-quality-green", "main-agent:pass5-full-unbudgeted-7-failed-environment", "main-agent:pass5-final-backend-1131-pass-2-skip", "main-agent:pass5-final-quality-green", "document:tdd-evidence.md#pass-6-fail-rework", "agent:/root/ocr_core_impl:pass6-page-anchor-smoke-red-4-failed", "agent:/root/ocr_core_impl:pass6-tesseract-http-detail-red-7-failed", "agent:/root/ocr_core_impl:pass6-memory-red-2-failed", "agent:/root/formats_packaging_impl:pass6-pptx-metadata-red-2-failed", "agent:/root/formats_packaging_impl:pass6-pptx-mixed-route-red-1-failed", "main-agent:pass6-ocr-format-targeted-167-pass-quality-green", "agent:/root/ocr_core_impl:pass6-tesseract-none-stdout-red-1-failed", "main-agent:pass6-ocr-format-targeted-168-pass-quality-green", "main-agent:pass6-first-full-1-failed-1151-pass", "main-agent:pass6-final-backend-1152-pass-2-skip", "main-agent:pass6-final-quality-green", "document:tdd-evidence.md#pass-7-concerns-closure", "agent:/root/pass5_ocr_smoke_fix:pass7-f1-red-2-failed", "agent:/root/pass5_ocr_smoke_fix:pass7-f2-red-2-failed", "agent:/root/pass5_ocr_smoke_fix:pass7-green-89-pass", "chunk:10e727", "chunk:b04fdd", "chunk:116481", "chunk:32f89a", "document:cleanup-pass.md", "document:architecture/system-document-ingestion.md", "document:compound/2026-07-30-learning-document-ingestion-deployment-evidence.md"]
+    files_changed: [".ai_state/sprints/2026-07-30-demo-full-doc-ocr/reviews/pass1.md", ".ai_state/sprints/2026-07-30-demo-full-doc-ocr/tdd-evidence.md", ".ai_state/sprints/2026-07-30-demo-full-doc-ocr/cleanup-pass.md", ".ai_state/architecture/ARCHITECTURE.md", ".ai_state/architecture/system-document-ingestion.md", ".ai_state/compound/2026-07-30-learning-document-ingestion-deployment-evidence.md", "scripts/evidence/document-format-smoke-local-arm64.json", "scripts/smoke_document_formats.py", "scripts/verify_office_macro_safety.py", "deploy/TROUBLESHOOTING.md", "server/ocr/page_render_worker.py", "server/ocr/engine.py", "server/ocr/native.py", "server/ocr/pipeline.py", "server/tender/doc_pipeline.py", "tests/test_ocr_engine_fallback.py", "tests/test_smoke_document_formats.py", "tests/test_office_macro_safety_smoke.py", "tests/test_tender_info_extraction.py", "agent-front/src/features/contract/tender-review/model.ts", "agent-front/src/features/contract/tender-review/model.test.ts", "agent-front/src/features/contract/tender-review/components/scoring-overview-panel.tsx", "agent-front/src/features/contract/tender-review/components/scoring-detail-table.tsx"]
+    completed_at: "2026-07-30"
+    blocked_by: "T2,T3,T4"
+  - id: T6
+    title: "demo 备份、同步、双镜像构建部署、格式验收、导出与清理"
+    design_ref: "design.md KD6, AC8-AC10"
     status: in_progress
     evidence_tool_use_ids: []
     files_changed: []
     completed_at: ""
     blocked_by: ""
-  - id: T2
-    title: "实现 native 多格式、Office 转 PDF 与 OCR 回退"
-    design_ref: "design.md KD1-KD3"
-    status: pending
-    evidence_tool_use_ids: []
-    files_changed: []
-    completed_at: ""
-    blocked_by: "T1"
-  - id: T3
-    title: "修复 criteria manual/null 后端与前端语义"
-    design_ref: "design.md KD4"
-    status: pending
-    evidence_tool_use_ids: []
-    files_changed: []
-    completed_at: ""
-    blocked_by: "T1"
-  - id: T4
-    title: "补齐完整 ARM64 后端镜像依赖"
-    design_ref: "design.md KD5"
-    status: pending
-    evidence_tool_use_ids: []
-    files_changed: []
-    completed_at: ""
-    blocked_by: "T2,T3"
-  - id: T5
-    title: "全量测试、交叉审查、polish 与架构文档"
-    design_ref: "design.md AC7"
-    status: pending
-    evidence_tool_use_ids: []
-    files_changed: []
-    completed_at: ""
-    blocked_by: "T2,T3,T4"
-  - id: T6
-    title: "demo 备份、同步、双镜像构建部署、格式验收、导出与清理"
-    design_ref: "design.md KD6, AC8-AC10"
-    status: pending
-    evidence_tool_use_ids: []
-    files_changed: []
-    completed_at: ""
-    blocked_by: "T5"

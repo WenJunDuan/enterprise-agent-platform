@@ -47,4 +47,4 @@ def test_app_settings_logs_cache_v2_first_rerun_hint(monkeypatch, caplog):
     get_app_settings()
 
     messages = [record.getMessage() for record in caplog.records]
-    assert any("OCR cache v4" in message and "first rerun" in message for message in messages)
+    assert any("OCR cache v5" in message and "first rerun" in message for message in messages)

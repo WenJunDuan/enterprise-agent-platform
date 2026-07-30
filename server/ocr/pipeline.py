@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -17,6 +18,7 @@ from server.ocr import boq as boq_extract
 from server.ocr import cache as ocr_cache
 from server.ocr.classify import classify
 from server.ocr.engine import extract_pdf_subset, recognize, recognize_seal
+from server.ocr.office_convert import convert_office_to_pdf
 from server.ocr.native import native_read
 
 logger = logging.getLogger(__name__)
@@ -39,6 +41,11 @@ _CLARITY_NOTE = {
 
 # P4：是否对 case 目录做确定性 OCR 预处理后注入模型上下文（=0 关闭，回落模型自己 Read）。
 OCR_PREPROCESS = os.getenv("OCR_PREPROCESS", "1").lower() in {"1", "true", "yes"}
+
+# PPTX with embedded pictures and less native text than this is treated as scan-heavy. A deck
+# without pictures stays native regardless of length; a deck at/above the threshold also stays
+# native, avoiding a LibreOffice/OCR tax for ordinary text/table presentations with logos.
+PRESENTATION_NATIVE_MIN_TEXT_CHARS = 80
 
 
 def _env_int(name: str, default: int) -> int:
@@ -204,6 +211,20 @@ def _has_extractable_text(native: dict) -> bool:
     )
 
 
+def _presentation_needs_ocr(native: dict) -> bool:
+    """True for scan-heavy PPTX: at least one picture and insufficient native text."""
+    image_count = native.get("image_count", 0)
+    text_char_count = native.get("text_char_count", 0)
+    return (
+        isinstance(image_count, int)
+        and not isinstance(image_count, bool)
+        and image_count > 0
+        and isinstance(text_char_count, int)
+        and not isinstance(text_char_count, bool)
+        and text_char_count < PRESENTATION_NATIVE_MIN_TEXT_CHARS
+    )
+
+
 def _blank_page_count(blocks: list[str]) -> int:
     """统计近空白页数。pdf_text 的 blocks 一页一项（read_pdf_text 逐页 append），扫描页经
     pymupdf get_text 抽出空串/极短文本 → 视为空白页（< MAX_BLANK_CHARS 个非空白字符）。"""
@@ -245,7 +266,8 @@ def _augment_mixed_pdf_blocks(
     if subset is None:
         return None  # ① 本地抽页失败 → 回退整份云 OCR
     try:
-        ocr_pages = recognize(subset, purpose=purpose).get("pages", [])
+        ocr_result = recognize(subset, purpose=purpose)
+        ocr_pages = ocr_result.get("pages", [])
     except (OcrError, OcrDependencyError):
         return None  # ② 子集云 OCR 失败 → 回退整份云 OCR（不在此抛，否则跳过 Layer 1 兜底）
     finally:
@@ -262,12 +284,15 @@ def _augment_mixed_pdf_blocks(
         markdown = ocr_pages[offset].get("markdown") or ""
         if markdown.strip():  # 空 OCR 文本不覆盖，保留原空白页跳过逻辑
             blocks[true_idx] = markdown
-    return {
+    result = {
         **route,
         **native,
         "blocks": blocks,
         "note": f"混合 PDF：{len(blank_indices)} 个扫描页经子集云 OCR 回填，数字页保原生直读",
     }
+    if ocr_result.get("degraded") is True:
+        result.update({"engine": "tesseract", "degraded": True, "clarity": "unknown"})
+    return result
 
 
 def extract_one(
@@ -383,11 +408,39 @@ def _dispatch_extract(
     "至少一次"文件级兜底（``page_emitted`` 语义不变）。
     """
     route = classify(path)
+    if route["route"] == "convert":
+        return _convert_and_dispatch(
+            path, route, run_seal=run_seal, purpose=purpose, on_page=on_page
+        )
     if route["route"] == "native":
-        native = _call_native_read(path, None)
+        try:
+            native = _call_native_read(path, None)
+        except MemoryError:
+            raise
+        except Exception:
+            if route.get("handler") not in {
+                "legacy_word",
+                "excel_xls",
+                "excel_xlsb",
+                "presentation",
+            }:
+                raise
+            return _convert_and_dispatch(
+                path, route, run_seal=run_seal, purpose=purpose, on_page=on_page
+            )
         if route.get("handler") == "pdf_text":
             return _dispatch_native_pdf_text(
                 path, route, native, run_seal=run_seal, purpose=purpose, on_page=on_page
+            )
+        if route.get("container") in {"word", "excel", "presentation"} and (
+            not _has_extractable_text(native)
+            or (
+                route.get("container") == "presentation"
+                and _presentation_needs_ocr(native)
+            )
+        ):
+            return _convert_and_dispatch(
+                path, route, run_seal=run_seal, purpose=purpose, on_page=on_page
             )
         return {**route, **native}
     if route["route"] == "ocr":
@@ -395,6 +448,45 @@ def _dispatch_extract(
             path, route, run_seal=run_seal, purpose=purpose, on_page=on_page
         )
     return {**route, "kind": "manual"}
+
+
+def _convert_and_dispatch(
+    path: Path,
+    original_route: dict,
+    *,
+    run_seal: bool,
+    purpose: str | None,
+    on_page: _PageCallback | None,
+) -> dict:
+    """Convert Office input to PDF, then reuse the PDF native/OCR ladder."""
+    with convert_office_to_pdf(path) as pdf:
+        pdf_route = classify(pdf)
+        if pdf_route["route"] == "native":
+            native = _call_native_read(pdf, None)
+            downstream = _dispatch_native_pdf_text(
+                pdf,
+                pdf_route,
+                native,
+                run_seal=run_seal,
+                purpose=purpose,
+                on_page=on_page,
+            )
+        else:
+            downstream = _call_recognize_with_seal(
+                pdf,
+                pdf_route,
+                run_seal=run_seal,
+                purpose=purpose,
+                on_page=on_page,
+            )
+    return {
+        **original_route,
+        **downstream,
+        "path": str(path),
+        "converted_from": path.suffix.lower(),
+        "downstream_route": downstream.get("route", pdf_route.get("route")),
+        "route": "convert",
+    }
 
 
 def _extract_one_raw(
@@ -434,11 +526,15 @@ def _extract_one_raw(
 
     try:
         result = _dispatch_extract(path, run_seal=run_seal, purpose=purpose, on_page=on_page)
+    except MemoryError:
+        raise
     except Exception as exc:  # per-file 隔离：损坏 / 缺引擎 / 解析错误都归一为 error
         logger.warning("extract failed for %s: %s", path, exc)
         result = {"path": file_str, "kind": "error", "route": "manual", "error": str(exc)}
 
-    if on_unit_complete is not None and not page_emitted:
+    if on_unit_complete is not None and (
+        not page_emitted or result.get("kind") == "error"
+    ):
         status = "error" if result.get("kind") == "error" else "ok"
         on_unit_complete(
             _make_unit(file=file_str, page=None, status=status, payload=result, from_cache=False)
@@ -505,6 +601,7 @@ OCR_ERROR_PREFIX = "[识别失败]"
 # build_extraction_block 每个文件以此为头、空目录回退此占位（is_ocr_text_valid 据此剔除非内容行）。
 _FILE_HEADER_PREFIX = "### 文件:"
 _EMPTY_BLOCK_MARKER = "（无识别内容）"
+_PAGE_ANCHOR_PATTERN = re.compile(r"^【第\s+\d+\s+页】$")
 
 
 def is_ocr_text_valid(text: str) -> bool:
@@ -521,7 +618,12 @@ def is_ocr_text_valid(text: str) -> bool:
         return False
     for line in stripped.splitlines():
         s = line.strip()
-        if not s or s.startswith(_FILE_HEADER_PREFIX) or s.startswith(OCR_ERROR_PREFIX):
+        if (
+            not s
+            or s.startswith(_FILE_HEADER_PREFIX)
+            or s.startswith(OCR_ERROR_PREFIX)
+            or _PAGE_ANCHOR_PATTERN.fullmatch(s)
+        ):
             continue
         return True
     return False

@@ -29,6 +29,14 @@ def _enable_openai_compatible(monkeypatch):
     monkeypatch.setattr(engine, "OCR_VL_MODEL_NAME", "paddleocr")
 
 
+def _write_test_image(path) -> None:
+    import fitz
+
+    pixmap = fitz.Pixmap(fitz.csRGB, (0, 0, 10, 10), False)
+    pixmap.clear_with(255)
+    pixmap.save(path)
+
+
 def test_openai_compatible_pdf_renders_pages_as_images(tmp_path, monkeypatch):
     _enable_openai_compatible(monkeypatch)
     pdf = tmp_path / "scan.pdf"
@@ -62,7 +70,7 @@ def test_openai_compatible_pdf_renders_pages_as_images(tmp_path, monkeypatch):
 def test_openai_compatible_image_keeps_image_mime_type(tmp_path, monkeypatch):
     _enable_openai_compatible(monkeypatch)
     image = tmp_path / "photo.jpg"
-    image.write_bytes(b"jpg-bytes")
+    _write_test_image(image)
     calls: list[dict] = []
 
     def fake_urlopen(request, timeout, context=None):
@@ -78,10 +86,8 @@ def test_openai_compatible_image_keeps_image_mime_type(tmp_path, monkeypatch):
     assert url.startswith("data:image/jpeg;base64,")
 
 
-def test_openai_compatible_http_error_includes_response_body(tmp_path, monkeypatch):
+def test_openai_compatible_http_error_includes_response_body(monkeypatch):
     _enable_openai_compatible(monkeypatch)
-    image = tmp_path / "photo.png"
-    image.write_bytes(b"png-bytes")
 
     def fake_urlopen(request, timeout, context=None):
         raise urllib.error.HTTPError(
@@ -95,7 +101,10 @@ def test_openai_compatible_http_error_includes_response_body(tmp_path, monkeypat
     monkeypatch.setattr(engine.urllib.request, "urlopen", fake_urlopen)
 
     with pytest.raises(OcrDependencyError) as exc:
-        engine._recognize_via_openai_compatible(image)
+        engine._call_openai_compatible_vlm(
+            data_url="data:image/png;base64,aW1hZ2U=",
+            prompt="Extract text",
+        )
 
     message = str(exc.value)
     assert "HTTP Error 400: Bad Request" in message

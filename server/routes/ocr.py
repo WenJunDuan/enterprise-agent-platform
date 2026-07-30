@@ -99,6 +99,7 @@ async def ocr_extract(
             request_id=request_id,
             tenant=tenant,
             files=collect_uploaded_files(form_data),
+            validate_document_format=True,
         )
         cleanup_path = case_path  # 上传件识别后清理，directory 模式不动用户目录
     else:
@@ -165,6 +166,7 @@ async def ocr_fill(
         request_id=request_id,
         tenant=tenant,
         files=collect_uploaded_files(form_data),
+        validate_document_format=True,
     )
 
     try:

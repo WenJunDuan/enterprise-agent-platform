@@ -19,6 +19,7 @@ import threading
 
 import pytest
 
+from server.ocr import OcrDependencyError
 from server.ocr.locks import FITZ_LOCK, PADDLE_LOCK
 from server.ocr.native import read_pdf_text
 from server.ocr.pipeline import _iter_files, extract_dir, extract_one
@@ -225,10 +226,23 @@ def test_extract_one_non_page_native_falls_back_to_single_file_unit(tmp_path):
     assert unit["payload"] is result
 
 
-def test_extract_one_error_path_emits_single_error_unit(tmp_path):
+def test_extract_one_error_path_emits_single_error_unit(tmp_path, monkeypatch):
     """损坏 / 不可读文件走 per-file 隔离 → 单一文件级 error 单元，不是静默丢事件。"""
-    broken = tmp_path / "broken.xlsx"
-    broken.write_bytes(b"not a real xlsx")  # 触发 read_excel 内部异常 → 归一 error
+    import server.ocr.pipeline as pipeline_mod
+
+    broken = tmp_path / "broken.pdf"
+    broken.write_bytes(b"%PDF broken")
+    monkeypatch.setattr(
+        pipeline_mod,
+        "classify",
+        lambda path: {
+            "path": str(path),
+            "container": "pdf",
+            "route": "native",
+            "handler": "pdf_text",
+        },
+    )
+    monkeypatch.setattr(pipeline_mod, "native_read", lambda _path: (_ for _ in ()).throw(ValueError("bad pdf")))
     collector = _LockedCollector()
 
     result = extract_one(broken, on_unit_complete=collector)
@@ -237,6 +251,38 @@ def test_extract_one_error_path_emits_single_error_unit(tmp_path):
     assert len(collector.units) == 1
     assert collector.units[0]["status"] == "error"
     assert collector.units[0]["payload"] is result
+
+
+def test_partial_pages_then_fallback_failure_emits_terminal_error_unit(tmp_path, monkeypatch):
+    """已发成功页后后续 OCR 失败，必须再发文件级 terminal error。"""
+    import server.ocr.pipeline as pipeline_mod
+
+    document = tmp_path / "scan.pdf"
+    document.write_bytes(b"%PDF")
+    monkeypatch.setattr(
+        pipeline_mod,
+        "classify",
+        lambda path: {
+            "path": str(path),
+            "container": "pdf",
+            "route": "ocr",
+            "handler": "pdf_scan",
+        },
+    )
+
+    def fail_after_first_page(path, *, purpose=None, on_page=None):
+        assert on_page is not None
+        on_page(1, {"markdown": "vlm-page-1"})
+        raise OcrDependencyError("Tesseract failed on page 2")
+
+    monkeypatch.setattr(pipeline_mod, "recognize", fail_after_first_page)
+    units = []
+
+    result = pipeline_mod.extract_one(document, on_unit_complete=units.append)
+
+    assert result["kind"] == "error"
+    assert [(unit["page"], unit["status"]) for unit in units] == [(1, "ok"), (None, "error")]
+    assert "Tesseract failed on page 2" in units[-1]["payload"]["error"]
 
 
 # ── G1：units.jsonl 边车排除，重扫不计入 results/单元计数 ───────────────────

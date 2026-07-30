@@ -10,12 +10,18 @@ import re
 import zipfile
 from pathlib import Path
 
-EXCEL_EXT = {".xlsx", ".xlsm", ".xls"}
-TEXT_EXT = {".txt", ".csv", ".md", ".json", ".tsv"}
-IMAGE_EXT = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp"}
-WORD_EXT = {".docx"}
-LEGACY_WORD_EXT = {".doc"}
-PDF_EXT = {".pdf"}
+from server.ocr.formats import suffixes
+
+EXCEL_OOXML_EXT = suffixes("excel_ooxml")
+EXCEL_XLS_EXT = suffixes("excel_xls")
+EXCEL_XLSB_EXT = suffixes("excel_xlsb")
+TEXT_EXT = suffixes("text")
+IMAGE_EXT = suffixes("images")
+WORD_EXT = suffixes("word_native")
+LEGACY_WORD_EXT = suffixes("word_legacy")
+PRESENTATION_EXT = suffixes("presentation_native")
+OFFICE_CONVERT_EXT = suffixes("office_convert")
+PDF_EXT = suffixes("pdf")
 
 # DOCX 判文本型：正文字符数低于此值且含嵌入图 → 视为图片/扫描型
 DOCX_MIN_TEXT_CHARS = 200
@@ -60,8 +66,8 @@ def _probe_docx(path: Path) -> dict:
             )
     except (zipfile.BadZipFile, KeyError, OSError):
         return {"has_text_layer": False, "scanned": True}
-    text_len = len(re.sub(r"<[^>]+>", "", xml))
-    has_text = text_len >= DOCX_MIN_TEXT_CHARS
+    text_len = len(re.sub(r"<[^>]+>", "", xml).strip())
+    has_text = text_len > 0 and (not media or text_len >= DOCX_MIN_TEXT_CHARS)
     return {"has_text_layer": has_text, "scanned": bool(media) and not has_text}
 
 
@@ -83,8 +89,12 @@ def _route(container, route, handler, has_text, reason, page_count=None, mixed_p
 def classify(path: Path) -> dict:
     """返回路由决策 dict：container / route(native|ocr|manual) / handler / has_text_layer / pages / reason / path。"""
     ext = path.suffix.lower()
-    if ext in EXCEL_EXT:
-        result = _route("excel", "native", "excel", True, "Excel 直读，绝不 OCR")
+    if ext in EXCEL_OOXML_EXT:
+        result = _route("excel", "native", "excel_ooxml", True, "OOXML Excel 原生直读")
+    elif ext in EXCEL_XLS_EXT:
+        result = _route("excel", "native", "excel_xls", True, "旧版 Excel 由 xlrd 原生直读")
+    elif ext in EXCEL_XLSB_EXT:
+        result = _route("excel", "native", "excel_xlsb", True, "二进制 Excel 由 pyxlsb 原生直读")
     elif ext in TEXT_EXT:
         result = _route("text", "native", "text", True, "纯文本直读")
     elif ext in IMAGE_EXT:
@@ -94,10 +104,14 @@ def classify(path: Path) -> dict:
         result = (
             _route("word", "native", "word", True, "文本型 Word，python-docx 直读")
             if probe["has_text_layer"]
-            else _route("word", "ocr", "word_scan", False, "图片/扫描型 Word，转 OCR")
+            else _route("word", "convert", "office_convert", False, "扫描型 Word 先转 PDF")
         )
     elif ext in LEGACY_WORD_EXT:
         result = _route("word", "native", "legacy_word", True, "老 Word .doc 原生文本抽取")
+    elif ext in PRESENTATION_EXT:
+        result = _route("presentation", "native", "presentation", True, "PowerPoint 原生直读")
+    elif ext in OFFICE_CONVERT_EXT:
+        result = _route("office", "convert", "office_convert", False, "Office 先转 PDF")
     elif ext in PDF_EXT:
         probe = _probe_pdf(path.read_bytes())
         result = (

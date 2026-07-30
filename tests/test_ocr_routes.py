@@ -64,12 +64,19 @@ def test_extract_multiple_files(client):
     assert len(resp.json()["results"]) == 2
 
 
-def test_extract_unknown_type_marked_manual(client):
-    # 不在白名单的扩展名 → classify 判 manual，不报错也不调引擎。
+def test_extract_unknown_type_rejected_before_materialization(client):
+    # 浏览器 accept 可绕过：服务端 canonical 白名单必须 fail-close。
     files = [("files", ("weird.xyz", b"opaque bytes", "application/octet-stream"))]
     resp = client.post("/ocr/extract", files=files, headers=_AUTH)
-    assert resp.status_code == 200
-    assert resp.json()["results"][0]["kind"] == "manual"
+    assert resp.status_code == 400
+    assert "Unsupported document format" in resp.json()["detail"]
+
+
+def test_extract_rejects_extension_magic_mismatch(client):
+    files = [("files", ("spoofed.pdf", b"MZ fake executable", "application/pdf"))]
+    resp = client.post("/ocr/extract", files=files, headers=_AUTH)
+    assert resp.status_code == 400
+    assert "does not match" in resp.json()["detail"]
 
 
 def test_extract_requires_auth(client):
@@ -258,8 +265,8 @@ def test_extract_directory_preserves_subdir_paths(client):
         shutil.rmtree(case, ignore_errors=True)
 
 
-def test_extract_corrupt_file_isolated_as_error(client):
-    # codex round 3：损坏 xlsx（非法 zip）应标 kind=error 隔离，不让整批 500（per-file 隔离）。
+def test_extract_corrupt_ooxml_rejected_before_pipeline(client):
+    # 上传边界先验 OOXML magic/内部结构；损坏包不再落盘后进入昂贵识别管线。
     files = [
         ("files", ("good.txt", b"ok content", "text/plain")),
         (
@@ -272,10 +279,8 @@ def test_extract_corrupt_file_isolated_as_error(client):
         ),
     ]
     resp = client.post("/ocr/extract", files=files, headers=_AUTH)
-    assert resp.status_code == 200
-    kinds = {r["path"]: r["kind"] for r in resp.json()["results"]}
-    assert kinds["good.txt"] == "text"
-    assert kinds["bad.xlsx"] == "error"
+    assert resp.status_code == 400
+    assert "does not match" in resp.json()["detail"]
 
 
 def test_extract_directory_rejects_symlink_escape(client, tmp_path):

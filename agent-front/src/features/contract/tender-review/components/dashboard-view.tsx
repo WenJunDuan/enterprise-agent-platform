@@ -56,26 +56,9 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { DataTablePagination, DataTableToolbar } from '@/components/data-table'
+import { ACCEPTED_DOCUMENT_FILE_TYPES } from '../supported-document-formats'
 import type { DashboardSummary, TenderProject } from '../types'
 import { StatusBadge } from './status-badge'
-
-const ACCEPTED_BIDDER_FILE_TYPES = [
-  '.pdf',
-  '.doc',
-  '.docx',
-  '.xls',
-  '.xlsx',
-  '.ppt',
-  '.pptx',
-  '.txt',
-  '.jpg',
-  '.jpeg',
-  '.png',
-  '.webp',
-  '.heic',
-  'image/*',
-  'application/pdf',
-].join(',')
 
 const statToneClass = {
   blue: 'bg-blue-500',
@@ -662,7 +645,7 @@ function AppendBidderDialog({
               ref={tenderInputRef}
               multiple
               type='file'
-              accept={ACCEPTED_BIDDER_FILE_TYPES}
+              accept={ACCEPTED_DOCUMENT_FILE_TYPES}
               className='hidden'
               onChange={(event) =>
                 setTenderFiles(Array.from(event.target.files ?? []))
@@ -693,7 +676,7 @@ function AppendBidderDialog({
               ref={bidderInputRef}
               multiple
               type='file'
-              accept={ACCEPTED_BIDDER_FILE_TYPES}
+              accept={ACCEPTED_DOCUMENT_FILE_TYPES}
               className='hidden'
               onChange={(event) =>
                 setBidderFiles(Array.from(event.target.files ?? []))

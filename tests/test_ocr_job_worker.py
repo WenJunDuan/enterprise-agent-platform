@@ -153,6 +153,43 @@ def test_execute_ocr_job_failure_sets_failed(case_dir, rid, monkeypatch):
     assert "engine exploded" in record["error_detail"]
 
 
+def test_terminal_error_unit_is_persisted_and_marks_job_failed(case_dir, rid, monkeypatch):
+    _write_files(case_dir, 1)
+
+    def emit_partial_then_error(_case_dir, *, run_seal, on_unit_complete):
+        on_unit_complete(
+            {
+                "file": "scan.pdf",
+                "page": 1,
+                "status": "ok",
+                "payload": {"markdown": "partial"},
+                "from_cache": False,
+            }
+        )
+        on_unit_complete(
+            {
+                "file": "scan.pdf",
+                "page": None,
+                "status": "error",
+                "payload": {"error": "Tesseract failed on page 2"},
+                "from_cache": False,
+            }
+        )
+
+    monkeypatch.setattr(worker, "extract_dir", emit_partial_then_error)
+
+    asyncio.run(worker.execute_ocr_job(request_id=rid, tenant=_TENANT))
+
+    record = get_ocr_job(rid, tenant=_TENANT)
+    assert record["status"] == "failed"
+    assert "Tesseract failed on page 2" in record["error_detail"]
+    units = [
+        json.loads(line)
+        for line in (case_dir / "units.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    assert [(unit["page"], unit["status"]) for unit in units] == [(1, "ok"), (None, "error")]
+
+
 def test_execute_ocr_job_timeout_sets_failed(case_dir, rid, monkeypatch):
     _write_files(case_dir, 1)
     monkeypatch.setattr(worker, "OCR_JOB_TIMEOUT_SEC", 0.01)

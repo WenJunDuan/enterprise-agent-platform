@@ -35,9 +35,9 @@
             "description": "评分项名称，如 '价格分' / '技术方案' / '业绩' / '项目负责人答辩'。"
           },
           "max": {
-            "type": "number",
+            "type": ["number", "null"],
             "minimum": 0,
-            "description": "该项最高分。对 score_mode=additive（加分项），max 必须是【含加分封顶】的该项最高分，确保实得 score≤max 恒成立、不撞 0≤score≤max 硬闸。"
+            "description": "该项最高分。仅 score_mode=manual 且 tag!=scored 的人工项允许 null（服务端语义闸校验）；scored/null 或其他模式/null 均无效。对 score_mode=additive（加分项），max 必须是【含加分封顶】的该项最高分，确保实得 score≤max 恒成立、不撞 0≤score≤max 硬闸。"
           },
           "scoring_rule": {
             "type": "string",
