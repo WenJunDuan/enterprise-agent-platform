@@ -11,9 +11,21 @@ const statusMeta: Record<
   ChecklistStatus,
   { label: string; Icon: typeof CheckCircle2; className: string }
 > = {
-  met: { label: '达到', Icon: CheckCircle2, className: 'text-emerald-600 dark:text-emerald-400' },
-  unmet: { label: '未达到', Icon: XCircle, className: 'text-red-600 dark:text-red-400' },
-  pending: { label: '待核验', Icon: Clock, className: 'text-amber-600 dark:text-amber-400' },
+  met: {
+    label: '达到',
+    Icon: CheckCircle2,
+    className: 'text-emerald-600 dark:text-emerald-400',
+  },
+  unmet: {
+    label: '未达到',
+    Icon: XCircle,
+    className: 'text-red-600 dark:text-red-400',
+  },
+  pending: {
+    label: '待核验',
+    Icon: Clock,
+    className: 'text-amber-600 dark:text-amber-400',
+  },
 }
 
 const statusOrder: ChecklistStatus[] = ['met', 'unmet', 'pending']
@@ -61,7 +73,7 @@ function BidderCardView({ card }: { card: BidderCard }) {
               </span>
             </div>
           </div>
-          {card.rank > 0 ? (
+          {card.rank != null && card.rank > 0 ? (
             <span className='flex shrink-0 items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground'>
               <Trophy className='size-3' />第 {card.rank} 名
             </span>
@@ -69,10 +81,13 @@ function BidderCardView({ card }: { card: BidderCard }) {
         </div>
         <div className='mt-3 flex items-end gap-2'>
           <span className='text-2xl font-semibold tracking-tight text-primary'>
-            {formatScore(card.score.earnedTotal)}
+            {card.total == null ? '待确认' : formatScore(card.total)}
           </span>
           <span className='mb-0.5 text-sm text-muted-foreground'>
-            / {formatScore(card.score.maxTotal)} 分
+            /{' '}
+            {card.score.maxTotal == null
+              ? `待确认（已知 ${formatScore(card.score.knownMaxTotal)} 分）`
+              : `${formatScore(card.score.maxTotal)} 分`}
           </span>
           {card.score.pendingTotal > 0 ? (
             <span className='mb-0.5 ml-auto text-xs text-amber-700 dark:text-amber-300'>
@@ -84,7 +99,9 @@ function BidderCardView({ card }: { card: BidderCard }) {
 
       {/* 符合性 checklist 概况 */}
       <div className='border-b p-4'>
-        <div className='mb-2 text-xs font-semibold text-muted-foreground'>符合性 checklist</div>
+        <div className='mb-2 text-xs font-semibold text-muted-foreground'>
+          符合性 checklist
+        </div>
         <div className='grid grid-cols-3 gap-2'>
           {counts.map(({ status, meta, count }) => (
             <div
@@ -94,7 +111,10 @@ function BidderCardView({ card }: { card: BidderCard }) {
               aria-label={`${meta.label} ${count} 项`}
             >
               <div className='flex items-center gap-1 text-xs text-muted-foreground'>
-                <meta.Icon className={cn('size-3.5', meta.className)} aria-hidden />
+                <meta.Icon
+                  className={cn('size-3.5', meta.className)}
+                  aria-hidden
+                />
                 {meta.label}
               </div>
               <div className='mt-0.5 text-lg font-semibold'>{count}</div>
@@ -117,21 +137,26 @@ function BidderCardView({ card }: { card: BidderCard }) {
                   />
                   <span className='min-w-0'>
                     <span className='font-medium'>{item.requirement}</span>
-                    <span className='ml-1 text-muted-foreground'>· {meta.label}</span>
+                    <span className='ml-1 text-muted-foreground'>
+                      · {meta.label}
+                    </span>
                   </span>
                 </div>
               )
             })}
           </div>
         ) : (
-          <p className='mt-3 text-xs text-muted-foreground'>各招标要求均已达到，无待关注项。</p>
+          <p className='mt-3 text-xs text-muted-foreground'>
+            各招标要求均已达到，无待关注项。
+          </p>
         )}
       </div>
 
       {/* 关键风险 */}
       <div className='min-h-0 flex-1 p-4'>
         <div className='mb-2 text-xs font-semibold text-muted-foreground'>
-          关键风险 {card.topIssues.length > 0 ? `（${card.topIssues.length}）` : ''}
+          关键风险{' '}
+          {card.topIssues.length > 0 ? `（${card.topIssues.length}）` : ''}
         </div>
         {card.topIssues.length === 0 ? (
           <p className='text-xs text-muted-foreground'>暂未发现明显问题。</p>
@@ -160,12 +185,18 @@ function IssueRow({ issue }: { issue: IssueItem }) {
         <span
           className={cn(
             'size-1.5 shrink-0 rounded-full',
-            isRisk ? 'bg-red-500' : issue.status === 'pending' ? 'bg-amber-400' : 'bg-orange-400'
+            isRisk
+              ? 'bg-red-500'
+              : issue.status === 'pending'
+                ? 'bg-amber-400'
+                : 'bg-orange-400'
           )}
         />
         <span className='font-medium text-foreground'>{issue.itemName}</span>
       </div>
-      <div className='mt-1 line-clamp-2 leading-5 text-muted-foreground'>{issue.basis}</div>
+      <div className='mt-1 line-clamp-2 leading-5 text-muted-foreground'>
+        {issue.basis}
+      </div>
     </div>
   )
 }

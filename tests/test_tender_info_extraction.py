@@ -19,6 +19,7 @@ import json
 import math
 import uuid
 
+import jsonschema
 import pytest
 from fastapi.testclient import TestClient
 
@@ -62,6 +63,97 @@ SAMPLE_TENDER_INFO = {
 }
 
 SAMPLE_EXTRACT_PAYLOAD = {"criteria": SAMPLE_CRITERIA, "tender_info": SAMPLE_TENDER_INFO}
+
+
+def _criteria_with_unknown_manual_items() -> dict:
+    """真实模型形状：7 个数值评分项 + 2 个 manual/null 项。"""
+    numeric_items = [
+        {
+            "item": f"数值评分项{i}",
+            "max": 10,
+            "scoring_rule": "按招标文件评分",
+            "source_ref": f"评标办法 p.{i}",
+            "tag": "scored",
+            "score_mode": "deduction",
+        }
+        for i in range(1, 8)
+    ]
+    manual_items = [
+        {
+            "item": "现场答辩",
+            "max": None,
+            "scoring_rule": "现场评委确认分值",
+            "source_ref": "评标办法 p.20",
+            "tag": "requires_live_event",
+            "score_mode": "manual",
+        },
+        {
+            "item": "外部信用",
+            "max": None,
+            "scoring_rule": "以外部信用结果确认分值",
+            "source_ref": "评标办法 p.21",
+            "tag": "requires_external_data",
+            "score_mode": "manual",
+        },
+    ]
+    return {
+        "source_ref": "招标文件评标办法",
+        "method": "综合评估法",
+        "total_max": 100,
+        "items": [*numeric_items, *manual_items],
+    }
+
+
+def test_criteria_looks_usable_accepts_seven_numeric_and_two_manual_null_items():
+    from server.tender.doc_pipeline import criteria_looks_usable
+
+    assert criteria_looks_usable(_criteria_with_unknown_manual_items()) is True
+
+
+@pytest.mark.parametrize(
+    ("score_mode", "tag"),
+    [
+        ("manual", "scored"),
+        ("manual", None),
+        ("manual", ""),
+        ("manual", "unknown_tag"),
+        ("deduction", "requires_external_data"),
+        ("formula", "requires_cross_bid_comparison"),
+    ],
+)
+def test_criteria_looks_usable_rejects_illegal_null_max(score_mode, tag):
+    from server.tender.doc_pipeline import criteria_looks_usable
+
+    criteria = _criteria_with_unknown_manual_items()
+    criteria["items"][-1].update(score_mode=score_mode, tag=tag)
+    assert criteria_looks_usable(criteria) is False
+
+
+def test_criteria_looks_usable_requires_at_least_one_numeric_max():
+    from server.tender.doc_pipeline import criteria_looks_usable
+
+    criteria = _criteria_with_unknown_manual_items()
+    criteria["items"] = criteria["items"][-2:]
+    assert criteria_looks_usable(criteria) is False
+
+
+@pytest.mark.parametrize("invalid_max", [-1, math.nan, math.inf, -math.inf])
+def test_criteria_looks_usable_rejects_negative_or_non_finite_numeric_max(invalid_max):
+    from server.tender.doc_pipeline import criteria_looks_usable
+
+    criteria = _criteria_with_unknown_manual_items()
+    criteria["items"][0]["max"] = invalid_max
+
+    assert criteria_looks_usable(criteria) is False
+
+
+def test_criteria_schema_allows_null_max_for_service_semantic_gate():
+    from server.common.contract import load_output_schema
+
+    jsonschema.validate(
+        _criteria_with_unknown_manual_items(),
+        load_output_schema("tender/criteria.schema.json"),
+    )
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 1. Schema migration: new columns are added idempotently
@@ -734,6 +826,42 @@ def test_get_tender_doc_returns_expected_shape(client, monkeypatch):
     assert "tender_info" in body
     assert "tender_files" in body
     assert isinstance(body["tender_files"], list)
+
+
+def test_get_tender_doc_round_trips_seven_numeric_and_two_manual_null_items(
+    client, monkeypatch
+):
+    """真实 criteria 经存储层和 GET API 后仍 ready，两个未知满分保持 null。"""
+    import server.routes.tender.docs as tender_module
+    from server.stores.tender_doc_store import (
+        update_project_doc_criteria_extracted,
+        upsert_project_doc,
+    )
+
+    monkeypatch.setattr(tender_module, "_start_project_doc_ocr_task", lambda *a, **kw: None)
+    pid = _make_project_api(client)
+    criteria = _criteria_with_unknown_manual_items()
+    upsert_project_doc(
+        project_id=pid,
+        tenant="acme",
+        tender_files=json.dumps(["招标文件.pdf"]),
+        ocr_status="ready",
+    )
+    update_project_doc_criteria_extracted(
+        pid,
+        "acme",
+        criteria_json=json.dumps(criteria, ensure_ascii=False),
+        tender_info_json=None,
+        status="ready",
+    )
+
+    response = client.get(f"/tender/projects/{pid}/tender-doc", headers=_AUTH)
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["criteria_status"] == "ready"
+    assert len(body["criteria"]["items"]) == 9
+    assert [item["max"] for item in body["criteria"]["items"][-2:]] == [None, None]
 
 
 def test_get_tender_doc_infers_failed_when_ocr_failed_and_criteria_stuck(client, monkeypatch):

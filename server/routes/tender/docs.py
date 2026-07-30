@@ -77,6 +77,7 @@ async def upload_tender_doc(
         form_data=form_data,
         domain="tender",
         project_id=project_id,
+        validate_document_format=True,
     )
 
     # Collect uploaded filenames for the files JSON list
@@ -139,6 +140,7 @@ async def upload_bid_doc(
         form_data=form_data,
         domain="tender",
         project_id=project_id,
+        validate_document_format=True,
     )
 
     file_names = [

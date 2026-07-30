@@ -1,5 +1,9 @@
 import { authHeaders, handleResponse, url } from '@/features/audit/api'
-import type { AuditResult, ReasonDetail, TaskStatus } from '@/features/audit/types'
+import type {
+  AuditResult,
+  ReasonDetail,
+  TaskStatus,
+} from '@/features/audit/types'
 import type { TenderProjectStatus, TenderScenario } from './types'
 
 const DEFAULT_POLL_INTERVAL_MS = 3000
@@ -158,9 +162,12 @@ export async function listTenderProjects(params?: {
 export async function getTenderProject(
   projectId: string
 ): Promise<TenderProjectDetailResponse> {
-  const res = await fetch(url(`/tender/projects/${encodeURIComponent(projectId)}`), {
-    headers: authHeaders(),
-  })
+  const res = await fetch(
+    url(`/tender/projects/${encodeURIComponent(projectId)}`),
+    {
+      headers: authHeaders(),
+    }
+  )
   return handleResponse<TenderProjectDetailResponse>(res)
 }
 
@@ -291,13 +298,18 @@ export async function getTenderCompareOrNull(
 export async function getTenderTask(
   requestId: string
 ): Promise<TenderTaskStatusResponse> {
-  const res = await fetch(url(`/tender/tasks/${encodeURIComponent(requestId)}`), {
-    headers: authHeaders(),
-  })
+  const res = await fetch(
+    url(`/tender/tasks/${encodeURIComponent(requestId)}`),
+    {
+      headers: authHeaders(),
+    }
+  )
   return handleResponse<TenderTaskStatusResponse>(res)
 }
 
-export async function getTenderTaskResult(requestId: string): Promise<AuditResult> {
+export async function getTenderTaskResult(
+  requestId: string
+): Promise<AuditResult> {
   const res = await fetch(
     url(`/tender/tasks/${encodeURIComponent(requestId)}/result`),
     {
@@ -321,10 +333,13 @@ export async function retryTenderTask(
 }
 
 export async function deleteTenderTask(requestId: string): Promise<void> {
-  const res = await fetch(url(`/tender/tasks/${encodeURIComponent(requestId)}`), {
-    method: 'DELETE',
-    headers: authHeaders(),
-  })
+  const res = await fetch(
+    url(`/tender/tasks/${encodeURIComponent(requestId)}`),
+    {
+      method: 'DELETE',
+      headers: authHeaders(),
+    }
+  )
   if (!res.ok) await handleResponse(res)
 }
 
@@ -429,11 +444,17 @@ export type CriteriaStatus = 'pending' | 'running' | 'ready' | 'failed'
 /** 单个评分项（镜像 .claude/contracts/tender/criteria.schema.json 的 items[]，仅取 UI 所需字段）。 */
 export type TenderCriteriaItem = {
   item: string
-  max: number
+  max: number | null
   scoring_rule?: string
   source_ref?: string
   tag?: string
-  score_mode?: 'deduction' | 'banded' | 'additive' | 'formula' | 'pass_fail' | 'manual'
+  score_mode?:
+    | 'deduction'
+    | 'banded'
+    | 'additive'
+    | 'formula'
+    | 'pass_fail'
+    | 'manual'
   evaluator_type?: 'objective' | 'subjective' | 'mixed'
   deductions?: Array<{ condition?: string; points?: number }>
   bands?: Array<{ level?: string; points?: number }>
@@ -503,7 +524,9 @@ export async function getTenderDocInfo(
  * @param projectId - Tender project identifier.
  * @returns Current OCR status for tender doc and each bid doc.
  */
-export async function getDocsStatus(projectId: string): Promise<DocsStatusResponse> {
+export async function getDocsStatus(
+  projectId: string
+): Promise<DocsStatusResponse> {
   const res = await fetch(
     url(`/tender/projects/${encodeURIComponent(projectId)}/docs-status`),
     {

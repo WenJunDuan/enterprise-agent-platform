@@ -32,6 +32,7 @@ allowed-tools: Read, Glob, Skill, Task
     - **复合评分行 → 拆成多条 items**：招标文件一个评分行含多个**独立子规则**（如「基础响应分 + ▲加分」「驻场人员计分 + 资格证书计分」「质量体系 + 服务承诺 + 培训」）时，**拆成多条 criteria items**、各自取最贴切的 `score_mode`，各 item `max` 之和 = 原行满分（契约一项只允许一种 `score_mode`，**不要把扣减与加分混进同一项**）。例：「运营平台 24 分 = 三平台功能响应 18 分（deduction：每缺一功能点扣 0.5、单平台封顶 6）+ ▲检测报告佐证加 6 分（additive：每▲项 +0.5、封顶 6）」→ 拆成两条 items。
   - **废标/否决条款 → 顶层 `rejection_rules[]`**（不是评分项，也不是资格审查清单本身）：逐条提取 `{id, condition 何情况废标/否决, source_quote 招标文件原文, source_ref}`，供 S3 走**独立 gate** 判定，与逐项评分解耦。资格审查的具体检查项优先进 `eligibility_rules[]`，不要只塞进 `rejection_rules[]`。
   - `tag` 标"可判定性"（与 `score_mode` 正交）：可依投标文件判定 → `scored`；命中 `requires_live_event`（现场答辩）/ `requires_external_data`（外部信用）/ `requires_cross_bid_comparison`（价格横比）→ 留待 S3 走 `manual_review`。
+  - **`max:null` 仅限人工未知满分项**：只有 `score_mode:"manual" && tag!="scored"` 可为 null；`scored/null` 或其他 score_mode/null 无效。manual/null 项计入评分项数量，但不参与满分、待核验分值或得分合计；整份 criteria 至少须有一个数值满分项。
 - 这份 `criteria` 就是本次评标的**会话项目规则**，随结论持久化（落 data/）；S3 据它先跑资格审查、再逐项评分。criteria 须**逐字依招标文件资格审查/初步评审/评标办法原文**（资格检查项、评分项、满分、规则不增删改），确保同一招标在不同投标人评标时得到**一致的 criteria**——这是后续多家公平横向比较的前提。
 - 同时 `Read` 通则层国家法规作**法律底座**（注意：**不是**项目评分标准，而是废标 / 资格 / 一致性 / 程序的法定依据，跨项目稳定）：
   - `knowledge/tender/evalmethod.rules.json`（《评标委员会和评标方法暂行规定》，发改委12号令）

@@ -25,26 +25,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import type { TenderFile, TenderScenario, UploadBidder } from '../types'
 import type { DocsStatusResponse, TenderProjectCreateRequest } from '../api'
-
-const ACCEPTED_REVIEW_FILE_TYPES = [
-  '.pdf',
-  '.doc',
-  '.docx',
-  '.xls',
-  '.xlsx',
-  '.ppt',
-  '.pptx',
-  '.txt',
-  '.jpg',
-  '.jpeg',
-  '.png',
-  '.webp',
-  '.heic',
-  'image/*',
-  'application/pdf',
-].join(',')
+import { ACCEPTED_DOCUMENT_FILE_TYPES } from '../supported-document-formats'
+import type { TenderFile, TenderScenario, UploadBidder } from '../types'
 
 /** funding_type 下拉选项 */
 const FUNDING_TYPE_OPTIONS: Array<{
@@ -59,7 +42,12 @@ const FUNDING_TYPE_OPTIONS: Array<{
 /** A①: 可编辑的项目基本信息 */
 export type ProjectFormData = Pick<
   TenderProjectCreateRequest,
-  'tender_no' | 'title' | 'tenderee' | 'method' | 'control_price' | 'funding_type'
+  | 'tender_no'
+  | 'title'
+  | 'tenderee'
+  | 'method'
+  | 'control_price'
+  | 'funding_type'
 >
 
 type CreateReviewViewProps = {
@@ -108,10 +96,7 @@ export function CreateReviewView(props: CreateReviewViewProps) {
 
   return (
     <div className='space-y-4'>
-      <StepBar
-        analyzing={props.isAnalyzing}
-        currentStep={currentStep}
-      />
+      <StepBar analyzing={props.isAnalyzing} currentStep={currentStep} />
       <ProjectInfoFormCard
         form={props.projectForm}
         onUpdate={props.onUpdateProjectForm}
@@ -244,7 +229,10 @@ function ProjectInfoFormCard({
       </CardHeader>
       <CardContent className='grid gap-4 md:grid-cols-2'>
         <div className='md:col-span-2'>
-          <Label htmlFor='project-title' className='mb-2 block text-sm font-medium'>
+          <Label
+            htmlFor='project-title'
+            className='mb-2 block text-sm font-medium'
+          >
             项目名称
           </Label>
           <Input
@@ -256,7 +244,10 @@ function ProjectInfoFormCard({
           />
         </div>
         <div>
-          <Label htmlFor='project-tender-no' className='mb-2 block text-sm font-medium'>
+          <Label
+            htmlFor='project-tender-no'
+            className='mb-2 block text-sm font-medium'
+          >
             招标编号
           </Label>
           <Input
@@ -268,7 +259,10 @@ function ProjectInfoFormCard({
           />
         </div>
         <div>
-          <Label htmlFor='project-tenderee' className='mb-2 block text-sm font-medium'>
+          <Label
+            htmlFor='project-tenderee'
+            className='mb-2 block text-sm font-medium'
+          >
             招标人
           </Label>
           <Input
@@ -280,7 +274,10 @@ function ProjectInfoFormCard({
           />
         </div>
         <div>
-          <Label htmlFor='project-method' className='mb-2 block text-sm font-medium'>
+          <Label
+            htmlFor='project-method'
+            className='mb-2 block text-sm font-medium'
+          >
             评标方法
           </Label>
           <Input
@@ -292,7 +289,10 @@ function ProjectInfoFormCard({
           />
         </div>
         <div>
-          <Label htmlFor='project-control-price' className='mb-2 block text-sm font-medium'>
+          <Label
+            htmlFor='project-control-price'
+            className='mb-2 block text-sm font-medium'
+          >
             标底 / 控制价
           </Label>
           <Input
@@ -304,7 +304,10 @@ function ProjectInfoFormCard({
           />
         </div>
         <div>
-          <Label htmlFor='project-funding-type' className='mb-2 block text-sm font-medium'>
+          <Label
+            htmlFor='project-funding-type'
+            className='mb-2 block text-sm font-medium'
+          >
             资金来源
           </Label>
           <Select
@@ -332,7 +335,8 @@ function ProjectInfoFormCard({
 function UploadFilesCard(props: CreateReviewViewProps) {
   // A 上传即 OCR：招标区选文件即自动上传，传后锁定（要改→取消重来）。投标区在招标上传前禁用
   // （强制招标先传），招标上传后解锁，每家传后单独锁定。
-  const tenderLocked = props.uploadingTender || props.hasUploaded || props.isAnalyzing
+  const tenderLocked =
+    props.uploadingTender || props.hasUploaded || props.isAnalyzing
   const isSelfCheck = props.scenario === 'bidder_self_check'
   return (
     <Card>
@@ -414,7 +418,7 @@ function TenderFilesSection({
           <input
             multiple
             type='file'
-            accept={ACCEPTED_REVIEW_FILE_TYPES}
+            accept={ACCEPTED_DOCUMENT_FILE_TYPES}
             className='hidden'
             onChange={(event) => {
               onAdd(event.target.files)
@@ -581,7 +585,7 @@ function BidderCard({
             <input
               multiple
               type='file'
-              accept={ACCEPTED_REVIEW_FILE_TYPES}
+              accept={ACCEPTED_DOCUMENT_FILE_TYPES}
               className='hidden'
               onChange={(event) => {
                 onAddFile(event.target.files)
@@ -645,7 +649,9 @@ function FileRow({
         compact ? 'px-3 py-2' : 'px-4 py-3'
       }`}
     >
-      <span className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${toneClass}`}>
+      <span
+        className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${toneClass}`}
+      >
         <FileText className='size-4' />
       </span>
       <div className='min-w-0 flex-1'>

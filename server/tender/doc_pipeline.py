@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import os
 
 from server.common.command_adapter import run_command_json
@@ -85,6 +86,7 @@ _TAG_ALIASES = {
 }
 # 不可识别 tag 的兜底：选一个强制人工复核的枚举（绝不默认 scored 冒充可自动判定）。
 _TAG_FALLBACK = "requires_external_data"
+_MANUAL_NULL_TAGS = _TAG_CANON - {"scored"}
 _SCORE_MODES = {"deduction", "banded", "additive", "formula", "pass_fail", "manual"}
 
 
@@ -95,9 +97,11 @@ def criteria_looks_usable(criteria_obj: object) -> bool:
     formula_spec.cap 写成对象、多一个字段），整份 all-or-nothing 校验会因一个叶子误杀整套
     14 项合格 criteria，让本功能形同虚设（实测 qwen 三处枚举/类型漂移）。
 
-    评标真正承重的最小结构 = 有评分项 + 每项有名字 + 每项有数值满分（S3 据此逐项判分）；其余
+    评标真正承重的最小结构 = 有评分项 + 每项有名字 + 至少一个数值满分（S3 据此逐项判分）；其余
     枚举/嵌套细节由 normalize_criteria_enums 尽力归一化、注入评标也只作文本 hint、区2 展示也
-    防御式渲染，零星瑕疵无害。结构性垃圾（无 items / items 非数组 / 项缺名字或满分非数）→ False
+    防御式渲染，零星瑕疵无害。数值满分必须是有限非负数；仅 ``manual`` 且非 ``scored`` 的项目
+    允许 ``max=null``，这种项目计入评分项数量但不参与满分算术。结构性垃圾（无 items / items
+    非数组 / 项缺名字 / 非法满分 / 没有任何数值满分）→ False
     → criteria_status=failed（评标自行 S1 解析、区2 显"识别失败"）。
     """
     if not isinstance(criteria_obj, dict):
@@ -105,15 +109,26 @@ def criteria_looks_usable(criteria_obj: object) -> bool:
     items = criteria_obj.get("items")
     if not isinstance(items, list) or not items:
         return False
+    has_numeric_max = False
     for item in items:
         if not isinstance(item, dict):
             return False
         name = item.get("item")
         if not isinstance(name, str) or not name.strip():
             return False
-        if not isinstance(item.get("max"), (int, float)) or isinstance(item.get("max"), bool):
+        max_score = item.get("max")
+        if isinstance(max_score, (int, float)) and not isinstance(max_score, bool):
+            if not math.isfinite(max_score) or max_score < 0:
+                return False
+            has_numeric_max = True
+            continue
+        if not (
+            max_score is None
+            and item.get("score_mode") == "manual"
+            and item.get("tag") in _MANUAL_NULL_TAGS
+        ):
             return False
-    return True
+    return has_numeric_max
 
 
 def normalize_criteria_enums(criteria_obj: object) -> None:
@@ -136,7 +151,7 @@ def normalize_criteria_enums(criteria_obj: object) -> None:
         if not isinstance(item, dict):
             continue
         tag = item.get("tag")
-        if isinstance(tag, str) and tag not in _TAG_CANON:
+        if isinstance(tag, str) and tag not in _TAG_CANON and item.get("max") is not None:
             item["tag"] = _TAG_ALIASES.get(tag.strip(), _TAG_FALLBACK)
         score_mode = item.get("score_mode")
         if isinstance(score_mode, str) and score_mode not in _SCORE_MODES:

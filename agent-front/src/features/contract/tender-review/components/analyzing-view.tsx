@@ -1,12 +1,7 @@
-import { Brain, FileText, Info, Loader2 } from 'lucide-react'
 import { useEffect, useRef } from 'react'
+import { Brain, FileText, Info, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import type {
   CriteriaStatus,
   DocsStatusResponse,
@@ -101,7 +96,10 @@ export function AnalyzingView({
             bidders={docsStatus?.bids ?? []}
           />
           {/* 区2：招标信息（OCR 状态 + 评分标准 criteria） */}
-          <Zone2TenderInfo docsStatus={docsStatus} tenderDocInfo={tenderDocInfo} />
+          <Zone2TenderInfo
+            docsStatus={docsStatus}
+            tenderDocInfo={tenderDocInfo}
+          />
         </div>
 
         {/* ─ 右栏：区3 投标公司文档（流式输出） ─ */}
@@ -142,15 +140,22 @@ function Zone1ProjectInfo({
     (projectForm?.funding_type
       ? (fundingLabel[projectForm.funding_type] ?? projectForm.funding_type)
       : '')
-  const extracting = criteriaStatus === 'pending' || criteriaStatus === 'running'
+  const extracting =
+    criteriaStatus === 'pending' || criteriaStatus === 'running'
 
   const rows = [
     {
       label: '项目名称',
       value: pick(tenderInfo?.project_name, projectForm?.title),
     },
-    { label: '招标编号', value: pick(tenderInfo?.tender_no, projectForm?.tender_no) },
-    { label: '招标人', value: pick(tenderInfo?.tenderee, projectForm?.tenderee) },
+    {
+      label: '招标编号',
+      value: pick(tenderInfo?.tender_no, projectForm?.tender_no),
+    },
+    {
+      label: '招标人',
+      value: pick(tenderInfo?.tenderee, projectForm?.tenderee),
+    },
     { label: '评标办法', value: pick(tenderInfo?.method, projectForm?.method) },
     {
       label: '控制价',
@@ -172,9 +177,16 @@ function Zone1ProjectInfo({
         {hasAny || extracting ? (
           <dl className='grid gap-2 text-sm'>
             {rows.map((row) => (
-              <div key={row.label} className='grid grid-cols-[6rem_1fr] gap-x-2'>
+              <div
+                key={row.label}
+                className='grid grid-cols-[6rem_1fr] gap-x-2'
+              >
                 <dt className='text-muted-foreground'>{row.label}</dt>
-                <dd className={row.value ? 'font-medium' : 'text-muted-foreground'}>
+                <dd
+                  className={
+                    row.value ? 'font-medium' : 'text-muted-foreground'
+                  }
+                >
                   {row.value || (extracting ? '识别中…' : '—')}
                 </dd>
               </div>
@@ -191,7 +203,10 @@ function Zone1ProjectInfo({
             </div>
             <div className='flex flex-col gap-1'>
               {bidders.map((bid) => (
-                <div key={bid.bid_id} className='flex items-center gap-2 text-sm'>
+                <div
+                  key={bid.bid_id}
+                  className='flex items-center gap-2 text-sm'
+                >
                   <span className='size-1.5 shrink-0 rounded-full bg-violet-500' />
                   <span className='truncate font-medium'>
                     {bid.bidder_name?.trim() || bid.bid_id}
@@ -245,8 +260,12 @@ function Zone2TenderInfo({
           {docsStatus ? (
             <div className='space-y-2'>
               <div className='flex items-center gap-2'>
-                <OcrDot status={docsStatus.tender_doc?.ocr_status ?? 'pending'} />
-                <span className='font-medium text-muted-foreground'>招标文件</span>
+                <OcrDot
+                  status={docsStatus.tender_doc?.ocr_status ?? 'pending'}
+                />
+                <span className='font-medium text-muted-foreground'>
+                  招标文件
+                </span>
                 <span className='shrink-0'>
                   {docsStatus.tender_doc
                     ? ocrStatusLabel(docsStatus.tender_doc.ocr_status)
@@ -274,7 +293,9 @@ function Zone2TenderInfo({
           {/* 评分标准 criteria（招标信息核心） */}
           <div className='border-t pt-3'>
             <div className='mb-2 flex items-center justify-between'>
-              <span className='font-medium text-muted-foreground'>评分标准</span>
+              <span className='font-medium text-muted-foreground'>
+                评分标准
+              </span>
               <CriteriaStatusBadge status={criteriaStatus} />
             </div>
             {criteriaStatus === 'ready' && criteria ? (
@@ -317,11 +338,18 @@ function CriteriaStatusBadge({ status }: { status: CriteriaStatus }) {
 function CriteriaSummary({ criteria }: { criteria: TenderCriteria }) {
   const items = criteria.items ?? []
   const rejectionCount = criteria.rejection_rules?.length ?? 0
-  // 自检：各项 max 之和 vs 声明满分，对不上时提示（抓漏/抓错评分项的早期信号）。
-  const sumMax = items.reduce((acc, it) => acc + (Number(it.max) || 0), 0)
+  const numericMaxItems = items.filter(
+    (item): item is typeof item & { max: number } =>
+      typeof item.max === 'number' && Number.isFinite(item.max)
+  )
+  const knownMaxTotal = numericMaxItems.reduce((sum, item) => sum + item.max, 0)
+  const unknownMaxCount = items.length - numericMaxItems.length
+  const maxTotal = unknownMaxCount === 0 ? knownMaxTotal : null
   const totalMax = criteria.total_max
   const sumMismatch =
-    typeof totalMax === 'number' && Math.abs(sumMax - totalMax) > 0.5
+    maxTotal != null &&
+    typeof totalMax === 'number' &&
+    Math.abs(maxTotal - totalMax) > 0.5
 
   return (
     <div className='space-y-2'>
@@ -332,8 +360,13 @@ function CriteriaSummary({ criteria }: { criteria: TenderCriteria }) {
           </span>
         ) : null}
         <span className='text-muted-foreground'>
-          满分 <b className='text-foreground'>{totalMax ?? sumMax}</b> · 评分项{' '}
-          <b className='text-foreground'>{items.length}</b>
+          满分{' '}
+          <b className='text-foreground'>
+            {maxTotal == null
+              ? `待确认（已知 ${knownMaxTotal}）`
+              : (totalMax ?? maxTotal)}
+          </b>{' '}
+          · 评分项 <b className='text-foreground'>{items.length}</b>
           {rejectionCount > 0 ? (
             <>
               {' '}
@@ -344,7 +377,8 @@ function CriteriaSummary({ criteria }: { criteria: TenderCriteria }) {
       </div>
       {sumMismatch ? (
         <p className='text-xs text-amber-600'>
-          ⚠ 各项满分合计 {sumMax} 与声明满分 {totalMax} 不一致，可能漏抓或抓错评分项。
+          ⚠ 各项满分合计 {maxTotal} 与声明满分 {totalMax}{' '}
+          不一致，可能漏抓或抓错评分项。
         </p>
       ) : null}
       <ul className='space-y-1'>
@@ -397,7 +431,9 @@ function CriteriaSummary({ criteria }: { criteria: TenderCriteria }) {
                     {scoreModeLabel[item.score_mode] ?? item.score_mode}
                   </span>
                 ) : null}
-                <span className='text-sm font-semibold'>{item.max}</span>
+                <span className='text-sm font-semibold'>
+                  {item.max == null ? '未设分值' : item.max}
+                </span>
               </span>
             </li>
           )
@@ -448,7 +484,7 @@ function Zone3StreamOutput({
       {/* R7-#3：flex 链撑满 → 区3 与左栏（区1+区2）等高（grid 默认 items-stretch）。 */}
       <CardContent
         ref={scrollRef}
-        className='min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-6 py-4'
+        className='min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-6 py-4'
       >
         {progressText?.trim() ? (
           <MarkdownView>{progressText}</MarkdownView>

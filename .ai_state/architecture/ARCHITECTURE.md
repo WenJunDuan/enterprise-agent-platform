@@ -8,6 +8,7 @@
 |---|---|---|
 | `system-tender-data-model.md` | tender 招标数据模型 | 招标项目实体 owns N 家投标评标 + 多投标人追加 + 回看 + 价格横比（Phase 1+2，2026-06-20） |
 | `system-tender-evidence-resolution.md` | tender 评标证据可验证性 | evidence-resolution 闸（出处回查）+ 底稿→校验透传管道 + BOQ 感知抽取 + confidence 消费（2026-06-22） |
+| `system-document-ingestion.md` | 文档摄取与 OCR | 24 格式 native→Office→VLM→Tesseract 路由、资源门禁、缓存与双镜像配置边界（2026-07-30） |
 | （已删） | contract/legal | 2026-06-20 agent-capability-redesign G0 删除（死域，无 knowledge/legal 规则） |
 
 ## 真实业务域（round4 校准）
@@ -60,5 +61,9 @@ app (api/cli) → routes → ops → features(audit|tender) → ocr(服务层) �
   progress 存 `progress_message` 定长 JSON `{done,total}`；路径一律服务端 `build_case_dir` 派生（跨租户 404）。
   `pipeline.extract_dir(on_unit_complete=...)` 回调接缝：native pdf_text 读后从最终 blocks 发、OCR 侧 buffer-then-fire，
   默认 None 零行为。前端 OCR 工作台 Tabs 双模式（识别+回填 / 流式识别渐进渲染）。
+- **文档摄取格式层（2026-07-30）**：24 个 canonical 后缀由共享 manifest 单源派生；原生抽取不足时
+  进入隔离 LibreOffice→PDF，再走 LiteLLM/OpenAI-compatible VLM→本地 Tesseract 的保守降级链。
+  图片/PDF/Office 均有分配前资源门禁，空文本和仅页锚不算成功，degraded 结果不缓存。现状详见
+  `architecture/system-document-ingestion.md`；目标 demo 成品镜像实跑仍由当前 sprint T6 验收。
 - 大 blob 留文件：会话 event 流、上传原件。
 - 详见 `sprints/2026-06-19-logging-and-storage/design-data-storage.md` + `architecture/system-tender-data-model.md`。

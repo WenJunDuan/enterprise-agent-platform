@@ -36,7 +36,7 @@ def client(monkeypatch):
     return TestClient(api_module.app)
 
 
-def _criteria(price_max: int = 40) -> dict:
+def _criteria(price_max: int | None = 40, *, price_mode: str = "formula") -> dict:
     return {
         "source_ref": "招标文件.pdf 评标办法 p.18",
         "method": "综合评估法",
@@ -49,6 +49,7 @@ def _criteria(price_max: int = 40) -> dict:
                 "scoring_rule": "最低价/本价×40",
                 "source_ref": "p.18",
                 "tag": "requires_cross_bid_comparison",
+                "score_mode": price_mode,
             },
         ],
     }
@@ -124,6 +125,123 @@ def test_collect_compare_input_and_signature():
     # 价格项被识别
     assert compare_input["criteria_price_item"]["item"] == "价格分"
     assert len(sig.input_result_ids) == 2
+
+
+def test_collect_blocks_manual_null_price_item_from_comparison_and_ranking():
+    from server.tender.compare_worker import collect_compare_input
+
+    pid = get_or_create_project(tenant="acme", tender_no=f"R-{uuid.uuid4().hex[:8]}")[
+        "project_id"
+    ]
+    criteria = _criteria(price_max=None, price_mode="manual")
+    _archive_bid(pid, "B1", 1000.0, criteria=criteria)
+    _archive_bid(pid, "B2", 1200.0, criteria=criteria)
+
+    compare_input, _sig = collect_compare_input("acme", pid, {})
+
+    assert compare_input["criteria_price_item"] is None
+    assert compare_input["price_comparison_blocked"] is True
+    assert compare_input["price_comparison_blocked_reason"] == "price_item_missing_or_invalid"
+
+
+@pytest.mark.parametrize("second_criteria", [_criteria(price_max=None), _criteria(price_max=40)])
+def test_collect_checks_every_bidder_price_item_and_criteria_consistency(second_criteria):
+    from server.tender.compare_worker import collect_compare_input
+
+    if second_criteria["items"][-1]["max"] == 40:
+        second_criteria = {**second_criteria, "method": "其他"}
+    pid = get_or_create_project(tenant="acme", tender_no=f"R-{uuid.uuid4().hex[:8]}")[
+        "project_id"
+    ]
+    _archive_bid(pid, "B1", 1000.0, criteria=_criteria())
+    _archive_bid(pid, "B2", 1200.0, criteria=second_criteria)
+
+    compare_input, _sig = collect_compare_input("acme", pid, {})
+
+    assert compare_input["price_comparison_blocked"] is True
+    assert compare_input["criteria_price_item"] is None
+
+
+def test_collect_blocks_when_any_bidder_has_no_price_item():
+    from server.tender.compare_worker import collect_compare_input
+
+    criteria_without_price = _criteria()
+    criteria_without_price["items"] = criteria_without_price["items"][:1]
+    pid = get_or_create_project(tenant="acme", tender_no=f"R-{uuid.uuid4().hex[:8]}")[
+        "project_id"
+    ]
+    _archive_bid(pid, "B1", 1000.0, criteria=_criteria())
+    _archive_bid(pid, "B2", 1200.0, criteria=criteria_without_price)
+
+    compare_input, _sig = collect_compare_input("acme", pid, {})
+
+    assert compare_input["price_comparison_blocked"] is True
+    assert compare_input["criteria_price_item"] is None
+
+
+def test_unknown_price_max_forces_manual_result_even_if_model_returns_rank():
+    from server.tender.compare_worker import enforce_price_comparison_block
+
+    payload = {
+        "bidders": [
+            {
+                "claim_id": "B1",
+                "price_score": 40,
+                "other_score": 50,
+                "total_score": 90,
+                "rank": 1,
+                "status": "scored",
+            }
+        ],
+        "recommended": "B1",
+        "provisional": False,
+        "warnings": [],
+        "explanation": "B1 排名第一",
+    }
+    compare_input = {
+        "price_comparison_blocked": True,
+        "bidders": [{"claim_id": "B1", "bid_price": {"amount": 1000, "currency": "CNY"}}],
+    }
+
+    enforce_price_comparison_block(payload, compare_input)
+
+    assert payload["recommended"] is None
+    assert payload["provisional"] is True
+    assert payload["bidders"][0]["rank"] is None
+    assert payload["bidders"][0]["price_score"] is None
+    assert payload["bidders"][0]["total_score"] is None
+    assert payload["bidders"][0]["status"] == "manual_review"
+
+
+def test_inconsistent_criteria_forces_manual_result_even_if_model_returns_rank():
+    from server.tender.compare_worker import enforce_price_comparison_block
+
+    payload = {
+        "bidders": [
+            {
+                "claim_id": "B1",
+                "price_score": 40,
+                "total_score": 90,
+                "rank": 1,
+                "status": "scored",
+            }
+        ],
+        "recommended": "B1",
+        "provisional": False,
+        "warnings": [],
+    }
+    compare_input = {
+        "price_comparison_blocked": True,
+        "price_comparison_blocked_reason": "criteria_inconsistent",
+        "bidders": [{"claim_id": "B1", "bid_price": None}],
+    }
+
+    enforce_price_comparison_block(payload, compare_input)
+
+    assert payload["bidders"][0]["price_score"] is None
+    assert payload["bidders"][0]["total_score"] is None
+    assert payload["bidders"][0]["rank"] is None
+    assert payload["recommended"] is None
 
 
 def test_collect_returns_none_when_under_two():

@@ -48,7 +48,12 @@ export function ScoringDetailTable({
 
   if (items.length === 0) {
     return (
-      <div className={cn('rounded-lg border border-dashed p-4 text-sm text-muted-foreground', className)}>
+      <div
+        className={cn(
+          'rounded-lg border border-dashed p-4 text-sm text-muted-foreground',
+          className
+        )}
+      >
         {emptyText}
       </div>
     )
@@ -109,7 +114,7 @@ function CompactScoringRows({ items }: { items: TenderScoringItem[] }) {
               {getStatusLabel(item.status)}
             </div>
             <div className='text-center text-muted-foreground'>
-              {formatScore(item.max)}
+              {formatMax(item.max)}
             </div>
             <div className='text-center text-muted-foreground'>
               {getStatusLabel(item.status)}
@@ -145,7 +150,7 @@ function FullScoringRows({ items }: { items: TenderScoringItem[] }) {
           >
             <div className='font-medium text-foreground'>{item.item}</div>
             <div className='text-center text-muted-foreground'>
-              {formatScore(item.max)}
+              {formatMax(item.max)}
             </div>
             <div className='text-center font-semibold'>
               {getStatusLabel(item.status)}
@@ -155,7 +160,9 @@ function FullScoringRows({ items }: { items: TenderScoringItem[] }) {
                 ? '待核验'
                 : '已记录'}
             </div>
-            <div className='leading-6 text-muted-foreground'>{item.basis || '—'}</div>
+            <div className='leading-6 text-muted-foreground'>
+              {item.basis || '—'}
+            </div>
           </div>
         ))}
       </div>
@@ -239,7 +246,7 @@ export function CompareScoringDetailTable({
                     ) : null}
                   </div>
                   <div className='text-center text-muted-foreground'>
-                    {formatScore(row.max)}
+                    {formatMax(row.max)}
                   </div>
                   {row.cells.map((cell) => (
                     <div
@@ -276,7 +283,7 @@ export function CompareScoreDetailSheet({
           <SheetTitle>{row?.item ?? '评标项目明细'}</SheetTitle>
           <SheetDescription>
             {row
-              ? `${getReviewDimensionLabel(row.reviewDimension)} · 满分 ${formatScore(row.max)}`
+              ? `${getReviewDimensionLabel(row.reviewDimension)} · ${row.max == null ? '未设分值' : `满分 ${formatScore(row.max)}`}`
               : ''}
           </SheetDescription>
         </SheetHeader>
@@ -329,9 +336,14 @@ function EvidenceList({ evidence }: { evidence: TenderScoreEvidence[] }) {
   return (
     <div className='mt-3 space-y-2'>
       {evidence.map((item, index) => (
-        <div key={index} className='rounded-md bg-muted/30 p-3 text-xs leading-5'>
+        <div
+          key={index}
+          className='rounded-md bg-muted/30 p-3 text-xs leading-5'
+        >
           {item.condition ? (
-            <div className='font-semibold text-foreground'>{item.condition}</div>
+            <div className='font-semibold text-foreground'>
+              {item.condition}
+            </div>
           ) : null}
           {item.quote ? (
             <div className='mt-1 border-l-2 border-l-amber-300 pl-2 text-muted-foreground italic'>
@@ -341,7 +353,9 @@ function EvidenceList({ evidence }: { evidence: TenderScoreEvidence[] }) {
           {item.finding || item.conclusion ? (
             <div className='mt-1 flex gap-1 text-muted-foreground'>
               <FileText className='mt-0.5 size-3 shrink-0' />
-              <span>{[item.finding, item.conclusion].filter(Boolean).join('；')}</span>
+              <span>
+                {[item.finding, item.conclusion].filter(Boolean).join('；')}
+              </span>
             </div>
           ) : null}
           {item.source ? (
@@ -357,20 +371,16 @@ function EvidenceList({ evidence }: { evidence: TenderScoreEvidence[] }) {
 }
 
 function groupScoringItems(items: TenderScoringItem[]) {
-  return groupByScoreCategory(items, (item) => item.scoreCategory).map((group) => ({
-    ...group,
-    max: roundScore(group.items.reduce((sum, item) => sum + item.max, 0)),
-    score: roundScore(
-      group.items.reduce((sum, item) => sum + (item.score ?? 0), 0)
-    ),
-  }))
+  return groupByScoreCategory(items, (item) => item.scoreCategory)
 }
 
 function groupCompareRows(rows: TenderCompareScoreRow[]) {
-  return groupByReviewDimension(rows, (row) => row.reviewDimension).map((group) => ({
-    dimension: group.dimension,
-    rows: group.items,
-  }))
+  return groupByReviewDimension(rows, (row) => row.reviewDimension).map(
+    (group) => ({
+      dimension: group.dimension,
+      rows: group.items,
+    })
+  )
 }
 
 function groupByScoreCategory<T>(
@@ -393,9 +403,7 @@ function groupByReviewDimension<T>(
   items: T[],
   pickDimension: (item: T) => TenderReviewDimension
 ) {
-  return (
-    ['price', 'business_objective', 'technical_subjective'] as const
-  )
+  return (['price', 'business_objective', 'technical_subjective'] as const)
     .map((dimension) => ({
       dimension,
       items: items.filter((item) => pickDimension(item) === dimension),
@@ -428,6 +436,6 @@ function formatScore(score: number) {
   return Number.isInteger(score) ? String(score) : score.toFixed(1)
 }
 
-function roundScore(score: number) {
-  return Number(score.toFixed(1))
+function formatMax(max: number | null) {
+  return max == null ? '未设分值' : formatScore(max)
 }

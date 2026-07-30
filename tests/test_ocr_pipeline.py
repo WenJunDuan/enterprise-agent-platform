@@ -10,7 +10,7 @@ import json
 import jsonschema
 import pytest
 
-from server.ocr.pipeline import build_extraction_block, extract_one
+from server.ocr.pipeline import build_extraction_block, extract_one, is_ocr_text_valid
 from server.platform.paths import PROJECT_ROOT
 
 _EXTRACT_RESULT_SCHEMA = json.loads(
@@ -67,6 +67,181 @@ def test_render_body_adds_page_anchors_ocr():
     )
     assert "【第 1 页】" in body and "甲页" in body
     assert "【第 2 页】" in body and "乙页" in body
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "【第 1 页】",
+        "### 文件: scan.pdf (kind=ocr, route=ocr)\n【第 1 页】\n\n【第 2 页】",
+        "### 文件: scan.pdf (kind=ocr, route=ocr)\n【第 1 页】\n   ",
+    ],
+)
+def test_is_ocr_text_valid_rejects_page_anchors_without_recognized_text(text):
+    assert is_ocr_text_valid(text) is False
+
+
+def test_extract_one_propagates_memory_error(tmp_path, monkeypatch):
+    import server.ocr.pipeline as pipeline_mod
+
+    document = tmp_path / "scan.pdf"
+    document.write_bytes(b"%PDF")
+    monkeypatch.setattr(
+        pipeline_mod,
+        "_dispatch_extract",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(MemoryError("out of memory")),
+    )
+
+    with pytest.raises(MemoryError, match="out of memory"):
+        pipeline_mod.extract_one(document)
+
+
+def test_native_reader_memory_error_does_not_attempt_office_conversion(tmp_path, monkeypatch):
+    import server.ocr.pipeline as pipeline_mod
+
+    presentation = tmp_path / "slides.pptx"
+    presentation.write_bytes(b"PK")
+    monkeypatch.setattr(
+        pipeline_mod,
+        "classify",
+        lambda path: {
+            "path": str(path),
+            "container": "presentation",
+            "route": "native",
+            "handler": "presentation",
+        },
+    )
+    monkeypatch.setattr(
+        pipeline_mod,
+        "_call_native_read",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(MemoryError("native exhausted")),
+    )
+    monkeypatch.setattr(
+        pipeline_mod,
+        "_convert_and_dispatch",
+        lambda *_args, **_kwargs: pytest.fail("MemoryError must not enter conversion fallback"),
+    )
+
+    with pytest.raises(MemoryError, match="native exhausted"):
+        pipeline_mod.extract_one(presentation)
+
+
+def test_pptx_short_text_with_image_converts_to_pdf_and_ocr(tmp_path, monkeypatch):
+    from contextlib import contextmanager
+
+    import server.ocr.pipeline as pipeline_mod
+
+    source = tmp_path / "scanned-slides.pptx"
+    source.write_bytes(b"PK")
+    converted = tmp_path / "converted.pdf"
+    converted.write_bytes(b"%PDF")
+    converted_sources = []
+
+    @contextmanager
+    def convert(path):
+        converted_sources.append(path)
+        yield converted
+
+    monkeypatch.setattr(pipeline_mod, "PRESENTATION_NATIVE_MIN_TEXT_CHARS", 80)
+    monkeypatch.setattr(pipeline_mod, "convert_office_to_pdf", convert)
+    monkeypatch.setattr(
+        pipeline_mod,
+        "classify",
+        lambda path: (
+            {"path": str(path), "container": "pdf", "route": "ocr", "handler": "pdf_scan"}
+            if path == converted
+            else {
+                "path": str(path),
+                "container": "presentation",
+                "route": "native",
+                "handler": "presentation",
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        pipeline_mod,
+        "native_read",
+        lambda path: {
+            "kind": "presentation",
+            "blocks": ["投标方案"],
+            "tables": [],
+            "image_count": 1,
+            "text_char_count": 4,
+        },
+    )
+    monkeypatch.setattr(
+        pipeline_mod,
+        "recognize",
+        lambda path, *, purpose=None: {
+            "kind": "ocr",
+            "engine": "openai-compatible-vlm",
+            "pages": [{"page_number": 1, "markdown": "扫描图片中的完整正文"}],
+        },
+    )
+
+    result = pipeline_mod.extract_one(source)
+
+    assert converted_sources == [source]
+    assert result["route"] == "convert"
+    assert result["converted_from"] == ".pptx"
+    assert result["engine"] == "openai-compatible-vlm"
+    assert result["pages"][0]["markdown"] == "扫描图片中的完整正文"
+
+
+@pytest.mark.parametrize(
+    "native_result",
+    [
+        {
+            "kind": "presentation",
+            "blocks": ["纯文字投标方案"],
+            "tables": [],
+            "image_count": 0,
+            "text_char_count": 8,
+        },
+        {
+            "kind": "presentation",
+            "blocks": [],
+            "tables": [{"rows": [["工期", "30天"]]}],
+            "image_count": 0,
+            "text_char_count": 5,
+        },
+        {
+            "kind": "presentation",
+            "blocks": ["x" * 80],
+            "tables": [],
+            "image_count": 1,
+            "text_char_count": 80,
+        },
+    ],
+)
+def test_pptx_without_scan_signal_or_with_sufficient_text_stays_native(
+    tmp_path, monkeypatch, native_result
+):
+    import server.ocr.pipeline as pipeline_mod
+
+    source = tmp_path / "native-slides.pptx"
+    source.write_bytes(b"PK")
+    monkeypatch.setattr(
+        pipeline_mod,
+        "classify",
+        lambda path: {
+            "path": str(path),
+            "container": "presentation",
+            "route": "native",
+            "handler": "presentation",
+        },
+    )
+    monkeypatch.setattr(pipeline_mod, "native_read", lambda path: native_result)
+    monkeypatch.setattr(
+        pipeline_mod,
+        "_convert_and_dispatch",
+        lambda *_args, **_kwargs: pytest.fail("native presentation must not be converted"),
+    )
+
+    result = pipeline_mod.extract_one(source)
+
+    assert result["route"] == "native"
+    assert result["kind"] == "presentation"
 
 
 def test_render_body_adds_page_anchors_pdf_text():
@@ -150,6 +325,8 @@ def test_manual_kind_item_conforms_to_extract_result_schema(tmp_path):
 
 def test_ocr_purpose_injected_into_openai_prompt(monkeypatch, tmp_path):
     """评标 OCR 目的注入：purpose 追加进 OpenAI-compatible 识别 prompt（治"OCR 无目的性"）。"""
+    from PIL import Image
+
     import server.ocr.engine as eng
 
     monkeypatch.setattr(eng, "OCR_VL_SERVER_URL", "http://ocr.local")
@@ -162,7 +339,7 @@ def test_ocr_purpose_injected_into_openai_prompt(monkeypatch, tmp_path):
 
     monkeypatch.setattr(eng, "_call_openai_compatible_vlm", fake_call)
     img = tmp_path / "scan.png"
-    img.write_bytes(b"\x89PNG\r\n\x1a\n")
+    Image.new("RGB", (10, 10), "white").save(img, format="PNG")
     eng._recognize_via_openai_compatible(img, purpose="完整还原扣分细则表格")
     assert "完整还原扣分细则表格" in captured["prompt"]
     assert "Extract all visible document text" in captured["prompt"]  # 通用指令保留
@@ -170,6 +347,8 @@ def test_ocr_purpose_injected_into_openai_prompt(monkeypatch, tmp_path):
 
 def test_audit_ocr_path_has_no_tender_purpose(monkeypatch, tmp_path):
     """无 purpose（audit/通用路径）→ prompt 不含评标文案，防域污染（critic F2）。"""
+    from PIL import Image
+
     import server.ocr.engine as eng
 
     monkeypatch.setattr(eng, "OCR_VL_SERVER_URL", "http://ocr.local")
@@ -182,7 +361,7 @@ def test_audit_ocr_path_has_no_tender_purpose(monkeypatch, tmp_path):
 
     monkeypatch.setattr(eng, "_call_openai_compatible_vlm", fake_call)
     img = tmp_path / "invoice.png"
-    img.write_bytes(b"\x89PNG\r\n\x1a\n")
+    Image.new("RGB", (10, 10), "white").save(img, format="PNG")
     eng._recognize_via_openai_compatible(img)  # 无 purpose（audit/通用路径）
     assert captured["prompt"] == "Extract all visible document text. Return concise markdown only."
     assert "评标" not in captured["prompt"] and "招投标" not in captured["prompt"]
@@ -214,7 +393,7 @@ def test_ocr_cache_version_bump_invalidates_stale_manual_result(tmp_path, monkey
     """缓存版本升级后，旧版本的 manual 结果不能继续遮蔽当前直读/OCR。"""
     import server.ocr.cache as cache
 
-    assert cache._CACHE_VERSION == "v4"
+    assert cache._CACHE_VERSION == "v5"
     monkeypatch.setattr(cache, "_CACHE_DIR", tmp_path / "ocr-cache")
     monkeypatch.setattr(cache, "OCR_CACHE_ENABLED", True)
     doc = tmp_path / "招标文件.doc"
@@ -224,7 +403,7 @@ def test_ocr_cache_version_bump_invalidates_stale_manual_result(tmp_path, monkey
     cache.put_cached(doc, purpose="评标", result={"kind": "manual", "route": "manual"})
     assert cache.get_cached(doc, purpose="评标") is not None
 
-    monkeypatch.setattr(cache, "_CACHE_VERSION", "v4")
+    monkeypatch.setattr(cache, "_CACHE_VERSION", "v5")
     assert cache.get_cached(doc, purpose="评标") is None
 
 
@@ -341,6 +520,52 @@ def test_extract_one_font_only_pdf_falls_back_to_ocr(tmp_path, monkeypatch):
     result = pipeline_mod.extract_one(tmp_path / "x.pdf")
     assert state["recognize_called"]  # native 抽空确实回退到 OCR
     assert result["kind"] == "error"  # 本机无引擎 → 归一 error（per-file 隔离）
+
+
+def test_office_conversion_never_sends_original_container_bytes_to_ocr(tmp_path, monkeypatch):
+    from contextlib import contextmanager
+
+    import server.ocr.pipeline as pipeline_mod
+
+    source = tmp_path / "scan.docx"
+    source.write_bytes(b"PK-office-zip")
+    converted = tmp_path / "converted.pdf"
+    converted.write_bytes(b"%PDF-converted")
+    recognized_paths = []
+
+    @contextmanager
+    def fake_convert(path):
+        assert path == source
+        yield converted
+
+    monkeypatch.setattr(pipeline_mod, "convert_office_to_pdf", fake_convert)
+    monkeypatch.setattr(
+        pipeline_mod,
+        "classify",
+        lambda path: (
+            {"path": str(path), "container": "pdf", "route": "ocr", "handler": "pdf_scan"}
+            if path == converted
+            else {
+                "path": str(path),
+                "container": "word",
+                "route": "convert",
+                "handler": "office_convert",
+            }
+        ),
+    )
+
+    def fake_recognize(path, *, purpose=None):
+        recognized_paths.append(path)
+        return {"kind": "ocr", "pages": [{"markdown": "扫描内容"}]}
+
+    monkeypatch.setattr(pipeline_mod, "recognize", fake_recognize)
+
+    result = pipeline_mod.extract_one(source)
+
+    assert recognized_paths == [converted]
+    assert result["path"] == str(source)
+    assert result["converted_from"] == ".docx"
+    assert result["downstream_route"] == "ocr"
 
 
 # ═════════════════════════════════════════════════════════════════════════════

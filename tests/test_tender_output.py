@@ -63,6 +63,40 @@ def test_finalize_explanation_appends_server_score_summary():
     assert "30 分需要补充信息后确认" in out["explanation"]
 
 
+def test_score_summary_preserves_unknown_max_count_without_claiming_complete_total():
+    out = {
+        "verdict": "manual_review",
+        "explanation": "已有七项完成评分。",
+        "extracted_data": {
+            "scoring": [
+                *[
+                    {"item": f"数值项{i}", "max": 10, "score": 8, "status": "scored"}
+                    for i in range(1, 8)
+                ],
+                {
+                    "item": "现场答辩",
+                    "max": None,
+                    "score": None,
+                    "status": "manual_review",
+                },
+                {
+                    "item": "外部信用",
+                    "max": None,
+                    "score": None,
+                    "status": "manual_review",
+                },
+            ]
+        },
+    }
+
+    to._finalize_user_explanation(out)
+
+    assert "评分表共 9 项" in out["explanation"]
+    assert "已知满分 70 分" in out["explanation"]
+    assert "2 项未设满分" in out["explanation"]
+    assert "满分 70 分" not in out["explanation"].replace("已知满分 70 分", "")
+
+
 def test_finalize_explanation_rejected_eligibility_prefix():
     out = {
         "verdict": "rejected",

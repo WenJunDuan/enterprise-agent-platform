@@ -18,14 +18,18 @@ from collections.abc import Callable
 from pathlib import Path
 
 from server.ocr import OcrDependencyError
+from server.ocr.formats import suffixes
 from server.ocr.locks import FITZ_LOCK
 
 logger = logging.getLogger(__name__)
 
-EXCEL_EXT = {".xlsx", ".xlsm", ".xls"}
-WORD_EXT = {".docx"}
-LEGACY_WORD_EXT = {".doc"}
-PDF_EXT = {".pdf"}
+EXCEL_OOXML_EXT = suffixes("excel_ooxml")
+EXCEL_XLS_EXT = suffixes("excel_xls")
+EXCEL_XLSB_EXT = suffixes("excel_xlsb")
+WORD_EXT = suffixes("word_native")
+LEGACY_WORD_EXT = suffixes("word_legacy")
+PRESENTATION_EXT = suffixes("presentation_native")
+PDF_EXT = suffixes("pdf")
 
 # 单 sheet 安全上限，防超大表撑爆下游上下文
 MAX_EXCEL_ROWS = 5000
@@ -51,6 +55,7 @@ def _require(module: str, package: str):
 
 
 def read_excel(path: Path) -> dict:
+    """Read OOXML Excel only; binary formats have dedicated readers."""
     openpyxl = _require("openpyxl", "openpyxl")
     workbook = openpyxl.load_workbook(path, read_only=True, data_only=True)
     try:
@@ -65,6 +70,86 @@ def read_excel(path: Path) -> dict:
     finally:
         workbook.close()  # 并行抽取下异常也释放文件句柄（codex P2-9）
     return {"kind": "excel", "tables": sheets}
+
+
+def read_excel_xls(path: Path) -> dict:
+    """Read historical binary .xls workbooks with xlrd."""
+    xlrd = _require("xlrd", "xlrd")
+    workbook = xlrd.open_workbook(filename=str(path), on_demand=True)
+    try:
+        tables = []
+        for sheet in workbook.sheets():
+            rows = [
+                ["" if value is None else str(value) for value in sheet.row_values(index)]
+                for index in range(min(sheet.nrows, MAX_EXCEL_ROWS))
+            ]
+            tables.append({"name": sheet.name, "rows": rows})
+    finally:
+        workbook.release_resources()
+    return {"kind": "excel", "tables": tables}
+
+
+def read_excel_xlsb(path: Path) -> dict:
+    """Read binary .xlsb workbooks with pyxlsb."""
+    pyxlsb = _require("pyxlsb", "pyxlsb")
+    tables = []
+    with pyxlsb.open_workbook(str(path)) as workbook:
+        for sheet_name in workbook.sheets:
+            rows = []
+            with workbook.get_sheet(sheet_name) as sheet:
+                for index, row in enumerate(sheet):
+                    if index >= MAX_EXCEL_ROWS:
+                        break
+                    rows.append(["" if cell.v is None else str(cell.v) for cell in row])
+            tables.append({"name": sheet_name, "rows": rows})
+    return {"kind": "excel", "tables": tables}
+
+
+def _iter_presentation_shapes(shapes, seen: set[int] | None = None):
+    """Yield top-level and nested GroupShape children once in document order."""
+    if seen is None:
+        seen = set()
+    for shape in shapes:
+        marker = id(shape)
+        if marker in seen:
+            continue
+        seen.add(marker)
+        yield shape
+        children = getattr(shape, "shapes", None)
+        if children is not None:
+            yield from _iter_presentation_shapes(children, seen)
+
+
+def read_presentation(path: Path) -> dict:
+    """Extract text boxes and tables from OOXML PowerPoint files."""
+    pptx = _require("pptx", "python-pptx")
+    presentation = pptx.Presentation(str(path))
+    blocks: list[str] = []
+    tables: list[dict] = []
+    text_parts: list[str] = []
+    image_count = 0
+    for slide in presentation.slides:
+        for shape in _iter_presentation_shapes(slide.shapes):
+            if getattr(shape, "has_text_frame", False) and str(shape.text).strip():
+                text = str(shape.text)
+                blocks.append(text)
+                text_parts.append(text)
+            if getattr(shape, "has_table", False):
+                rows = [[cell.text for cell in row.cells] for row in shape.table.rows]
+                tables.append({"rows": rows})
+                text_parts.extend(str(cell) for row in rows for cell in row)
+            # python-pptx's stable MSO_SHAPE_TYPE.PICTURE value is 13. Recording the signal here
+            # lets the pipeline upgrade only scan-heavy decks instead of converting every PPTX.
+            if getattr(shape, "shape_type", None) == 13:
+                image_count += 1
+    text_char_count = sum(len("".join(text.split())) for text in text_parts)
+    return {
+        "kind": "presentation",
+        "blocks": blocks,
+        "tables": tables,
+        "image_count": image_count,
+        "text_char_count": text_char_count,
+    }
 
 
 def read_word(path: Path) -> dict:
@@ -226,12 +311,18 @@ def native_read(
     对它们不适用——调用方（``server.ocr.pipeline``）对这些格式退化为文件级单元（至少一次）。
     """
     ext = path.suffix.lower()
-    if ext in EXCEL_EXT:
+    if ext in EXCEL_OOXML_EXT:
         return read_excel(path)
+    if ext in EXCEL_XLS_EXT:
+        return read_excel_xls(path)
+    if ext in EXCEL_XLSB_EXT:
+        return read_excel_xlsb(path)
     if ext in WORD_EXT:
         return read_word(path)
     if ext in LEGACY_WORD_EXT:
         return read_legacy_word(path)
+    if ext in PRESENTATION_EXT:
+        return read_presentation(path)
     if ext in PDF_EXT:
         return read_pdf_text(path, on_page=on_page)
     return read_text(path)

@@ -7,15 +7,18 @@ No route handlers, no FastAPI app references.
 
 from __future__ import annotations
 
-import logging
+import io
 import json
+import logging
 import re
 import shutil
+import zipfile
 from pathlib import Path
 from typing import Any
 
 from fastapi import HTTPException
 
+from server.ocr.formats import ALL_SUPPORTED_SUFFIXES, suffixes
 from server.platform.config import get_app_settings
 from server.platform.paths import PROJECT_ROOT, SUBMISSION_ROOT_DIR
 from server.platform.storage import append_json_file
@@ -29,6 +32,21 @@ SUBMISSION_DOMAINS = frozenset({"audit", "ocr", "tender"})
 # 旧 /tender/evaluate（无招标项目）的 project 占位段（codex P1.1：不带前导下划线，过白名单；
 # 不与服务端生成的 tp-<hex> 项目 ID 冲突）。
 UNBOUND_PROJECT = "unbound"
+
+_OLE_MAGIC = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
+_ZIP_MAGIC = b"PK\x03\x04"
+_OOXML_REQUIRED_PART = {
+    ".docx": "word/document.xml",
+    ".xlsx": "xl/workbook.xml",
+    ".xlsm": "xl/workbook.xml",
+    ".xlsb": "xl/workbook.bin",
+    ".pptx": "ppt/presentation.xml",
+}
+_ODF_MIMETYPE = {
+    ".odt": b"application/vnd.oasis.opendocument.text",
+    ".ods": b"application/vnd.oasis.opendocument.spreadsheet",
+    ".odp": b"application/vnd.oasis.opendocument.presentation",
+}
 
 
 def tenant_submission_root(tenant: str) -> Path:
@@ -189,6 +207,75 @@ def validate_upload_bytes(content: bytes) -> None:
         raise HTTPException(status_code=400, detail="Uploaded file exceeds size limit")
 
 
+def _zip_document_matches(suffix: str, content: bytes) -> bool:
+    """Validate the minimum package structure without extracting uploaded paths."""
+    if not content.startswith(_ZIP_MAGIC):
+        return False
+    try:
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            names = set(archive.namelist())
+            required_part = _OOXML_REQUIRED_PART.get(suffix)
+            if required_part:
+                return "[Content_Types].xml" in names and required_part in names
+            expected_mimetype = _ODF_MIMETYPE.get(suffix)
+            if expected_mimetype is None or "mimetype" not in names:
+                return False
+            mimetype_info = archive.getinfo("mimetype")
+            return mimetype_info.file_size <= 128 and archive.read(mimetype_info) == expected_mimetype
+    except (KeyError, OSError, zipfile.BadZipFile, RuntimeError):
+        return False
+
+
+def _reasonable_text(content: bytes) -> bool:
+    """Accept UTF-8/common Chinese text while rejecting NUL/control-heavy binary payloads."""
+    if b"\x00" in content:
+        return False
+    decoded: str | None = None
+    for encoding in ("utf-8-sig", "gb18030"):
+        try:
+            decoded = content.decode(encoding)
+            break
+        except UnicodeDecodeError:
+            continue
+    if decoded is None:
+        return False
+    controls = sum(1 for char in decoded if ord(char) < 32 and char not in "\t\r\n")
+    return controls <= max(1, len(decoded) // 100)
+
+
+def _document_magic_matches(suffix: str, content: bytes) -> bool:
+    if suffix in suffixes("text"):
+        return _reasonable_text(content)
+    if suffix == ".pdf":
+        return content.startswith(b"%PDF-")
+    if suffix in {".doc", ".xls", ".ppt"}:
+        return content.startswith(_OLE_MAGIC)
+    if suffix in _OOXML_REQUIRED_PART or suffix in _ODF_MIMETYPE:
+        return _zip_document_matches(suffix, content)
+    image_checks = {
+        ".png": content.startswith(b"\x89PNG\r\n\x1a\n"),
+        ".jpg": content.startswith(b"\xff\xd8\xff"),
+        ".jpeg": content.startswith(b"\xff\xd8\xff"),
+        ".tif": content.startswith((b"II*\x00", b"MM\x00*")),
+        ".tiff": content.startswith((b"II*\x00", b"MM\x00*")),
+        ".bmp": content.startswith(b"BM"),
+        ".webp": content.startswith(b"RIFF") and content[8:12] == b"WEBP",
+    }
+    return image_checks.get(suffix, False)
+
+
+def validate_document_upload(filename: str, content: bytes) -> None:
+    """Fail closed on unsupported suffixes or obvious extension/content mismatches."""
+    suffix = Path(filename).suffix.lower()
+    if suffix not in ALL_SUPPORTED_SUFFIXES:
+        raise HTTPException(status_code=400, detail=f"Unsupported document format: {suffix or 'none'}")
+    if not _document_magic_matches(suffix, content):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Uploaded file content does not match its extension: {Path(filename).name}",
+        )
+
+
 def _append_form_field(fields: dict[str, Any], key: str, value: str) -> None:
     current = fields.get(key)
     if current is None:
@@ -235,6 +322,7 @@ async def materialize_upload_submission(
     form_data: Any,
     domain: str,
     project_id: str | None = None,
+    validate_document_format: bool = False,
 ) -> str:
     """Write uploaded files and form metadata to the tenant's submission directory.
 
@@ -259,6 +347,8 @@ async def materialize_upload_submission(
             target_path = case_dir / safe_name
             content = await upload.read()
             validate_upload_bytes(content)
+            if validate_document_format:
+                validate_document_upload(safe_name, content)
             target_path.write_bytes(content)
             attachments.append(
                 {"type": "uploaded", "name": safe_name, "path": serialize_case_path(target_path)}
@@ -276,7 +366,12 @@ async def materialize_upload_submission(
 
 
 async def materialize_ocr_upload(
-    *, request_id: str, tenant: str, files: list[Any], domain: str = "ocr"
+    *,
+    request_id: str,
+    tenant: str,
+    files: list[Any],
+    domain: str = "ocr",
+    validate_document_format: bool = False,
 ) -> str:
     """Write uploaded files (no metadata sidecar) to the tenant's submission directory.
 
@@ -301,6 +396,8 @@ async def materialize_ocr_upload(
             used_names.add(safe_name)
             content = await upload.read()
             validate_upload_bytes(content)
+            if validate_document_format:
+                validate_document_upload(safe_name, content)
             (case_dir / safe_name).write_bytes(content)
     except Exception:
         shutil.rmtree(case_dir, ignore_errors=True)

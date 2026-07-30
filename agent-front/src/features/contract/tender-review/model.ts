@@ -25,6 +25,7 @@ import type {
   TenderPolicyRef,
   TenderPriceCompareDetail,
   TenderScoreCategory,
+  TenderScoreCategorySummary,
   TenderScoreEvidence,
   TenderScoreIssue,
   TenderScoreSummary,
@@ -323,7 +324,7 @@ function getRecommendedBidder(
   if (compare?.result.provisional === false && compare.result.recommended) {
     return compare.result.recommended
   }
-  if (compare?.result.provisional) return '暂定排名'
+  if (compare?.result.provisional) return '待人工复核'
   if (status === 'doing') return '分析中'
   return '暂未推荐'
 }
@@ -345,9 +346,10 @@ function getTopCompareScore(compare?: TenderCompareResponse | null) {
  */
 function buildCaseHeaderFromTenderInfo(result?: AuditResult | null) {
   const extracted = result?.extracted_data
-  const tenderInfo = isRecord(extracted) && isRecord(extracted.tender_info)
-    ? extracted.tender_info
-    : null
+  const tenderInfo =
+    isRecord(extracted) && isRecord(extracted.tender_info)
+      ? extracted.tender_info
+      : null
   return {
     name: toText(tenderInfo?.project_name) || '',
     code: toText(tenderInfo?.tender_no) || '',
@@ -362,7 +364,9 @@ function buildProjectInfo(
   const date =
     compare?.computed_at || project?.updated_at || project?.created_at || ''
   const id = project?.project_id || 'new'
-  const caseHeader = project ? null : buildCaseHeaderFromTenderInfo(selectedResult)
+  const caseHeader = project
+    ? null
+    : buildCaseHeaderFromTenderInfo(selectedResult)
   return {
     name:
       project?.title?.trim() ||
@@ -416,10 +420,8 @@ function buildReviewBidders(
   resultDetails: AuditResult[] = []
 ): ReviewBidder[] {
   const displayNameByClaim = buildBidderDisplayNameMap(resultDetails)
-  const { detailBids, handNameByClaim, summaryNameByClaim } = buildBidderNameIndexes(
-    project,
-    resultSummaries
-  )
+  const { detailBids, handNameByClaim, summaryNameByClaim } =
+    buildBidderNameIndexes(project, resultSummaries)
 
   if (compare?.result.bidders.length) {
     const bidders = [...compare.result.bidders]
@@ -444,13 +446,18 @@ function buildReviewBidders(
           tag: getBidderTag(index),
           name,
           short: shortenBidderName(name),
-          total: toNumber(bidder.total_score) ?? 0,
-          rank: bidder.rank ?? index + 1,
+          total: toNumber(bidder.total_score),
+          rank: bidder.rank ?? null,
           nameSource: source,
           nameSourceRefs: sourceRefs,
         }
       })
-    return rankReviewBiddersByScore(bidders)
+    const hasCompleteRanking = bidders.every(
+      (bidder) => bidder.total != null && bidder.rank != null
+    )
+    return !compare.result.provisional && hasCompleteRanking
+      ? rankReviewBiddersByScore(bidders)
+      : bidders
   }
 
   const summaries = resultSummaries.length
@@ -473,7 +480,9 @@ function buildReviewBidders(
       const { name, source, sourceRefs } = resolveBidderDisplayName({
         claimId,
         bidderName: claimId ? handNameByClaim.get(claimId) : undefined,
-        summaryBidderName: claimId ? summaryNameByClaim.get(claimId) : undefined,
+        summaryBidderName: claimId
+          ? summaryNameByClaim.get(claimId)
+          : undefined,
         result,
         mappedName: summary.claim_id
           ? displayNameByClaim.get(summary.claim_id)
@@ -521,12 +530,17 @@ function buildReviewBidders(
 }
 
 function rankReviewBiddersByScore(bidders: ReviewBidder[]): ReviewBidder[] {
+  if (bidders.some((bidder) => bidder.total == null)) return bidders
   return bidders
     .map((bidder, index) => ({ bidder, index }))
     .sort((left, right) => {
-      const scoreDelta = right.bidder.total - left.bidder.total
+      const scoreDelta =
+        (right.bidder.total ?? Number.NEGATIVE_INFINITY) -
+        (left.bidder.total ?? Number.NEGATIVE_INFINITY)
       if (Math.abs(scoreDelta) > 0.000001) return scoreDelta
-      const rankDelta = left.bidder.rank - right.bidder.rank
+      const rankDelta =
+        (left.bidder.rank ?? Number.MAX_SAFE_INTEGER) -
+        (right.bidder.rank ?? Number.MAX_SAFE_INTEGER)
       if (rankDelta !== 0) return rankDelta
       return left.index - right.index
     })
@@ -751,10 +765,14 @@ function buildCompareRow(
   values: Array<number | null | undefined>
 ) {
   if (!values.some((value) => value != null)) return null
-  const cells = values.map((value) => roundScore(toNumber(value) ?? 0))
+  const cells = values.map((value) => {
+    const score = toNumber(value)
+    return score == null ? null : roundScore(score)
+  })
+  const knownCells = cells.filter((cell): cell is number => cell != null)
   return {
     name,
-    max: Math.max(...cells, 1),
+    max: Math.max(...knownCells, 1),
     cells,
   }
 }
@@ -822,7 +840,9 @@ function buildPriceFormulaText(compare: TenderCompareResponse) {
   )
 }
 
-function buildComparePriceEvidence(compare: TenderCompareResponse): TenderScoreEvidence[] {
+function buildComparePriceEvidence(
+  compare: TenderCompareResponse
+): TenderScoreEvidence[] {
   const evidence = compare.result.evidence_chain ?? []
   return evidence
     .filter((item) =>
@@ -835,9 +855,7 @@ function buildComparePriceEvidence(compare: TenderCompareResponse): TenderScoreE
       finding: item.finding?.trim(),
       conclusion: item.conclusion?.trim(),
     }))
-    .filter(
-      (item) => item.source || item.finding || item.conclusion
-    )
+    .filter((item) => item.source || item.finding || item.conclusion)
 }
 
 function getScoringItems(result?: AuditResult | null): UnknownRecord[] {
@@ -940,9 +958,7 @@ export function buildIssueList(result?: AuditResult | null): IssueItem[] {
       basis:
         toText(item.basis) ||
         toText(item.finding) ||
-        (pending
-          ? '该资格项需要人工核验。'
-          : '该资格项未满足招标文件要求。'),
+        (pending ? '该资格项需要人工核验。' : '该资格项未满足招标文件要求。'),
       quote: evidence.quote,
       source: evidence.source,
     })
@@ -950,7 +966,7 @@ export function buildIssueList(result?: AuditResult | null): IssueItem[] {
 
   getScoringItems(result).forEach((item, index) => {
     const title = toText(item.item) || `评分项 ${index + 1}`
-    const max = toNumber(item.max) ?? 0
+    const max = toNumber(item.max)
     const score = toNumber(item.score)
     const status = toText(item.status)
     const basis =
@@ -959,9 +975,7 @@ export function buildIssueList(result?: AuditResult | null): IssueItem[] {
       '按招标文件评分标准判定。'
     const text = collectIssueText(item, [title, basis])
     const pending =
-      status === 'manual_review' ||
-      score == null ||
-      isPendingSignal(text)
+      status === 'manual_review' || score == null || isPendingSignal(text)
     const rejected = status === 'rejected' || status === 'failed'
     const deductionHits = parseScoreHits(item.deduction_hits) ?? []
 
@@ -999,7 +1013,7 @@ export function buildIssueList(result?: AuditResult | null): IssueItem[] {
       return
     }
 
-    if (rejected || (score != null && max > 0 && score < max)) {
+    if (rejected || (score != null && max != null && max > 0 && score < max)) {
       const evidence = getIssueEvidence(item)
       const category = classifyIssueCategory(text)
       pushIssue({
@@ -1010,7 +1024,10 @@ export function buildIssueList(result?: AuditResult | null): IssueItem[] {
         basis,
         quote: evidence.quote,
         source: evidence.source,
-        points: score == null ? null : roundScore(Math.max(0, max - score)),
+        points:
+          score == null || max == null
+            ? null
+            : roundScore(Math.max(0, max - score)),
       })
     }
   })
@@ -1021,7 +1038,12 @@ export function buildIssueList(result?: AuditResult | null): IssueItem[] {
 // S10 概要分析：只识别真正二元的评分项——pass_fail 硬性响应，或 status=rejected 的硬否决/必交材料缺失。
 const BINARY_SCORE_MODES = new Set(['pass_fail'])
 // "程度"评分项（档次/扣减/加分/公式）——概要 checklist 一律排除（即便被标 rejected），留给「详细分析」。
-const DEGREE_SCORE_MODES = new Set(['banded', 'deduction', 'additive', 'formula'])
+const DEGREE_SCORE_MODES = new Set([
+  'banded',
+  'deduction',
+  'additive',
+  'formula',
+])
 
 /** 把一条记录的出处（文件+页+quote）收成 checklist 用的 evidence 数组；与 issueList 共用同一提取口径。 */
 function checklistEvidence(record: UnknownRecord): TenderScoreEvidence[] {
@@ -1034,23 +1056,31 @@ function checklistEvidence(record: UnknownRecord): TenderScoreEvidence[] {
 // 排名第N"等，直接塞进 reason 会在标称无分数的概要页泄漏分值。这里覆盖"数字在前(N分)"与
 // "数字在后(得分为N)"两序，抹掉分值表述，只留定性理由（守不可违反原则 #1，不展示评分）。
 function stripScoreMentions(text: string): string {
-  return text
-    // (5/10)、（5 / 10 分）等占比/得分括注
-    .replace(/[（(]\s*\d+(?:\.\d+)?\s*[/／]\s*\d+(?:\.\d+)?\s*分?\s*[)）]/gu, '')
-    // 分数关键词 + (为/是/等于/:) + 数字（数字在后）：得分为0 / 总分80 / 分值：5
-    .replace(
-      /(?:满分|总分|得分|分值|评分|计分|积分|分数)\s*(?:为|是|达|等于|计|=|：|:)?\s*\d+(?:\.\d+)?\s*分?/gu,
-      ''
-    )
-    // 数字 + 分（数字在前）：得5分 / 扣10分 / 0分（"分母/分子/分项"等非分值不误伤）
-    .replace(/(?:得|扣|加|计|共|减|判|给|获|再|拿)?\s*\d+(?:\.\d+)?\s*分(?![母子项数值制])/gu, '')
-    // 排名第 N / 第 N 名
-    .replace(/排名\s*第?\s*\d+|第\s*\d+\s*名/gu, '')
-    .replace(/\s{2,}/gu, ' ')
-    // 清理抹除后遗留的孤立/首尾标点（如"投标函未签字，。"→"投标函未签字"）
-    .replace(/[，,、；;]\s*(?=[，,、；;。])/gu, '')
-    .replace(/^[，,、；;。/／\s]+|[，,、；;、/／\s]+$/gu, '')
-    .trim()
+  return (
+    text
+      // (5/10)、（5 / 10 分）等占比/得分括注
+      .replace(
+        /[（(]\s*\d+(?:\.\d+)?\s*[/／]\s*\d+(?:\.\d+)?\s*分?\s*[)）]/gu,
+        ''
+      )
+      // 分数关键词 + (为/是/等于/:) + 数字（数字在后）：得分为0 / 总分80 / 分值：5
+      .replace(
+        /(?:满分|总分|得分|分值|评分|计分|积分|分数)\s*(?:为|是|达|等于|计|=|：|:)?\s*\d+(?:\.\d+)?\s*分?/gu,
+        ''
+      )
+      // 数字 + 分（数字在前）：得5分 / 扣10分 / 0分（"分母/分子/分项"等非分值不误伤）
+      .replace(
+        /(?:得|扣|加|计|共|减|判|给|获|再|拿)?\s*\d+(?:\.\d+)?\s*分(?![母子项数值制])/gu,
+        ''
+      )
+      // 排名第 N / 第 N 名
+      .replace(/排名\s*第?\s*\d+|第\s*\d+\s*名/gu, '')
+      .replace(/\s{2,}/gu, ' ')
+      // 清理抹除后遗留的孤立/首尾标点（如"投标函未签字，。"→"投标函未签字"）
+      .replace(/[，,、；;]\s*(?=[，,、；;。])/gu, '')
+      .replace(/^[，,、；;。/／\s]+|[，,、；;、/／\s]+$/gu, '')
+      .trim()
+  )
 }
 
 /** 概要理由：抹掉分数表述后若为空，退回定性兜底（不留空行）。 */
@@ -1131,7 +1161,8 @@ export function buildOverviewChecklist(
     const title = toText(item.item) || `硬性响应 ${index + 1}`
     // score_mode 与 buildScoringItems 同口径：raw 缺省时回退 criteria，避免漏填 mode 绕过程度项排除。
     const scoreMode =
-      toText(item.score_mode) || toText(findCriteriaItem(result, title)?.score_mode)
+      toText(item.score_mode) ||
+      toText(findCriteriaItem(result, title)?.score_mode)
     const status = toText(item.status)
     const isRejected = status === 'rejected' || status === 'failed'
     // 只收 pass_fail，或"非程度项"的 rejected（必交材料缺失/硬否决）；程度项即便 rejected 也排除。
@@ -1140,7 +1171,7 @@ export function buildOverviewChecklist(
       (isRejected && !DEGREE_SCORE_MODES.has(scoreMode))
     if (!isBinary) return
 
-    const max = toNumber(item.max) ?? 0
+    const max = toNumber(item.max)
     const score = toNumber(item.score)
     const rawBasis = toText(item.basis) || toText(item.manual_review_reason)
     const text = collectIssueText(item, [title, rawBasis])
@@ -1156,7 +1187,7 @@ export function buildOverviewChecklist(
       !pending &&
       !isRejected &&
       score != null &&
-      (max > 0 ? score >= max : score > 0)
+      (max != null && max > 0 ? score >= max : score > 0)
     push({
       group: '硬性响应',
       requirement: title,
@@ -1270,7 +1301,9 @@ function collectIssueText(record: UnknownRecord, extra: string[] = []) {
       toText(evidence.conclusion)
     )
   }
-  const selectedBand = isRecord(record.selected_band) ? record.selected_band : null
+  const selectedBand = isRecord(record.selected_band)
+    ? record.selected_band
+    : null
   if (selectedBand) {
     parts.push(toText(selectedBand.level), toText(selectedBand.reason))
   }
@@ -1343,7 +1376,7 @@ function buildScoringItems(result?: AuditResult | null): TenderScoringItem[] {
   return getScoringItems(result).map((item, index) => {
     const title = toText(item.item) || `评分项 ${index + 1}`
     const criteria = findCriteriaItem(result, title)
-    const max = toNumber(item.max) ?? 0
+    const max = toNumber(item.max)
     const score = toNumber(item.score)
     const status =
       toText(item.status) || (score == null ? 'manual_review' : 'scored')
@@ -1362,8 +1395,9 @@ function buildScoringItems(result?: AuditResult | null): TenderScoringItem[] {
       // 类目优先用招标文件标注的实际类目原名（criteria/scoring.category），动态分栏；
       // 旧数据无 category 时回退关键词推断的 tech/comm，保证不崩。
       category:
-        normalizeDocCategory(toText(item.category) || toText(criteria?.category)) ||
-        inferReviewCategory(title, scoreCategory),
+        normalizeDocCategory(
+          toText(item.category) || toText(criteria?.category)
+        ) || inferReviewCategory(title, scoreCategory),
       scoreCategory,
       reviewDimension,
       scoreMode:
@@ -1376,7 +1410,11 @@ function buildScoringItems(result?: AuditResult | null): TenderScoringItem[] {
 }
 
 function buildScoreSummary(items: TenderScoringItem[]): TenderScoreSummary {
-  const maxTotal = roundScore(items.reduce((sum, item) => sum + item.max, 0))
+  const knownMaxTotal = roundScore(
+    items.reduce((sum, item) => sum + (item.max ?? 0), 0)
+  )
+  const unknownMaxCount = items.filter((item) => item.max == null).length
+  const maxTotal = unknownMaxCount === 0 ? knownMaxTotal : null
   const earnedTotal = roundScore(
     items.reduce(
       (sum, item) =>
@@ -1395,7 +1433,12 @@ function buildScoreSummary(items: TenderScoringItem[]): TenderScoreSummary {
       rejectedItems.push(issue)
     } else if (item.status === 'manual_review' || item.score == null) {
       pendingItems.push({ ...issue, deduction: null })
-    } else if (item.status === 'scored' && item.score < item.max) {
+    } else if (
+      item.status === 'scored' &&
+      item.score != null &&
+      item.max != null &&
+      item.score < item.max
+    ) {
       deductedItems.push(issue)
     }
   })
@@ -1406,10 +1449,12 @@ function buildScoreSummary(items: TenderScoringItem[]): TenderScoreSummary {
     )
   )
   const pendingTotal = roundScore(
-    pendingItems.reduce((sum, item) => sum + item.max, 0)
+    pendingItems.reduce((sum, item) => sum + (item.max ?? 0), 0)
   )
 
   return {
+    knownMaxTotal,
+    unknownMaxCount,
     maxTotal,
     earnedTotal,
     deductedTotal,
@@ -1417,7 +1462,44 @@ function buildScoreSummary(items: TenderScoringItem[]): TenderScoreSummary {
     deductedItems,
     rejectedItems,
     pendingItems,
+    categorySummaries: buildScoreCategorySummaries(items),
   }
+}
+
+function buildScoreCategorySummaries(
+  items: TenderScoringItem[]
+): TenderScoreCategorySummary[] {
+  return (['business', 'technical'] as const)
+    .map((category) => {
+      const categoryItems = items.filter(
+        (item) => item.scoreCategory === category
+      )
+      const knownMaxTotal = roundScore(
+        categoryItems.reduce((sum, item) => sum + (item.max ?? 0), 0)
+      )
+      const unknownMaxCount = categoryItems.filter(
+        (item) => item.max == null
+      ).length
+      const score = roundScore(
+        categoryItems.reduce(
+          (sum, item) =>
+            item.status === 'scored' && item.score != null
+              ? sum + item.score
+              : sum,
+          0
+        )
+      )
+      return {
+        category,
+        knownMaxTotal,
+        unknownMaxCount,
+        maxTotal: unknownMaxCount === 0 ? knownMaxTotal : null,
+        score,
+      }
+    })
+    .filter(
+      (summary) => summary.knownMaxTotal > 0 || summary.unknownMaxCount > 0
+    )
 }
 
 /**
@@ -1462,6 +1544,7 @@ function toScoreIssue(item: TenderScoringItem): TenderScoreIssue {
 }
 
 function getItemDeduction(item: TenderScoringItem): number | null {
+  if (item.max == null) return null
   if (item.status === 'rejected' && item.score == null) return item.max
   if (item.score == null) return null
   return roundScore(Math.max(0, item.max - item.score))
@@ -1469,7 +1552,7 @@ function getItemDeduction(item: TenderScoringItem): number | null {
 
 function getIssueLostScore(item: TenderScoreIssue): number {
   if (item.deduction != null) return item.deduction
-  if (item.status === 'rejected') return item.max
+  if (item.status === 'rejected') return item.max ?? 0
   return 0
 }
 
@@ -1564,7 +1647,9 @@ function resolveBidderDisplayName({
         name: text,
         source: candidate.source,
         sourceRefs:
-          candidate.source === 'agent' ? extractBidderSourceRefs(result) : undefined,
+          candidate.source === 'agent'
+            ? extractBidderSourceRefs(result)
+            : undefined,
       }
     }
   }
@@ -1575,7 +1660,9 @@ function extractBidderCompanyName(result?: AuditResult | null) {
   const extracted = result?.extracted_data
   if (!isRecord(extracted)) return ''
 
-  const bidderInfo = isRecord(extracted.bidder_info) ? extracted.bidder_info : null
+  const bidderInfo = isRecord(extracted.bidder_info)
+    ? extracted.bidder_info
+    : null
   // 历史兼容次选：旧数据/其它猜测键（本字段引入前留存的结论仍需正确展示名称）。
   const bidder = isRecord(extracted.bidder) ? extracted.bidder : null
   const directCandidates = [
@@ -1599,13 +1686,19 @@ function extractBidderCompanyName(result?: AuditResult | null) {
 }
 
 /** AI 识别名的出处页锚（`extracted_data.bidder_info.source_refs`），供 hover 展示，识别不到则空。 */
-function extractBidderSourceRefs(result?: AuditResult | null): string[] | undefined {
+function extractBidderSourceRefs(
+  result?: AuditResult | null
+): string[] | undefined {
   const extracted = result?.extracted_data
   if (!isRecord(extracted)) return undefined
-  const bidderInfo = isRecord(extracted.bidder_info) ? extracted.bidder_info : null
+  const bidderInfo = isRecord(extracted.bidder_info)
+    ? extracted.bidder_info
+    : null
   const refs = bidderInfo?.source_refs
   if (!Array.isArray(refs)) return undefined
-  const texts = refs.map((ref) => toText(ref)).filter((ref): ref is string => Boolean(ref))
+  const texts = refs
+    .map((ref) => toText(ref))
+    .filter((ref): ref is string => Boolean(ref))
   return texts.length > 0 ? texts : undefined
 }
 
@@ -1648,7 +1741,7 @@ function buildCompareScoreRows(
       const firstItem = itemsByResult
         .map((items) => items.get(itemName))
         .find((item): item is TenderScoringItem => Boolean(item))
-      const max = firstItem?.max ?? 0
+      const max = firstItem?.max ?? null
       const scoreCategory =
         firstItem?.scoreCategory ?? inferScoreCategory(itemName, '')
       const reviewDimension =
@@ -1664,16 +1757,17 @@ function buildCompareScoreRows(
         cells: bidders.map((bidder, bidderIndex) => {
           const item = itemsByResult[bidderIndex]?.get(itemName)
           const score = item?.score ?? null
+          const cellMax = item ? item.max : max
           return {
             bidderId: bidder.id,
             bidderName: bidder.name,
-            max: item?.max ?? max,
+            max: cellMax,
             score,
             status: item?.status ?? 'manual_review',
             deduction:
-              score == null
+              score == null || cellMax == null
                 ? null
-                : roundScore(Math.max(0, (item?.max ?? max) - score)),
+                : roundScore(Math.max(0, cellMax - score)),
             basis: item?.basis ?? '该投标人暂无该评分项明细。',
             evidence: item?.evidence ?? [],
           }
@@ -1795,7 +1889,11 @@ export function deriveReviewDimension(
     return 'technical_subjective'
   }
 
-  if (!scoreMode && !evaluatorType && isLegacyPriceItemName(scoringItem, criteriaItem)) {
+  if (
+    !scoreMode &&
+    !evaluatorType &&
+    isLegacyPriceItemName(scoringItem, criteriaItem)
+  ) {
     return 'price'
   }
 
@@ -1887,7 +1985,8 @@ function getCategoryLabel(category: ReviewCategory) {
   return category
 }
 
-const _ELIGIBILITY_CATEGORY = /资格(性|预)?审查|资格评审|符合性审查|响应性(审查|评审)/
+const _ELIGIBILITY_CATEGORY =
+  /资格(性|预)?审查|资格评审|符合性审查|响应性(审查|评审)/
 
 /**
  * 归一招标文件标注的类目名：资格审查类合并到固定 'qual' 列（避免与
@@ -1966,7 +2065,9 @@ function formatScore(score: number) {
   return Number.isInteger(score) ? String(score) : score.toFixed(1)
 }
 
-function formatBidPrice(value: { amount?: number | null; currency?: string | null } | null | undefined) {
+function formatBidPrice(
+  value: { amount?: number | null; currency?: string | null } | null | undefined
+) {
   const amount = toNumber(value?.amount)
   if (amount == null) return '待补充'
   const currency = value?.currency?.trim() || '元'

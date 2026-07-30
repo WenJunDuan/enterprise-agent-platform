@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import type { AuditResult } from '@/features/audit/types'
 import { tenderReviewMockData } from './mock-data'
 import {
   buildBidderCards,
@@ -11,10 +12,112 @@ import {
   getAdvisoryLabel,
   mapTenderProject,
 } from './model'
-import type { AuditResult } from '@/features/audit/types'
 import type { ChecklistItem, ReviewBidder, TenderReviewMockData } from './types'
 
 describe('contract tender review model', () => {
+  test('preserves 7 numeric + 2 manual/null items without folding unknown max to zero', () => {
+    const scoring = [
+      ...Array.from({ length: 7 }, (_, index) => ({
+        item: `数值项${index + 1}`,
+        max: 10,
+        score: 8,
+        status: 'scored',
+        score_mode: 'deduction',
+        category: '商务标',
+        basis: '已评分。',
+      })),
+      {
+        item: '现场答辩',
+        max: null,
+        score: null,
+        status: 'manual_review',
+        score_mode: 'manual',
+        category: '技术标',
+        basis: '待现场确认。',
+      },
+      {
+        item: '外部信用',
+        max: null,
+        score: null,
+        status: 'manual_review',
+        score_mode: 'manual',
+        category: '技术标',
+        basis: '待外部数据确认。',
+      },
+    ]
+    const data = buildTenderReviewData({
+      selectedResult: {
+        claim_id: 'B-1',
+        verdict: 'manual_review',
+        extracted_data: { scoring },
+      } as AuditResult,
+    })
+
+    expect(data.scoringItems).toHaveLength(9)
+    expect(data.scoringItems?.slice(-2).map((item) => item.max)).toEqual([
+      null,
+      null,
+    ])
+    expect(data.scoreSummary).toMatchObject({
+      knownMaxTotal: 70,
+      unknownMaxCount: 2,
+      maxTotal: null,
+      earnedTotal: 56,
+      pendingTotal: 0,
+      categorySummaries: [
+        {
+          category: 'business',
+          knownMaxTotal: 70,
+          unknownMaxCount: 0,
+          maxTotal: 70,
+          score: 56,
+        },
+        {
+          category: 'technical',
+          knownMaxTotal: 0,
+          unknownMaxCount: 2,
+          maxTotal: null,
+          score: 0,
+        },
+      ],
+    })
+  })
+
+  test('compare groups preserve unknown bidder scores as null instead of zero', () => {
+    const data = buildTenderReviewData({
+      compare: {
+        project_id: 'P-1',
+        stale: false,
+        result: {
+          project_id: 'P-1',
+          bidders: [
+            {
+              claim_id: 'B1',
+              price_score: 38,
+              other_score: 50,
+              status: 'scored',
+            },
+            {
+              claim_id: 'B2',
+              price_score: null,
+              other_score: null,
+              status: 'manual_review',
+            },
+          ],
+          recommended: null,
+          provisional: true,
+          warnings: [],
+          policy_refs: [],
+        },
+      },
+    })
+
+    expect(data.compareGroups[0]?.rows.map((row) => row.cells)).toEqual([
+      [38, null],
+      [50, null],
+    ])
+  })
+
   test('deriveReviewDimension prioritizes structured price signals', () => {
     expect(
       deriveReviewDimension(
@@ -513,15 +616,15 @@ describe('contract tender review model', () => {
       [51, 50],
     ])
     expect(data.comparePriceDetail).toMatchObject({
-      formula: '价格分公式：最低有效报价/本投标报价×40。；中建一局价格分 38 分，中铁二局价格分 36 分。',
+      formula:
+        '价格分公式：最低有效报价/本投标报价×40。；中建一局价格分 38 分，中铁二局价格分 36 分。',
       cells: [
         { bidderName: '中建一局', bidPrice: '1,000,000 CNY', score: 38 },
         { bidderName: '中铁二局', bidPrice: '1,055,555 CNY', score: 36 },
       ],
     })
     expect(
-      data.compareScoreRows
-        ?.find((row) => row.item === '技术方案')
+      data.compareScoreRows?.find((row) => row.item === '技术方案')
     ).toMatchObject({
       reviewDimension: 'technical_subjective',
       cells: [
@@ -989,6 +1092,111 @@ describe('contract tender review model', () => {
     })
   })
 
+  test('blocked provisional compare keeps totals and ranks null without recommending a bidder', () => {
+    const data = buildTenderReviewData({
+      project: {
+        project_id: 'project-blocked-compare',
+        tender_no: 'BLOCKED-001',
+        title: '人工复核项目',
+        tenderee: '测试招标人',
+        method: '综合评估法',
+        control_price: null,
+        funding_type: null,
+        status: 'done',
+        created_at: '2026-07-30T00:00:00Z',
+        updated_at: '2026-07-30T00:00:00Z',
+        bidder_count: 2,
+        bids: [],
+        recommended_bidder: null,
+        compare_stale: false,
+      },
+      compare: {
+        project_id: 'project-blocked-compare',
+        result: {
+          project_id: 'project-blocked-compare',
+          bidders: [
+            {
+              claim_id: 'CLAIM-B',
+              total_score: null,
+              rank: null,
+              status: 'manual_review',
+              note: '价格项未设分值，转人工复核。',
+            },
+            {
+              claim_id: 'CLAIM-A',
+              total_score: null,
+              rank: null,
+              status: 'manual_review',
+              note: '横比已阻断。',
+            },
+          ],
+          recommended: null,
+          provisional: true,
+          warnings: ['存在未设分值项，禁止排名。'],
+          explanation: '横比已阻断，等待人工复核。',
+          policy_refs: [],
+        },
+        stale: false,
+      },
+    })
+
+    expect(
+      data.reviewBidders.map((bidder) => [bidder.id, bidder.total, bidder.rank])
+    ).toEqual([
+      ['CLAIM-B', null, null],
+      ['CLAIM-A', null, null],
+    ])
+    expect(
+      data.bidderCards?.map((card) => [card.id, card.total, card.rank])
+    ).toEqual([
+      ['CLAIM-B', null, null],
+      ['CLAIM-A', null, null],
+    ])
+    expect(data.compareNotice).toMatchObject({
+      provisional: true,
+      recommended: null,
+    })
+    expect(data.projects[0]?.score).toBe('-')
+    expect(data.projects[0]?.recommendedBidder).toBe('待人工复核')
+  })
+
+  test('ready numeric compare retains score sorting and explicit ranks', () => {
+    const data = buildTenderReviewData({
+      compare: {
+        project_id: 'project-ready-compare',
+        result: {
+          project_id: 'project-ready-compare',
+          bidders: [
+            {
+              claim_id: 'CLAIM-LOW',
+              total_score: 81,
+              rank: 2,
+              status: 'scored',
+            },
+            {
+              claim_id: 'CLAIM-HIGH',
+              total_score: 92,
+              rank: 1,
+              status: 'scored',
+            },
+          ],
+          recommended: 'CLAIM-HIGH',
+          provisional: false,
+          warnings: [],
+          policy_refs: [],
+        },
+        stale: false,
+      },
+    })
+
+    expect(
+      data.reviewBidders.map((bidder) => [bidder.id, bidder.total, bidder.rank])
+    ).toEqual([
+      ['CLAIM-HIGH', 92, 1],
+      ['CLAIM-LOW', 81, 2],
+    ])
+  })
+
   test('buildIssueList derives all seven expert advisory categories from extracted data', () => {
     const result: AuditResult = {
       verdict: 'manual_review',
@@ -1148,9 +1356,8 @@ describe('contract tender review model', () => {
       'pending_verification',
     ])
     expect(
-      issues.find(
-        (item) => item.itemName === '投标人名称与投标文件不一致。'
-      )?.category
+      issues.find((item) => item.itemName === '投标人名称与投标文件不一致。')
+        ?.category
     ).toBe('disqualification_risk')
   })
 
@@ -1303,16 +1510,28 @@ describe('contract tender review model', () => {
       checklist.find((item) => item.requirement === name)
 
     // 资格审查组：pass→met, fail→unmet, manual→pending
-    expect(byName('营业执照')).toMatchObject({ group: '资格审查', status: 'met' })
-    expect(byName('企业资质')).toMatchObject({ group: '资格审查', status: 'unmet' })
+    expect(byName('营业执照')).toMatchObject({
+      group: '资格审查',
+      status: 'met',
+    })
+    expect(byName('企业资质')).toMatchObject({
+      group: '资格审查',
+      status: 'unmet',
+    })
     expect(byName('信用中国查询')).toMatchObject({
       group: '资格审查',
       status: 'pending',
     })
 
     // 否决条款组：confirmed→unmet, confirmed:false→pending
-    expect(byName('投标保证金')).toMatchObject({ group: '否决条款', status: 'unmet' })
-    expect(byName('信用记录')).toMatchObject({ group: '否决条款', status: 'pending' })
+    expect(byName('投标保证金')).toMatchObject({
+      group: '否决条款',
+      status: 'unmet',
+    })
+    expect(byName('信用记录')).toMatchObject({
+      group: '否决条款',
+      status: 'pending',
+    })
 
     // 硬性响应组：pass_fail score≥max→met, score<max→unmet, manual_review→pending, rejected→unmet
     expect(byName('投标函签字盖章')).toMatchObject({
@@ -1334,7 +1553,9 @@ describe('contract tender review model', () => {
   })
 
   test('buildOverviewChecklist excludes 程度/formula scoring items (范畴错误防护)', () => {
-    const names = buildOverviewChecklist(s10Fixture).map((item) => item.requirement)
+    const names = buildOverviewChecklist(s10Fixture).map(
+      (item) => item.requirement
+    )
     expect(names).not.toContain('技术方案档次') // banded 档次
     expect(names).not.toContain('业绩扣分') // deduction 扣减
     expect(names).not.toContain('价格分') // formula 横比价格
@@ -1438,10 +1659,34 @@ describe('contract tender review model', () => {
     const names = buildOverviewChecklist({
       extracted_data: {
         scoring: [
-          { item: '档次项被否', max: 10, score: 0, status: 'rejected', score_mode: 'banded' },
-          { item: '扣减项被否', max: 10, score: 0, status: 'rejected', score_mode: 'deduction' },
-          { item: '加分项被否', max: 10, score: 0, status: 'rejected', score_mode: 'additive' },
-          { item: '公式项被否', max: 10, score: null, status: 'rejected', score_mode: 'formula' },
+          {
+            item: '档次项被否',
+            max: 10,
+            score: 0,
+            status: 'rejected',
+            score_mode: 'banded',
+          },
+          {
+            item: '扣减项被否',
+            max: 10,
+            score: 0,
+            status: 'rejected',
+            score_mode: 'deduction',
+          },
+          {
+            item: '加分项被否',
+            max: 10,
+            score: 0,
+            status: 'rejected',
+            score_mode: 'additive',
+          },
+          {
+            item: '公式项被否',
+            max: 10,
+            score: null,
+            status: 'rejected',
+            score_mode: 'formula',
+          },
           { item: '必交材料被否', max: 3, score: 0, status: 'rejected' }, // 无 score_mode → 保留
         ],
       },
@@ -1457,8 +1702,18 @@ describe('contract tender review model', () => {
     const checklist = buildOverviewChecklist({
       extracted_data: {
         scoring: [
-          { item: '响应达标无max', score: 5, status: 'scored', score_mode: 'pass_fail' },
-          { item: '响应为零无max', score: 0, status: 'scored', score_mode: 'pass_fail' },
+          {
+            item: '响应达标无max',
+            score: 5,
+            status: 'scored',
+            score_mode: 'pass_fail',
+          },
+          {
+            item: '响应为零无max',
+            score: 0,
+            status: 'scored',
+            score_mode: 'pass_fail',
+          },
         ],
       },
     })
@@ -1516,7 +1771,9 @@ describe('contract tender review model', () => {
   test('buildOverviewChecklist excludes degree item whose score_mode is only in criteria (P1-b)', () => {
     const names = buildOverviewChecklist({
       extracted_data: {
-        criteria: { items: [{ item: '技术方案档次', max: 20, score_mode: 'banded' }] },
+        criteria: {
+          items: [{ item: '技术方案档次', max: 20, score_mode: 'banded' }],
+        },
         scoring: [
           {
             item: '技术方案档次',
@@ -1563,18 +1820,46 @@ describe('contract tender review model', () => {
   // ── 风险对比"每家一卡"：buildBidderCards 多家派生 ──
 
   const bidders: ReviewBidder[] = [
-    { id: 'CLAIM-A', tag: '甲', name: 'A 公司', short: 'A', total: 80, rank: 1 },
-    { id: 'CLAIM-B', tag: '乙', name: 'B 公司', short: 'B', total: 60, rank: 2 },
+    {
+      id: 'CLAIM-A',
+      tag: '甲',
+      name: 'A 公司',
+      short: 'A',
+      total: 80,
+      rank: 1,
+    },
+    {
+      id: 'CLAIM-B',
+      tag: '乙',
+      name: 'B 公司',
+      short: 'B',
+      total: 60,
+      rank: 2,
+    },
   ]
   const details: AuditResult[] = [
     {
       claim_id: 'CLAIM-A',
       verdict: 'manual_review',
       extracted_data: {
-        eligibility_checks: [{ check: '营业执照', status: 'pass', basis: '有效。' }],
+        eligibility_checks: [
+          { check: '营业执照', status: 'pass', basis: '有效。' },
+        ],
         scoring: [
-          { item: '业绩', max: 10, score: 8, status: 'scored', basis: '缺1个业绩。' },
-          { item: '价格分', max: 40, score: null, status: 'manual_review', basis: '需横比。' },
+          {
+            item: '业绩',
+            max: 10,
+            score: 8,
+            status: 'scored',
+            basis: '缺1个业绩。',
+          },
+          {
+            item: '价格分',
+            max: 40,
+            score: null,
+            status: 'manual_review',
+            basis: '需横比。',
+          },
         ],
       },
     },
@@ -1585,7 +1870,15 @@ describe('contract tender review model', () => {
         eligibility_checks: [
           { check: '企业资质', status: 'fail', basis: '资质等级不符。' },
         ],
-        scoring: [{ item: '业绩', max: 10, score: 4, status: 'scored', basis: '仅1个业绩。' }],
+        scoring: [
+          {
+            item: '业绩',
+            max: 10,
+            score: 4,
+            status: 'scored',
+            basis: '仅1个业绩。',
+          },
+        ],
       },
     },
   ]
@@ -1626,8 +1919,18 @@ describe('contract tender review model', () => {
       resultDetails: details,
       selectedResult: details[0],
       resultSummaries: [
-        { request_id: 'r1', claim_id: 'CLAIM-A', bidder_name: 'A 公司', verdict: 'manual_review' },
-        { request_id: 'r2', claim_id: 'CLAIM-B', bidder_name: 'B 公司', verdict: 'rejected' },
+        {
+          request_id: 'r1',
+          claim_id: 'CLAIM-A',
+          bidder_name: 'A 公司',
+          verdict: 'manual_review',
+        },
+        {
+          request_id: 'r2',
+          claim_id: 'CLAIM-B',
+          bidder_name: 'B 公司',
+          verdict: 'rejected',
+        },
       ],
     })
     expect(Array.isArray(data.bidderCards)).toBe(true)
@@ -1638,14 +1941,29 @@ describe('contract tender review model', () => {
 
   test('buildScoreSummary classifies rejected+score:null as 失分 not 待核验 (CC F1)', () => {
     const cards = buildBidderCards(
-      [{ id: 'CLAIM-R', tag: '甲', name: 'R 公司', short: 'R', total: 0, rank: 1 }],
+      [
+        {
+          id: 'CLAIM-R',
+          tag: '甲',
+          name: 'R 公司',
+          short: 'R',
+          total: 0,
+          rank: 1,
+        },
+      ],
       [
         {
           claim_id: 'CLAIM-R',
           verdict: 'rejected',
           extracted_data: {
             scoring: [
-              { item: '必交资料', max: 5, score: null, status: 'rejected', basis: '缺授权书。' },
+              {
+                item: '必交资料',
+                max: 5,
+                score: null,
+                status: 'rejected',
+                basis: '缺授权书。',
+              },
             ],
           },
         },
@@ -1659,7 +1977,16 @@ describe('contract tender review model', () => {
 
   test('buildBidderCards matches result by request_id when claim_id absent (Codex P1-1)', () => {
     const cards = buildBidderCards(
-      [{ id: 'req-a', tag: '甲', name: 'A 公司', short: 'A', total: 9, rank: 1 }],
+      [
+        {
+          id: 'req-a',
+          tag: '甲',
+          name: 'A 公司',
+          short: 'A',
+          total: 9,
+          rank: 1,
+        },
+      ],
       [
         {
           request_id: 'req-a',
@@ -1691,7 +2018,10 @@ describe('contract tender review model', () => {
                 {
                   condition: '每缺1个同类业绩扣2分',
                   deducted: 2,
-                  evidence: { source: '投标文件 p.5', quote: '仅提供 2 个业绩' },
+                  evidence: {
+                    source: '投标文件 p.5',
+                    quote: '仅提供 2 个业绩',
+                  },
                 },
               ],
             },
@@ -1709,10 +2039,18 @@ describe('contract tender review model', () => {
     const checklist = buildOverviewChecklist({
       extracted_data: {
         scoring: [
-          { item: '必交材料', max: 5, score: null, status: 'rejected', basis: '缺授权书。' },
+          {
+            item: '必交材料',
+            max: 5,
+            score: null,
+            status: 'rejected',
+            basis: '缺授权书。',
+          },
         ],
       },
     })
-    expect(checklist.find((i) => i.requirement === '必交材料')?.status).toBe('unmet')
+    expect(checklist.find((i) => i.requirement === '必交材料')?.status).toBe(
+      'unmet'
+    )
   })
 })

@@ -89,6 +89,10 @@ def _run_job_sync(
             _append_unit_locked(units_path, unit)
             done += 1
             update_ocr_job_progress(request_id, _progress_json(done, total))
+            if unit.get("status") == "error" and unit.get("page") is None:
+                payload = unit.get("payload")
+                detail = payload.get("error") if isinstance(payload, dict) else None
+                raise RuntimeError(str(detail or "OCR file extraction failed"))
 
     extract_dir(str(case_dir), run_seal=run_seal, on_unit_complete=_on_unit_complete)
 

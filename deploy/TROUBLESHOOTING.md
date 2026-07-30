@@ -158,3 +158,179 @@
 
 不要排除这类上传失败信号，除非已明确改用本地隧道：`Incoming request ended abruptly: context canceled`
 且 `dest=https://agent.guoker.org/tender/projects/.*/evaluate`。
+
+---
+
+## H. 演示环境双容器完整文档/OCR 重打包 Runbook（0730b2）
+
+> 本节是执行清单，不代表已经部署成功。目标镜像为 `agent-backend:0730b2`、
+> `agent-front:0730b2`，容器名继续固定为 `agent-backend`、`agent-front`。演示机自己的 env、
+> Compose、知识库和运行数据是权威配置，禁止拿仓库文件覆盖。
+
+### H1. 同步前冻结保护面
+
+1. 在目标项目目录记录以下路径的存在性、权限和 SHA-256；目录清单也保存到本次 evidence 目录：
+   `.env*`、Compose 文件、`knowledge/`、`data/`、`logs/`、`backups/`、`docker-export/`、
+   `.claude/settings.local.json`，以及执行前枚举出的全部 `.claude/*.local.*`。
+2. 只同步代码和构建资产。`server/`、`shared/` 可分别对自己的目标子目录使用 `--delete`；
+   `scripts/` 只同步格式清单生成器、真实格式 smoke、宏安全验收脚本及
+   `document_format_fixtures/`，不得把临时 evidence 或其他运维脚本混入；
+   `.claude/` 必须带 `--exclude=settings.local.json`，并把上一步枚举的每个 `*.local.*` 加入
+   protect filter；`agent-front/` 保护 `.env*`、`node_modules/`。根目录只逐文件更新
+   `Dockerfile`、`pyproject.toml`、`uv.lock`、entrypoint 等构建文件。
+3. 禁止以项目根为 `--delete` 目标，禁止 `--delete-excluded`。不得同步仓库的 env、Compose、
+   `knowledge/`、`data/`、`logs/`、`tests/`、`.ai_state/`、`backups/`、`docker-export/`、归档包或缓存。
+4. 每组 rsync 先执行 `--dry-run --itemize-changes` 并保存输出。机器检查输出中上述保护路径没有
+   `*deleting`；出现任何一项就停止。正式同步后重新计算保护面 SHA-256，与同步前逐项比对。
+
+`.dockerignore` 同时必须排除 `.git/.ai_state/tests/knowledge/data/logs/backups/docker-export/.env*`、
+`.venv`、`node_modules`、缓存和 `*.tar*`；否则历史导出镜像会把构建上下文膨胀到数 GB。
+
+### H2. 替换前建立可恢复的当前镜像证据
+
+1. 从运行容器解析真实 image ID，不以 tag 猜测：
+
+   ```bash
+   docker inspect agent-backend agent-front > "$EVIDENCE_DIR/containers-before.json"
+   BACKEND_OLD_ID=$(docker inspect agent-backend --format '{{.Image}}')
+   FRONT_OLD_ID=$(docker inspect agent-front --format '{{.Image}}')
+   docker image inspect "$BACKEND_OLD_ID" "$FRONT_OLD_ID" > "$EVIDENCE_DIR/images-before.json"
+   ```
+
+2. 保存容器日志、env **键名**（值脱敏）、挂载、网络、端口、restart policy、CPU/内存限制和
+   `docker compose config`。确认 LiteLLM、Milvus 等不在本次重建服务列表。
+3. 用时间戳创建临时 backup tag，并从这些真实 image ID 新鲜导出两个旧镜像：
+
+   ```bash
+   docker image tag "$BACKEND_OLD_ID" "agent-backend:backup-$STAMP"
+   docker image tag "$FRONT_OLD_ID" "agent-front:backup-$STAMP"
+   docker image save "agent-backend:backup-$STAMP" -o "$EVIDENCE_DIR/agent-backend-old.tar"
+   docker image save "agent-front:backup-$STAMP" -o "$EVIDENCE_DIR/agent-front-old.tar"
+   sha256sum "$EVIDENCE_DIR"/*.tar > "$EVIDENCE_DIR/SHA256SUMS"
+   sha256sum -c "$EVIDENCE_DIR/SHA256SUMS"
+   ```
+
+4. 使用临时 `--data-root`/独立 Docker socket 启动一次性 daemon，在隔离环境中分别 `docker load`，
+   再 inspect 加载后的 image ID/架构；结果必须能映射回 `BACKEND_OLD_ID`、`FRONT_OLD_ID`。
+   验证完成后停止一次性 daemon，再删除它的临时目录。不要用正式 daemon 中已有 tag 代替 load 验证。
+
+### H3. 构建与依赖 smoke
+
+1. 用演示机现有前端 env 执行前端 build，再分别构建 ARM64 镜像：
+
+   ```bash
+   cd agent-front && bun install --frozen-lockfile && bun run test && bun run build && bun run lint
+   cd ..
+   docker build -f agent-front/deploy/Containerfile.agent-backend -t agent-backend:0730b2 .
+   docker build -f agent-front/deploy/Containerfile.agent-front -t agent-front:0730b2 .
+   ```
+
+2. 后端镜像内验证架构和固定依赖：xlrd、pyxlsb、python-pptx、pdfplumber、PaddlePaddle 3.2.2、
+   PaddleOCR 3.7.0、PaddleX 3.7.2 均可 import；`soffice --version`、
+   `tesseract --list-langs`（含 `chi_sim`、`eng`）、`fc-list`（含 Noto CJK、Liberation2）实际成功。
+   `OCR_VL_USE_PADDLE_PIPELINE=0` 是 ARM64 默认；import 成功不能冒充本地 Paddle pipeline smoke。
+3. 显式设置 `OCR_VL_USE_PADDLE_PIPELINE=1` 的启动 smoke 单独记录，失败不得影响默认远端 LiteLLM
+   路径的诊断，但不得宣称本地 layout pipeline 可用。
+
+### H4. 重建固定名称容器
+
+1. 只在目标机现有部署定义中把前后端 image tag 改为 `0730b2`；其余 env、挂载、网络、端口、
+   restart policy 和资源限制保持 H2 快照不变。
+2. 仅重建 `agent-backend`、`agent-front`，不得连带重启 LiteLLM、Milvus、OpenProject 等服务。
+3. 重建后再次 inspect 并与 H2 做结构化 diff：固定容器名、三个运行挂载
+   `/app/knowledge`、`/app/data`、`/app/logs`、网络、资源限制、restart policy、env 键集合必须一致；
+   只有 image ID/tag 和预期代码版本允许变化。
+4. 验证后端 `/health`、前端 `/` 均 HTTP 200，日志无 OCR/LibreOffice/Tesseract 启动错误。
+   任一步失败，按 H2 保存的 inspect 与旧 image ID 恢复两个固定名称容器；旧归档保留。
+
+### H5. 真实格式/OCR 矩阵
+
+准备每种 canonical 后缀恰好一个真实 fixture（包含中文、表格/正文；至少一份扫描件），在新后端
+容器的同一 env/网络下运行：
+
+```bash
+set -o pipefail
+python scripts/generate_document_formats.py --check
+# The former single document-format-smoke.json is replaced by two engine-specific records below.
+
+# Round 1: use the demo environment's real LiteLLM/PaddleOCR-VL endpoint.
+python scripts/smoke_document_formats.py \
+  --fixtures-dir scripts/document_format_fixtures \
+  --expect-engine openai-compatible-vlm \
+  --expect-degraded false \
+  --require-ocr-suffix .png \
+  | tee "$EVIDENCE_DIR/document-format-smoke-vlm.json"
+VLM_SMOKE_RC=${PIPESTATUS[0]}
+test "$VLM_SMOKE_RC" -eq 0
+
+# Round 2: force the remote endpoint to fail, proving the real Tesseract fallback.
+OCR_VL_SERVER_URL=http://127.0.0.1:1/v1 \
+OCR_VL_TIMEOUT=2 \
+python scripts/smoke_document_formats.py \
+  --fixtures-dir scripts/document_format_fixtures \
+  --expect-engine tesseract \
+  --expect-degraded true \
+  --require-ocr-suffix .png \
+  | tee "$EVIDENCE_DIR/document-format-smoke-tesseract.json"
+TESS_SMOKE_RC=${PIPESTATUS[0]}
+test "$TESS_SMOKE_RC" -eq 0
+
+python - \
+  "$EVIDENCE_DIR/document-format-smoke-vlm.json" \
+  "$EVIDENCE_DIR/document-format-smoke-tesseract.json" <<'PY'
+import json
+import sys
+
+expected = [
+    (sys.argv[1], "openai-compatible-vlm", False),
+    (sys.argv[2], "tesseract", True),
+]
+for evidence_path, expected_engine, expected_degraded in expected:
+    with open(evidence_path, encoding="utf-8") as handle:
+        payload = json.load(handle)
+    assert payload["status"] == "ok", payload
+    expectation = payload["expectation"]
+    assert expectation == {
+        "engine": expected_engine,
+        "degraded": expected_degraded,
+        "required_ocr_suffixes": [".png"],
+        "cache_enabled": False,
+    }, expectation
+    formats = payload["formats"]
+    assert formats and all(item["status"] == "ok" for item in formats), formats
+    assert all(item["from_cache"] is False for item in formats), formats
+    required = {item["suffix"]: item for item in formats if item["suffix"] == ".png"}
+    assert set(required) == {".png"}, required
+    for item in required.values():
+        assert item["route"] in {"ocr", "convert"}, item
+        assert item["engine"] == expected_engine, item
+        assert item["degraded"] is expected_degraded, item
+        assert item["ocr_expectation"] == "matched", item
+PY
+
+python scripts/verify_office_macro_safety.py \
+  --fixture scripts/document_format_fixtures/macro-on-open.odt \
+  --evidence "$EVIDENCE_DIR/office-macro-safety-demo-arm64.json"
+```
+
+smoke 必须覆盖 `.txt/.csv/.md/.json/.tsv`、全部图片、`.doc/.docx`、`.xls/.xlsx/.xlsm/.xlsb`、
+`.ppt/.pptx`、`.odt/.ods/.odp`、`.pdf`。每个文件都要通过上传 magic、canonical classify、
+native/convert/OCR 路由并产出非空底稿；至少一份扫描 PDF/图片实际经过远端 VLM，模拟远端失败时
+再证明 Tesseract 降级可用。两轮都必须完成全部 canonical 后缀，逐项记录 `from_cache=false`；
+`--require-ocr-suffix` 指定的关键 OCR fixture 还必须逐后缀匹配预期 `engine/degraded`。可重复
+传入该参数扩大关键集。不得用“包已安装”、“route 字段正确”或旧缓存代替真实非空底稿。
+
+仓库中的 `scripts/evidence/office-macro-safety-local-arm64.json` 只证明本机 Darwin arm64、
+LibreOfficeDev 的宏禁用与进程清理结果，不代表演示机或成品镜像已通过。上面的宏验收必须在目标
+Debian ARM64 后端成品镜像内重新执行；结果为 `status=ok`、`side_effect_created=false`、
+`profile_removed=true`、`residual_processes=[]` 前，不得宣称远端宏安全验收成功。
+
+### H6. 新镜像导出与临时 tag 清理
+
+1. 所有健康、配置漂移和真实矩阵验证通过后，从**运行容器解析出的新 image ID**新鲜导出到目标
+   项目 `docker-export/`，文件名包含 `0730b2` 和架构；写 SHA-256，并用 H2 相同的隔离 daemon
+   执行 load/inspect 验证。
+2. 确认导出 ID 等于运行中的 `agent-backend`、`agent-front` image ID，且两个归档都可加载后，
+   只删除 `agent-backend:backup-$STAMP`、`agent-front:backup-$STAMP` 两个临时 backup tag。
+3. 不删除旧镜像 tar、SHA、inspect、日志或恢复说明；它们在观察期结束前持续保留。不得执行
+   `docker image prune -a`，不得删除 `0730b1`/旧 image ID，除非另有明确的观察期清理授权。

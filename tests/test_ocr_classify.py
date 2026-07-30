@@ -15,7 +15,7 @@ def test_excel_routes_native(tmp_path):
     path.write_bytes(b"placeholder")
     result = classify(path)
     assert result["route"] == "native"
-    assert result["handler"] == "excel"
+    assert result["handler"] == "excel_ooxml"
 
 
 def test_text_routes_native(tmp_path):
@@ -112,12 +112,12 @@ def test_legacy_doc_routes_native(tmp_path):
     assert result["has_text_layer"] is True
 
 
-def test_scanned_docx_routes_ocr(tmp_path):
+def test_scanned_docx_routes_through_pdf_conversion(tmp_path):
     # 正文近空 + 含嵌入图 → 图片/扫描型
     path = tmp_path / "scan.docx"
     with zipfile.ZipFile(path, "w") as archive:
         archive.writestr("word/document.xml", "<w:p></w:p>")
         archive.writestr("word/media/image1.png", b"\x89PNG")
     result = classify(path)
-    assert result["route"] == "ocr"
-    assert result["handler"] == "word_scan"
+    assert result["route"] == "convert"
+    assert result["handler"] == "office_convert"

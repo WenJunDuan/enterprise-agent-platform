@@ -43,15 +43,24 @@ RUN pip install \
 # - paddlepaddle + paddleocr[doc-parser]：保留完整 PaddleOCRVL pipeline 能力；
 #   默认识别走 litellm OpenAI 兼容网关（OCR_VL_SERVER_URL），避免本地 layout
 #   predictor 在部分 arm64 容器运行时崩溃；需完整 pipeline 时设 OCR_VL_USE_PADDLE_PIPELINE=1。
-# - openpyxl/python-docx/pypdf：原生直读 Excel/Word/文本层 PDF。
+# - Office/Excel/PDF parsers：按后缀使用独立解析器，避免把旧格式交给 OOXML 解析器。
 # - pymupdf：远端 VLM 仅收图片时，把扫描 PDF 按页渲染为 PNG。
 # arm64 上 paddlepaddle wheel 可用性在构建时验证；失败则按官方索引指定 wheel 源。
 ARG WITH_OCR
 RUN if [ "$WITH_OCR" = "1" ]; then \
       pip install \
-        paddlepaddle \
-        "paddleocr[doc-parser]>=3.4.0" \
-        openpyxl python-docx pymupdf pypdf ; \
+        paddlepaddle==3.2.2 \
+        "paddleocr[doc-parser]==3.7.0" \
+        paddlex==3.7.2 \
+        openpyxl==3.1.5 \
+        python-docx==1.2.0 \
+        xlrd==2.0.2 \
+        pyxlsb==1.0.10 \
+        python-pptx==1.0.2 \
+        Pillow==12.3.0 \
+        pymupdf==1.27.2.3 \
+        pypdf==6.14.2 \
+        pdfplumber==0.11.10 ; \
     fi
 
 RUN apt-get update \
@@ -60,7 +69,17 @@ RUN apt-get update \
       libgl1 \
       libglib2.0-0 \
       libgomp1 \
-    && if [ "$WITH_OCR" = "1" ]; then apt-get install -y --no-install-recommends catdoc; fi \
+    && if [ "$WITH_OCR" = "1" ]; then apt-get install -y --no-install-recommends \
+      antiword \
+      catdoc \
+      fonts-liberation2 \
+      fonts-noto-cjk \
+      libreoffice-calc \
+      libreoffice-impress \
+      libreoffice-writer \
+      tesseract-ocr \
+      tesseract-ocr-chi-sim \
+      tesseract-ocr-eng; fi \
     && rm -rf /var/lib/apt/lists/*
 
 RUN groupadd --gid "${APP_GID}" app \
@@ -70,13 +89,17 @@ RUN groupadd --gid "${APP_GID}" app \
 # SDK reads via setting_sources=["project"]; agent-front/dist is the prebuilt frontend;
 # knowledge holds the audit rules (mounted volume overrides this baked default).
 COPY --chown=app:app server ./server
+COPY --chown=app:app shared ./shared
+COPY --chown=app:app scripts/generate_document_formats.py ./scripts/generate_document_formats.py
+COPY --chown=app:app scripts/smoke_document_formats.py ./scripts/smoke_document_formats.py
+COPY --chown=app:app scripts/verify_office_macro_safety.py ./scripts/verify_office_macro_safety.py
+COPY --chown=app:app scripts/document_format_fixtures ./scripts/document_format_fixtures
 COPY --chown=app:app .claude ./.claude
 COPY --chown=app:app agent-front/dist ./agent-front/dist
-COPY --chown=app:app knowledge ./knowledge
 COPY --chown=app:app pyproject.toml README.md ./
 COPY docker-entrypoint.sh ./docker-entrypoint.sh
 
-RUN mkdir -p /app/data /app/logs \
+RUN mkdir -p /app/data /app/knowledge /app/logs \
     && chown -R app:app /app /home/app \
     && chmod +x /app/docker-entrypoint.sh
 

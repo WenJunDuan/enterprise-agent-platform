@@ -136,6 +136,7 @@ async def _submit_bid_evaluation(
             form_data=form_data,
             domain="tender",
             project_id=project_id or UNBOUND_PROJECT,
+            validate_document_format=True,
         )
     else:
         raise HTTPException(status_code=415, detail="Unsupported Content-Type")

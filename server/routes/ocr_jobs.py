@@ -109,6 +109,7 @@ async def ocr_jobs_submit(
         request_id=request_id,
         tenant=tenant,
         files=collect_uploaded_files(form_data),
+        validate_document_format=True,
     )
 
     submitted_at = utc_now()

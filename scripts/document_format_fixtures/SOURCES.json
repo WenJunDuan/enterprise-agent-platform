@@ -1,0 +1,14 @@
+{
+  "generated_by": "scripts/build_document_format_fixtures.py",
+  "generated_with": "LibreOfficeDev 26.8.0.0.alpha0 2c87e51eeaa2b413ff4ae097b2705eea1995d8e5",
+  "fixtures": {
+    "sample.xlsb": {
+      "url": "https://raw.githubusercontent.com/willtrnr/pyxlsb/a59b6ddcadd89cf96e478152b7c4fb051588a747/test_files/test.xlsb",
+      "repository": "https://github.com/willtrnr/pyxlsb",
+      "commit": "a59b6ddcadd89cf96e478152b7c4fb051588a747",
+      "license": "LGPL-3.0",
+      "license_url": "https://github.com/willtrnr/pyxlsb/blob/master/COPYING.LESSER",
+      "sha256": "94e006f195668677170b9e0efb7ba8d443fa6c9c2149ebd78b7a67d77a99c09e"
+    }
+  }
+}

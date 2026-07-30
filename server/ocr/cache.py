@@ -23,7 +23,7 @@ _CACHE_DIR = DATA_ROOT / "ocr-cache"
 # （扫描页空白），与新键不同的 result——若不 bump，同内容文件命中旧缓存会绕过子集 OCR。
 # v3：文档分诊/老 Word 读取路径修复。旧缓存可能把可直读的 .doc 固化成 manual，必须整体失效。
 # v4：后端镜像补齐 catdoc。v3 可能已经缓存了无转换器时的 UTF-16 二进制噪声，不能复用。
-_CACHE_VERSION = "v4"
+_CACHE_VERSION = "v5"
 
 
 def _engine_fingerprint() -> str:
@@ -69,7 +69,9 @@ def get_cached(path: Any, *, purpose: str | None = None, run_seal: bool = False)
         loaded = json.loads(cache_file.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
-    return loaded if isinstance(loaded, dict) else None
+    if not isinstance(loaded, dict) or loaded.get("degraded") is True:
+        return None
+    return loaded
 
 
 def put_cached(
@@ -77,6 +79,8 @@ def put_cached(
 ) -> None:
     """写缓存（临时文件 + 原子 rename，并发安全）。任何失败静默——缓存绝不拖垮主识别流程。"""
     if not OCR_CACHE_ENABLED:
+        return
+    if result.get("degraded") is True:
         return
     content = _read_bytes(path)
     if content is None:

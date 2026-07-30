@@ -4,6 +4,7 @@
 .ai_state
 .ruff_cache
 **/.DS_Store
+tests
 
 # Python virtualenv & caches (host-specific, must not leak into image)
 .venv
@@ -14,6 +15,7 @@
 # Runtime state — provided as mounted volumes, not baked
 logs
 data
+knowledge
 backups
 docker-export
 *.tar
@@ -28,6 +30,7 @@ agent-front/.env.local
 
 # Secrets — supplied at runtime via env_file, never baked into the image
 .env
+.env*
 **/.env
 **/.env.local
 **/*.env.prod

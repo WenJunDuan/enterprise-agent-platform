@@ -179,13 +179,15 @@ def _score_summary(extracted: Any) -> str | None:
     scored_max = 0.0
     pending_max = 0.0
     total_max = 0.0
+    unknown_max_count = 0
     for item in scoring:
         if not isinstance(item, dict):
             continue
+        total_items += 1
         max_score = item.get("max")
         if not _is_real_number(max_score):
+            unknown_max_count += 1
             continue
-        total_items += 1
         total_max += float(max_score)
         score = item.get("score")
         if _is_real_number(score):
@@ -198,10 +200,17 @@ def _score_summary(extracted: Any) -> str | None:
 
     if total_items == 0:
         return None
-    summary = (
-        f"{_USER_SUMMARY_MARKER}评分表共 {total_items} 项，满分 {_format_score(total_max)} 分；"
-        f"已有分数 {scored_items} 项，合计 {_format_score(score_sum)} 分"
-    )
+    if unknown_max_count:
+        summary = (
+            f"{_USER_SUMMARY_MARKER}评分表共 {total_items} 项；已知满分 "
+            f"{_format_score(total_max)} 分，另有 {unknown_max_count} 项未设满分，整表满分待确认；"
+            f"已有分数 {scored_items} 项，合计 {_format_score(score_sum)} 分"
+        )
+    else:
+        summary = (
+            f"{_USER_SUMMARY_MARKER}评分表共 {total_items} 项，满分 {_format_score(total_max)} 分；"
+            f"已有分数 {scored_items} 项，合计 {_format_score(score_sum)} 分"
+        )
     if pending_items:
         summary += (
             f"；还有 {pending_items} 项、共 {_format_score(pending_max)} 分需要补充信息后确认"

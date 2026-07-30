@@ -38,6 +38,7 @@ allowed-tools: Read, Glob
   - `pass_fail` / `manual`：客观通过或主观/现场/外部不可判定。
 - `rejection_rules[]`：废标/资格否决条款逐条提取，`{id, condition, source_quote, source_ref}`。
 - **`tag` 可判定性标签（与 score_mode 正交）**：全可依单份投标文件判定 → `scored`；含 cross_bid/external_data/live_event → 对应 manual tag。
+- **`max:null` 是窄例外**：只有招标文件确实未给出该人工项分值，且该项同时满足 `score_mode:"manual"` 与 `tag!="scored"` 时才可输出 `max:null`。`scored/null`、非 manual/null 均属无效结果；已载明分值不得改成 null。整份 criteria 至少保留一个数值 `max` 项。
 
 ### 步骤 3 — 抽取 tender_info（招标基本信息）
 

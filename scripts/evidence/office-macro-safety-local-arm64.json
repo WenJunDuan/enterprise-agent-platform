@@ -1,0 +1,19 @@
+{
+  "status": "ok",
+  "executed_at": "2026-07-30T11:26:19.731992+00:00",
+  "execution_scope": "current runtime: Darwin arm64",
+  "host": {
+    "system": "Darwin",
+    "architecture": "arm64"
+  },
+  "libreoffice_version": "LibreOfficeDev 26.8.0.0.alpha0 2c87e51eeaa2b413ff4ae097b2705eea1995d8e5",
+  "fixture": "/Users/mac/workspace/enterprise-agent-platform-demo-full-doc-ocr-0730/scripts/document_format_fixtures/macro-on-open.odt",
+  "fixture_sha256": "5f41578f38041ef7d38f861465b0bece957faccf12777fd1fc84688d8f7c9c9c",
+  "macro_present": true,
+  "side_effect_code_present": true,
+  "load_event_present": true,
+  "pdf_magic": "%PDF-",
+  "side_effect_created": false,
+  "profile_removed": true,
+  "residual_processes": []
+}

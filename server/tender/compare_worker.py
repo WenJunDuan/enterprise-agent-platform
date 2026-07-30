@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import os
 from typing import Any
 
@@ -62,7 +63,7 @@ def collect_compare_input(
     bidders: list[dict[str, Any]] = []
     result_ids: list[str] = []
     criteria_seen: Any = None
-    price_item: Any = None
+    criteria_entries: list[Any] = []
     criteria_hashes: set[str] = set()  # codex P1.1：覆盖**全量**各家 criteria，非只第一份
     for row in rows:
         # list_results_by_project 的 payload 列是未解析 JSON 字符串（SELECT *），需 loads。
@@ -77,11 +78,11 @@ def collect_compare_input(
             continue
         extracted = response.get("extracted_data") or {}
         crit = extracted.get("criteria")
+        criteria_entries.append(crit)
         if crit:
             criteria_hashes.add(compute_criteria_hash(crit))
             if criteria_seen is None:
                 criteria_seen = crit
-                price_item = _find_price_item(crit)
         result_ids.append(str(row["request_id"]))
         bidders.append(
             {
@@ -95,12 +96,25 @@ def collect_compare_input(
         return None
     # codex P1.1：各家 criteria 不全一致 → 标记，命令据此走 manual_review，不任取一份当权威公式。
     criteria_inconsistent = len(criteria_hashes) > 1
+    price_items = [_find_price_item(criteria) for criteria in criteria_entries]
+    all_price_items_valid = len(price_items) == len(bidders) and all(
+        item is not None for item in price_items
+    )
+    price_comparison_blocked = criteria_inconsistent or not all_price_items_valid
+    blocked_reason = (
+        "criteria_inconsistent"
+        if criteria_inconsistent
+        else "price_item_missing_or_invalid" if not all_price_items_valid else None
+    )
+    price_item = price_items[0] if not price_comparison_blocked else None
     compare_input = {
         "project_id": project_id,
         "method": (criteria_seen or {}).get("method") if isinstance(criteria_seen, dict) else None,
         "funding_type": project.get("funding_type") or "unknown",
         "control_price": project.get("control_price"),
         "criteria_price_item": price_item,
+        "price_comparison_blocked": price_comparison_blocked,
+        "price_comparison_blocked_reason": blocked_reason,
         "criteria_inconsistent": criteria_inconsistent,
         "bidders": bidders,
     }
@@ -113,17 +127,69 @@ def collect_compare_input(
 
 
 def _find_price_item(criteria: Any) -> Any:
-    """从 criteria.items 找价格项（tag=requires_cross_bid_comparison）。"""
+    """返回可横比的价格项；满分未知的项目绝不进入横比算分。"""
     if not isinstance(criteria, dict):
         return None
     for item in criteria.get("items", []):
-        if isinstance(item, dict) and item.get("tag") == "requires_cross_bid_comparison":
+        if not (
+            isinstance(item, dict) and item.get("tag") == "requires_cross_bid_comparison"
+        ):
+            continue
+        max_score = item.get("max")
+        if (
+            isinstance(max_score, (int, float))
+            and not isinstance(max_score, bool)
+            and math.isfinite(max_score)
+            and max_score >= 0
+        ):
             return {
                 "item": item.get("item"),
-                "max": item.get("max"),
+                "max": max_score,
                 "scoring_rule": item.get("scoring_rule"),
             }
+        return None
     return None
+
+
+def enforce_price_comparison_block(
+    payload: dict[str, Any], compare_input: dict[str, Any]
+) -> None:
+    """Fail closed for any invalid/missing price item or inconsistent criteria set."""
+    if not compare_input.get("price_comparison_blocked"):
+        return
+    model_bidders = payload.get("bidders")
+    model_by_claim = {
+        bidder.get("claim_id"): bidder
+        for bidder in model_bidders
+        if isinstance(bidder, dict)
+    } if isinstance(model_bidders, list) else {}
+    payload["bidders"] = [
+        {
+            "claim_id": bidder.get("claim_id"),
+            "bid_price": bidder.get("bid_price"),
+            "price_score": None,
+            "other_score": (model_by_claim.get(bidder.get("claim_id")) or {}).get(
+                "other_score"
+            ),
+            "total_score": None,
+            "rank": None,
+            "status": "manual_review",
+            "note": "价格项满分未设，需人工确认后再横比。",
+        }
+        for bidder in compare_input.get("bidders", [])
+        if isinstance(bidder, dict)
+    ]
+    reason = compare_input.get("price_comparison_blocked_reason")
+    warning = (
+        "各投标人评分标准不一致，已停止价格横比与排名，需人工复核。"
+        if reason == "criteria_inconsistent"
+        else "价格项缺失或满分无效，已停止价格横比与排名，需人工复核。"
+    )
+    warnings = payload.get("warnings")
+    payload["warnings"] = [*warnings, warning] if isinstance(warnings, list) else [warning]
+    payload["recommended"] = None
+    payload["provisional"] = True
+    payload["explanation"] = warning
 
 
 async def _run_compare(*, request_id: str, tenant: str, compare_input: dict[str, Any]):
@@ -171,6 +237,7 @@ async def _execute_inner(*, request_id: str, tenant: str, project_id: str) -> No
             # codex P2.4：以服务端 project_id 为准，杜绝 Claude 回填错 project_id 致 GET 自相矛盾。
             if isinstance(stored, dict):
                 stored["project_id"] = project_id
+                enforce_price_comparison_block(stored, compare_input)
             await asyncio.to_thread(
                 upsert_compare_result,
                 project_id=project_id,

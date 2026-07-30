@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "groups": {
+    "text": [".txt", ".csv", ".md", ".json", ".tsv"],
+    "images": [".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp"],
+    "word_native": [".docx"],
+    "word_legacy": [".doc"],
+    "excel_ooxml": [".xlsx", ".xlsm"],
+    "excel_xls": [".xls"],
+    "excel_xlsb": [".xlsb"],
+    "presentation_native": [".pptx"],
+    "office_convert": [".ppt", ".odt", ".ods", ".odp"],
+    "pdf": [".pdf"]
+  }
+}

@@ -726,7 +726,7 @@ def test_evaluate_upload_without_bid_id_passes_none(client, monkeypatch):
     client.post(
         f"/tender/projects/{pid}/evaluate",
         data={"mode": "upload", "form_json": _json.dumps({"bidder_name": "X"})},
-        files=[("files", ("招标.pdf", b"%PDF", "application/pdf"))],
+        files=[("files", ("招标.pdf", b"%PDF-1.4 fake", "application/pdf"))],
         headers=_AUTH,
     )
     assert calls[-1]["bid_id"] is None

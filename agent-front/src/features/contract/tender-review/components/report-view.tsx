@@ -187,7 +187,10 @@ function IssueSummaryCard({
               </div>
               <div className='space-y-2'>
                 {group.items.map((issue) => (
-                  <div key={issue.id} className='rounded-md bg-background p-3 text-sm'>
+                  <div
+                    key={issue.id}
+                    className='rounded-md bg-background p-3 text-sm'
+                  >
                     <div className='font-semibold'>{issue.itemName}</div>
                     <div className='mt-1 leading-6 text-muted-foreground'>
                       {issue.basis}
@@ -260,10 +263,7 @@ function ScoreSummaryCard({ data }: { data: TenderReviewMockData }) {
           value={`${summary.pendingItems.length} 项`}
           items={summary.pendingItems}
         />
-        <ScoreMetric
-          label='展示口径'
-          value='分值隐藏'
-        />
+        <ScoreMetric label='展示口径' value='分值隐藏' />
       </div>
       {!hasScoring ? (
         <div className='mt-3 rounded-md border border-dashed p-2 text-xs text-muted-foreground'>
@@ -388,7 +388,7 @@ function PriceScoreSection({ data }: { data: TenderReviewMockData }) {
                 <div>
                   <div className='font-semibold'>{item.item}</div>
                   <div className='mt-1 text-xs text-muted-foreground'>
-                    满分 {formatScore(item.max)} 分
+                    {formatMax(item.max)}
                   </div>
                 </div>
                 <div className='text-right'>
@@ -398,7 +398,9 @@ function PriceScoreSection({ data }: { data: TenderReviewMockData }) {
                       : '已完成内部计算'}
                   </div>
                   <div className='mt-1 text-xs text-muted-foreground'>
-                    {item.score == null ? '待补充' : getScoringReportStatus(item.status, item.score)}
+                    {item.score == null
+                      ? '待补充'
+                      : getScoringReportStatus(item.status, item.score)}
                   </div>
                 </div>
               </div>
@@ -520,7 +522,7 @@ function ScoreItemsTable({
             ) : null}
           </div>
           <div className='text-center text-muted-foreground'>
-            {formatScore(item.max)}
+            {formatMax(item.max)}
           </div>
           <div className='text-center text-muted-foreground'>
             {getScoringReportStatus(item.status, item.score)}
@@ -550,7 +552,7 @@ function TechnicalCompareCard({ row }: { row: TenderCompareScoreRow }) {
       <div className='border-b bg-muted/40 px-4 py-3'>
         <div className='font-semibold'>{row.item}</div>
         <div className='mt-1 text-xs text-muted-foreground'>
-          满分 {formatScore(row.max)} 分 · 初评建议，最终以评标委员会评分为准
+          {formatMax(row.max)} · 初评建议，最终以评标委员会评分为准
         </div>
       </div>
       <div className='overflow-x-auto'>
@@ -593,10 +595,16 @@ function TechnicalCompareLine({
   gridStyle: React.CSSProperties
 }) {
   return (
-    <div className='grid border-b px-4 py-3 text-sm last:border-b-0' style={gridStyle}>
+    <div
+      className='grid border-b px-4 py-3 text-sm last:border-b-0'
+      style={gridStyle}
+    >
       <div className='font-medium text-muted-foreground'>{label}</div>
       {cells.map((cell, index) => (
-        <div key={`${label}-${index}`} className='leading-6 text-muted-foreground'>
+        <div
+          key={`${label}-${index}`}
+          className='leading-6 text-muted-foreground'
+        >
           {cell}
         </div>
       ))}
@@ -610,7 +618,9 @@ function EvidenceText({ evidence }: { evidence: TenderScoreEvidence[] }) {
     <div className='mt-2 text-xs leading-5 text-muted-foreground'>
       {evidence.map((item, index) => (
         <div key={index}>
-          {[item.source, item.finding, item.conclusion].filter(Boolean).join('：')}
+          {[item.source, item.finding, item.conclusion]
+            .filter(Boolean)
+            .join('：')}
         </div>
       ))}
     </div>
@@ -708,7 +718,9 @@ function CompareNotice({ data }: { data: TenderReviewMockData }) {
 function ComprehensiveOpinion({ data }: { data: TenderReviewMockData }) {
   const notice = data.compareNotice
   const issues = data.issueList ?? []
-  const pendingCount = issues.filter((issue) => issue.status === 'pending').length
+  const pendingCount = issues.filter(
+    (issue) => issue.status === 'pending'
+  ).length
 
   return (
     <div className='mt-4 rounded-md bg-muted/40 p-4'>
@@ -746,7 +758,10 @@ function ReportTitle({ children }: { children: React.ReactNode }) {
 }
 
 const emptyScoreSummary = {
+  knownMaxTotal: 0,
+  unknownMaxCount: 0,
   maxTotal: 0,
+  categorySummaries: [],
   deductedItems: [],
   rejectedItems: [],
   pendingItems: [],
@@ -754,4 +769,8 @@ const emptyScoreSummary = {
 
 function formatScore(score: number) {
   return Number.isInteger(score) ? String(score) : score.toFixed(1)
+}
+
+function formatMax(max: number | null) {
+  return max == null ? '未设分值' : `满分 ${formatScore(max)} 分`
 }

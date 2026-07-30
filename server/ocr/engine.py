@@ -13,14 +13,22 @@ PaddleX 印章产线: https://paddlepaddle.github.io/PaddleX/latest/pipeline_usa
 from __future__ import annotations
 
 import base64
+import http.client
 import json
 import os
+import selectors
+import signal
+import shutil
 import ssl
+import subprocess
+import sys
 import tempfile
 import time
 import urllib.error
 import urllib.request
+import warnings
 from collections.abc import Callable
+from io import BytesIO
 from pathlib import Path
 
 from server.ocr import OcrDependencyError, OcrError
@@ -50,6 +58,31 @@ OCR_VL_CLOUD_POLL_INTERVAL = float(os.getenv("OCR_VL_CLOUD_POLL_INTERVAL", "5"))
 # 云 job 轮询总超时。默认 1200 对齐 TENDER_TIMEOUT_SEC——混合大标书整份/子集云 OCR 在云端排队时，
 # 旧默认 600 会误判超时（评标整体仍有 TENDER_TIMEOUT 兜底，audit 侧由 AUDIT_TIMEOUT_SEC 上限收口）。
 OCR_VL_CLOUD_MAX_WAIT = float(os.getenv("OCR_VL_CLOUD_MAX_WAIT", "1200"))
+
+
+def _positive_int_env(name: str, default: int) -> int:
+    try:
+        return max(1, int(os.getenv(name, str(default))))
+    except (TypeError, ValueError):
+        return default
+
+
+OCR_MAX_PDF_PAGES = _positive_int_env("OCR_MAX_PDF_PAGES", 500)
+OCR_MAX_PAGE_PIXELS = _positive_int_env("OCR_MAX_PAGE_PIXELS", 25_000_000)
+OCR_MAX_TEMP_BYTES = _positive_int_env("OCR_MAX_TEMP_BYTES", 536_870_912)
+OCR_MAX_IMAGE_BYTES = _positive_int_env("OCR_MAX_IMAGE_BYTES", 32 * 1024 * 1024)
+OCR_PAGE_TIMEOUT_SEC = _positive_int_env("OCR_PAGE_TIMEOUT_SEC", 90)
+OCR_MAX_TEXT_CHARS_PER_PAGE = _positive_int_env("OCR_MAX_TEXT_CHARS_PER_PAGE", 200_000)
+
+_IMAGE_MIME_TYPES = {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".webp": "image/webp",
+    ".bmp": "image/bmp",
+    ".tif": "image/tiff",
+    ".tiff": "image/tiff",
+}
 
 
 def _make_ssl_context() -> ssl.SSLContext | None:
@@ -108,15 +141,7 @@ def _page_markdown(res) -> str:
 
 
 def _mime_type(path: Path) -> str:
-    return {
-        ".jpg": "image/jpeg",
-        ".jpeg": "image/jpeg",
-        ".png": "image/png",
-        ".webp": "image/webp",
-        ".bmp": "image/bmp",
-        ".tif": "image/tiff",
-        ".tiff": "image/tiff",
-    }.get(path.suffix.lower(), "application/octet-stream")
+    return _IMAGE_MIME_TYPES.get(path.suffix.lower(), "application/octet-stream")
 
 
 def _chat_completions_url(base_url: str) -> str:
@@ -129,39 +154,275 @@ def _image_data_url(content: bytes, mime_type: str) -> str:
     return f"data:{mime_type};base64,{encoded}"
 
 
-def _render_pdf_pages(path: Path) -> list[dict]:
-    """PDF 必须先按页渲染成图片，再交给 OpenAI-compatible VLM 的 image_url。"""
+class _TimedPipeReader:
+    """Deadline-aware unbuffered reader for the renderer's framed stdout."""
+
+    def __init__(self, stream) -> None:
+        self._fd = stream.fileno()
+        self._buffer = bytearray()
+        self.eof = False
+
+    def _fill(self, deadline: float) -> bool:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        with selectors.DefaultSelector() as selector:
+            selector.register(self._fd, selectors.EVENT_READ)
+            if not selector.select(remaining):
+                return False
+        chunk = os.read(self._fd, 65_536)
+        if not chunk:
+            self.eof = True
+            return False
+        self._buffer.extend(chunk)
+        return True
+
+    def readline(self, deadline: float) -> bytes | None:
+        while b"\n" not in self._buffer:
+            if not self._fill(deadline):
+                return None
+        line, _, rest = self._buffer.partition(b"\n")
+        self._buffer = bytearray(rest)
+        return bytes(line)
+
+    def read_exact(self, length: int, deadline: float) -> bytes | None:
+        while len(self._buffer) < length:
+            if not self._fill(deadline):
+                return None
+        content = bytes(self._buffer[:length])
+        del self._buffer[:length]
+        return content
+
+
+def _render_worker_argv(path: Path) -> list[str]:
+    return [
+        sys.executable,
+        "-m",
+        "server.ocr.page_render_worker",
+        str(path),
+        str(OCR_VL_PDF_RENDER_SCALE),
+        str(OCR_MAX_PAGE_PIXELS),
+    ]
+
+
+def _terminate_render_process(process: subprocess.Popen[bytes]) -> None:
     try:
-        import fitz  # PyMuPDF
-    except ImportError as exc:
+        os.killpg(process.pid, signal.SIGTERM)
+    except (OSError, ProcessLookupError):
+        pass
+    try:
+        process.wait(timeout=5)
+        return
+    except subprocess.TimeoutExpired:
+        pass
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except (OSError, ProcessLookupError):
+        pass
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        pass
+
+
+def _renderer_error(process: subprocess.Popen[bytes]) -> str:
+    if process.poll() is None:
+        return "renderer closed its output stream before completing"
+    if process.stderr is None:
+        return "renderer exited without diagnostics"
+    detail = process.stderr.read().decode("utf-8", "replace").strip()
+    return detail[-1000:] or "renderer exited without diagnostics"
+
+
+def _read_render_header(reader: _TimedPipeReader, process, page_number: int) -> dict:
+    deadline = time.monotonic() + OCR_PAGE_TIMEOUT_SEC
+    line = reader.readline(deadline)
+    if line is None:
+        if reader.eof:
+            try:
+                process.wait(timeout=1)
+            except subprocess.TimeoutExpired:
+                pass
+            raise OcrDependencyError(
+                f"PDF page {page_number} render failed: {_renderer_error(process)}"
+            )
+        if process.poll() is None:
+            raise TimeoutError(f"PDF page {page_number} render timed out")
         raise OcrDependencyError(
-            "缺少 PyMuPDF：请安装 pymupdf 以支持 PDF 调用远端 OCR VLM"
-        ) from exc
-
-    pages: list[dict] = []
+            f"PDF page {page_number} render failed: {_renderer_error(process)}"
+        )
     try:
-        # fitz 非线程安全；与 native 直读共享同一把 FITZ_LOCK 串行化（codex P1-1：扫描 PDF
-        # 渲染也调 fitz.open，并行 OCR 时会与 native 直读并发崩）。
-        with FITZ_LOCK, fitz.open(path) as document:
-            matrix = fitz.Matrix(OCR_VL_PDF_RENDER_SCALE, OCR_VL_PDF_RENDER_SCALE)
-            for index, page in enumerate(document):
-                pixmap = page.get_pixmap(matrix=matrix, alpha=False)
-                pages.append(
-                    {
-                        "page_number": index + 1,
-                        "mime_type": "image/png",
-                        "content": pixmap.tobytes("png"),
-                    }
-                )
-    except Exception as exc:
-        raise OcrDependencyError(f"PDF 渲染失败：{exc}") from exc
+        return json.loads(line.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise OcrDependencyError("PDF renderer returned an invalid frame") from exc
 
-    if not pages:
-        raise OcrDependencyError("PDF 渲染失败：未产生任何页面")
-    return pages
+
+def _render_pdf_pages(path: Path):
+    """Stream pages from a killable renderer process with a hard per-page timeout."""
+    process = subprocess.Popen(
+        _render_worker_argv(path),
+        shell=False,
+        start_new_session=True,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        bufsize=0,
+    )
+    assert process.stdout is not None
+    reader = _TimedPipeReader(process.stdout)
+    total_bytes = 0
+    try:
+        metadata = _read_render_header(reader, process, 1)
+        page_count = metadata.get("page_count")
+        if not isinstance(page_count, int) or page_count < 1:
+            raise OcrDependencyError("PDF render failed: no pages")
+        if page_count > OCR_MAX_PDF_PAGES:
+            raise OcrDependencyError(
+                f"PDF page count {page_count} exceeds configured limit {OCR_MAX_PDF_PAGES}"
+            )
+        for page_number in range(1, page_count + 1):
+            deadline = time.monotonic() + OCR_PAGE_TIMEOUT_SEC
+            header = _read_render_header(reader, process, page_number)
+            length = header.get("length")
+            remaining_bytes = OCR_MAX_TEMP_BYTES - total_bytes
+            if (
+                header.get("type") != "page"
+                or header.get("page_number") != page_number
+                or not isinstance(length, int)
+                or isinstance(length, bool)
+                or length < 1
+            ):
+                raise OcrDependencyError("PDF renderer returned an invalid page frame")
+            if length > remaining_bytes:
+                raise OcrDependencyError(
+                    "PDF rendered bytes exceed configured temporary byte limit"
+                )
+            content = reader.read_exact(length, deadline)
+            if content is None:
+                if reader.eof:
+                    raise OcrDependencyError(
+                        f"PDF page {page_number} render failed: {_renderer_error(process)}"
+                    )
+                raise TimeoutError(f"PDF page {page_number} render timed out")
+            total_bytes += length
+            if total_bytes > OCR_MAX_TEMP_BYTES:
+                raise OcrDependencyError("PDF rendered bytes exceed configured temporary byte limit")
+            yield {"page_number": page_number, "mime_type": "image/png", "content": content}
+        returncode = process.wait(timeout=5)
+        if returncode != 0:
+            raise OcrDependencyError(f"PDF render failed: {_renderer_error(process)}")
+    except TimeoutError as exc:
+        raise OcrDependencyError(str(exc)) from exc
+    finally:
+        if process.poll() is None:
+            _terminate_render_process(process)
+        if process.stdout is not None:
+            process.stdout.close()
+        if process.stderr is not None:
+            process.stderr.close()
+
+
+def _iter_pdf_pages(path: Path):
+    """Compatibility seam allowing tests/callers to replace the page iterator."""
+    return iter(_render_pdf_pages(path))
+
+
+def _validate_image_resource_limits(path: Path, content: bytes) -> None:
+    """Reject malformed or oversized images before base64/network expansion."""
+    try:
+        from PIL import Image
+    except ImportError as exc:
+        raise OcrDependencyError("image dimension validation requires Pillow") from exc
+
+    expected_formats = {
+        ".bmp": {"BMP"},
+        ".jpeg": {"JPEG"},
+        ".jpg": {"JPEG"},
+        ".png": {"PNG"},
+        ".tif": {"TIFF"},
+        ".tiff": {"TIFF"},
+        ".webp": {"WEBP"},
+    }
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            with Image.open(BytesIO(content)) as image:
+                width, height = image.size
+                image_format = image.format
+                if width <= 0 or height <= 0:
+                    raise ValueError("image parser returned invalid dimensions")
+                if image_format not in expected_formats.get(path.suffix.lower(), set()):
+                    raise ValueError("image content does not match its file extension")
+                pixels = width * height
+                if pixels > OCR_MAX_PAGE_PIXELS:
+                    raise OcrDependencyError("image exceeds configured pixel limit")
+                image.verify()
+    except OcrDependencyError:
+        raise
+    except Exception as exc:
+        raise OcrDependencyError(f"image dimension validation failed: {exc}") from exc
+
+
+def _read_image_with_resource_limits(path: Path) -> bytes:
+    """Stat-gate an image before allocation, then close TOCTOU and pixel checks."""
+    try:
+        size = path.stat().st_size
+    except OSError as exc:
+        raise OcrDependencyError(f"image stat failed: {exc}") from exc
+    if size < 1 or size > OCR_MAX_IMAGE_BYTES:
+        raise OcrDependencyError("image exceeds configured image byte limit")
+    try:
+        content = path.read_bytes()
+    except OSError as exc:
+        raise OcrDependencyError(f"image read failed: {exc}") from exc
+    if len(content) < 1 or len(content) > OCR_MAX_IMAGE_BYTES:
+        raise OcrDependencyError("image exceeds configured image byte limit")
+    _validate_image_resource_limits(path, content)
+    return content
+
+
+def _recognize_tesseract_page(
+    content: bytes, *, page_number: int, mime_type: str
+) -> str:
+    """Run bounded local Tesseract for one already-rendered image page."""
+    _ = mime_type
+    executable = shutil.which("tesseract")
+    if executable is None:
+        raise OcrDependencyError("Tesseract command is not installed")
+    argv = [executable, "stdin", "stdout", "-l", "chi_sim+eng", "--oem", "1", "--psm", "3"]
+    try:
+        completed = subprocess.run(
+            argv,
+            input=content,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            timeout=OCR_PAGE_TIMEOUT_SEC,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise OcrDependencyError(f"Tesseract failed on page {page_number}: {exc}") from exc
+    if completed.returncode != 0:
+        detail = completed.stderr.decode("utf-8", "replace") if isinstance(completed.stderr, bytes) else str(completed.stderr)
+        raise OcrDependencyError(f"Tesseract failed on page {page_number}: {detail[-500:]}")
+    if completed.stdout is None:
+        output = ""
+    elif isinstance(completed.stdout, bytes):
+        output = completed.stdout.decode("utf-8", "replace")
+    else:
+        output = str(completed.stdout)
+    text = output.strip()[:OCR_MAX_TEXT_CHARS_PER_PAGE]
+    if not text:
+        raise OcrDependencyError(f"Tesseract returned no text on page {page_number}")
+    return text
 
 
 def _call_openai_compatible_vlm(*, data_url: str, prompt: str) -> str:
+    """Call the remote VLM while preserving the OCR fallback error boundary.
+
+    Recoverable transport, protocol, decoding, and response-shape failures are
+    normalized to ``OcrDependencyError``. Resource and cancellation errors are
+    intentionally allowed to propagate instead of being disguised as fallback.
+    """
     body = {
         "model": OCR_VL_MODEL_NAME,
         "messages": [
@@ -194,25 +455,36 @@ def _call_openai_compatible_vlm(*, data_url: str, prompt: str) -> str:
     )
     try:
         with urllib.request.urlopen(
-            request, timeout=OCR_VL_TIMEOUT, context=_SSL_CONTEXT
+            request, timeout=min(OCR_VL_TIMEOUT, OCR_PAGE_TIMEOUT_SEC), context=_SSL_CONTEXT
         ) as response:
             payload = json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         detail = f"HTTP Error {exc.code}: {exc.reason}"
         try:
             response_body = exc.read().decode("utf-8", errors="replace").strip()
-        except Exception:
+        except (OSError, UnicodeDecodeError, http.client.HTTPException):
             response_body = ""
         if response_body:
             detail = f"{detail}；响应：{response_body[:1000]}"
         raise OcrDependencyError(f"OCR VLM 远端调用失败：{detail}") from exc
-    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+    except (
+        OSError,
+        urllib.error.URLError,
+        TimeoutError,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+        http.client.HTTPException,
+        ssl.SSLError,
+    ) as exc:
         raise OcrDependencyError(f"OCR VLM 远端调用失败：{exc}") from exc
 
     try:
-        return payload["choices"][0]["message"]["content"]
+        content = payload["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError) as exc:
         raise OcrDependencyError(f"OCR VLM 返回结构异常：{payload!r}") from exc
+    if not isinstance(content, str) or not content.strip():
+        raise OcrDependencyError(f"OCR VLM 返回结构异常：{payload!r}")
+    return content
 
 
 def _recognize_via_openai_compatible(
@@ -220,6 +492,7 @@ def _recognize_via_openai_compatible(
     *,
     purpose: str | None = None,
     on_page: Callable[[int, dict], None] | None = None,
+    content: bytes | None = None,
 ) -> dict:
     """LiteLLM/OpenAI-compatible fallback：让已部署 PaddleOCR-VL 读取图片页面。
 
@@ -227,9 +500,8 @@ def _recognize_via_openai_compatible(
         path: 待识别文件路径（PDF 或图片）。
         purpose: 场景化识别目的，追加进 prompt。
         on_page: 可选页级完成回调 ``(page_no, {"markdown": str})``。识别循环本就在
-            ``FITZ_LOCK``/``PADDLE_LOCK`` 之外（``_render_pdf_pages`` 已在其内部完成渲染并
-            释放锁后才返回），故每页识别完成即可**直接触发**，无需 buffer-then-fire（D9 T1）。
-            单图片文件无页概念，不触发——由调用方退化为文件级单元。
+            ``FITZ_LOCK``/``PADDLE_LOCK`` 之外（``_render_pdf_pages`` 每页物化后先释放锁再
+            yield），故每页识别完成即可直接触发。图片按单页触发一次。
     """
     if not OCR_VL_SERVER_URL or not OCR_VL_MODEL_NAME:
         raise OcrDependencyError(
@@ -240,29 +512,91 @@ def _recognize_via_openai_compatible(
     if purpose:
         # 场景化识别目的（如评标：完整还原评分标准/扣分细则/废标条款表格）——追加在通用提取指令后。
         prompt = f"{prompt}\n{purpose}"
+    degraded = False
     if path.suffix.lower() == ".pdf":
         pages = []
-        for page in _render_pdf_pages(path):
-            markdown = _call_openai_compatible_vlm(
-                data_url=_image_data_url(page["content"], page["mime_type"]),
-                prompt=f"{prompt}\nThis image is page {page['page_number']} of the PDF.",
-            )
-            pages.append({"markdown": markdown, "layout": [], "page_number": page["page_number"]})
-            if on_page is not None:
-                on_page(page["page_number"], {"markdown": markdown})
+        use_tesseract = False
+        page_iterator = _iter_pdf_pages(path)
+        try:
+            for page in page_iterator:
+                if use_tesseract:
+                    markdown = _recognize_tesseract_page(
+                        page["content"],
+                        page_number=page["page_number"],
+                        mime_type=page["mime_type"],
+                    )
+                else:
+                    try:
+                        markdown = _call_openai_compatible_vlm(
+                            data_url=_image_data_url(page["content"], page["mime_type"]),
+                            prompt=(
+                                f"{prompt}\nThis image is page {page['page_number']} of the PDF."
+                            ),
+                        )
+                    except OcrDependencyError as vlm_error:
+                        use_tesseract = True
+                        degraded = True
+                        try:
+                            markdown = _recognize_tesseract_page(
+                                page["content"],
+                                page_number=page["page_number"],
+                                mime_type=page["mime_type"],
+                            )
+                        except OcrDependencyError as fallback_error:
+                            raise OcrDependencyError(
+                                f"{vlm_error}; Tesseract fallback failed: {fallback_error}"
+                            ) from fallback_error
+                markdown = markdown[:OCR_MAX_TEXT_CHARS_PER_PAGE]
+                payload = {
+                    "markdown": markdown,
+                    "layout": [],
+                    "page_number": page["page_number"],
+                }
+                if use_tesseract:
+                    payload.update(
+                        {"engine": "tesseract", "degraded": True, "clarity": "unknown"}
+                    )
+                pages.append(payload)
+                if on_page is not None:
+                    on_page(page["page_number"], payload)
+        finally:
+            close_iterator = getattr(page_iterator, "close", None)
+            if callable(close_iterator):
+                close_iterator()
     else:
-        markdown = _call_openai_compatible_vlm(
-            data_url=_image_data_url(path.read_bytes(), _mime_type(path)),
-            prompt=prompt,
-        )
-        pages = [{"markdown": markdown, "layout": []}]
+        if content is None:
+            content = _read_image_with_resource_limits(path)
+        try:
+            markdown = _call_openai_compatible_vlm(
+                data_url=_image_data_url(content, _mime_type(path)),
+                prompt=prompt,
+            )
+        except OcrDependencyError as vlm_error:
+            degraded = True
+            try:
+                markdown = _recognize_tesseract_page(
+                    content, page_number=1, mime_type=_mime_type(path)
+                )
+            except OcrDependencyError as fallback_error:
+                raise OcrDependencyError(
+                    f"{vlm_error}; Tesseract fallback failed: {fallback_error}"
+                ) from fallback_error
+        markdown = markdown[:OCR_MAX_TEXT_CHARS_PER_PAGE]
+        pages = [{"markdown": markdown, "layout": [], "page_number": 1}]
+        if degraded:
+            pages[0].update({"engine": "tesseract", "degraded": True, "clarity": "unknown"})
+        if on_page is not None:
+            on_page(1, pages[0])
 
-    return {
+    result = {
         "kind": "ocr",
         "pipeline_version": OCR_VL_PIPELINE_VERSION,
-        "engine": "openai-compatible-vlm",
+        "engine": "tesseract" if degraded else "openai-compatible-vlm",
         "pages": pages,
     }
+    if degraded:
+        result.update({"degraded": True, "clarity": "unknown"})
+    return result
 
 
 def _page_confidence(layout: list) -> float | None:
@@ -323,7 +657,12 @@ def _recognize_via_paddle_pipeline(
 
 
 def _post_multipart(
-    url: str, *, fields: dict[str, str], file_path: Path, headers: dict[str, str]
+    url: str,
+    *,
+    fields: dict[str, str],
+    file_path: Path,
+    headers: dict[str, str],
+    file_content: bytes | None = None,
 ) -> dict:
     """urllib 手搓 multipart/form-data 上传（项目不装 requests）。返回解析后的 JSON。"""
     boundary = "----ocrcloud" + base64.urlsafe_b64encode(os.urandom(12)).decode("ascii")
@@ -338,7 +677,7 @@ def _post_multipart(
         f'Content-Disposition: form-data; name="file"; filename="{safe_name}"\r\n'.encode()
     )
     parts.append(b"Content-Type: application/octet-stream\r\n\r\n")
-    parts.append(file_path.read_bytes())
+    parts.append(file_path.read_bytes() if file_content is None else file_content)
     parts.append(f"\r\n--{boundary}--\r\n".encode())
     request = urllib.request.Request(
         url,
@@ -349,7 +688,7 @@ def _post_multipart(
         return json.loads(response.read().decode("utf-8"))
 
 
-def _cloud_submit_job(path: Path) -> str:
+def _cloud_submit_job(path: Path, *, content: bytes | None = None) -> str:
     """上传文件建 OCR job（Local File Mode）→ 返回 jobId。"""
     optional_payload = {
         "useDocOrientationClassify": False,
@@ -361,6 +700,7 @@ def _cloud_submit_job(path: Path) -> str:
         fields={"model": OCR_VL_MODEL_NAME or "", "optionalPayload": json.dumps(optional_payload)},
         file_path=path,
         headers={"Authorization": f"Bearer {OCR_VL_API_KEY}"},
+        file_content=content,
     )
     try:
         return payload["data"]["jobId"]
@@ -419,7 +759,9 @@ def _parse_cloud_jsonl(jsonl_text: str) -> list[dict]:
     return pages
 
 
-def _recognize_via_paddle_cloud(path: Path, *, purpose: str | None = None) -> dict:
+def _recognize_via_paddle_cloud(
+    path: Path, *, purpose: str | None = None, content: bytes | None = None
+) -> dict:
     """线上 PaddleOCR-VL 云服务（aistudio job API）：建 job → 轮询 → 取 jsonl。
 
     协议与 OpenAI 兼容路径完全不同（异步 job-poll）。服务端切页+版面，**无需本地渲染/本地 paddleocr**。
@@ -432,7 +774,7 @@ def _recognize_via_paddle_cloud(path: Path, *, purpose: str | None = None) -> di
     if not OCR_VL_SERVER_URL or not OCR_VL_API_KEY:
         raise OcrDependencyError("OCR_CLOUD=1 但 OCR_VL_SERVER_URL / OCR_VL_API_KEY 未配置")
     try:
-        job_id = _cloud_submit_job(path)
+        job_id = _cloud_submit_job(path, content=content)
         jsonl_url = _cloud_poll_until_done(job_id)
         request = urllib.request.Request(jsonl_url)
         with urllib.request.urlopen(
@@ -510,9 +852,24 @@ def recognize(
     该路径粒度为文件级单元，由调用方（``server.ocr.pipeline``）在拿到整份结果后退化为
     一次文件级事件。
     """
+    validated_content = None
+    if path.suffix.lower() in _IMAGE_MIME_TYPES:
+        validated_content = _read_image_with_resource_limits(path)
+
     if OCR_CLOUD:  # 显式开关优先：=1 走线上云服务（job-poll），与 litellm/本地解耦
+        if validated_content is not None:
+            return _recognize_via_paddle_cloud(
+                path, purpose=purpose, content=validated_content
+            )
         return _recognize_via_paddle_cloud(path, purpose=purpose)
     if OCR_VL_SERVER_URL and not OCR_VL_USE_PADDLE_PIPELINE:
+        if validated_content is not None:
+            return _recognize_via_openai_compatible(
+                path,
+                purpose=purpose,
+                on_page=on_page,
+                content=validated_content,
+            )
         return _recognize_via_openai_compatible(path, purpose=purpose, on_page=on_page)
     return _recognize_via_paddle_pipeline(path, purpose=purpose, on_page=on_page)
 

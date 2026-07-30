@@ -34,18 +34,35 @@ RUN pip install \
       "uvicorn==0.42.0" \
       "openpyxl==3.1.5" \
       "python-docx==1.2.0" \
+      "xlrd==2.0.2" \
+      "pyxlsb==1.0.10" \
+      "python-pptx==1.0.2" \
+      "Pillow==12.3.0" \
       "pymupdf==1.27.2.3" \
       "pypdf==6.14.2" \
+      "pdfplumber==0.11.10" \
+      "paddlepaddle==3.2.2" \
+      "paddleocr[doc-parser]==3.7.0" \
+      "paddlex==3.7.2" \
       "certifi==2026.2.25"
 
 RUN if [ "$INSTALL_OS_DEPS" = "1" ]; then \
       apt-get update \
       && apt-get install -y --no-install-recommends \
         gosu \
+        antiword \
         catdoc \
+        fonts-liberation2 \
+        fonts-noto-cjk \
         libgl1 \
         libglib2.0-0 \
         libgomp1 \
+        libreoffice-calc \
+        libreoffice-impress \
+        libreoffice-writer \
+        tesseract-ocr \
+        tesseract-ocr-chi-sim \
+        tesseract-ocr-eng \
       && rm -rf /var/lib/apt/lists/*; \
     fi
 
@@ -55,13 +72,17 @@ RUN if ! getent group app >/dev/null; then groupadd --gid "${APP_GID}" app; fi \
     fi
 
 COPY --chown=app:app server ./server
+COPY --chown=app:app shared ./shared
+COPY --chown=app:app scripts/generate_document_formats.py ./scripts/generate_document_formats.py
+COPY --chown=app:app scripts/smoke_document_formats.py ./scripts/smoke_document_formats.py
+COPY --chown=app:app scripts/verify_office_macro_safety.py ./scripts/verify_office_macro_safety.py
+COPY --chown=app:app scripts/document_format_fixtures ./scripts/document_format_fixtures
 COPY --chown=app:app .claude ./.claude
 COPY --chown=app:app agent-front/dist ./agent-front/dist
-COPY --chown=app:app knowledge ./knowledge
 COPY --chown=app:app pyproject.toml README.md ./
 COPY agent-front/deploy/docker-entrypoint-agent-backend.sh ./docker-entrypoint.sh
 
-RUN mkdir -p /app/data /app/logs \
+RUN mkdir -p /app/data /app/knowledge /app/logs \
     && chown -R app:app /app /home/app \
     && chmod +x /app/docker-entrypoint.sh
 
