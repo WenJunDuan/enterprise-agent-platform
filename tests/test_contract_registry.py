@@ -334,6 +334,50 @@ def test_evidence_chain_extra_fields_normalized_not_rejected():
     assert ec[0]["conclusion"] == ""  # 缺失必填补空串
 
 
+@pytest.mark.parametrize(
+    "schema_name",
+    [DEFAULT_OUTPUT_SCHEMA_NAME, EXPENSE_OUTPUT_SCHEMA_NAME, TENDER_OUTPUT_SCHEMA_NAME],
+)
+def test_single_evidence_chain_object_normalized_to_one_item_list(schema_name):
+    evidence = {
+        "source": "发票文件第1页",
+        "finding": "购买方名称与报销主体一致",
+        "conclusion": "主体信息核验通过",
+    }
+
+    out = apply_schema_semantics(
+        schema_name,
+        _valid_audit_result(evidence_chain=evidence),
+    )
+
+    assert out["evidence_chain"] == [evidence]
+
+
+@pytest.mark.parametrize("invalid_chain", [None, "无证据", 42, True])
+def test_invalid_evidence_chain_value_normalized_to_empty_list(invalid_chain):
+    out = apply_schema_semantics(
+        DEFAULT_OUTPUT_SCHEMA_NAME,
+        _valid_audit_result(evidence_chain=invalid_chain),
+    )
+
+    assert out["evidence_chain"] == []
+
+
+def test_evidence_chain_normalization_does_not_relax_weight_bearing_policy_gate():
+    with pytest.raises(JSONContractError, match="must cite at least one policy_ref"):
+        apply_schema_semantics(
+            DEFAULT_OUTPUT_SCHEMA_NAME,
+            _valid_audit_result(
+                policy_refs=[],
+                evidence_chain={
+                    "source": "发票文件第1页",
+                    "finding": "票面信息完整",
+                    "conclusion": "形式核验通过",
+                },
+            ),
+        )
+
+
 @pytest.mark.parametrize("status", ["FAIL", "fail ", " Fail"])
 def test_eligibility_fail_case_insensitive_coerces(status):
     """codex R2 P2：eligibility status 大小写/空白容错（FAIL/fail /Fail 均算 fail→rejected）。"""

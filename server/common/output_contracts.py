@@ -251,11 +251,14 @@ def _normalize_evidence_chain(output: dict[str, Any]) -> None:
 
     剥模型自行追加的未知字段（rule_ref/relevance…）+ 补缺失必填（conclusion 等默认空串），防
     evidence_chain（展示元数据，**非承重**）的 additionalProperties:false / required 让整单评标契约
-    失败、反复重试至失败或拖慢。非 list / 非 dict 项安全丢弃。Side-effect: 原地改写 *output*。
+    失败、反复重试至失败或拖慢。单个 dict 包成单元素数组；其余非 list 值和 list 内非 dict 项
+    安全丢弃。Side-effect: 原地改写 *output*。
     """
     chain = output.get("evidence_chain")
-    if not isinstance(chain, list):
-        return
+    if isinstance(chain, dict):
+        chain = [chain]
+    elif not isinstance(chain, list):
+        chain = []
     output["evidence_chain"] = [
         {
             "source": str(item.get("source") or ""),
