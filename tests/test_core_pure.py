@@ -481,7 +481,7 @@ class TestValidateAuditSchema:
             )
 
     def test_risk_dimensions_invalid_items_filtered(self):
-        """非法 risk_dimensions 条目被清除，但不抛出异常（可选字段）。"""
+        """共享契约继续清除非法 risk_dimensions 条目，不影响其他业务域。"""
         d = self._ok(
             {
                 "risk_dimensions": [
@@ -497,7 +497,7 @@ class TestValidateAuditSchema:
         assert kept == ["invoice"]
 
     def test_risk_dimensions_non_list_popped(self):
-        """非 list 的 risk_dimensions 被 pop 掉，不抛出异常。"""
+        """共享契约收到非 list 维度时清除，不让可选元数据拖垮其他域。"""
         d = self._ok({"risk_dimensions": {"anomaly": 5}})
         validate_structured_output_semantics(DEFAULT_OUTPUT_SCHEMA_NAME, d)
         assert "risk_dimensions" not in d

@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from server.audit.direct import DirectTransportError, run_direct_audit
+from server.audit.output import EXPENSE_OUTPUT_SCHEMA_NAME
 from server.common.domain_profile import (
     DomainProfile,
     assemble_domain_prompt,
@@ -22,7 +23,6 @@ from server.common.domain_profile import (
     resolve_case_dir as _assemble_resolve_case_dir,
 )
 from server.core import (
-    DEFAULT_OUTPUT_SCHEMA_NAME,
     AgentRunMeta,
     StructuredJSON,
     run_agent_json,
@@ -69,12 +69,13 @@ AUDIT_INSTRUCTIONS = """你是企业报销审核员。下方已提供本案的�
 输出：
 - 决策只用 `verdict`（approved / rejected / manual_review）；不要输出 `result` / `conclusion`（服务端派生）。
 - `reasons` 为简短中文字符串数组（每条一句话，**不要嵌套对象**）；`policy_refs` 为规则 ID 字符串数组；`evidence_chain` 各字段用中文。
+- `risk_dimensions` 必须完整包含 invoice / amount / approval / budget / anomaly 五项，每项格式为 `{"name": "维度名", "score": 整数}`，`score` 取 0-10；不得缺项、增加其他维度或根据 `risk_score` 机械拆分。
 - **措辞规范**（`explanation` / `reasons` / `evidence_chain` 通用，写得像财务 / 审计意见，平实克制）：
   - 禁用夸张或口语词（硬伤、铁证、实锤、妥妥、铁定、坐实、必然是 等），改用中性表述：存在、疑似、不满足、缺少、与……不一致。
   - 不堆砌技术黑话（如「Unix 纪元」「系统默认值占位符」），字段异常直接描述现象即可，例「日期为 1970-01-01，疑似默认值或占位值」。
   - 不加自我点评式括注（如「（典型占位数据）」「（非真实人员）」）；事实写进 `finding`，定性交给 `verdict` 与 `reasons`，同一问题只说一次，不连套多个标签。
   - 定性留有余地：除非证据确凿且规则支持，否则用「疑似 / 需人工核实」，不替调查人员下「造假 / 伪造」的终局结论。
-- **输出纪律（严格遵守）**：分析在内部完成（如需思考，写在 `<think>...</think>` 内）；最终回复**只能是一个 JSON 对象**，其前后不得有任何分析、前言、说明或重复内容；所有文本字段一律用**中文**，不要中英文混杂。该 JSON 对象必须包含 `verdict` / `explanation` / `reasons` / `policy_refs` / `risk_score` / `evidence_chain` 六个字段，一个都不能少；`explanation` 为**必填且非空**字段，不论走常规审核还是数据真实性核验分支都必须填写，禁止省略。
+- **输出纪律（严格遵守）**：分析在内部完成（如需思考，写在 `<think>...</think>` 内）；最终回复**只能是一个 JSON 对象**，其前后不得有任何分析、前言、说明或重复内容；所有文本字段一律用**中文**，不要中英文混杂。该 JSON 对象必须包含 `verdict` / `explanation` / `reasons` / `policy_refs` / `risk_score` / `risk_dimensions` / `evidence_chain` 七个字段，一个都不能少；`explanation` 为**必填且非空**字段，不论走常规审核还是数据真实性核验分支都必须填写，禁止省略。
 - **JSON 合法性（极重要，违反会导致解析失败）**：字符串值内部引用人名 / 实体 / 字段值 / 票号时，**一律使用中文引号「」或『』**，**严禁在字符串值里使用半角双引号 `"`**（它会提前闭合字符串、破坏 JSON）；确需半角双引号时必须转义为 `\"`。例：写 `"申请人为「张三」"`，不要写 `"申请人为"张三""`。
 """
 
@@ -82,7 +83,7 @@ AUDIT_INSTRUCTIONS = """你是企业报销审核员。下方已提供本案的�
 # 兜底文案：无材料 / 无规则时仍要让模型走 manual_review，而非脑补。
 CASE_MISSING_FALLBACK = "（未找到本案材料，请据此输出 manual_review）"
 RULES_MISSING_FALLBACK = "（本地规则缺失，无适用规则时输出 manual_review / rule_gap）"
-RESULT_CONTRACT = "common/audit-result.schema.json"
+RESULT_CONTRACT = EXPENSE_OUTPUT_SCHEMA_NAME
 
 
 def _expense_profile() -> DomainProfile:
@@ -167,7 +168,7 @@ async def run_inline_directory_audit(
                 prompt,
                 request_id=request_id,
                 tenant=tenant,
-                schema_name=DEFAULT_OUTPUT_SCHEMA_NAME,
+                schema_name=EXPENSE_OUTPUT_SCHEMA_NAME,
                 contract_max_retry=settings.contract_max_retry,
                 project_id=project_id,
                 archive_to_results=archive_to_results,
@@ -212,7 +213,7 @@ async def _run_cli_directory_audit(
         try:
             return await run_agent_json(
                 prompt,
-                schema_name=DEFAULT_OUTPUT_SCHEMA_NAME,
+                schema_name=EXPENSE_OUTPUT_SCHEMA_NAME,
                 request_id=request_id,
                 tenant=tenant,
                 structured=settings.structured_output,

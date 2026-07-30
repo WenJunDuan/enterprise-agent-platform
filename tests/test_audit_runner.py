@@ -168,6 +168,17 @@ class TestBuildInlineAuditPrompt:
         prompt = build_inline_audit_prompt("no/such/dir")
         assert AUDIT_INSTRUCTIONS in prompt
 
+    def test_requires_all_five_risk_dimensions(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("server.audit.runner.PROJECT_ROOT", tmp_path)
+        monkeypatch.setattr("server.audit.runner.EXPENSE_RULES_DIR", tmp_path / "no-rules")
+
+        prompt = build_inline_audit_prompt("no/such/dir")
+
+        assert "risk_dimensions" in prompt
+        assert "invoice / amount / approval / budget / anomaly" in prompt
+        assert "五项" in prompt
+        assert "0-10" in prompt
+
     def test_missing_case_shows_placeholder(self, tmp_path, monkeypatch):
         monkeypatch.setattr("server.audit.runner.PROJECT_ROOT", tmp_path)
         monkeypatch.setattr("server.audit.runner.EXPENSE_RULES_DIR", tmp_path / "no-rules")
