@@ -1,0 +1,51 @@
+sprint_slug: "2026-07-30-demo-full-doc-ocr"
+created: "2026-07-30"
+tasks:
+  - id: T1
+    title: "先写格式矩阵、Office 转换、Tesseract 与 criteria null 的失败测试"
+    design_ref: "design.md AC1-AC6"
+    status: in_progress
+    evidence_tool_use_ids: []
+    files_changed: []
+    completed_at: ""
+    blocked_by: ""
+  - id: T2
+    title: "实现 native 多格式、Office 转 PDF 与 OCR 回退"
+    design_ref: "design.md KD1-KD3"
+    status: pending
+    evidence_tool_use_ids: []
+    files_changed: []
+    completed_at: ""
+    blocked_by: "T1"
+  - id: T3
+    title: "修复 criteria manual/null 后端与前端语义"
+    design_ref: "design.md KD4"
+    status: pending
+    evidence_tool_use_ids: []
+    files_changed: []
+    completed_at: ""
+    blocked_by: "T1"
+  - id: T4
+    title: "补齐完整 ARM64 后端镜像依赖"
+    design_ref: "design.md KD5"
+    status: pending
+    evidence_tool_use_ids: []
+    files_changed: []
+    completed_at: ""
+    blocked_by: "T2,T3"
+  - id: T5
+    title: "全量测试、交叉审查、polish 与架构文档"
+    design_ref: "design.md AC7"
+    status: pending
+    evidence_tool_use_ids: []
+    files_changed: []
+    completed_at: ""
+    blocked_by: "T2,T3,T4"
+  - id: T6
+    title: "demo 备份、同步、双镜像构建部署、格式验收、导出与清理"
+    design_ref: "design.md KD6, AC8-AC10"
+    status: pending
+    evidence_tool_use_ids: []
+    files_changed: []
+    completed_at: ""
+    blocked_by: "T5"
