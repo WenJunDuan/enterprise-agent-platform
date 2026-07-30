@@ -22,7 +22,8 @@ _CACHE_DIR = DATA_ROOT / "ocr-cache"
 # v2：混合 PDF 子集 OCR 回填（扫描页内容进 blocks）。旧 v1 对混合 PDF 缓存的是纯 native 产物
 # （扫描页空白），与新键不同的 result——若不 bump，同内容文件命中旧缓存会绕过子集 OCR。
 # v3：文档分诊/老 Word 读取路径修复。旧缓存可能把可直读的 .doc 固化成 manual，必须整体失效。
-_CACHE_VERSION = "v3"
+# v4：后端镜像补齐 catdoc。v3 可能已经缓存了无转换器时的 UTF-16 二进制噪声，不能复用。
+_CACHE_VERSION = "v4"
 
 
 def _engine_fingerprint() -> str:

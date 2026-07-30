@@ -36,6 +36,16 @@ def _tender_slim_context_enabled() -> bool:
     """Return True when the opt-in tender context slimming path is enabled."""
     return os.getenv("TENDER_SLIM_CONTEXT", "0").lower() in {"1", "true", "yes"}
 
+
+_EXTRACTION_OUTPUT_GUARD = (
+    "=== 服务端输出约束（最高优先级）===\n"
+    "criteria.schema.json 和 tender-info.schema.json 已由服务端预加载；禁止调用 Read、Glob 或任何工具。"
+    "请立即完成抽取。\n"
+    "只输出一个合法 JSON 对象，首字符必须是 {，末字符必须是 }，不要输出分析、Markdown 围栏、"
+    "<think>、<tool_call> 或英文散文。字符串内的半角双引号必须转义或改用中文引号。"
+)
+
+
 # TENDER_OCR_PURPOSE 挪家 server/tender/runner.py（D1 T2 方案 i 接缝）：评标 OCR 与本模块的上传
 # 预热 OCR 共用同一目的字符串，evaluation 核心下沉后常量随之下沉，本模块改 import 复用（routes→
 # features 合法方向），消除原先两处重复的语义未变。
@@ -198,6 +208,8 @@ async def extract_project_doc_info(
     context = (
         "=== 招标文件 OCR 底稿（确定性预处理，优先用此文本，无需再 Read 文件）===\n"
         + extraction_text
+        + "\n\n"
+        + _EXTRACTION_OUTPUT_GUARD
     )
     try:
         payload, _meta = await run_command_json(

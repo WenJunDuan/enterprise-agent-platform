@@ -637,6 +637,8 @@ def test_extract_project_doc_info_slims_initial_ocr_context_with_budget(monkeypa
     assert "资格审查和符合性审查要求" in context
     assert "废标情形和否决投标条款" in context
     assert "无关正文" not in context
+    assert "禁止调用 Read、Glob 或任何工具" in context
+    assert "只输出一个合法 JSON 对象" in context
 
     row = get_project_doc(pid, tenant)
     assert row is not None
@@ -669,7 +671,10 @@ def test_extract_project_doc_info_keeps_small_unstructured_ocr_behavior(monkeypa
 
     asyncio.run(tender_module.extract_project_doc_info(pid, "/fake/path", ocr_text, tenant))
 
-    assert calls["context"] == "=== 招标文件 OCR 底稿（确定性预处理，优先用此文本，无需再 Read 文件）===\n" + ocr_text
+    assert calls["context"].startswith(
+        "=== 招标文件 OCR 底稿（确定性预处理，优先用此文本，无需再 Read 文件）===\n" + ocr_text
+    )
+    assert "禁止调用 Read、Glob 或任何工具" in calls["context"]
     row = get_project_doc(pid, tenant)
     assert row is not None
     assert row["criteria_status"] == "ready"
