@@ -170,7 +170,8 @@ open http://127.0.0.1:15173/contracts/tender-review
 | `AUDIT_LEAN_CONTEXT` | 1 | =1 不加载 .claude/settings(含 hooks) | hook 生效需设 0 |
 | `AUDIT_WRITE_VALIDATION_ENABLED` | 关 | check-before-write 写入校验 hook | 见 hook 注释，需 lean=0 + 模型经 Write 写结果 |
 | `SECOND_REVIEW_ENABLED` | 关 | 二次 SDK 复核 | 耗时翻倍，慎开 |
-| `CLAUDE_CODE_MAX_OUTPUT_TOKENS` | CLI 默认 64000 | CLI 请求的最大输出 token | **本地 65536 上下文模型必须压低（如 16000）**，否则撞 400；大上下文云模型可留默认 |
+| `MODEL_PROFILES_JSON` | 未设置 | 按模型名配置 `context_window` / `max_output_tokens` | 切换 `MODEL_NAME` 或 `TENDER_EVAL_MODEL` 时同步选择对应条目 |
+| `CLAUDE_CODE_MAX_OUTPUT_TOKENS` | 由 CLI/网关决定 | 单模型兼容配置：CLI 请求的最大输出 token | 仅在未配置模型条目时使用；本地小窗口模型按网关实际限制填写 |
 
 ## 六、OCR 文档识别（可选能力）
 

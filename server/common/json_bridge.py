@@ -171,7 +171,7 @@ async def run_agent_json(
         conversation_id, resume_session_id, fork_from_session_id, continue_recent, tenant
     )
     session_logger = SessionLogger(current_session_id, request_id, prompt, started_at, tenant)
-    warn_if_context_may_truncate(prompt)
+    warn_if_context_may_truncate(prompt, model=opts.get("model"))
     output_opts = {"output_format": build_output_format(schema_name)} if structured else {}
     options = build_options(case_root=case_root, **output_opts, **opts)
     cli_stderr: list[str] = []

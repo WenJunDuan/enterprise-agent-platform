@@ -56,6 +56,12 @@ def test_tools_matches_allowed_tools_whitelist():
     assert list(opts.allowed_tools) == expected
 
 
+def test_empty_tool_inventory_is_preserved_for_text_only_call():
+    opts = build_options(tools=[], allowed_tools=[])
+    assert opts.tools == []
+    assert opts.allowed_tools == []
+
+
 # ── 推理强度（extended thinking）：评标/审核默认 xhigh，治 deepseek 判断随机性 ──
 
 

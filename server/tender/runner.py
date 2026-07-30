@@ -23,7 +23,7 @@ from typing import Any, Callable
 
 from server.common.command_adapter import run_command_json
 from server.ocr.pipeline import ocr_preprocess_block
-from server.tender.context_slim import build_slim_tender_context
+from server.tender.context_slim import bound_tender_context, build_slim_tender_context
 from server.tender.output import TENDER_OUTPUT_SCHEMA_NAME
 from server.platform.config import get_tender_eval_settings
 from server.stores.session_store import new_conversation_id
@@ -197,6 +197,7 @@ async def run_tender_evaluation(
     先例，只读不缓存）；两者皆空则不覆盖，走全局默认——生产 tender_worker 从不设
     ``TENDER_EVAL_MODEL``，故这条 env 兜底路径零行为变更。
     """
+    resolved_model = (model or get_tender_eval_settings().model or "").strip()
     # P2 评标读层：优先取 tender_doc_store 已 ready 的 OCR 底稿（上传时预热，秒过）。
     # P1-1 修复：只读招标层 + 当前家(bid_id)投标层，不混全部投标。
     # 未 ready/缺失/无 bid_id/异常 → 回落原串行 ocr_preprocess_block（兜底，不破现有路径）。
@@ -261,10 +262,13 @@ async def run_tender_evaluation(
         except Exception:
             logger.debug("criteria context injection failed, continuing without", exc_info=True)
 
+    bounded_context = bound_tender_context(context, model=resolved_model or None) if context else None
+    if bounded_context is not None:
+        context = bounded_context
+
     # D1 T3：per-call model 覆盖——显式参数优先于 TENDER_EVAL_MODEL env，两者皆空则不传
     # model kwargs（零行为变更）。生产 tender_worker 调用从不传 model 也从不设该 env，
     # 故这条兜底路径只在 eval CLI / 部署机手动调参场景生效。
-    resolved_model = (model or get_tender_eval_settings().model or "").strip()
     model_kwargs: dict[str, str] = {"model": resolved_model} if resolved_model else {}
     # 有意的安全设计（D11 TA4）：case_root 恒绑定本案目录，因此受 ocr-page
     # PreToolUse hook 约束的 Bash 对每次评标都可用——任一评标都可能需要低清页重识别。

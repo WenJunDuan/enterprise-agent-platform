@@ -48,7 +48,10 @@ def test_flag_off_never_touches_direct_entry(monkeypatch, tmp_path):
     monkeypatch.delenv("AUDIT_DIRECT_CONNECT", raising=False)
     monkeypatch.setattr(runner, "run_direct_audit", _fail_if_called)
 
+    seen = {}
+
     async def fake_run_agent_json(prompt, *, schema_name, request_id, tenant, **opts):
+        seen.update(opts)
         return {"verdict": "manual_review"}, _fake_meta(request_id, mode="cli")
 
     monkeypatch.setattr(runner, "run_agent_json", fake_run_agent_json)
@@ -63,6 +66,8 @@ def test_flag_off_never_touches_direct_entry(monkeypatch, tmp_path):
 
     assert output == {"verdict": "manual_review"}
     assert meta.claude_session_id == "sess-test"
+    assert seen["tools"] == []
+    assert seen["allowed_tools"] == []
 
 
 def test_flag_on_dispatches_direct_entry_and_skips_cli(monkeypatch, tmp_path):

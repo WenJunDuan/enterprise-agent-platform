@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from server.tender.context_slim import (
+    bound_tender_context,
     build_preextract_tender_context,
     build_slim_tender_context,
 )
@@ -187,3 +188,41 @@ def test_preextract_context_caps_large_unstructured_ocr(monkeypatch):
     assert len(result) <= 100000 - 2000 - max(4096, 100000 // 50)
     assert result.startswith("项目名称：超大文件")
     assert "章节中间内容省略" in result
+
+
+def test_bound_tender_context_uses_selected_model_profile(monkeypatch):
+    monkeypatch.setenv(
+        "MODEL_PROFILES_JSON",
+        '{"small-model":{"context_window":100,"max_output_tokens":10}}',
+    )
+    monkeypatch.setenv("TENDER_CONTEXT_MARGIN_TOKENS", "0")
+    monkeypatch.setenv("TENDER_CONTEXT_CHARS_PER_TOKEN", "1")
+
+    result = bound_tender_context("x" * 150, model="small-model")
+
+    assert result is not None
+    assert len(result) <= 98
+    assert "章节中间内容省略" in result
+
+
+def test_bound_tender_context_preserves_tender_and_criteria_before_bid_trim(monkeypatch):
+    monkeypatch.setenv(
+        "MODEL_PROFILES_JSON",
+        '{"small-model":{"context_window":120,"max_output_tokens":10}}',
+    )
+    monkeypatch.setenv("TENDER_CONTEXT_MARGIN_TOKENS", "0")
+    monkeypatch.setenv("TENDER_CONTEXT_CHARS_PER_TOKEN", "1")
+    context = (
+        "=== OCR/直读底稿 ===\n"
+        "=== 招标文件底稿 ===\n评分标准核心条款\n"
+        "\n=== 投标文件（甲公司）底稿 ===\n"
+        + "投标证据中段\n" * 60
+        + "\n\n=== 已解析评分标准 criteria\ncriteria核心条款"
+    )
+
+    result = bound_tender_context(context, model="small-model")
+
+    assert result is not None
+    assert len(result) <= 118
+    assert "评分标准核心条款" in result
+    assert "criteria核心条款" in result
