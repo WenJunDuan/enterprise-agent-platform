@@ -10,6 +10,7 @@ FROM ${BASE_IMAGE}
 
 ARG APP_UID=1000
 ARG APP_GID=1000
+ARG INSTALL_OS_DEPS=1
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -20,29 +21,37 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR /app
 
 RUN pip install \
-      "claude-agent-sdk>=0.2.88" \
-      "fastapi>=0.115.0" \
-      "jsonschema>=4.23.0" \
-      "python-dotenv>=1.0.1" \
-      "python-multipart>=0.0.30" \
-      "typer>=0.12.0" \
-      "uvicorn>=0.30.0" \
-      "openpyxl>=3.1" \
-      "python-docx>=1.1" \
-      "pymupdf>=1.26" \
-      "pypdf>=5.0" \
-      "certifi>=2024.0"
+      "anthropic==0.117.0" \
+      "claude-agent-sdk==0.2.88" \
+      "fastapi==0.135.1" \
+      "httpx==0.28.1" \
+      "jsonschema==4.26.0" \
+      "mcp==1.28.1" \
+      "pydantic==2.12.5" \
+      "python-dotenv==1.2.2" \
+      "python-multipart==0.0.32" \
+      "typer==0.24.1" \
+      "uvicorn==0.42.0" \
+      "openpyxl==3.1.5" \
+      "python-docx==1.2.0" \
+      "pymupdf==1.27.2.3" \
+      "pypdf==6.14.2" \
+      "certifi==2026.2.25"
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-      gosu \
-      libgl1 \
-      libglib2.0-0 \
-      libgomp1 \
-    && rm -rf /var/lib/apt/lists/*
+RUN if [ "$INSTALL_OS_DEPS" = "1" ]; then \
+      apt-get update \
+      && apt-get install -y --no-install-recommends \
+        gosu \
+        libgl1 \
+        libglib2.0-0 \
+        libgomp1 \
+      && rm -rf /var/lib/apt/lists/*; \
+    fi
 
-RUN groupadd --gid "${APP_GID}" app \
-    && useradd --uid "${APP_UID}" --gid app --create-home --home-dir /home/app app
+RUN if ! getent group app >/dev/null; then groupadd --gid "${APP_GID}" app; fi \
+    && if ! id app >/dev/null 2>&1; then \
+      useradd --uid "${APP_UID}" --gid app --create-home --home-dir /home/app app; \
+    fi
 
 COPY --chown=app:app server ./server
 COPY --chown=app:app .claude ./.claude

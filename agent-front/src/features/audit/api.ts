@@ -13,7 +13,7 @@ const RAW_BASE = (import.meta.env.VITE_API_BASE as string | undefined) || '/'
 const RAW_TENANT_PIN_KEYS =
   (import.meta.env.VITE_TENANT_PIN_KEYS as string | undefined) || ''
 const BASE = RAW_BASE
-const TENANT_TOKEN_STORAGE_KEY = 'enterprise-audit:tenant-token:v1'
+const TENANT_TOKEN_STORAGE_KEY = 'enterprise-audit:tenant-token:v2'
 
 function normalizeTenantToken(token: string) {
   const trimmed = token.trim()

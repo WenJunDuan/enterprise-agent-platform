@@ -14,7 +14,10 @@
 # Runtime state — provided as mounted volumes, not baked
 logs
 data
+backups
+docker-export
 *.tar
+*.tar.gz
 *.tar.sha256
 prod
 

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from server.tender.context_slim import build_slim_tender_context
+from server.tender.context_slim import (
+    build_preextract_tender_context,
+    build_slim_tender_context,
+)
 
 
 def _body(text: str, file_name: str = "招标文件.pdf") -> str:
@@ -119,3 +122,68 @@ def test_dedupes_chunk_shared_by_multiple_criteria_queries(monkeypatch):
 
     assert result is not None
     assert result.count("共享章节内容") == 1
+
+
+def test_preextract_context_keeps_preface_and_review_related_chapters(monkeypatch):
+    monkeypatch.setenv("MODEL_CONTEXT_WINDOW", "100000")
+    monkeypatch.setenv("CLAUDE_CODE_MAX_OUTPUT_TOKENS", "2000")
+    body = _body(
+        """
+        项目名称：城市更新项目
+        招标人：某市建设局
+        预算金额：1200万元
+        【第 1 页】
+        # 第一章 项目说明
+        """
+        + "无关正文\n" * 40000
+        + """
+        # 第二章 评标办法
+        评分标准：技术方案最高得 60 分。
+        # 第三章 资格审查与符合性审查
+        资格条件和符合性审查要求。
+        # 第四章 废标与否决条款
+        废标情形和否决投标条款。
+        # 第五章 合同条款
+        不应进入首次评分标准抽取的合同内容。
+        """
+    )
+
+    result = build_preextract_tender_context(body)
+
+    assert result is not None
+    assert "项目名称：城市更新项目" in result
+    assert "招标人：某市建设局" in result
+    assert "评分标准：技术方案最高得 60 分" in result
+    assert "资格条件和符合性审查要求" in result
+    assert "废标情形和否决投标条款" in result
+    assert "不应进入首次评分标准抽取的合同内容" not in result
+    assert len(result) < len(body)
+
+
+def test_preextract_context_returns_none_for_small_or_unstructured_text(monkeypatch):
+    monkeypatch.setenv("MODEL_CONTEXT_WINDOW", "100000")
+    monkeypatch.setenv("CLAUDE_CODE_MAX_OUTPUT_TOKENS", "2000")
+
+    assert build_preextract_tender_context("项目名称：小项目\n评分标准：按总价评分。") is None
+    assert build_preextract_tender_context("### 文件: 招标文件.pdf\n普通 OCR 正文") is None
+
+
+def test_preextract_context_without_window_keeps_original_behavior(monkeypatch):
+    monkeypatch.delenv("MODEL_CONTEXT_WINDOW", raising=False)
+    monkeypatch.setenv("CLAUDE_CODE_MAX_OUTPUT_TOKENS", "2000")
+    body = _body("\n".join(["# 第一章 评标办法", "评分标准内容。"] + ["大段正文"] * 5000))
+
+    assert build_preextract_tender_context(body) is None
+
+
+def test_preextract_context_caps_large_unstructured_ocr(monkeypatch):
+    monkeypatch.setenv("MODEL_CONTEXT_WINDOW", "100000")
+    monkeypatch.setenv("CLAUDE_CODE_MAX_OUTPUT_TOKENS", "2000")
+    body = "项目名称：超大文件\n" + ("无结构 OCR 正文\n" * 50000)
+
+    result = build_preextract_tender_context(body)
+
+    assert result is not None
+    assert len(result) <= 100000 - 2000 - max(4096, 100000 // 50)
+    assert result.startswith("项目名称：超大文件")
+    assert "章节中间内容省略" in result
