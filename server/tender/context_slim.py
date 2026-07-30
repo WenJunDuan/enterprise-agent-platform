@@ -16,7 +16,7 @@ from typing import Any
 
 from server.ocr.docstructure import build_doc_structure, chapter_heading
 from server.ocr.rag import index_document, search
-from server.platform.config import resolve_model_context_window
+from server.platform.config import resolve_model_context_window, resolve_model_max_output_tokens
 
 _ELIGIBILITY_TAG = "qualification_review"
 _EVALUATION_TAG = "evaluation_method"
@@ -43,7 +43,6 @@ _PREEXTRACT_KEYWORDS = (
 _PAGE_ANCHOR_RE = re.compile(r"^\s*【第\s*\d+\s*页】")
 # OCR 文本以中文为主，按 1 字符≈1 token 估算，宁可少送也不让网关再次超窗。
 _DEFAULT_CHARS_PER_TOKEN = 1.0
-_DEFAULT_RESERVED_OUTPUT_TOKENS = 32000
 _DEFAULT_CONTEXT_MARGIN_TOKENS = 4096
 
 
@@ -65,18 +64,14 @@ def _non_negative_int_env(name: str, default: int) -> int:
     return value if value >= 0 else default
 
 
-def _preextract_char_budget() -> int | None:
+def _preextract_char_budget(model: str | None = None) -> int | None:
     """Return a conservative OCR character budget, or None when the guard is disabled."""
-    window = resolve_model_context_window()
+    window = resolve_model_context_window(model=model)
     if window <= 0:
         return None
-    raw_output = (os.getenv("CLAUDE_CODE_MAX_OUTPUT_TOKENS") or "").strip()
-    try:
-        reserved_output = int(raw_output) if raw_output else _DEFAULT_RESERVED_OUTPUT_TOKENS
-    except ValueError:
-        reserved_output = _DEFAULT_RESERVED_OUTPUT_TOKENS
-    if reserved_output < 0:
-        reserved_output = _DEFAULT_RESERVED_OUTPUT_TOKENS
+    reserved_output = resolve_model_max_output_tokens(model=model)
+    if reserved_output is None:
+        return None
     # 留出命令/系统提示和估算误差空间；窗口越大，至少保留 2% 的 token 余量。
     configured_margin = _non_negative_int_env(
         "TENDER_CONTEXT_MARGIN_TOKENS", _DEFAULT_CONTEXT_MARGIN_TOKENS
@@ -121,7 +116,7 @@ def _keyword_windows(lines: list[str]) -> list[tuple[int, int]]:
 
 
 def build_preextract_tender_context(
-    tender_text: str, *, file_name: str | None = None
+    tender_text: str, *, file_name: str | None = None, model: str | None = None
 ) -> str | None:
     """Build a bounded first-pass context before ``criteria`` exists.
 
@@ -130,7 +125,7 @@ def build_preextract_tender_context(
     For a large structured document, keep the preface plus every title-matched review section;
     section-aware fitting avoids dropping the entire scoring chapter through a blind tail cut.
     """
-    budget = _preextract_char_budget()
+    budget = _preextract_char_budget(model)
     if budget is None or len(tender_text) <= budget:
         return None
 
@@ -193,6 +188,51 @@ def build_preextract_tender_context(
         fitted.append(_trim_context_block(section, limit))
         remaining -= min(len(section), limit)
     return "\n\n".join(part for part in fitted if part)
+
+
+def bound_tender_context(context: str, *, model: str | None = None) -> str | None:
+    """Bound the complete tender prompt context using the selected model's deployment budget.
+
+    The budget is intentionally configuration-only. When the deployment does not declare both
+    the selected model's context window and output budget, this helper returns ``None`` so the
+    caller keeps the existing full-context behavior instead of silently choosing a model limit.
+    """
+    budget = _preextract_char_budget(model)
+    if budget is None or len(context) <= budget:
+        return context
+
+    tender_marker = "=== 招标文件底稿 ===\n"
+    bid_marker_start = "\n=== 投标文件（"
+    criteria_marker = "\n\n=== 已解析评分标准 criteria"
+    tender_start = context.find(tender_marker)
+    bid_start = context.find(bid_marker_start, tender_start + len(tender_marker))
+    if tender_start < 0 or bid_start < 0:
+        return _trim_context_block(context, budget)
+
+    criteria_start = context.find(criteria_marker, bid_start)
+    if criteria_start < 0:
+        criteria_start = len(context)
+    prefix = context[:tender_start]
+    tender_block = context[tender_start:bid_start]
+    bid_block = context[bid_start:criteria_start]
+    criteria_block = context[criteria_start:]
+
+    # Keep the deterministic scoring material and criteria intact whenever possible; only the
+    # current bidder's evidence is reduced to fit the remaining configured budget.
+    body_budget = budget - len(prefix) - len(criteria_block)
+    if body_budget <= 0:
+        return _trim_context_block(context, budget)
+    if len(tender_block) <= body_budget:
+        tender_budget = len(tender_block)
+    else:
+        tender_budget = (body_budget * 3) // 5
+    bid_budget = max(0, body_budget - tender_budget)
+    bounded_tender = _trim_context_block(tender_block, tender_budget)
+    bounded_bid = _trim_context_block(bid_block, bid_budget)
+    bounded = prefix + bounded_tender + bounded_bid + criteria_block
+    if len(bounded) <= budget:
+        return bounded
+    return _trim_context_block(bounded, budget)
 
 
 def _criteria_queries(criteria: dict[str, Any]) -> list[tuple[str, str, str]]:

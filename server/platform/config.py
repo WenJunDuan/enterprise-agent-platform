@@ -243,28 +243,90 @@ def resolve_second_review_model(environ: Mapping[str, str] | None = None) -> str
     return None
 
 
-def resolve_model_context_window(environ: Mapping[str, str] | None = None) -> int:
-    """Resolve the active model's declared context window (tokens) for the truncation guard.
+def _resolve_model_name(environ: Mapping[str, str], model: str | None = None) -> str:
+    if model and model.strip():
+        return model.strip()
+    for key in ("ANTHROPIC_MODEL", "MODEL_NAME"):
+        value = (environ.get(key) or "").strip()
+        if value:
+            return value
+    return ""
 
-    运维在 .env 里声明当前 ``MODEL_NAME`` 模型的上下文窗口（如 Flash 的 65536）；
-    agent_bridge 据此在注入超大标书底稿时预警截断风险（见 ``warn_if_context_may_truncate``）。
-    未配置或非正数 → 返回 0，表示 guard 关闭（opt-in，零行为变更）。不缓存：改 env 即生效。
 
-    Args:
-        environ: Environment mapping to read; defaults to ``os.environ``.
-
-    Returns:
-        Declared context window in tokens, or 0 when unset/invalid/non-positive.
-    """
-    env = environ if environ is not None else os.environ
-    raw = (env.get("MODEL_CONTEXT_WINDOW") or "").strip()
+def _model_profiles(environ: Mapping[str, str]) -> dict[str, dict[str, Any]]:
+    raw = (environ.get("MODEL_PROFILES_JSON") or "").strip()
     if not raw:
-        return 0
+        return {}
     try:
-        value = int(raw)
-    except ValueError:
-        return 0
-    return value if value > 0 else 0
+        parsed = json.loads(raw)
+    except (TypeError, json.JSONDecodeError):
+        return {}
+    if not isinstance(parsed, dict):
+        return {}
+    return {
+        str(name): value
+        for name, value in parsed.items()
+        if isinstance(value, dict)
+    }
+
+
+def _configured_positive_int(value: Any) -> int | None:
+    try:
+        parsed = int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed > 0 else None
+
+
+def _configured_non_negative_int(value: Any) -> int | None:
+    try:
+        parsed = int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed >= 0 else None
+
+
+def _resolve_model_budget(
+    field: str,
+    *,
+    environ: Mapping[str, str] | None = None,
+    model: str | None = None,
+) -> int | None:
+    env = environ if environ is not None else os.environ
+    selected_model = _resolve_model_name(env, model)
+    profile = _model_profiles(env).get(selected_model, {})
+    parser = (
+        _configured_non_negative_int
+        if field == "max_output_tokens"
+        else _configured_positive_int
+    )
+    profile_value = parser(profile.get(field))
+    if profile_value is not None:
+        return profile_value
+
+    legacy_name = {
+        "context_window": "MODEL_CONTEXT_WINDOW",
+        "max_output_tokens": "CLAUDE_CODE_MAX_OUTPUT_TOKENS",
+    }[field]
+    return parser(env.get(legacy_name))
+
+
+def resolve_model_context_window(
+    environ: Mapping[str, str] | None = None,
+    *,
+    model: str | None = None,
+) -> int:
+    """Resolve the selected model's configured context window, or ``0`` when unset."""
+    return _resolve_model_budget("context_window", environ=environ, model=model) or 0
+
+
+def resolve_model_max_output_tokens(
+    environ: Mapping[str, str] | None = None,
+    *,
+    model: str | None = None,
+) -> int | None:
+    """Resolve the selected model's configured output budget without inventing a fallback."""
+    return _resolve_model_budget("max_output_tokens", environ=environ, model=model)
 
 
 def _env_bool(name: str, default: bool = False) -> bool:

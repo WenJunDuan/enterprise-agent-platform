@@ -216,6 +216,10 @@ async def _run_cli_directory_audit(
                 request_id=request_id,
                 tenant=tenant,
                 structured=settings.structured_output,
+                # Keep the tool inventory aligned with the permission whitelist. In text mode
+                # the prompt is self-contained; exposing the SDK's default tools lets some
+                # gateways emit raw ``<tool_call>`` XML instead of the required JSON answer.
+                tools=settings.allowed_tools,
                 allowed_tools=settings.allowed_tools,
                 max_turns=settings.inline_max_turns,
                 setting_sources=[] if settings.lean_context else ["project"],

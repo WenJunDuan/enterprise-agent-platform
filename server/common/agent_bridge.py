@@ -32,6 +32,7 @@ from server.platform.config import (
     get_claude_runtime_snapshot,
     offline_guard_error,
     resolve_model_context_window,
+    resolve_model_max_output_tokens,
 )
 from server.platform.logging_setup import logging_context
 from server.platform.paths import PROJECT_ROOT, ensure_local_layout
@@ -57,9 +58,6 @@ _VALID_EFFORTS = frozenset({"low", "medium", "high", "xhigh", "max"})
 # CJK 标书底稿密集，deepseek 分词约 1.5 char/token；env MODEL_CHARS_PER_TOKEN 可调。
 # 这是安全预警而非精确 gate，取偏保守默认（宁可早报也不漏报截断风险）。
 _DEFAULT_CHARS_PER_TOKEN = 1.5
-# 预留输出 token 默认（对齐 build_options 的 CLAUDE_CODE_MAX_OUTPUT_TOKENS 兜底）。
-_DEFAULT_RESERVED_OUTPUT_TOKENS = 32000
-
 _OCR_PAGE_PREFIX = "uv run python .claude/skills/ocr-page/ocr.py"
 _OCR_PAGE_SHELL_META = frozenset(";&|$(){}<>\r\n" + chr(96))
 _OCR_PAGE_MAX_NUMBER = sys.maxsize
@@ -93,16 +91,9 @@ def _positive_float_env(name: str, default: float) -> float:
     return value if value > 0 else default
 
 
-def _reserved_output_tokens() -> int:
-    """预留给模型输出的 token 数——它同样吃上下文窗口，须计入截断预警。"""
-    raw = (os.getenv("CLAUDE_CODE_MAX_OUTPUT_TOKENS") or "").strip()
-    if not raw:
-        return _DEFAULT_RESERVED_OUTPUT_TOKENS
-    try:
-        value = int(raw)
-    except ValueError:
-        return _DEFAULT_RESERVED_OUTPUT_TOKENS
-    return value if value >= 0 else _DEFAULT_RESERVED_OUTPUT_TOKENS
+def _reserved_output_tokens(model: str | None = None) -> int | None:
+    """Read the configured output budget for the selected model, if supplied."""
+    return resolve_model_max_output_tokens(model=model)
 
 
 def _estimate_prompt_tokens(prompt: str) -> int:
@@ -112,11 +103,10 @@ def _estimate_prompt_tokens(prompt: str) -> int:
 
 
 def warn_if_context_may_truncate(prompt: str, *, model: str | None = None) -> dict[str, Any] | None:
-    """当预估输入 token + 预留输出 token 超过声明的模型上下文窗口时，记 WARNING。
+    """当配置的输入/输出预算可能超窗时记 WARNING。
 
-    S7 截断防护：平台默认模型可切成窗口远小于 V4Pro[1M] 的 Flash，而评标会把数百页
-    标书 OCR 底稿整段内联；超窗时网关会静默截断，模型据半截证据评分却无任何告警。
-    本函数在每次 agent 调用前粗估注入体量并与 ``MODEL_CONTEXT_WINDOW`` 比对，超窗即预警。
+    S7 截断防护：评标会把数百页标书 OCR 底稿整段内联；超窗时网关会静默截断，模型据半截
+    证据评分却无任何告警。本函数只使用部署配置，不推断或写死任何模型上限。
 
     **Opt-in**：``MODEL_CONTEXT_WINDOW`` 未配置（<=0）时直接返回 None、不记日志，零行为变更。
 
@@ -127,11 +117,13 @@ def warn_if_context_may_truncate(prompt: str, *, model: str | None = None) -> di
     Returns:
         超窗时返回诊断 dict（估算/预留/窗口/模型），否则返回 None。
     """
-    window = resolve_model_context_window()
+    window = resolve_model_context_window(model=model)
     if window <= 0:
         return None
     estimated_input = _estimate_prompt_tokens(prompt)
-    reserved_output = _reserved_output_tokens()
+    reserved_output = _reserved_output_tokens(model)
+    if reserved_output is None:
+        return None
     if estimated_input + reserved_output <= window:
         return None
     model_name = model or get_claude_runtime_snapshot()["anthropic_model"]
@@ -282,9 +274,6 @@ def build_options(*, case_root: Path | None = None, **overrides: Any) -> ClaudeA
     # 内联审核会改用 setting_sources=[] 精简系统提示，放进 env 才不会丢掉长超时与降噪。
     os.environ.setdefault("API_TIMEOUT_MS", "3000000")
     os.environ.setdefault("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1")
-    # 评标大底稿（数百页标书 → 数十项 scoring + evidence_chain）输出 JSON 很长，输出 token 不足
-    # 会截断成半截 JSON 触发重试/失败。给一个稳妥兜底（.env 显式设置仍优先）。
-    os.environ.setdefault("CLAUDE_CODE_MAX_OUTPUT_TOKENS", "32000")
     runtime = get_claude_runtime_snapshot()
     # 内网硬约束：base_url 为空或指向 api.anthropic.com 时直接拒绝运行，
     # 避免 CLI 去拨公网 anthropic、在物理隔离机上拖到 ConnectionRefused/超时。
@@ -322,6 +311,13 @@ def build_options(*, case_root: Path | None = None, **overrides: Any) -> ClaudeA
     if env_effort:
         defaults["effort"] = env_effort
     defaults.update(overrides)
+    selected_model = str(defaults.get("model") or "").strip() or None
+    child_env = dict(defaults.get("env") or {})
+    configured_output = resolve_model_max_output_tokens(model=selected_model)
+    if configured_output is not None and "CLAUDE_CODE_MAX_OUTPUT_TOKENS" not in child_env:
+        child_env["CLAUDE_CODE_MAX_OUTPUT_TOKENS"] = str(configured_output)
+    if child_env:
+        defaults["env"] = child_env
     if case_root is not None:
         tools = list(defaults.get("tools") or _AGENT_TOOLS)
         if "Bash" not in tools:
@@ -401,7 +397,7 @@ async def run_agent(
         conversation_id, resume_session_id, fork_from_session_id, continue_recent, tenant
     )
     session_logger = SessionLogger(current_session_id, request_id, prompt, started_at, tenant)
-    warn_if_context_may_truncate(prompt)
+    warn_if_context_may_truncate(prompt, model=opts.get("model"))
     options = build_options(case_root=case_root, **opts)
     cli_stderr: list[str] = []
     options.stderr = cli_stderr.append

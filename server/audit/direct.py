@@ -32,16 +32,11 @@ from anthropic import (
 
 from server.common.contract import apply_schema_semantics
 from server.core import AgentRunMeta, StructuredJSON, _extract_json_object
-from server.platform.config import configure_claude_runtime_env
+from server.platform.config import configure_claude_runtime_env, resolve_model_max_output_tokens
 from server.stores.result_store import archive_result_payload
 from server.stores.session_store import new_conversation_id, utc_now
 
 logger = logging.getLogger(__name__)
-
-# 审核结论（verdict/explanation/reasons/policy_refs/evidence_chain）比表单回填小得多；
-# 直连单跳无需像 agent_bridge 的 CLAUDE_CODE_MAX_OUTPUT_TOKENS(32000) 那样为多轮
-# <think> 累积预留 buffer。4096 足够容纳审核 JSON，避免过度保守拖慢/多计费。
-MAX_TOKENS = 4096
 
 # 传输类故障（连接/鉴权/网关 5xx/超时，review round1 F2 修订）：APIConnectionError
 # 覆盖连接失败与 APITimeoutError（其子类）；APIStatusError 里只有 AuthenticationError
@@ -164,10 +159,18 @@ async def run_direct_audit(
         DirectContractError: 契约重试耗尽仍未拿到合法输出。
     """
     client, model = _build_client()
+    max_output_tokens = resolve_model_max_output_tokens(model=model)
+    if max_output_tokens is None or max_output_tokens <= 0:
+        await client.close()
+        raise DirectTransportError(
+            "AUDIT_DIRECT_CONNECT 未配置有效输出预算：请在 MODEL_PROFILES_JSON 的当前模型条目"
+            "或 CLAUDE_CODE_MAX_OUTPUT_TOKENS 中配置 max_output_tokens。"
+        )
     try:
         return await _run_contract_retry_loop(
             client,
             model,
+            max_output_tokens,
             prompt,
             request_id=request_id,
             tenant=tenant,
@@ -185,6 +188,7 @@ async def run_direct_audit(
 async def _run_contract_retry_loop(
     client: AsyncAnthropic,
     model: str,
+    max_output_tokens: int,
     prompt: str,
     *,
     request_id: str,
@@ -202,7 +206,7 @@ async def _run_contract_retry_loop(
         try:
             response = await client.messages.create(
                 model=model,
-                max_tokens=MAX_TOKENS,
+                max_tokens=max_output_tokens,
                 messages=[{"role": "user", "content": prompt}],
             )
         except APIConnectionError as exc:
