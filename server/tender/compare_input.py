@@ -150,7 +150,10 @@ def collect_compare_input(
         return None
     warnings = _apply_bidder_guardrails(bidders, criteria_version)
     price_item, price_reason = find_price_item(criteria)
-    blocked_reason = price_reason or _pool_blocked_reason(bidders, warnings)
+    # 池级原因优先于价格项原因：项目规则未定稿时权威 criteria 为空，价格项必然"找不到"，
+    # 若让 price_reason 短路就会把「可比家数不足」误报成 no_price_item（F3，正是本 sprint
+    # 要治的"封锁原因与实际不符"病症）。
+    blocked_reason = _pool_blocked_reason(bidders, warnings) or price_reason
     signature = CompareSignature(
         input_result_ids=[str(entry.pop("_request_id")) for entry in bidders],
         # 版本变了（项目规则改版）→ 旧横比结果 stale。
@@ -210,9 +213,11 @@ def _apply_bidder_guardrails(
         name = entry["claim_id"]
         if not entry["comparable"]:
             entry["exclusion_reason"] = "criteria_stale"
+            # 面向业务人员：只说"依据哪版规则"这件事，不摆内部内容 hash（F7）。
             warnings.append(
-                f"投标人「{name}」的评标依据不是当前项目规则版本"
-                f"（{criteria_version or '项目规则尚未定稿'}），已排除出横比，建议重评该家后再横比。"
+                f"投标人「{name}」的评标依据早于当前项目规则定稿"
+                f"{'（项目规则尚未定稿）' if not criteria_version else ''}，"
+                "已排除出横比，建议重评该家后再横比。"
             )
             continue
         if _bid_price_amount(entry.get("bid_price")) is None:

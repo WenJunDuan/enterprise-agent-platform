@@ -242,8 +242,23 @@ def test_get_compare_reports_in_flight_status(client, task_status, expected):
     assert body["status"] == expected
 
 
-def test_get_compare_exposes_failure_with_sanitized_detail(client):
-    """AC2：横比失败必须对前端可见，且不泄露 stack trace / 服务器路径。"""
+def test_get_compare_exposes_known_business_failure(client):
+    """AC2：已登记的业务失败原因原文可见（用户看得懂、知道下一步）。"""
+    from server.tender.compare_guard import COMPARE_TIMEOUT_REASON
+
+    project_id = _new_project(client)
+    _archive_bid(project_id, "B1", 1000.0)
+    _archive_bid(project_id, "B2", 1200.0)
+    _compare_task(project_id, "failed", error_detail=COMPARE_TIMEOUT_REASON)
+    body = client.get(f"/tender/projects/{project_id}/compare", headers=_AUTH).json()
+    assert body["status"] == "failed"
+    assert body["error_detail"] == COMPARE_TIMEOUT_REASON
+
+
+def test_get_compare_masks_unknown_internal_failure(client):
+    """F6：未登记的内部异常一律固定文案，不泄露 traceback / 路径 / SQL 细节。"""
+    from server.tender.compare_guard import GENERIC_ERROR_DETAIL
+
     project_id = _new_project(client)
     _archive_bid(project_id, "B1", 1000.0)
     _archive_bid(project_id, "B2", 1200.0)
@@ -253,12 +268,12 @@ def test_get_compare_exposes_failure_with_sanitized_detail(client):
         error_detail=(
             "Traceback (most recent call last):\n"
             '  File "/Users/dev/workspace/server/tender/compare_worker.py", line 9, in run\n'
-            "TimeoutError: 横比调用超时"
+            "sqlite3.OperationalError: no such column: foo"
         ),
     )
     body = client.get(f"/tender/projects/{project_id}/compare", headers=_AUTH).json()
     assert body["status"] == "failed"
-    assert "横比调用超时" in body["error_detail"]
+    assert body["error_detail"] == GENERIC_ERROR_DETAIL
     assert "Traceback" not in body["error_detail"]
     assert "/Users/dev" not in body["error_detail"]
 
