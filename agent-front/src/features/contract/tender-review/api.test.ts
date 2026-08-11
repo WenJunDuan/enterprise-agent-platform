@@ -5,6 +5,7 @@ import {
   deleteTenderTask,
   evaluateTenderProjectUpload,
   getTenderCompare,
+  triggerTenderCompare,
   listTenderProjects,
   retryTenderTask,
 } from './api'
@@ -178,6 +179,25 @@ describe('contract tender review api', () => {
       '招标文件.pdf',
       '投标文件.pdf',
     ])
+  })
+
+  // M1：「重新横比」入口 —— POST 打到 compare 端点并返回受理信息。
+  test('triggerTenderCompare posts to the compare endpoint', async () => {
+    globalThis.fetch = (async (input, init) => {
+      calls.push({ input, init })
+      return jsonResponse({
+        request_id: 'cmp-1',
+        status: 'accepted',
+        mode: 'compare',
+        task_status_url: '/tender/projects/project-1/compare',
+      })
+    }) as typeof fetch
+
+    const accepted = await triggerTenderCompare('project-1')
+
+    expect(calls[0]?.input).toBe('/tender/projects/project-1/compare')
+    expect(calls[0]?.init?.method).toBe('POST')
+    expect(accepted.mode).toBe('compare')
   })
 
   // KD2：GET 恒 200 带 status，前端不再有 404→null 分支（没算过是 status=none，不是"不存在"）。

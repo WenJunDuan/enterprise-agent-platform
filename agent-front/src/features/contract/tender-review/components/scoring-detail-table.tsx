@@ -93,7 +93,7 @@ function CompactScoringRows({ items }: { items: TenderScoringItem[] }) {
   return (
     <div className='overflow-x-auto'>
       <div className='min-w-[620px]'>
-        <div className='grid h-10 grid-cols-[minmax(140px,1.2fr)_56px_56px_68px_minmax(220px,1.6fr)] items-center border-b px-3 text-xs font-semibold text-muted-foreground'>
+        <div className='grid h-10 grid-cols-[minmax(140px,1.2fr)_56px_56px_112px_minmax(220px,1.6fr)] items-center border-b px-3 text-xs font-semibold text-muted-foreground'>
           <div>评标项目</div>
           <div className='text-center'>结果</div>
           <div className='text-center'>满分</div>
@@ -104,7 +104,7 @@ function CompactScoringRows({ items }: { items: TenderScoringItem[] }) {
           <div
             key={item.id}
             className={cn(
-              'grid h-[72px] grid-cols-[minmax(140px,1.2fr)_56px_56px_68px_minmax(220px,1.6fr)] items-center px-3 text-xs',
+              'grid h-[72px] grid-cols-[minmax(140px,1.2fr)_56px_56px_112px_minmax(220px,1.6fr)] items-center px-3 text-xs',
               index % 2 ? 'bg-muted/20' : ''
             )}
           >
@@ -117,7 +117,10 @@ function CompactScoringRows({ items }: { items: TenderScoringItem[] }) {
             <div className='text-center text-muted-foreground'>
               {formatMax(item.max)}
             </div>
-            <div className='text-center text-muted-foreground'>
+            <div
+              className='truncate text-center text-muted-foreground'
+              title={resolvePendingReasonLabel(item)}
+            >
               {resolvePendingReasonLabel(item)}
             </div>
             <div className='line-clamp-2 leading-5 text-muted-foreground'>
@@ -134,7 +137,7 @@ function FullScoringRows({ items }: { items: TenderScoringItem[] }) {
   return (
     <div className='overflow-x-auto'>
       <div className='min-w-[760px]'>
-        <div className='grid grid-cols-[minmax(180px,1.2fr)_80px_90px_100px_minmax(260px,1.5fr)] border-b px-3 py-2 text-xs font-semibold text-muted-foreground'>
+        <div className='grid grid-cols-[minmax(180px,1.2fr)_80px_90px_120px_minmax(260px,1.5fr)] border-b px-3 py-2 text-xs font-semibold text-muted-foreground'>
           <div>评标项目</div>
           <div className='text-center'>满分</div>
           <div className='text-center'>状态</div>
@@ -145,7 +148,7 @@ function FullScoringRows({ items }: { items: TenderScoringItem[] }) {
           <div
             key={item.id}
             className={cn(
-              'grid grid-cols-[minmax(180px,1.2fr)_80px_90px_100px_minmax(260px,1.5fr)] px-3 py-3 text-sm',
+              'grid grid-cols-[minmax(180px,1.2fr)_80px_90px_120px_minmax(260px,1.5fr)] px-3 py-3 text-sm',
               index % 2 ? 'bg-muted/20' : ''
             )}
           >
@@ -156,8 +159,12 @@ function FullScoringRows({ items }: { items: TenderScoringItem[] }) {
             <div className='text-center font-semibold'>
               {getStatusLabel(item.status)}
             </div>
-            <div className='text-center text-muted-foreground'>
-              {/* KD5：待定原因显式化（枚举→中文文案），存量无字段仍回退"待核验"。 */}
+            <div
+              className='truncate text-center text-muted-foreground'
+              title={resolvePendingReasonLabel(item)}
+            >
+              {/* KD5：待定原因显式化（枚举→中文文案），存量无字段仍回退"待核验"。
+                  列宽装不下最长文案时 truncate + title 兜底（F9）。 */}
               {resolvePendingReasonLabel(item)}
             </div>
             <div className='leading-6 text-muted-foreground'>

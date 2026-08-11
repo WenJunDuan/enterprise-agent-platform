@@ -36,6 +36,24 @@
       "type": "object",
       "additionalProperties": true,
       "properties": {
+        "criteria_ref": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["version", "source"],
+          "description": "本结论所依据的项目规则版本引用（tender 评标；KD1 横比可比性判据只看它，不看 criteria 快照）。由服务端确定性写入，模型无需产出。",
+          "properties": {
+            "version": {
+              "type": "string",
+              "minLength": 1,
+              "description": "项目权威 criteria 的内容 hash（compute-on-read）。"
+            },
+            "source": {
+              "type": "string",
+              "enum": ["project", "self_parsed"],
+              "description": "project=依据项目权威规则评的（可进横比）；self_parsed=评标时项目规则尚未定稿、本家自行解析（横比时排除并提示重评）。"
+            }
+          }
+        },
         "scoring": {
           "type": "array",
           "description": "逐评分项明细（tender 评标产出；expense 审核无此结构，不受本节约束）。",

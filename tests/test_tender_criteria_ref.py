@@ -69,6 +69,35 @@ def _fake_meta(request_id: str) -> AgentRunMeta:
     )
 
 
+def test_audit_schema_declares_criteria_ref_shape():
+    """D2：criteria_ref 是横比承重字段，形状必须进契约（不能只靠 additionalProperties 放行）。"""
+    from server.common.contract import load_output_schema
+
+    schema = load_output_schema("common/audit-result.schema.json")
+    ref = schema["properties"]["extracted_data"]["properties"]["criteria_ref"]
+    assert ref["required"] == ["version", "source"]
+    assert set(ref["properties"]["source"]["enum"]) == {"project", "self_parsed"}
+
+
+def test_audit_schema_rejects_unknown_criteria_ref_source():
+    import jsonschema
+    import pytest
+
+    from server.common.contract import load_output_schema
+
+    schema = load_output_schema("common/audit-result.schema.json")
+    payload = {
+        "claim_id": "B1", "verdict": "manual_review",
+        "manual_review_reason": "rule_gap", "explanation": "x", "reasons": [],
+        "policy_refs": [], "risk_score": 1,
+        "extracted_data": {"criteria_ref": {"version": "v1", "source": "guessed"}},
+        "evidence_chain": [], "reviewed_by": "tender-evaluator",
+        "timestamp": "2026-08-11T00:00:00+00:00",
+    }
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate(payload, schema)
+
+
 # ── compute-on-read 版本 ────────────────────────────────────────────────────────
 
 
