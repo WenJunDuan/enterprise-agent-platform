@@ -14,7 +14,15 @@ artifact 坐标系、表格挂在哪一页、超长怎么按锚切"是自成一�
 
 from __future__ import annotations
 
-from server.common.corpus import ARTIFACT_CONVERTED, ARTIFACT_ORIGINAL, page_anchor_text
+import os
+
+from server.common.corpus import (
+    ARTIFACT_CONVERTED,
+    ARTIFACT_ORIGINAL,
+    page_anchor_text,
+    split_head_tail_on_anchors,
+    text_has_page_anchor,
+)
 
 # 识别失败标记前缀：识别失败时 render_body 以此前缀打头该文件正文。
 OCR_ERROR_PREFIX = "[识别失败]"
@@ -126,3 +134,33 @@ def _render_paged_blocks(blocks: list, tables: list[dict], artifact: str) -> str
             body = f"{body}\n{table_text}" if body else table_text
         parts.append(page_anchor(page_no, artifact) + body)
     return "\n\n".join(parts)
+
+
+# R2：通用截断「从头切」是否改「首尾切」（保尾部，如合同付款节点/落款）。**默认关**——
+# expense/audit 关键字段多在头部，贸然减头部预算会回归；tender 大非 BOQ 文件需保尾可经 env 开。
+def _truncate_head_tail_enabled() -> bool:
+    return os.getenv("OCR_TRUNCATE_HEAD_TAIL", "0").lower() in {"1", "true", "yes"}
+
+
+def truncate_body(full_body: str, max_chars: int) -> str:
+    """大文件截断：默认头截（向后兼容）；OCR_TRUNCATE_HEAD_TAIL=1 则首尾截（保尾）。
+
+    KD3：首尾截的切点吸附到页锚行边界，且尾段开头**重放所属页锚**——否则尾段内容在模型视角归属
+    head 末锚（早得多的页），是"证据页码对不上"的主链路成因之一。
+
+    截断标记本身**不含页锚字样**——免破 evidence-resolution 的 parse_corpus 页索引（R1 协同）。
+    """
+    n = len(full_body)
+    if not _truncate_head_tail_enabled():
+        return full_body[:max_chars] + (
+            f"\n\n...[内容已截断：本文件共 {n} 字符，仅保留前 {max_chars}；"
+            f"尾部信息（如合同付款节点）可能丢失，相关字段请标 low_confidence / needs_review]"
+        )
+    head_n = int(max_chars * 0.7)
+    head, tail, replay = split_head_tail_on_anchors(full_body, head_n, max_chars - head_n)
+    note = "" if text_has_page_anchor(full_body) else "；本文件无页锚，按字符切"
+    marker = (
+        f"\n\n...[内容已截断：本文件共 {n} 字符，保留首 {len(head)} + 尾 {len(tail)}，"
+        f"中间省略{note}；相关字段请标 low_confidence / needs_review]\n\n"
+    )
+    return head + marker + (f"{replay}\n" if replay else "") + tail

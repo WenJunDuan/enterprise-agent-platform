@@ -22,6 +22,7 @@ from server.ocr.draft_render import (
     converted_header_note,
     page_confidence_note,
     render_body,
+    truncate_body,
 )
 from server.ocr.engine import extract_pdf_subset, recognize, recognize_seal
 from server.ocr.office_convert import convert_office_to_pdf
@@ -724,30 +725,12 @@ def file_clarity(result: dict, *, threshold: float = OCR_CLARITY_MIN_CONFIDENCE)
     return "clear"
 
 
-# R2：通用截断「从头切」是否改「首尾切」（保尾部，如合同付款节点/落款）。**默认关**——
-# expense/audit 关键字段多在头部，贸然减头部预算会回归；tender 大非 BOQ 文件需保尾可经 env 开。
-def _truncate_head_tail_enabled() -> bool:
-    return os.getenv("OCR_TRUNCATE_HEAD_TAIL", "0").lower() in {"1", "true", "yes"}
-
-
 def _truncate_body(full_body: str) -> str:
-    """大文件截断：默认头截（向后兼容）；OCR_TRUNCATE_HEAD_TAIL=1 则首尾截（保尾）。
+    """大文件截断（实现见 ``draft_render.truncate_body``，KD3 按页锚切）。
 
-    截断标记**不含 `【第N页】` 字样**——免破 evidence-resolution 的 parse_corpus 页索引（R1 协同）。
+    上限每次调用时从模块常量读——测试与灰度会 monkeypatch ``MAX_FILE_BLOCK_CHARS``。
     """
-    n = len(full_body)
-    if _truncate_head_tail_enabled():
-        head_n = int(MAX_FILE_BLOCK_CHARS * 0.7)
-        tail_n = MAX_FILE_BLOCK_CHARS - head_n
-        marker = (
-            f"\n\n...[内容已截断：本文件共 {n} 字符，保留首 {head_n} + 尾 {tail_n}，"
-            f"中间省略；相关字段请标 low_confidence / needs_review]\n\n"
-        )
-        return full_body[:head_n] + marker + full_body[-tail_n:]
-    return full_body[:MAX_FILE_BLOCK_CHARS] + (
-        f"\n\n...[内容已截断：本文件共 {n} 字符，仅保留前 {MAX_FILE_BLOCK_CHARS}；"
-        f"尾部信息（如合同付款节点）可能丢失，相关字段请标 low_confidence / needs_review]"
-    )
+    return truncate_body(full_body, MAX_FILE_BLOCK_CHARS)
 
 
 def build_extraction_block(results: list[dict]) -> str:
