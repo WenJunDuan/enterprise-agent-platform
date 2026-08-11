@@ -425,25 +425,41 @@ def existence_ratio(norm_quote: str, corpus: str) -> float:
     return found / len(grams)
 
 
+def _files_for_tier(index: CorpusIndex, tier: str) -> dict[str, dict[int, str]]:
+    """该 tier 的 file→pages 映射；tier 不可定（whole）时跨全部 tier 找。
+
+    与 ``corpus_for('whole')`` 用全量语料对称，避免 whole 恒判 page_mismatch。
+    """
+    files = index.tier_files.get(tier)
+    if files is not None:
+        return files
+    return {f: pg for t in index.tier_files.values() for f, pg in t.items()}
+
+
 def page_status(index: CorpusIndex, tier: str, page: int | None, norm_quote: str) -> str:
     """file/page 精度细化（仅当存在性已 resolved 才有意义）：
 
     - ``no_page``：source 未给页码。
     - ``confirmed``：cited page ±window 切片里逐字命中（且仅一个文件命中）。
     - ``file_ambiguous``：该页号在该 tier 多文件都命中（source 未给确切文件 → 不强判）。
+    - ``file_level``：命中的是**无页锚**文件（native word/excel 整份直读）→ 页号无从核实，
+      按文件级判定即可；**绝不因 source 写了个页号就盖章 confirmed**（H2 KD5）。
     - ``page_mismatch``：cited page 附近无此原文（但 tier 内别处有 → 仍 resolved，仅页不符）。
+
+    key=0 是"无页锚段"的哨兵，不是第 0 页——旧实现让它落进 ``abs(0 - 1) <= window`` 的窗口，
+    于是无页锚文件的臆造"第 1 页"恒判 confirmed（AC5 要消灭的正是这条）。
     """
     if page is None:
         return "no_page"
     window = _page_window()
-    files = index.tier_files.get(tier)
-    if files is None:
-        # tier 不可定 / whole 无独立 key（doclayer 只有 tender/bid）→ 跨全部 tier 找
-        # （与 corpus_for('whole') 用全量语料对称，避免 whole 恒判 page_mismatch）
-        files = {f: pg for t in index.tier_files.values() for f, pg in t.items()}
+    files = _files_for_tier(index, tier)
     hits: list[str] = []
+    file_level_hit = False
     for fname, pages in (files or {}).items():
         for p, ptext in pages.items():
+            if p == 0:
+                file_level_hit = file_level_hit or norm_quote in ptext
+                continue
             if abs(p - page) <= window and norm_quote in ptext:
                 hits.append(fname)
                 break
@@ -451,7 +467,22 @@ def page_status(index: CorpusIndex, tier: str, page: int | None, norm_quote: str
         return "confirmed"
     if len(hits) > 1:
         return "file_ambiguous"
-    return "page_mismatch"
+    return "file_level" if file_level_hit else "page_mismatch"
+
+
+def locate_quote_pages(index: CorpusIndex, tier: str, norm_quote: str) -> list[tuple[str, int]]:
+    """逐字 quote 在**带页锚**的页里出现在哪些 ``(文件, 页号)``（供页号就地纠正，H2 KD5）。"""
+    return sorted(
+        (fname, page)
+        for fname, pages in (_files_for_tier(index, tier) or {}).items()
+        for page, ptext in pages.items()
+        if page != 0 and norm_quote in ptext
+    )
+
+
+def rewrite_source_page(source: str, page: int) -> str:
+    """把出处里的页号改写成 ``page``（保留「转换稿」等 artifact 前缀与原有格式）。"""
+    return _PAGE_IN_SOURCE_RE.sub(f"第 {page} 页", source, count=1)
 
 
 # ── 出处解析 ──────────────────────────────────────────────────────────────────

@@ -29,13 +29,17 @@ import os
 from typing import Any
 
 from server.common.corpus import (
+    ARTIFACT_CONVERTED,
     CorpusIndex,
     _classify,
     existence_ratio,
+    locate_quote_pages,
     normalize_text,
     page_status,
     parse_corpus,
     parse_source,
+    rewrite_source_page,
+    source_page_kind,
 )
 
 logger = logging.getLogger(__name__)
@@ -71,6 +75,56 @@ def _min_quote_chars() -> int:
 # ── 主回查逻辑 ────────────────────────────────────────────────────────────────
 
 
+def _corrected_page(index: CorpusIndex, tier: str, norm_quote: str) -> int | None:
+    """quote 在带锚页里**唯一**命中的页号；多处命中或零命中 → None（不猜）。"""
+    hits = locate_quote_pages(index, tier, norm_quote)
+    return hits[0][1] if len(hits) == 1 else None
+
+
+def _annotate_page(
+    *,
+    container: dict[str, Any],
+    source: str | None,
+    tier: str,
+    page: int | None,
+    norm_quote: str,
+    index: CorpusIndex,
+    annotation: dict[str, Any],
+    summary: dict[str, Any],
+    where: str,
+) -> None:
+    """页精度标注 + **就地纠正/降级**（H2 KD5）。
+
+    旧行为 ``page_mismatch`` 只计数、不纠正、不降级 → 错页畅通进结论。现在：
+    - quote 在底稿里唯一命中某页 → 以底稿坐标为准改写 source 页号，记 ``page_corrected``；
+    - 多处命中 / file_ambiguous / 该文件页号本就不可靠（云页数守卫）→ ``page_unverified``，
+      并计入结论 warnings（不再静默）。
+    """
+    if source and source_page_kind(source) == ARTIFACT_CONVERTED:
+        # 转换稿出处显式留痕，前端/人工才知道这页号不是原文档页（KD2）
+        container["page_kind"] = ARTIFACT_CONVERTED
+    pstat = page_status(index, tier, page, norm_quote)
+    if pstat == "page_mismatch":
+        summary["page_mismatch"] = summary.get("page_mismatch", 0) + 1
+    if page is not None and index.source_names_page_unreliable_file(source):
+        pstat = "page_unverified"
+    elif pstat == "page_mismatch":
+        corrected = _corrected_page(index, tier, norm_quote)
+        if corrected is None:
+            pstat = "page_unverified"
+        else:
+            container["source"] = rewrite_source_page(source or "", corrected)
+            annotation["page_corrected"] = {"from": page, "to": corrected}
+            pstat = "page_corrected"
+            summary["page_corrected"] = summary.get("page_corrected", 0) + 1
+    elif pstat == "file_ambiguous":
+        pstat = "page_unverified"
+    annotation["page"] = pstat
+    if pstat == "page_unverified":
+        summary["page_unverified"] = summary.get("page_unverified", 0) + 1
+        summary["page_unverified_refs"].append({"where": where, "source": source or ""})
+
+
 def _check_one(
     *,
     container: dict[str, Any],
@@ -93,10 +147,17 @@ def _check_one(
 
     annotation: dict[str, Any] = {"status": status}
     if status == "resolved":
-        pstat = page_status(index, tier, page, norm_quote)
-        annotation["page"] = pstat
-        if pstat == "page_mismatch":
-            summary["page_mismatch"] = summary.get("page_mismatch", 0) + 1
+        _annotate_page(
+            container=container,
+            source=source,
+            tier=tier,
+            page=page,
+            norm_quote=norm_quote,
+            index=index,
+            annotation=annotation,
+            summary=summary,
+            where=where,
+        )
     if status != "resolved" or _annotate_resolved():
         container["resolution"] = annotation
 
@@ -219,6 +280,28 @@ def _flag_low_clarity_sources(sitem: dict[str, Any], index: CorpusIndex) -> str 
     return named or f
 
 
+def _emit_page_warnings(extracted: Any, summary: dict[str, Any]) -> None:
+    """页号不可核实的出处 → ``extracted_data.validation_warnings``（结论里人工可见，AC4）。
+
+    页号本身不改变得分，故只告警不降级；降级仍由 unresolved / low_clarity 两条闸负责。
+    """
+    refs = summary.get("page_unverified_refs") or []
+    if not isinstance(extracted, dict) or not refs:
+        return
+    warnings = extracted.setdefault("validation_warnings", [])
+    if not isinstance(warnings, list):
+        return
+    for ref in refs:
+        warnings.append(
+            {
+                "code": "evidence_page_unverified",
+                "item": ref["where"],
+                "detail": f"出处「{ref['source']}」的页号无法在底稿核实（多处命中或该文件页号不可靠），"
+                "原文已核实但页码请人工复核",
+            }
+        )
+
+
 def resolve_audit_evidence(structured_output: Any, evidence_source: str) -> Any:
     """``resolve`` hook 入口：回查 audit-result 结论里所有出处 vs 本案底稿，标注 + 降级 + verdict 一致性回填。
 
@@ -243,6 +326,9 @@ def resolve_audit_evidence(structured_output: Any, evidence_source: str) -> Any:
             "weak_match": 0,
             "unresolved": 0,
             "page_mismatch": 0,
+            "page_corrected": 0,
+            "page_unverified": 0,
+            "page_unverified_refs": [],
             "loc_only": 0,
             "downgraded_items": [],
             "high_severity_unresolved": [],
@@ -361,7 +447,10 @@ def resolve_audit_evidence(structured_output: Any, evidence_source: str) -> Any:
                 structured_output.setdefault("manual_review_reason", "insufficient_evidence")
             # verdict == "rejected"：终局更强，不因单项未核实翻盘
 
-        # 5. 摘要（有回查 或 有低置信文件即写，勿因无 quote 吞掉 low_clarity_files）
+        # 5. 页号不可核实的出处进结论 warnings（AC4：不再静默）
+        _emit_page_warnings(extracted, summary)
+
+        # 6. 摘要（有回查 或 有低置信文件即写，勿因无 quote 吞掉 low_clarity_files）
         if isinstance(extracted, dict) and (summary["checked"] > 0 or summary["low_clarity_files"]):
             extracted["evidence_resolution"] = summary
         return structured_output
