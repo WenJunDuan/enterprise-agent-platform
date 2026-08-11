@@ -452,11 +452,25 @@ def test_sanitize_error_detail_masks_credentials_even_in_known_reason():
         assert "0123456789abcdef" not in cleaned, secret
 
 
-def test_sanitize_error_detail_logs_full_detail_server_side(caplog):
-    """被屏蔽的详情必须进服务端日志，否则等于把线索一起丢了。"""
-    with caplog.at_level("WARNING", logger="server.tender.compare_guard"):
-        sanitize_error_detail("sqlite3.OperationalError: disk I/O error")
-    assert "disk I/O error" in caplog.text
+def test_sanitize_error_detail_is_pure_and_never_logs_raw(caplog):
+    """pass2-N1/N2：sanitize 是 GET 轮询热路径上的纯函数，不得记日志（尤其不得记未脱敏原文）。
+
+    完整详情的服务端留痕由写入侧 compare_worker._execute_inner 的
+    logger.exception("tender_compare_failed") 承担（失败时一次，而非每次轮询一次）。
+    """
+    with caplog.at_level("DEBUG"):
+        sanitize_error_detail("sqlite3.OperationalError: disk I/O error (api_key=ZZZTOPSECRET)")
+    assert "ZZZTOPSECRET" not in caplog.text
+    assert "disk I/O error" not in caplog.text
+    assert caplog.records == []
+
+
+def test_sanitize_error_detail_drops_tail_after_known_reason():
+    """pass2-N3：白名单命中即用登记文案本身，命中位置之后的尾巴（路径/凭证）一律丢弃。"""
+    cleaned = sanitize_error_detail(
+        "参与横比的已完成投标人不足 2 家 (at /srv/app/server/tender/x.py:12, token=ZZZTOPSECRET)"
+    )
+    assert cleaned == "参与横比的已完成投标人不足 2 家"
 
 
 def test_sanitize_error_detail_handles_blank():
