@@ -10,23 +10,40 @@ allowed-tools: Read
 ```jsonc
 {
   "project_id": "...",
-  "method": "综合评估法 | 经评审的最低投标价法 | 其他",
+  "method": "综合评估法 | 经评审的最低投标价法 | 其他",   // 取自项目权威 criteria，非各家转录副本
+  "criteria_version": "a1b2c3d4e5f6...",              // 本次横比依据的项目规则版本（服务端算）
   "funding_type": "state_funded | other | unknown",   // 是否国有资金/国家融资项目
   "control_price": "标底/控制价（可空）",
   "criteria_price_item": { "item": "价格分", "max": 40, "scoring_rule": "招标文件价格评分公式原文" },
+  "price_comparison_blocked": false,
+  // 封锁原因（封锁时非空）：insufficient_comparable_bidders（可比家数 < 2）/
+  // price_max_unknown（价格项满分未设）/ no_price_item（评标办法无横比价格项）/
+  // bid_price_unit_mismatch（各家报价数量级差 ≥100 倍，疑似万元与元混用）
+  "price_comparison_blocked_reason": null,
+  "warnings": ["服务端护栏告警（已指名到具体投标人），须原样并入你的 warnings"],
   "bidders": [
     { "claim_id": "...", "bid_price": {"amount": 1234.5, "currency": "CNY"},
       "scoring": [ {"item","max","score","status"} … ],   // 该家已评的非价格项
-      "verdict": "approved | rejected | manual_review" }
+      "verdict": "approved | rejected | manual_review",
+      "comparable": true,          // false = 服务端判定该家不参与横比
+      "exclusion_reason": null }   // criteria_stale（评标依据非当前规则版本）/ bid_price_invalid（报价缺失或非法）
   ]
 }
 ```
 
 ## 任务（Claude 侧判断与计算，逐步）
 
-### 0. 前置：criteria 一致性
-- 若输入 `criteria_inconsistent: true`（各投标人评标时用的评分标准不一致）→ **不做横比排名**：所有 bidder `status: "manual_review"`、`rank: null`，`recommended: null`、`provisional: true`，`warnings` 写"各投标人评分标准(criteria)不一致，需人工核对评标办法后重评"，`explanation` 说明原因。直接产出该结论，不进下面步骤。
-- 若输入 `price_comparison_blocked: true`（价格项 `max` 未设或不合法）→ **不得把该项带入价格计算或排名**：所有 bidder `price_score/total_score/rank:null`、`status:"manual_review"`，`recommended:null`、`provisional:true`，warnings/explanation 明示“价格项满分待确认，转人工复核”。直接产出，不进下面步骤。
+### 0. 前置：服务端判据（不要自行推翻）
+可比性、价格项、报价合法性**均已由服务端按项目权威 criteria（`criteria_version`）判定**，你只按判据算分：
+
+- 若 `price_comparison_blocked: true` → **不做横比与排名**：所有 bidder `price_score/total_score/rank: null`、`status: "manual_review"`，`recommended: null`、`provisional: true`；`explanation` 与 `warnings` 按 `price_comparison_blocked_reason` 如实说明：
+  - `insufficient_comparable_bidders`：可比投标人不足 2 家（有的评标依据不是当前规则版本、或报价无效），需人工处理后再横比；
+  - `price_max_unknown`：招标评分标准里的价格项满分未设定，需人工确认；
+  - `no_price_item`：评标办法中未找到需横向比较的价格项，需人工确认；
+  - `bid_price_unit_mismatch`：各家报价数量级相差 100 倍以上，疑似万元/元口径不一致，**不得自行换算**，转人工。
+  直接产出该结论，不进下面步骤。
+- 若某家 `comparable: false`（`exclusion_reason` 为 `criteria_stale` 或 `bid_price_invalid`）→ **该家不参与价格分与排名**（`price_score/total_score/rank: null`、`status:"manual_review"`、`note` 写明原因与需要的人工动作），**其余可比家照常横比排名**——不要因为一家有问题就把整池判人工。
+- 输入 `warnings` 里的服务端告警**原样并入**输出 `warnings`（它们已指名到具体投标人）。
 
 ### 1. 认定有效投标
 - `verdict: "rejected"`（废标）的投标人**不参与价格评分与排名**，在输出里 `status: "rejected"`、`rank: null`、`note` 写明废标不参与。
