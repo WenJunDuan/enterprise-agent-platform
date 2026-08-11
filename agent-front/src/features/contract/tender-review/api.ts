@@ -101,6 +101,8 @@ export type TenderCompareResult = {
     source?: string
     finding?: string
     conclusion?: string
+    /** 页号所属坐标系：converted = Office→PDF 转换稿页号，原文档页号不可用 */
+    page_kind?: 'original' | 'converted'
   }>
 }
 
