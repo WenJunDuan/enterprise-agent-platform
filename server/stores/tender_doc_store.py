@@ -10,7 +10,9 @@
 
 from __future__ import annotations
 
+import json
 import uuid
+from collections.abc import Sequence
 from typing import Any
 
 from server.platform.paths import PLATFORM_DB_FILE, ensure_local_layout
@@ -18,9 +20,28 @@ from server.platform.sqlite_store import connect_sqlite, utc_now
 
 ensure_local_layout()
 
-# OCR 状态合法值（不做运行时强制，仅文档约定）
-# pending → running → ready | failed
-OCR_STATUSES = {"pending", "running", "ready", "failed"}
+# OCR 状态合法值。pending → running → ready | degraded | partial | failed。
+# H3 KD2 扩两档并改为**写入时强制校验**（见 _validate_ocr_status）：
+#   degraded — 底稿完整但含 Tesseract 降级段（低质，不得当 ready 永久落库、之后永不重跑 VLM）；
+#   partial  — 部分文件失败或某文件渲染中途失败只出了部分页。
+# 未知值一律 fail-fast：静默落库后读侧只能猜，最坏被当成 ready 直接拿去评标。
+OCR_STATUSES = {"pending", "running", "ready", "degraded", "partial", "failed"}
+
+
+def _validate_ocr_status(status: str) -> str:
+    """校验 ocr_status 取值；未知值抛错（绝不静默写入）。"""
+    if status not in OCR_STATUSES:
+        raise ValueError(
+            f"unknown ocr_status {status!r}; expected one of {sorted(OCR_STATUSES)}"
+        )
+    return status
+
+
+def _encode_failed_files(failed_files: Sequence[str] | None) -> str | None:
+    """把失败/降级文件清单编码为 JSON 文本列；None → 不记（与"没有失败"区分靠 status）。"""
+    if failed_files is None:
+        return None
+    return json.dumps(list(failed_files), ensure_ascii=False)
 
 
 def new_bid_id() -> str:
@@ -100,6 +121,16 @@ def _initialize_schema() -> None:
             conn.execute(
                 "ALTER TABLE tender_bid_docs ADD COLUMN bidder_name_source TEXT"
             )
+        # H3 KD2 migration（沿用同一幂等 PRAGMA + ALTER 先例，无迁移框架/无 downgrade）：
+        #   ocr_failed_files — JSON 文件名列表，partial/degraded 时点名是哪些文件出的问题；
+        #   case_path        — 上传落盘目录，供评标入口对非 ready 底稿自动重跑一次预热 OCR。
+        for table, columns in (
+            ("tender_project_docs", existing_cols),
+            ("tender_bid_docs", existing_bid_cols),
+        ):
+            for column in ("ocr_failed_files", "case_path"):
+                if column not in columns:
+                    conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} TEXT")
 
 
 _initialize_schema()
@@ -119,6 +150,7 @@ def upsert_project_doc(
     criteria: str | None = None,
     criteria_status: str = "pending",
     tender_info: str | None = None,
+    case_path: str | None = None,
 ) -> None:
     """Insert or replace a tender project doc record.
 
@@ -126,13 +158,15 @@ def upsert_project_doc(
         project_id: Tender project identifier (PK).
         tenant: Tenant scope for isolation.
         tender_files: JSON-encoded list of file paths/names.
-        ocr_status: One of pending/running/ready/failed.
+        ocr_status: One of ``OCR_STATUSES``.
         ocr_text: Full OCR text blob (None until OCR completes).
         ocr_clarity: Clarity signal from OCR pipeline (clear/low/unknown/failed).
         criteria: JSON-encoded evaluation criteria (None until first evaluation).
         criteria_status: R1 info-extraction state: pending/running/ready/failed.
         tender_info: R1 JSON-encoded tender metadata extracted from the OCR text.
+        case_path: 上传落盘目录（H3 KD2：评标入口据此重跑预热 OCR）。
     """
+    _validate_ocr_status(ocr_status)
     now = utc_now()
     with connect_sqlite(PLATFORM_DB_FILE, immediate=True) as conn:
         existing = conn.execute(
@@ -145,13 +179,13 @@ def upsert_project_doc(
             INSERT OR REPLACE INTO tender_project_docs
                 (project_id, tenant, tender_files, ocr_text, ocr_clarity,
                  ocr_status, criteria, criteria_status, tender_info,
-                 created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 case_path, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 project_id, tenant, tender_files, ocr_text, ocr_clarity,
                 ocr_status, criteria, criteria_status, tender_info,
-                created_at, now,
+                case_path, created_at, now,
             ),
         )
 
@@ -177,6 +211,7 @@ def update_project_doc_ocr(
     ocr_text: str | None,
     ocr_clarity: str | None,
     status: str,
+    failed_files: Sequence[str] | None = None,
 ) -> None:
     """Update OCR result fields after background OCR completes.
 
@@ -185,16 +220,45 @@ def update_project_doc_ocr(
         tenant: Tenant scope — WHERE clause includes tenant to prevent cross-tenant writes.
         ocr_text: Full text extracted by OCR (None on failure).
         ocr_clarity: Clarity signal (None on failure).
-        status: New ocr_status (ready or failed).
+        status: New ocr_status；须属 ``OCR_STATUSES``，未知值抛 ValueError。
+        failed_files: partial/degraded 时的失败文件名清单（H3 KD2）。
+
+    Raises:
+        ValueError: status 不在 ``OCR_STATUSES`` 内。
     """
+    _validate_ocr_status(status)
     with connect_sqlite(PLATFORM_DB_FILE, immediate=True) as conn:
         conn.execute(
             """
             UPDATE tender_project_docs
-            SET ocr_text = ?, ocr_clarity = ?, ocr_status = ?, updated_at = ?
+            SET ocr_text = ?, ocr_clarity = ?, ocr_status = ?, ocr_failed_files = ?,
+                updated_at = ?
             WHERE project_id = ? AND tenant = ?
             """,
-            (ocr_text, ocr_clarity, status, utc_now(), project_id, tenant),
+            (
+                ocr_text,
+                ocr_clarity,
+                status,
+                _encode_failed_files(failed_files),
+                utc_now(),
+                project_id,
+                tenant,
+            ),
+        )
+
+
+def touch_project_doc_ocr(project_id: str, *, tenant: str) -> None:
+    """预热心跳：刷新仍在 ``running`` 的招标层行的 ``updated_at``（H3 KD5）。
+
+    评标侧的 in-flight oracle = ``ocr_status=running`` 且 ``updated_at`` 新鲜。没有心跳时，
+    单个大文件跑过阈值就会被误判为"僵尸 running" → 评标另起 inline OCR → 双跑正反馈。
+    ``WHERE ocr_status='running'`` 是硬约束：终态行绝不能被心跳"复活"。
+    """
+    with connect_sqlite(PLATFORM_DB_FILE, immediate=True) as conn:
+        conn.execute(
+            "UPDATE tender_project_docs SET updated_at = ? "
+            "WHERE project_id = ? AND tenant = ? AND ocr_status = 'running'",
+            (utc_now(), project_id, tenant),
         )
 
 
@@ -258,6 +322,7 @@ def upsert_bid_doc(
     ocr_status: str = "pending",
     ocr_text: str | None = None,
     extracted: str | None = None,
+    case_path: str | None = None,
 ) -> None:
     """Insert or replace a bid document record.
 
@@ -267,10 +332,12 @@ def upsert_bid_doc(
         tenant: Tenant scope for isolation.
         bidder_name: Bidder display name.
         bid_files: JSON-encoded list of uploaded file paths/names.
-        ocr_status: One of pending/running/ready/failed.
+        ocr_status: One of ``OCR_STATUSES``.
         ocr_text: Full OCR text blob (None until OCR completes).
         extracted: JSON-encoded extracted fields (None until evaluation).
+        case_path: 上传落盘目录（H3 KD2：评标入口据此重跑预热 OCR）。
     """
+    _validate_ocr_status(ocr_status)
     now = utc_now()
     with connect_sqlite(PLATFORM_DB_FILE, immediate=True) as conn:
         existing = conn.execute(
@@ -282,12 +349,12 @@ def upsert_bid_doc(
             """
             INSERT OR REPLACE INTO tender_bid_docs
                 (project_id, bid_id, tenant, bidder_name, bid_files,
-                 ocr_text, ocr_status, extracted, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 ocr_text, ocr_status, extracted, case_path, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 project_id, bid_id, tenant, bidder_name, bid_files,
-                ocr_text, ocr_status, extracted, created_at, now,
+                ocr_text, ocr_status, extracted, case_path, created_at, now,
             ),
         )
 
@@ -331,6 +398,7 @@ def update_bid_doc_ocr(
     tenant: str,
     ocr_text: str | None,
     status: str,
+    failed_files: Sequence[str] | None = None,
 ) -> None:
     """Update OCR result fields for a bid doc after background OCR completes.
 
@@ -339,16 +407,40 @@ def update_bid_doc_ocr(
         bid_id: Bid document identifier.
         tenant: Tenant scope — WHERE clause includes tenant to prevent cross-tenant writes.
         ocr_text: Full text extracted by OCR (None on failure).
-        status: New ocr_status (ready or failed).
+        status: New ocr_status；须属 ``OCR_STATUSES``，未知值抛 ValueError。
+        failed_files: partial/degraded 时的失败文件名清单（H3 KD2）。
+
+    Raises:
+        ValueError: status 不在 ``OCR_STATUSES`` 内。
     """
+    _validate_ocr_status(status)
     with connect_sqlite(PLATFORM_DB_FILE, immediate=True) as conn:
         conn.execute(
             """
             UPDATE tender_bid_docs
-            SET ocr_text = ?, ocr_status = ?, updated_at = ?
+            SET ocr_text = ?, ocr_status = ?, ocr_failed_files = ?, updated_at = ?
             WHERE project_id = ? AND bid_id = ? AND tenant = ?
             """,
-            (ocr_text, status, utc_now(), project_id, bid_id, tenant),
+            (
+                ocr_text,
+                status,
+                _encode_failed_files(failed_files),
+                utc_now(),
+                project_id,
+                bid_id,
+                tenant,
+            ),
+        )
+
+
+def touch_bid_doc_ocr(project_id: str, bid_id: str, *, tenant: str) -> None:
+    """预热心跳：刷新仍在 ``running`` 的投标层行的 ``updated_at``（H3 KD5，理由见
+    :func:`touch_project_doc_ocr`）。"""
+    with connect_sqlite(PLATFORM_DB_FILE, immediate=True) as conn:
+        conn.execute(
+            "UPDATE tender_bid_docs SET updated_at = ? "
+            "WHERE project_id = ? AND bid_id = ? AND tenant = ? AND ocr_status = 'running'",
+            (utc_now(), project_id, bid_id, tenant),
         )
 
 
