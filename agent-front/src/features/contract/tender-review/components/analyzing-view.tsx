@@ -10,6 +10,7 @@ import type {
   TenderInfo,
 } from '../api'
 import type { ProjectFormData } from './create-review-view'
+import { isOcrUsable, ocrDotClass, ocrStatusLabel } from '../ocr-status'
 import { MarkdownView } from './markdown-view'
 
 /**
@@ -306,7 +307,7 @@ function Zone2TenderInfo({
               </p>
             ) : (
               <p className='rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground'>
-                {docsStatus?.tender_doc?.ocr_status === 'ready'
+                {isOcrUsable(docsStatus?.tender_doc?.ocr_status ?? 'pending')
                   ? '正在从招标文件抽取评分项、扣分点与废标条款…'
                   : '等待招标文件 OCR 完成后自动抽取评分标准…'}
               </p>
@@ -444,23 +445,9 @@ function CriteriaSummary({ criteria }: { criteria: TenderCriteria }) {
 }
 
 function OcrDot({ status }: { status: string }) {
-  const colorClass =
-    status === 'ready'
-      ? 'bg-emerald-500'
-      : status === 'failed'
-        ? 'bg-red-500'
-        : 'bg-blue-400 animate-pulse'
-  return <span className={`size-2 shrink-0 rounded-full ${colorClass}`} />
-}
-
-function ocrStatusLabel(status: string): string {
-  const labels: Record<string, string> = {
-    pending: '等待中',
-    running: '识别中',
-    ready: '已就绪',
-    failed: '识别失败',
-  }
-  return labels[status] ?? status
+  // 颜色映射收敛在 ocr-status（H3 KD2）：degraded/partial 必须是静态琥珀点，
+  // 落到蓝色脉冲会让用户以为"还在识别、再等等"。
+  return <span className={`size-2 shrink-0 rounded-full ${ocrDotClass(status)}`} />
 }
 
 /**

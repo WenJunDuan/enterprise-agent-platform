@@ -67,6 +67,8 @@ type CreateReviewViewProps = {
   uploadingBidderIds: Set<number>
   /** P3: 文件已上传并 OCR 就绪，可点"开始分析"。 */
   isOcrReady: boolean
+  /** H3 KD2：底稿降级/部分缺失时的告警文案（不阻断开始分析，只告知结论会标注）。 */
+  ocrNotice: string | null
   /** A: 招标已上传（uploadProjectId 非 null）→ 投标区解锁。 */
   hasUploaded: boolean
   /** P3: docs-status 轮询结果（显示各文件 OCR 状态）。 */
@@ -106,6 +108,14 @@ export function CreateReviewView(props: CreateReviewViewProps) {
       {/* R7：移除"OCR 识别中，请稍候…"提示卡——OCR 全在后台跑、不拦路、前台不提示（用户诉求）。
           文件各自的 OCR 进度在「分析中」页区2 仍可见，创建页不再弹阻塞感的状态卡。 */}
       {props.isAnalyzing ? <AnalyzingCard progress={props.progress} /> : null}
+      {props.ocrNotice ? (
+        <p
+          role='status'
+          className='rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800'
+        >
+          {props.ocrNotice}
+        </p>
+      ) : null}
       {props.uploadError ? <UploadError /> : null}
       {props.submitError ? <SubmitError message={props.submitError} /> : null}
       <div className='flex justify-end gap-3'>
