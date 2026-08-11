@@ -28,6 +28,7 @@ import {
   type TenderProjectDetailResponse,
 } from './api'
 import type { ProjectFormData } from './components/create-review-view'
+import { isOcrTerminal, isOcrUsable, ocrImpairedNotice } from './ocr-status'
 import {
   buildDashboardSummary,
   buildTenderReviewData,
@@ -284,14 +285,11 @@ export function useTenderReviewPage(
     refetchInterval: (query) => {
       const data = query.state.data
       if (!data) return 2500
+      // H3 KD2：终态集含 degraded/partial——漏接会让轮询永不终止。
       const allDone =
         data.bids.length > 0 &&
-        (data.tender_doc?.ocr_status === 'ready' ||
-          data.tender_doc?.ocr_status === 'failed')
-          ? data.bids.every(
-              (bid) => bid.ocr_status === 'ready' || bid.ocr_status === 'failed'
-            )
-          : false
+        isOcrTerminal(data.tender_doc?.ocr_status ?? 'pending') &&
+        data.bids.every((bid) => isOcrTerminal(bid.ocr_status))
       return allDone ? false : 2500
     },
   })
@@ -321,14 +319,21 @@ export function useTenderReviewPage(
     },
   })
 
-  // OCR 就绪判定：招标层 + 全部投标层均为 ready（failed 不算 ready）。
+  // OCR 就绪判定：招标层 + 全部投标层底稿**可用**（H3 KD2：degraded/partial 有内容也算可用，
+  // 只是结论会标注；failed 仍不算）。此前只认 ready → 底稿一降级就把「开始分析」永久禁死。
   const isOcrReady = useMemo(() => {
     if (!uploadProjectId || !docsStatusQuery.data) return false
     const { tender_doc, bids } = docsStatusQuery.data
-    if (!tender_doc || tender_doc.ocr_status !== 'ready') return false
+    if (!tender_doc || !isOcrUsable(tender_doc.ocr_status)) return false
     if (bids.length === 0) return false
-    return bids.every((bid) => bid.ocr_status === 'ready')
+    return bids.every((bid) => isOcrUsable(bid.ocr_status))
   }, [uploadProjectId, docsStatusQuery.data])
+
+  // 底稿降级/部分缺失时的告警提示（不阻断，只告知：结论会标注受影响的评分项）。
+  const ocrNotice = useMemo(
+    () => ocrImpairedNotice(docsStatusQuery.data ?? null),
+    [docsStatusQuery.data]
+  )
 
   const selectedResultRequestId = useMemo(() => {
     const results = resultsQuery.data ?? []
@@ -1044,6 +1049,7 @@ export function useTenderReviewPage(
     docsStatus: docsStatusQuery.data ?? null,
     tenderDocInfo: tenderDocInfoQuery.data ?? null,
     isOcrReady,
+    ocrNotice,
     hasFilesSelected,
     uploadError,
     submitError,
