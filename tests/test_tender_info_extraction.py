@@ -14,6 +14,8 @@ Coverage:
 
 from __future__ import annotations
 
+from server.tender import doc_layer  # noqa: E402  (H3: 读层拆出后测试改打这里)
+
 import asyncio
 import json
 import math
@@ -1061,7 +1063,7 @@ def test_worker_injects_stored_criteria_into_context(monkeypatch):
     def fake_load_doc_layer(project_id, bid_id, tenant):
         return "=== 招标文件底稿 ===\nOCR文本\n\n=== 投标文件（测试公司）底稿 ===\n投标文本"
 
-    monkeypatch.setattr(worker, "_load_doc_layer_context", fake_load_doc_layer)
+    monkeypatch.setattr(doc_layer, "load_doc_layer_context", fake_load_doc_layer)
 
     # Patch get_project_doc to return a row with stored criteria
     def fake_get_project_doc(project_id, tenant):
@@ -1133,7 +1135,7 @@ def test_worker_no_criteria_in_store_unchanged_behavior(monkeypatch):
     def fake_load_doc_layer(project_id, bid_id, tenant):
         return "=== 招标文件底稿 ===\nOCR文本\n\n=== 投标文件（测试公司）底稿 ===\n投标文本"
 
-    monkeypatch.setattr(worker, "_load_doc_layer_context", fake_load_doc_layer)
+    monkeypatch.setattr(doc_layer, "load_doc_layer_context", fake_load_doc_layer)
 
     def fake_get_project_doc_no_criteria(project_id, tenant):
         return {

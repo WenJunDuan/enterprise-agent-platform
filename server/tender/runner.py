@@ -23,11 +23,12 @@ from typing import Any, Callable
 
 from server.common.command_adapter import run_command_json
 from server.ocr.pipeline import ocr_preprocess_block
-from server.tender.context_slim import bound_tender_context, build_slim_tender_context
+from server.tender import doc_layer
+from server.tender.context_slim import bound_tender_context
 from server.tender.output import TENDER_OUTPUT_SCHEMA_NAME
 from server.platform.config import get_tender_eval_settings
 from server.stores.session_store import new_conversation_id
-from server.stores.tender_doc_store import get_bid_doc, get_project_doc
+from server.stores.tender_doc_store import get_project_doc
 
 logger = logging.getLogger(__name__)
 
@@ -64,118 +65,110 @@ TENDER_CONTRACT_MAX_RETRY = int(os.getenv("TENDER_CONTRACT_MAX_RETRY", "2"))
 # 不走全局 build_options 默认 → 不拖慢 audit，codex r4 P1）；env 可调或设非法值走端点默认。
 _TENDER_EFFORT = os.getenv("TENDER_REASONING_EFFORT", "xhigh")
 
-# R6-R2 复用预热 OCR：等招标层+当前家投标层 OCR 就绪的上限/间隔。标书大(百页)OCR 可达数分钟，
-# 给足窗口；env 可调。用迭代次数计时（不依赖 wall-clock 时间函数）。
-_DOC_LAYER_WAIT_SEC = float(os.getenv("TENDER_DOC_LAYER_WAIT_SEC", "360"))
-_DOC_LAYER_POLL_SEC = 3.0
-
-
-def _load_doc_layer_context(project_id: str, bid_id: str | None, tenant: str) -> str | None:
-    """P2 评标读层：从 tender_doc_store 取已预热的 OCR 底稿并拼为上下文字符串。
-
-    **P1-1 修复**：只加载招标层 + **当前被评标这一家**的投标层（by bid_id）。
-    旧实现拼接所有投标文件 → 多家材料污染同一 context，错乱 claim_id/scoring。
-    无 bid_id（legacy 散单/无法定位当前家）→ 返回 None 回落串行 OCR（天然正确，
-    case_path 就是该家散单目录）。招标层或当前家 not-ready/failed/缺失 → 返回 None。
-    任何异常 → 静默返回 None，**绝不拖垮评标**。
-
-    Args:
-        project_id: 招标项目 ID。
-        bid_id: 当前被评标的投标文件 ID；为 None 时跳过读层（安全回落）。
-        tenant: 租户作用域。
-
-    Returns:
-        "招标底稿 + 当前家投标底稿"组合字符串，或 None 触发回落。
-    """
-    # 无 bid_id → 无法精确定位当前家，绝不混入其他家材料，直接回落
-    if not bid_id:
-        return None
-    try:
-        project_doc = get_project_doc(project_id, tenant)
-        if project_doc is None or project_doc.get("ocr_status") != "ready":
-            return None
-        bid = get_bid_doc(project_id, bid_id, tenant)
-        if bid is None or bid.get("ocr_status") != "ready" or not bid.get("ocr_text"):
-            return None
-        bidder = bid.get("bidder_name") or bid["bid_id"]
-        parts: list[str] = [
-            f"=== 招标文件底稿 ===\n{project_doc['ocr_text']}",
-            f"=== 投标文件（{bidder}）底稿 ===\n{bid['ocr_text']}",
-        ]
-        return "\n\n".join(parts)
-    except Exception:
-        logger.warning("_load_doc_layer_context failed, falling back", exc_info=True)
-        return None
-
-
-def _tender_slim_context_enabled() -> bool:
-    """Return True when D8 criteria-driven tender context slimming is enabled."""
-    return os.getenv("TENDER_SLIM_CONTEXT", "0").lower() in {"1", "true", "yes"}
-
-
-def _parse_stored_criteria(raw: str | None) -> dict | None:
-    """Parse stored criteria JSON for the D8 slimming path, tolerating missing or invalid data."""
+def _decode_failed_files(row: dict | None) -> list[str]:
+    """解析 doc 行的 ``ocr_failed_files`` JSON 列；缺失/损坏 → 空列表（warning 仍照发）。"""
+    raw = (row or {}).get("ocr_failed_files")
     if not raw:
-        return None
+        return []
     try:
         parsed = json.loads(raw)
     except (ValueError, TypeError):
-        return None
-    return parsed if isinstance(parsed, dict) else None
+        return []
+    return [str(item) for item in parsed] if isinstance(parsed, list) else []
 
 
-def _load_doc_layer_context_slim(project_id: str, bid_id: str | None, tenant: str) -> str | None:
-    """Load doc-layer context with an optional criteria-driven tender-document reduction.
+def _ocr_integrity_warnings(
+    project_doc: dict | None, bid_doc: dict | None
+) -> list[dict[str, object]]:
+    """把"底稿降级/部分缺失"渲染成结构化 warning（H3 KD2：不静默）。
 
-    This preserves the full tender text when criteria are unavailable or slimming cannot safely
-    produce a complete result; the current bidder's document is always passed through unchanged.
+    Returns:
+        每条形如 ``{"scope", "status", "files", "message"}``；无问题时空列表。
     """
-    if not bid_id:
-        return None
-    try:
-        project_doc = get_project_doc(project_id, tenant)
-        if project_doc is None or project_doc.get("ocr_status") != "ready":
-            return None
-        bid = get_bid_doc(project_id, bid_id, tenant)
-        if bid is None or bid.get("ocr_status") != "ready" or not bid.get("ocr_text"):
-            return None
-        bidder = bid.get("bidder_name") or bid["bid_id"]
-        tender_text = project_doc["ocr_text"]
-        criteria = _parse_stored_criteria(project_doc.get("criteria"))
-        if criteria is not None:
-            slim_text = build_slim_tender_context(tender_text, criteria, file_name=project_id)
-            if slim_text is not None:
-                tender_text = slim_text
-        parts: list[str] = [
-            f"=== 招标文件底稿 ===\n{tender_text}",
-            f"=== 投标文件（{bidder}）底稿 ===\n{bid['ocr_text']}",
-        ]
-        return "\n\n".join(parts)
-    except Exception:
-        logger.warning("_load_doc_layer_context_slim failed, falling back", exc_info=True)
-        return None
+    warnings: list[dict[str, object]] = []
+    for scope, row in (("招标文件", project_doc), ("投标文件", bid_doc)):
+        status = doc_layer.doc_ocr_status(row)
+        if status not in doc_layer.DOC_LAYER_IMPAIRED_STATUSES:
+            continue
+        files = _decode_failed_files(row)
+        detail = "部分文件识别失败或缺页" if status == "partial" else "含降级识别段（本地兜底引擎）"
+        named = f"：{'、'.join(files)}" if files else ""
+        warnings.append(
+            {
+                "scope": scope,
+                "status": status,
+                "files": files,
+                "message": f"{scope}底稿{detail}{named}；依赖这些材料的评分项证据可能不完整。",
+            }
+        )
+    return warnings
 
 
-async def _wait_doc_layer_ready(project_id: str, bid_id: str, tenant: str) -> None:
-    """短轮询等招标层 + 当前家投标层 OCR 都到终态（ready/failed），供评标复用预热 OCR、免重 OCR。
+def _inject_ocr_warnings(payload: object, warnings: list[dict[str, object]]) -> None:
+    """把底稿完整性 warning 强制写进结论（``extracted_data.ocr_warnings``）。
 
-    用户「上传即 OCR」后可能在 OCR 未完就点开始分析（R1 解阻塞）→ 评标提交时预热 OCR 还在跑。本函数
-    等它跑完（ready→复用 / failed→由 _load_doc_layer_context 回落 inline）。缺记录/超时/异常 → 直接返回
-    （绝不死等、绝不拖垮评标）。
+    落在 ``extracted_data`` 而非顶层：``audit-result.schema.json`` 顶层是
+    ``additionalProperties: false``，而 ``extracted_data`` 显式允许自由字段——既不动共享 schema，
+    也保证 warning 随结论一起持久化、可回溯。
     """
-    max_polls = max(1, int(_DOC_LAYER_WAIT_SEC / _DOC_LAYER_POLL_SEC))
-    terminal = {"ready", "failed"}
-    for _ in range(max_polls):
-        try:
-            proj = await asyncio.to_thread(get_project_doc, project_id, tenant)
-            bid = await asyncio.to_thread(get_bid_doc, project_id, bid_id, tenant)
-        except Exception:
-            return  # 读失败 → 不等，交后续逻辑回落
-        if proj is None or bid is None:
-            return  # 无预热记录（散单/旧路径）→ 不等
-        if proj.get("ocr_status") in terminal and bid.get("ocr_status") in terminal:
-            return  # 都终态 → 可判复用/回落
-        await asyncio.sleep(_DOC_LAYER_POLL_SEC)
+    if not warnings or not isinstance(payload, dict):
+        return
+    extracted = payload.get("extracted_data")
+    if not isinstance(extracted, dict):
+        extracted = {}
+        payload["extracted_data"] = extracted
+    existing = extracted.get("ocr_warnings")
+    extracted["ocr_warnings"] = (existing if isinstance(existing, list) else []) + warnings
+
+
+async def _resolve_doc_layer(
+    project_id: str, bid_id: str | None, tenant: str
+) -> tuple[str | None, list[dict[str, object]]]:
+    """评标入口对预热底稿的完整决策（H3 KD2 + KD5）。
+
+    顺序：等预热到终态（in-flight 才等，不再无条件超时回落 inline）→ 对 degraded/partial 自动
+    重跑一次预热 → 复用底稿并按最终状态生成结论 warning。
+
+    Returns:
+        ``(doc 层底稿文本 | None, warnings)``；文本为 None 时调用方回落 inline OCR。
+    """
+    warnings: list[dict[str, object]] = []
+    if bid_id:
+        outcome = await doc_layer.wait_doc_layer_ready(project_id, bid_id, tenant)
+        if outcome == "wait_cap_reached":
+            warnings.append(
+                {
+                    "scope": "预热 OCR",
+                    "status": "prewarm_timeout",
+                    "files": [],
+                    "message": "预热 OCR 在评标等待上限内未完成，已改用即时 OCR；底稿可能不完整。",
+                }
+            )
+        elif outcome == "terminal":
+            rows = await doc_layer.read_doc_rows(project_id, bid_id, tenant)
+            if any(doc_layer.doc_ocr_status(row) in doc_layer.DOC_LAYER_IMPAIRED_STATUSES for row in rows):
+                await doc_layer.rerun_prewarm_for_degraded_docs(project_id, bid_id, tenant, rows)
+    loader = (
+        doc_layer.load_doc_layer_context_slim
+        if doc_layer.slim_context_enabled()
+        else doc_layer.load_doc_layer_context
+    )
+    doc_layer_text = await asyncio.to_thread(loader, project_id, bid_id, tenant)
+    if doc_layer_text is not None and bid_id:
+        # 重跑后重新读一次：warning 必须反映**最终**状态，重跑成功就不该再报警。
+        project_doc, bid_doc = await doc_layer.read_doc_rows(project_id, bid_id, tenant)
+        warnings.extend(_ocr_integrity_warnings(project_doc, bid_doc))
+    return doc_layer_text, warnings
+
+
+def _ocr_warning_block(warnings: list[dict[str, object]]) -> str:
+    """把底稿完整性 warning 渲染进模型上下文——评分项据此走 evidence 缺失规则，而不是静默判低分。"""
+    lines = "\n".join(f"- {warning['message']}" for warning in warnings)
+    return (
+        "\n\n=== 底稿完整性告警（本次识别底稿存在降级/缺失）===\n"
+        f"{lines}\n"
+        "依赖上述材料的评分项：证据不足时按现行 evidence 缺失规则处理（manual_review / 不得凭空判 0）。"
+    )
 
 
 async def run_tender_evaluation(
@@ -203,18 +196,9 @@ async def run_tender_evaluation(
     # 未 ready/缺失/无 bid_id/异常 → 回落原串行 ocr_preprocess_block（兜底，不破现有路径）。
     # 无 project_id（legacy 散单）或开关关闭 → 直接回落。
     doc_layer_text: str | None = None
+    ocr_warnings: list[dict[str, object]] = []
     if _tender_read_doc_layer_enabled() and project_id:
-        # R6-R2：复用预热 OCR——用户「上传即 OCR」后可能在 OCR 未完就点开始分析(R1 解阻塞)。此时给了
-        # prewarm bid_id 但 doc 层尚 running → 先短轮询等其 ready(预热在跑)，再复用，避免重 OCR 跑两遍
-        # ~5min。兜底超时/失败 → 回落 inline(不死等)。
-        if bid_id:
-            await _wait_doc_layer_ready(project_id, bid_id, tenant)
-        loader = (
-            _load_doc_layer_context_slim
-            if _tender_slim_context_enabled()
-            else (_load_doc_layer_context)
-        )
-        doc_layer_text = await asyncio.to_thread(loader, project_id, bid_id, tenant)
+        doc_layer_text, ocr_warnings = await _resolve_doc_layer(project_id, bid_id, tenant)
 
     if doc_layer_text is not None:
         ocr_block: str | None = doc_layer_text
@@ -245,7 +229,7 @@ async def run_tender_evaluation(
         try:
             import json as _json
 
-            # F4：同步 SQLite 读经 to_thread 移出事件循环（对齐 _load_doc_layer_context / round4 F4）。
+            # F4：同步 SQLite 读经 to_thread 移出事件循环（对齐 doc_layer.load_doc_layer_context / round4 F4）。
             project_doc = await asyncio.to_thread(get_project_doc, project_id, tenant)
             stored_criteria = (project_doc or {}).get("criteria")
             if stored_criteria:
@@ -261,6 +245,10 @@ async def run_tender_evaluation(
                 context = context + criteria_block
         except Exception:
             logger.debug("criteria context injection failed, continuing without", exc_info=True)
+
+    # H3 KD2：底稿降级/缺失对模型显式可见（不静默）——与结论里的 ocr_warnings 同源同文案。
+    if context and ocr_warnings:
+        context = context + _ocr_warning_block(ocr_warnings)
 
     bounded_context = bound_tender_context(context, model=resolved_model or None) if context else None
     if bounded_context is not None:
@@ -311,6 +299,8 @@ async def run_tender_evaluation(
             # 这类回归信号。成功时的 attempt（从 0 计数）即实际重试了几次；AgentRunMeta 已
             # 声明 retry_count 尾部字段（带默认值 0），slots 下此赋值合法。
             meta.retry_count = attempt
+            # H3 KD2：底稿降级/缺失强制随结论落盘，人工复核时不必回翻日志才知道底稿有洞。
+            _inject_ocr_warnings(payload, ocr_warnings)
             return payload, meta
         except Exception as exc:
             last_error = exc

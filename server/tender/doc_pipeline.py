@@ -356,6 +356,7 @@ async def run_project_doc_ocr(
     *,
     tenant: str,
     purpose: str | None = None,
+    run_info_extraction: bool = True,
 ) -> None:
     """Background OCR coroutine for a tender project doc upload (P1-2/P1-3).
 
@@ -374,6 +375,8 @@ async def run_project_doc_ocr(
         case_path: Directory containing uploaded tender files.
         tenant: Tenant scope forwarded to update_project_doc_ocr.
         purpose: OCR engine purpose hint.
+        run_info_extraction: 是否在 OCR 成功后抽取 criteria/tender_info。评标入口的补底稿重跑
+            （H3 KD2）传 False——那是一次 30-60s 的模型往返，与"补回缺失页"无关。
     """
     # OCR 与抽取分两段：OCR 在信号量内（限并发的是 OCR 计算），抽取是模型调用，必须在信号量
     # 外跑——否则一次 criteria 抽取（~30-60s 模型往返）会占住一个 OCR 名额，拖慢同项目投标文件
@@ -433,8 +436,8 @@ async def run_project_doc_ocr(
             except Exception:
                 logger.debug("failed to set criteria_status=failed on ocr failure", exc_info=True)
 
-    # 信号量已释放：抽取（模型调用）不再占 OCR 名额。OCR 成功才抽取。
-    if ocr_text is not None:
+    # 信号量已释放：抽取（模型调用）不再占 OCR 名额。OCR 成功且调用方要抽取才抽。
+    if ocr_text is not None and run_info_extraction:
         # OCR ready 即解锁开始分析；置 criteria_status=running（独立 try，F1：失败只记日志，绝不
         # 触发 OCR failed 路径）。随后抽取在末尾置 ready/failed，故 running 写失败也无碍最终状态。
         try:
