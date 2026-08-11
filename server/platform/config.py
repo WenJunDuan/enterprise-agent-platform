@@ -23,6 +23,10 @@ _DEFAULT_TENANT_KEY_WARNING_EMITTED = False
 _DEFAULT_TENDER_TIMEOUT_SECONDS = 3600.0
 _DEFAULT_OCR_CLOUD_MAX_WAIT_SECONDS = 1200.0
 _OCR_TIMEOUT_BUDGET_RATIO = 0.5
+_DEFAULT_OCR_EXECUTOR_WORKERS = 4
+_DEFAULT_OCR_PREWARM_STALE_SECONDS = 300.0
+# 评标最多把 tender 总预算的这个比例花在"等预热 OCR 跑完"上，其余留给评标本身。
+_DOC_LAYER_WAIT_BUDGET_RATIO = 0.5
 _CACHE_V2_STARTUP_NOTE = (
     "OCR cache v5 active: the first rerun after deployment re-runs OCR once per file; "
     "subsequent reruns use the cached result."
@@ -563,6 +567,37 @@ class OcrSettings:
     def allowed_tools(self) -> list[str]:
         """映射输入全内联，无需任何工具。"""
         return []
+
+
+@dataclass(frozen=True, slots=True)
+class OcrConcurrencySettings:
+    """H3 KD4/KD5：OCR 命名池规模 + 预热在途新鲜度阈值 + 评标等预热的上限。
+
+    Attributes:
+        executor_workers: 命名 OCR 线程池 worker 数。分钟级 OCR 调用与毫秒级 DB 调用分池，
+            状态写库不再被 OCR 饿死（``OCR_EXECUTOR_WORKERS``）。
+        prewarm_stale_sec: doc 行 ``ocr_status=running`` 且 ``updated_at`` 距今小于该值时判
+            "预热仍在途"；超过即视为进程重启遗留的僵尸 running（``OCR_PREWARM_STALE_SEC``）。
+        doc_layer_wait_cap_sec: 评标等待预热完成的上限，从 tender 总预算派生（占比
+            ``_DOC_LAYER_WAIT_BUDGET_RATIO``），替代此前拍脑袋的 360s 固定值。
+    """
+
+    executor_workers: int
+    prewarm_stale_sec: float
+    doc_layer_wait_cap_sec: float
+
+
+def get_ocr_concurrency_settings() -> OcrConcurrencySettings:
+    """Read OCR pool / prewarm-freshness knobs fresh from the environment."""
+    stale = _env_float_from("OCR_PREWARM_STALE_SEC", _DEFAULT_OCR_PREWARM_STALE_SECONDS, os.environ)
+    tender_timeout = _env_float_from(
+        "TENDER_TIMEOUT_SEC", _DEFAULT_TENDER_TIMEOUT_SECONDS, os.environ
+    )
+    return OcrConcurrencySettings(
+        executor_workers=max(1, _env_int("OCR_EXECUTOR_WORKERS", _DEFAULT_OCR_EXECUTOR_WORKERS)),
+        prewarm_stale_sec=stale if stale > 0 else _DEFAULT_OCR_PREWARM_STALE_SECONDS,
+        doc_layer_wait_cap_sec=max(0.0, tender_timeout) * _DOC_LAYER_WAIT_BUDGET_RATIO,
+    )
 
 
 def get_ocr_settings() -> OcrSettings:

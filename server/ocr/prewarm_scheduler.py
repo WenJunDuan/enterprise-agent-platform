@@ -10,6 +10,15 @@ from __future__ import annotations
 
 import asyncio
 import os
+import threading
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
+from typing import Any, TypeVar
+
+from server.platform.config import get_ocr_concurrency_settings
+
+_T = TypeVar("_T")
 
 # P1-2: 强引用集防 fire-and-forget OCR 任务被 GC 回收；done 后自清。
 _UPLOAD_OCR_TASKS: set[asyncio.Task[None]] = set()
@@ -25,6 +34,45 @@ _DEFAULT_UPLOAD_OCR_CONCURRENCY = 4
 _UPLOAD_OCR_SEMAPHORE = asyncio.Semaphore(
     int(os.getenv("OCR_PREWARM_MAX", str(_DEFAULT_UPLOAD_OCR_CONCURRENCY)))
 )
+
+
+_OCR_EXECUTOR: ThreadPoolExecutor | None = None
+_OCR_EXECUTOR_LOCK = threading.Lock()
+
+
+def get_ocr_executor() -> ThreadPoolExecutor:
+    """进程级命名 OCR 线程池（KD4）。
+
+    OCR 是分钟级阻塞调用；此前它和 DB 读写、轮询共用 asyncio 默认 to_thread 池（4 核机 ≈8 线程），
+    双标并发时 OCR 占满默认池 → **连状态写库都排队**，任务状态机看起来"卡死"。把 OCR 挪到独立
+    命名池后，默认池只剩毫秒级短调用，状态更新不再被饿死。
+
+    懒建（不在 import 期开线程），加锁防并发首调建出两个池。
+    """
+    global _OCR_EXECUTOR
+    if _OCR_EXECUTOR is None:
+        with _OCR_EXECUTOR_LOCK:
+            if _OCR_EXECUTOR is None:
+                _OCR_EXECUTOR = ThreadPoolExecutor(
+                    max_workers=get_ocr_concurrency_settings().executor_workers,
+                    thread_name_prefix="ocr",
+                )
+    return _OCR_EXECUTOR
+
+
+async def run_in_ocr_executor(func: Callable[..., _T], /, *args: Any, **kwargs: Any) -> _T:
+    """在命名 OCR 池里跑同步 OCR 调用（``asyncio.to_thread`` 的分池替身，KD4）。
+
+    Args:
+        func: 同步的 OCR 入口（如 ``prewarm_and_report`` / ``ocr_preprocess_block``）。
+        *args: 位置参数。
+        **kwargs: 关键字参数。
+
+    Returns:
+        ``func`` 的返回值。
+    """
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(get_ocr_executor(), partial(func, *args, **kwargs))
 
 
 def get_upload_ocr_semaphore() -> asyncio.Semaphore:
