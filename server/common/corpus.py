@@ -144,17 +144,21 @@ def normalize_text(text: str) -> str:
 
 # 文件头切分：纯文件名 = 首个 ``(kind=`` 或 **已知方括号标记** 之前。只在 ``[检出印章`` /
 # ``[⚠清晰度`` / ``[清晰度`` 处切，**不切文件名里的普通 ``[``**（如 file[1].pdf）。
-_FILE_HEAD_SPLIT_RE = re.compile(r"\s*\(kind=|\s*\[(?:检出印章|⚠?清晰度)")
+_FILE_HEAD_SPLIT_RE = re.compile(r"\s*\(kind=|\s*\[(?:检出印章|⚠?清晰度|⚠?页号存疑)")
+
+# 页号不可靠标记（云 OCR 页数守卫命中，draft_render.page_confidence_note 产）
+_PAGE_UNRELIABLE_MARK = "页号存疑"
 
 
-def _parse_file_head(head: str) -> tuple[str, str]:
-    """从 ``### 文件:`` 头串解析 (纯文件名, clarity)。
+def _parse_file_head(head: str) -> tuple[str, str, bool]:
+    """从 ``### 文件:`` 头串解析 (纯文件名, clarity, 页号是否不可靠)。
 
     clarity: ``[⚠清晰度低`` → low；``[清晰度未知`` → unknown；否则 clear（供置信度消费）。
+    页号不可靠（``[⚠页号存疑``，云 OCR 页数守卫命中）→ 回查闸把该文件证据全部降 page_unverified。
     """
     clarity = "low" if "清晰度低" in head else ("unknown" if "清晰度未知" in head else "clear")
     name = _FILE_HEAD_SPLIT_RE.split(head, maxsplit=1)[0].strip()
-    return name, clarity
+    return name, clarity, _PAGE_UNRELIABLE_MARK in head
 
 
 def _normalize_filename(s: str) -> str:
@@ -162,6 +166,14 @@ def _normalize_filename(s: str) -> str:
     s = unicodedata.normalize("NFKC", s or "").lower()
     s = s.replace("\\", "/")
     return s.rsplit("/", 1)[-1].strip()
+
+
+def _source_mentions_file(normalized_source: str, name: str) -> bool:
+    """规范化 source 里是否点名了文件 ``name``：完整名或 stem(≥4 字符) 命中（不反向短子串）。"""
+    stem = name.rsplit(".", 1)[0]
+    return bool(name and name in normalized_source) or (
+        len(stem) >= 4 and stem in normalized_source
+    )
 
 
 def parse_corpus(evidence_source: str) -> list[dict[str, Any]]:
@@ -181,6 +193,7 @@ def parse_corpus(evidence_source: str) -> list[dict[str, Any]]:
     cur_clarity: str = "clear"
     cur_page: int | None = None
     cur_artifact: str = ARTIFACT_ORIGINAL
+    cur_page_unreliable: bool = False
     buf: list[str] = []
 
     def flush() -> None:
@@ -198,6 +211,7 @@ def parse_corpus(evidence_source: str) -> list[dict[str, Any]]:
                         "artifact_page": cur_page,
                         "text": text,
                         "clarity": cur_clarity,
+                        "page_unreliable": cur_page_unreliable,
                     }
                 )
         buf = []
@@ -211,11 +225,12 @@ def parse_corpus(evidence_source: str) -> list[dict[str, Any]]:
             cur_clarity = "clear"
             cur_page = None
             cur_artifact = ARTIFACT_ORIGINAL
+            cur_page_unreliable = False
             continue
         m_file = _FILE_RE.match(line)
         if m_file:
             flush()
-            cur_file, cur_clarity = _parse_file_head(m_file.group(1))
+            cur_file, cur_clarity, cur_page_unreliable = _parse_file_head(m_file.group(1))
             cur_page = None
             cur_artifact = ARTIFACT_ORIGINAL
             continue
@@ -239,6 +254,8 @@ class CorpusIndex:
         self.clarity_map: dict[str, str] = {}
         # 文件名（原样，与 tier_files 的 key 一致）→ artifact（original/converted），供页坐标系比对
         self.artifact_map: dict[str, str] = {}
+        # 页号不可靠的文件（云 OCR 页数守卫命中）：其证据页号一律不认，见 page_unreliable_files
+        self._page_unreliable: set[str] = set()
         parts: dict[str, list[str]] = {}
         for seg in segments:
             tier, file = seg["tier"], seg["file"]
@@ -249,6 +266,8 @@ class CorpusIndex:
                 # 同文件多段 clarity 一致；非 clear 优先记（low/unknown 是风险信号）
                 if norm_name not in self.clarity_map or clarity != "clear":
                     self.clarity_map[norm_name] = clarity
+                if seg.get("page_unreliable"):
+                    self._page_unreliable.add(norm_name)
                 if seg["artifact"] != ARTIFACT_ORIGINAL:
                     self.artifact_map[file] = seg["artifact"]
                 else:
@@ -271,6 +290,17 @@ class CorpusIndex:
             if c in {"low", "unknown"}
         ]
 
+    def page_unreliable_files(self) -> list[str]:
+        """页号不可靠的文件名列表（云 OCR 页数守卫命中，H2 KD1/KD5）。"""
+        return sorted(self._page_unreliable)
+
+    def source_names_page_unreliable_file(self, source: str | None) -> bool:
+        """source 是否点名了某个页号不可靠的文件（匹配规则同低置信点名）。"""
+        if not source:
+            return False
+        nsrc_full = unicodedata.normalize("NFKC", source).lower()
+        return any(_source_mentions_file(nsrc_full, name) for name in self._page_unreliable)
+
     def source_names_low_clarity_file(self, source: str | None) -> str | None:
         """source 文本是否点名了某 **low**（confirmed 低置信，不含 unknown）文件 → 返回该文件名。
 
@@ -282,10 +312,7 @@ class CorpusIndex:
         # source 常是"投标文件2.07资料.pdf第6页"——直接对原串 NFKC+lower 匹配（不取 basename）
         nsrc_full = unicodedata.normalize("NFKC", source).lower()
         for name, clarity in self.clarity_map.items():
-            if clarity != "low":
-                continue
-            stem = name.rsplit(".", 1)[0]
-            if (name and name in nsrc_full) or (len(stem) >= 4 and stem in nsrc_full):
+            if clarity == "low" and _source_mentions_file(nsrc_full, name):
                 return name
         return None
 

@@ -121,7 +121,16 @@ def test_units_jsonl_concurrent_append_integrity(case_dir, rid):
     assert len(lines) == n
     for line in lines:
         unit = json.loads(line)  # 交错写会产生非法 JSON 行，此处即失败
-        assert set(unit) == {"file", "page", "status", "payload", "from_cache"}
+        # H2 KD1：单元带页溯源三元组（artifact / artifact_page / page）
+        assert set(unit) == {
+            "file",
+            "page",
+            "artifact",
+            "artifact_page",
+            "status",
+            "payload",
+            "from_cache",
+        }
 
 
 def test_progress_done_monotonic_nondecreasing(case_dir, rid, monkeypatch):
