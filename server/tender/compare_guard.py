@@ -7,8 +7,11 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 # 整池封锁时的逐家说明：按 **blocked_reason** 取（F9：旧实现无论何种原因都写"价格项满分未设"，
 # 与实际原因不符，误导人工）。
@@ -23,8 +26,22 @@ _EXCLUSION_NOTES = {
     "bid_price_invalid": "该家投标报价缺失或数值非法，已不参与价格横比，需人工补录。",
 }
 
-# 错误详情脱敏：抹掉绝对路径（含 Windows 盘符形式），只留业务可读信息。
-_PATH_PATTERN = re.compile(r"(?:[A-Za-z]:)?(?:/[\w.\-]+)+|(?:[A-Za-z]:\\[\w.\\\-]+)")
+# 未命中白名单时给用户看的固定文案（详情只进服务端日志）。
+GENERIC_ERROR_DETAIL = "横比计算失败，请重试或联系管理员"
+
+# 白名单：服务端自己抛出、本就写给用户看的业务原因，命中才原文透出。
+# 新增服务端业务异常时，把它的用户可读消息一并登记到这里，否则前端只会看到固定文案。
+COMPARE_TIMEOUT_REASON = "横比计算超时，请稍后重新横比"
+
+KNOWN_BUSINESS_REASONS = (
+    "参与横比的已完成投标人不足 2 家",
+    COMPARE_TIMEOUT_REASON,
+)
+
+# 凭证兜底（防御纵深）：Bearer / sk-xxx / api_key= / token= 等形态一律抹掉。
+_CREDENTIAL_PATTERN = re.compile(
+    r"(?i)(?:bearer\s+\S+|sk-[\w\-]{6,}|(?:api[_-]?key|token|secret|password)\s*[:=]\s*\S+)"
+)
 
 _DETAIL_MAX_CHARS = 200
 
@@ -53,23 +70,44 @@ def enforce_compare_guardrails(
 
 
 def sanitize_error_detail(detail: Any, limit: int = _DETAIL_MAX_CHARS) -> str:
-    """把内部异常文本收成可回前端的一行说明（脱敏：无 stack trace、无绝对路径）。
+    """把内部异常文本收成可回前端的一行说明（**白名单**：只有已知业务原因原文出网）。
 
-    compare 失败原因必须对用户可见（否则回到"静默失败"），但 traceback 与服务器路径属于内部
-    实现，不得出网（security-checklist 错误处理条款）。取有效信息行、抹路径、截断。
+    compare 失败原因必须对用户可见（否则回到"静默失败"），但异常文本是不可控输入：
+    traceback、SQL 片段、服务器路径、乃至上游调用带出的凭证都可能混在里面。透传 + 正则
+    清洗是黑名单思路（漏一个模式就泄一次），故改白名单：只有服务端自己抛的、本就写给用户看的
+    业务原因才原样返回，其余一律固定文案，完整详情落服务端日志供排障。
 
     Args:
         detail: 原始 error_detail（可能是多行 traceback）。
-        limit: 截断长度上限。
+        limit: 已知业务原因的截断长度上限。
+
+    Returns:
+        面向用户的一行说明；无内容时空串。
     """
     if not detail:
         return ""
-    lines = [line.strip() for line in str(detail).splitlines() if line.strip()]
+    raw = str(detail)
+    lines = [line.strip() for line in raw.splitlines() if line.strip()]
     if not lines:
         return ""
     message = lines[-1] if lines[0].startswith("Traceback") else lines[0]
-    message = _PATH_PATTERN.sub("[路径已隐去]", message)
-    return message if len(message) <= limit else message[:limit] + "…"
+    known = _match_known_reason(message)
+    if known is None:
+        # 详情只留服务端：写进消息体（而非 extra 字段）才能被常规日志采集与本地排障看到。
+        logger.warning("tender_compare_error_detail_masked: %s", raw)
+        return GENERIC_ERROR_DETAIL
+    # 已知业务原因也过一遍凭证兜底：上游可能把 token 拼进消息（防御纵深，不是重复校验）。
+    known = _CREDENTIAL_PATTERN.sub("[已隐去]", known)
+    return known if len(known) <= limit else known[:limit] + "…"
+
+
+def _match_known_reason(message: str) -> str | None:
+    """命中白名单则返回该业务原因原文（去掉异常类名前缀），否则 None。"""
+    for reason in KNOWN_BUSINESS_REASONS:
+        if reason in message:
+            index = message.index(reason)
+            return message[index:].strip()
+    return None
 
 
 def _block_whole_pool(payload: dict[str, Any], compare_input: dict[str, Any]) -> None:
@@ -129,4 +167,10 @@ def _model_bidders_by_claim(payload: dict[str, Any]) -> dict[Any, dict[str, Any]
     }
 
 
-__all__ = ["enforce_compare_guardrails", "sanitize_error_detail"]
+__all__ = [
+    "COMPARE_TIMEOUT_REASON",
+    "GENERIC_ERROR_DETAIL",
+    "KNOWN_BUSINESS_REASONS",
+    "enforce_compare_guardrails",
+    "sanitize_error_detail",
+]

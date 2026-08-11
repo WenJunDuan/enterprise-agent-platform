@@ -107,3 +107,48 @@ records:
       compare 任务真跑到 completed、结果落 tender_compare_results、评标不抛异常、
       flusher 已 cancel 且无幽灵 accepted 行）；全量与基线 diff 为空；ruff All checks passed。
     green_observed_at: "2026-08-11T13:12:51Z"
+
+  - id: pass2-F3-F7-blocked-reason-and-warning-text
+    ac_refs: [AC3, AC4]
+    test_file: tests/test_tender_compare_input.py
+    red_command: uv run pytest tests/test_tender_compare_input.py -q
+    red_summary: >-
+      2 failed, 19 passed —— 项目规则未定稿时 price_reason 短路，封锁原因误报 no_price_item
+      （应为 insufficient_comparable_bidders，正是本 sprint 要治的"原因与实际不符"病症）；
+      排除告警把 16 位内容 hash 摆给业务用户看。
+    red_observed_at: "2026-08-11T13:14:00Z"
+    green_command: uv run pytest tests/test_tender_compare_input.py -q && uv run pytest -q
+    green_summary: >-
+      21 passed（后随 F6 增至 24）；池级原因优先于价格项原因、池可比时价格项三态照常上报、
+      告警文案去 hash 三条用例锁定；全量与基线 diff 为空。
+    green_observed_at: "2026-08-11T13:16:28Z"
+
+  - id: pass2-F4-pending-reason-label
+    ac_refs: [AC6]
+    test_file: tests/test_tender_pending_reason.py
+    red_command: uv run pytest tests/test_tender_pending_reason.py -q
+    red_summary: >-
+      1 failed, 10 passed —— scored_zero_demoted 分支同时写
+      manual_review_reason=insufficient_evidence 却把 pending_reason 打成 non_responsive，
+      与 evidence.py 回查降级的 evidence_unresolved 不一致（贴错标签误导人工）。
+    red_observed_at: "2026-08-11T13:17:30Z"
+    green_command: uv run pytest tests/test_tender_pending_reason.py -q && uv run pytest -q
+    green_summary: 11 passed；两条降级路径枚举统一为 evidence_unresolved；全量与基线 diff 为空。
+    green_observed_at: "2026-08-11T13:19:00Z"
+
+  - id: pass2-F6-error-detail-whitelist
+    ac_refs: [AC2]
+    test_file: tests/test_tender_compare_input.py
+    red_command: uv run pytest tests/test_tender_compare_input.py -q
+    red_summary: >-
+      1 error during collection —— ImportError: cannot import name 'GENERIC_ERROR_DETAIL'
+      （旧实现是"透传 + 抹路径"的黑名单清洗：SQL 片段、异常类名照出，Bearer/sk-/api_key/token
+      一律不抹，且被屏蔽内容不落服务端日志）。
+    red_observed_at: "2026-08-11T13:20:00Z"
+    green_command: uv run pytest tests/test_tender_compare_input.py tests/test_tender_compare.py -q && uv run pytest -q
+    green_summary: >-
+      43 passed —— 白名单命中原文透出、未知内部异常固定文案、5 种凭证形态兜底抹除、
+      被屏蔽详情进服务端日志（caplog 断言）、路由层两条（已知业务原因 vs 未知内部异常）。
+      超时另登记业务原因 COMPARE_TIMEOUT_REASON（原 str(TimeoutError) 为空串 → 用户看不到原因）。
+      全量 33 failed / 1168 passed，与基线 diff 为空；ruff All checks passed。
+    green_observed_at: "2026-08-11T13:22:58Z"

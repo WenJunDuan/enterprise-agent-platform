@@ -17,7 +17,11 @@ from server.stores.result_store import archive_result_payload
 from server.stores.tender_compare_store import compute_criteria_hash
 from server.stores.tender_doc_store import upsert_project_doc
 from server.stores.tender_project_store import get_or_create_project
-from server.tender.compare_guard import enforce_compare_guardrails, sanitize_error_detail
+from server.tender.compare_guard import (
+    GENERIC_ERROR_DETAIL,
+    enforce_compare_guardrails,
+    sanitize_error_detail,
+)
 from server.tender.compare_input import collect_compare_input, find_price_item
 
 TENANT = "acme"
@@ -176,6 +180,56 @@ def test_collect_returns_none_when_pool_under_two():
     project_id = _new_project(criteria)
     _archive_bid(project_id, "B1", amount=1000.0, criteria_ref=_project_ref(criteria))
     assert collect_compare_input(TENANT, project_id, {}) is None
+
+
+def test_missing_authority_criteria_reports_pool_reason_not_price_reason():
+    """F3：项目规则未定稿时，封锁原因是「可比家数不足」，不该被价格项短路成 no_price_item。"""
+    project_id = _new_project(None)
+    _archive_bid(project_id, "B1", amount=1000.0,
+                 criteria_ref={"version": "v1", "source": "self_parsed"})
+    _archive_bid(project_id, "B2", amount=1200.0,
+                 criteria_ref={"version": "v1", "source": "self_parsed"})
+
+    compare_input, _sig = collect_compare_input(TENANT, project_id, {})
+
+    assert compare_input["price_comparison_blocked"] is True
+    assert compare_input["price_comparison_blocked_reason"] == "insufficient_comparable_bidders"
+
+    payload = {"bidders": [], "recommended": None, "provisional": True, "warnings": [],
+               "explanation": ""}
+    enforce_compare_guardrails(payload, compare_input)
+    assert all("未找到" not in bidder["note"] for bidder in payload["bidders"])
+
+
+def test_price_reason_still_reported_when_pool_is_comparable():
+    """池可比时价格项原因照常上报（F3 修复不得把价格项三态吃掉）。"""
+    criteria = _criteria(price_max=None)
+    project_id = _new_project(criteria)
+    ref = _project_ref(criteria)
+    _archive_bid(project_id, "B1", amount=1000.0, criteria_ref=ref)
+    _archive_bid(project_id, "B2", amount=1200.0, criteria_ref=ref)
+
+    compare_input, _sig = collect_compare_input(TENANT, project_id, {})
+
+    assert compare_input["price_comparison_blocked_reason"] == "price_max_unknown"
+
+
+def test_exclusion_warning_hides_internal_hash():
+    """F7：告警面向业务人员，不得把 16 位内容 hash 摆上去。"""
+    criteria = _criteria()
+    project_id = _new_project(criteria)
+    version = compute_criteria_hash(criteria)
+    _archive_bid(project_id, "B1", amount=1000.0, criteria_ref=_project_ref(criteria))
+    _archive_bid(project_id, "B2", amount=1200.0,
+                 criteria_ref={"version": "stale-version", "source": "self_parsed"})
+    _archive_bid(project_id, "B3", amount=1100.0, criteria_ref=_project_ref(criteria))
+
+    compare_input, _sig = collect_compare_input(TENANT, project_id, {})
+
+    joined = " ".join(compare_input["warnings"])
+    assert version not in joined
+    assert "stale-version" not in joined
+    assert "B2" in joined and "重评" in joined
 
 
 # ── KD3 价格项：权威单源 + 遍历三态 ────────────────────────────────────────────
@@ -359,19 +413,52 @@ def test_pool_keeps_only_latest_result_per_bidder():
 # ── 错误详情脱敏（KD2 GET 透传前的边界处理）────────────────────────────────────
 
 
-def test_sanitize_error_detail_strips_traceback_and_paths():
+def test_sanitize_error_detail_passes_known_business_reason():
+    """已知业务异常（服务端自己抛的、面向用户的话）原文透出。"""
     raw = (
         'Traceback (most recent call last):\n'
         '  File "/Users/someone/workspace/server/tender/compare_worker.py", line 12, in run\n'
         "ValueError: 参与横比的已完成投标人不足 2 家"
     )
     cleaned = sanitize_error_detail(raw)
-    assert "Traceback" not in cleaned
+    assert cleaned == "参与横比的已完成投标人不足 2 家"
+
+
+def test_sanitize_error_detail_masks_unknown_internal_errors():
+    """F6 白名单：未知内部异常一律固定文案，不透任何内部信息。"""
+    raw = (
+        'Traceback (most recent call last):\n'
+        '  File "/Users/someone/workspace/server/tender/compare_worker.py", line 12, in run\n'
+        "sqlite3.OperationalError: no such column: tender_compare_results.foo"
+    )
+    cleaned = sanitize_error_detail(raw)
+    assert cleaned == GENERIC_ERROR_DETAIL
+    assert "sqlite3" not in cleaned
     assert "/Users/someone" not in cleaned
-    assert "参与横比的已完成投标人不足 2 家" in cleaned
 
 
-def test_sanitize_error_detail_truncates_and_handles_blank():
-    assert sanitize_error_detail("x" * 500).endswith("…")
-    assert len(sanitize_error_detail("x" * 500)) <= 201
+def test_sanitize_error_detail_masks_credentials_even_in_known_reason():
+    """凭证兜底：任何形态的密钥/令牌都不得随错误文案出网。"""
+    for secret in (
+        "Bearer abcdef123456",
+        "sk-live-0123456789abcdef",
+        "api_key=ZZZTOPSECRET",
+        "api-key: ZZZTOPSECRET",
+        "token=ZZZTOPSECRET",
+    ):
+        cleaned = sanitize_error_detail(f"参与横比的已完成投标人不足 2 家（{secret}）")
+        assert "ZZZTOPSECRET" not in cleaned, secret
+        assert "abcdef123456" not in cleaned, secret
+        assert "0123456789abcdef" not in cleaned, secret
+
+
+def test_sanitize_error_detail_logs_full_detail_server_side(caplog):
+    """被屏蔽的详情必须进服务端日志，否则等于把线索一起丢了。"""
+    with caplog.at_level("WARNING", logger="server.tender.compare_guard"):
+        sanitize_error_detail("sqlite3.OperationalError: disk I/O error")
+    assert "disk I/O error" in caplog.text
+
+
+def test_sanitize_error_detail_handles_blank():
     assert sanitize_error_detail(None) == ""
+    assert sanitize_error_detail("") == ""

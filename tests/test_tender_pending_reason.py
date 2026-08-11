@@ -135,7 +135,12 @@ def test_validate_leaves_expense_result_untouched():
 
 
 def test_scored_zero_demotion_stamps_pending_reason():
-    """整单不响应时 score=0 无依据项被服务端降级 null → 必须同时打上 non_responsive。"""
+    """无依据 0 分被降级 null → 打 evidence_unresolved。
+
+    F4：该分支同时写 ``manual_review_reason="insufficient_evidence"``，语义是"没有可核的
+    评分依据"，与 evidence.py 回查降级同源，故枚举必须一致取 ``evidence_unresolved``；
+    ``non_responsive`` 是"投标压根没响应该项"，两者不是一回事，贴错标签会误导人工。
+    """
     payload = _tender_result(
         [{"item": "技术方案", "max": 20, "score": 0, "status": "scored", "score_mode": "banded"}]
     )
@@ -145,7 +150,8 @@ def test_scored_zero_demotion_stamps_pending_reason():
     to.validate_tender_result(payload)
     item = payload["extracted_data"]["scoring"][0]
     assert item["score"] is None
-    assert item["pending_reason"] == "non_responsive"
+    assert item["pending_reason"] == "evidence_unresolved"
+    assert item["manual_review_reason"] == "insufficient_evidence"
 
 
 def test_evidence_downgrade_stamps_pending_reason():

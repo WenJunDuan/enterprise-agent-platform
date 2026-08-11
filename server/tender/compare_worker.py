@@ -27,7 +27,7 @@ from server.stores.tender_compare_store import (
 )
 from server.stores.tender_compare_task_store import list_compare_tasks, upsert_compare_task
 from server.stores.tender_project_store import get_project
-from server.tender.compare_guard import enforce_compare_guardrails
+from server.tender.compare_guard import COMPARE_TIMEOUT_REASON, enforce_compare_guardrails
 from server.tender.compare_input import collect_compare_input
 
 logger = logging.getLogger(__name__)
@@ -184,7 +184,11 @@ async def _execute_inner(*, request_id: str, tenant: str, project_id: str) -> No
             )
             finished = utc_now()
             row = _task_row(request_id, tenant, project_id, "failed", "横比失败", finished, finished)
-            row["error_detail"] = str(exc)
+            # 超时 str(exc) 是空串，用户会看到"失败但没说为什么"；给一句已登记的业务原因
+            # （compare_guard.KNOWN_BUSINESS_REASONS 白名单内，可原文回前端）。
+            row["error_detail"] = (
+                COMPARE_TIMEOUT_REASON if isinstance(exc, asyncio.TimeoutError) else str(exc)
+            )
             await asyncio.to_thread(upsert_compare_task, row)
 
 

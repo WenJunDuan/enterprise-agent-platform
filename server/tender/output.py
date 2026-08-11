@@ -614,7 +614,10 @@ def _verify_score_mode_consistency(structured_output: dict[str, Any]) -> None:
                 item["score"] = None
                 item.setdefault("manual_review_reason", "insufficient_evidence")
                 # KD5：服务端造出的 null 也必须自带待定原因，否则本模块自己违反 pending_reason 闸。
-                item["pending_reason"] = "non_responsive"
+                # 取 evidence_unresolved 而非 non_responsive：本降级的判据是"实得 0 且**无评分
+                # 依据明细**"（同一处已写 manual_review_reason=insufficient_evidence），与
+                # evidence.py 回查降级同源；non_responsive 表示"投标未响应该项"，是另一回事。
+                item["pending_reason"] = "evidence_unresolved"
                 warnings.append(
                     {
                         "code": "scored_zero_demoted",
