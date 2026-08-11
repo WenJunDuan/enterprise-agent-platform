@@ -23,6 +23,7 @@ from typing import Any, Callable
 
 from server.common.command_adapter import run_command_json
 from server.ocr.pipeline import ocr_preprocess_block
+from server.tender.compare_input import build_criteria_ref, resolve_project_criteria
 from server.tender.context_slim import bound_tender_context, build_slim_tender_context
 from server.tender.output import TENDER_OUTPUT_SCHEMA_NAME
 from server.platform.config import get_tender_eval_settings
@@ -156,6 +157,35 @@ def _load_doc_layer_context_slim(project_id: str, bid_id: str | None, tenant: st
         return None
 
 
+def _criteria_context_block(criteria: dict[str, Any], version: str | None) -> str:
+    """注入给模型的权威 criteria 块（含 KD1 版本号，供结论回引与人工回溯）。"""
+    readable = json.dumps(criteria, ensure_ascii=False, indent=2)
+    return (
+        f"\n\n=== 已解析评分标准 criteria（版本 {version}，S1 直接采用，勿重新解析）===\n"
+        f"{readable}\n"
+        f"（本次评标依据的项目规则版本 criteria_version={version}；"
+        "结论请照此版本判分，服务端会按该版本做跨投标人横比。）"
+    )
+
+
+def _stamp_criteria_ref(payload: Any, injected_version: str | None) -> None:
+    """在结论上**确定性**打 ``extracted_data.criteria_ref``（KD1，不依赖模型回声）。
+
+    注入过项目权威版本 → ``source=project``（即便模型转录快照漂移，判据也只看 ref）；
+    未注入 → 按模型自解析副本记 ``self_parsed``（横比时排除并提示重评）。
+    归档发生在 ``run_command_json`` 内部、早于本次打标，故 results 行里的 ref 由
+    ``tender.worker`` 随后补写一次（见 ``worker._persist_criteria_ref``）。
+    """
+    if not isinstance(payload, dict):
+        return
+    extracted = payload.get("extracted_data")
+    if not isinstance(extracted, dict):
+        return
+    ref = build_criteria_ref(injected_version, extracted.get("criteria"))
+    if ref is not None:
+        extracted["criteria_ref"] = ref
+
+
 async def _wait_doc_layer_ready(project_id: str, bid_id: str, tenant: str) -> None:
     """短轮询等招标层 + 当前家投标层 OCR 都到终态（ready/failed），供评标复用预热 OCR、免重 OCR。
 
@@ -239,27 +269,22 @@ async def run_tender_evaluation(
         else None
     )
 
-    # R1 criteria 注入（治②）：若招标层已有 criteria（上传时预抽），追加到 context，
-    # 指示模型 S1 直接采用、无需重解析。降级安全：无 criteria/project_id/异常 → 不注入。
+    # R1 criteria 注入（治②）：若招标层已有权威 criteria（上传时预抽 / 首家评标 backfill），
+    # 连同 KD1 的 criteria_version 一并追加到 context，指示模型 S1 直接采用、无需重解析。
+    # 降级安全：无 criteria/project_id/异常 → 不注入（version 留 None → 结论记 self_parsed）。
+    injected_criteria_version: str | None = None
     if project_id and context:
         try:
-            import json as _json
-
             # F4：同步 SQLite 读经 to_thread 移出事件循环（对齐 _load_doc_layer_context / round4 F4）。
-            project_doc = await asyncio.to_thread(get_project_doc, project_id, tenant)
-            stored_criteria = (project_doc or {}).get("criteria")
-            if stored_criteria:
-                # Ensure Chinese characters are readable in the injected context block.
-                try:
-                    parsed = _json.loads(stored_criteria)
-                    readable = _json.dumps(parsed, ensure_ascii=False, indent=2)
-                except (ValueError, TypeError):
-                    readable = stored_criteria
-                criteria_block = (
-                    "\n\n=== 已解析评分标准 criteria（S1 直接采用，勿重新解析）===\n" + readable
+            project_criteria, injected_criteria_version = await asyncio.to_thread(
+                resolve_project_criteria, project_id, tenant
+            )
+            if project_criteria is not None:
+                context = context + _criteria_context_block(
+                    project_criteria, injected_criteria_version
                 )
-                context = context + criteria_block
         except Exception:
+            injected_criteria_version = None
             logger.debug("criteria context injection failed, continuing without", exc_info=True)
 
     bounded_context = bound_tender_context(context, model=resolved_model or None) if context else None
@@ -311,6 +336,7 @@ async def run_tender_evaluation(
             # 这类回归信号。成功时的 attempt（从 0 计数）即实际重试了几次；AgentRunMeta 已
             # 声明 retry_count 尾部字段（带默认值 0），slots 下此赋值合法。
             meta.retry_count = attempt
+            _stamp_criteria_ref(payload, injected_criteria_version)
             return payload, meta
         except Exception as exc:
             last_error = exc

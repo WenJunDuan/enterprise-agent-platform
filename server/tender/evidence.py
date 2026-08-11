@@ -184,6 +184,9 @@ def _downgrade_scoring_item(
     if sitem.get("status") == "scored":
         sitem["status"] = "manual_review"
         sitem["score"] = None
+        # KD5：回查降级造出的 null 必须自带待定原因（出处未核实/底稿读不清），
+        # 否则归档结论会违反 pending_reason 契约、消费端又要靠猜。
+        sitem["pending_reason"] = "evidence_unresolved"
         sitem["basis"] = cur_basis + note
         sitem["resolution"] = {"status": resolution_status}
         summary["downgraded_items"].append(sitem.get("item"))

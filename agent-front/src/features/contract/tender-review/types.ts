@@ -1,3 +1,5 @@
+import type { TenderCompareStatus } from './api'
+
 export type TenderProjectStatus = 'doing' | 'review' | 'done' | 'archived'
 export type TenderScenario =
   | 'bidder_self_check'
@@ -122,12 +124,23 @@ export type ReviewCategoryData = {
   items: ReviewItem[]
 }
 
+/** score=null 的待定原因（KD5，与 audit-result.schema.json 的枚举同源）。 */
+export type TenderPendingReason =
+  | 'cross_bid'
+  | 'external_data'
+  | 'live_event'
+  | 'evidence_unresolved'
+  | 'manual_mode'
+  | 'non_responsive'
+
 export type TenderScoringItem = {
   id: string
   item: string
   max: number | null
   score: number | null
   status: TenderScoringStatus
+  /** score=null 时的待定原因；存量结果没有该字段，展示层回退"待核验"。 */
+  pendingReason?: TenderPendingReason
   basis: string
   category: ReviewCategory
   scoreCategory: TenderScoreCategory
@@ -310,6 +323,10 @@ export type TenderReviewMockData = {
   compareScoreRows?: TenderCompareScoreRow[]
   comparePriceDetail?: TenderPriceCompareDetail
   compareNotice?: {
+    /** 横比生命周期（KD2）：none/pending/running/failed/ready。 */
+    status: TenderCompareStatus
+    /** failed 时的脱敏原因，供"错误可解释"提示。 */
+    errorDetail?: string
     stale: boolean
     provisional: boolean
     recommended: string | null

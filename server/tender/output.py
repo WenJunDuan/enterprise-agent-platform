@@ -42,6 +42,19 @@ from server.common.output_contracts import (
 
 PLAN_SCHEMA_NAME = "common/plan.schema.json"
 
+# KD5：``score=null`` 的合法待定原因枚举。与 audit-result.schema.json 的
+# extracted_data.scoring.items.pending_reason 同源（schema 管形、本闸管"null 必须给原因"的语义）。
+PENDING_REASONS = frozenset(
+    {
+        "cross_bid",  # 需全部投标报价横比
+        "external_data",  # 需外部数据（信用等）
+        "live_event",  # 需现场答辩 / 演示
+        "evidence_unresolved",  # 出处未核实 / 底稿读不清
+        "manual_mode",  # 评分方式本身为人工主观项
+        "non_responsive",  # 实质性不响应，无可评事实
+    }
+)
+
 TENDER_OUTPUT_SCHEMA_NAME = "tender/audit-result.schema.json"
 # 仅注册表 key；物理 schema 复用 common/audit-result.json（见下方 register_schema_processor 的
 # schema_path=DEFAULT_OUTPUT_SCHEMA_NAME）。刻意不在 .claude/contracts/tender/ 下建同名文件——
@@ -406,6 +419,33 @@ def _verify_scoring_consistency(structured_output: dict[str, Any]) -> None:
             )
 
 
+def _verify_pending_reason(structured_output: dict[str, Any]) -> None:
+    """KD5 语义闸：``score=null`` 的评分项必须带合法 ``pending_reason``。
+
+    `score:null` 曾同时表示"等横比 / 需外部数据 / 需答辩 / 回查降级 / 主观人工 / 实质不响应"，
+    消费端只能靠猜。缺失或取值不在枚举内 → 契约失败（触发命令重试），逼模型显式表态。
+    **必须在 ``_verify_score_mode_consistency`` 之后调用**：后者会把无依据的 0 分降级为 null，
+    降级时自行补枚举，先跑本闸会漏检这些服务端新造的 null。
+    """
+    from server.common.contract import JSONContractError  # 惰性 import，断模块加载期环
+
+    extracted = structured_output.get("extracted_data")
+    if not isinstance(extracted, dict):
+        return
+    scoring = extracted.get("scoring")
+    if not isinstance(scoring, list):
+        return
+    for item in scoring:
+        if not isinstance(item, dict) or _is_real_number(item.get("score")):
+            continue
+        reason = item.get("pending_reason")
+        if reason not in PENDING_REASONS:
+            raise JSONContractError(
+                f"评分项 score=null 必须带合法 pending_reason（取值 {sorted(PENDING_REASONS)}），"
+                f"当前为 {reason!r}（item={item.get('item')!r}）"
+            )
+
+
 def _verify_score_mode_consistency(structured_output: dict[str, Any]) -> None:
     """按 criteria 各项 score_mode 校验 scoring 算术自洽，不一致记 warning（不阻断）。
 
@@ -573,6 +613,11 @@ def _verify_score_mode_consistency(structured_output: dict[str, Any]) -> None:
                 item["status"] = "manual_review"
                 item["score"] = None
                 item.setdefault("manual_review_reason", "insufficient_evidence")
+                # KD5：服务端造出的 null 也必须自带待定原因，否则本模块自己违反 pending_reason 闸。
+                # 取 evidence_unresolved 而非 non_responsive：本降级的判据是"实得 0 且**无评分
+                # 依据明细**"（同一处已写 manual_review_reason=insufficient_evidence），与
+                # evidence.py 回查降级同源；non_responsive 表示"投标未响应该项"，是另一回事。
+                item["pending_reason"] = "evidence_unresolved"
                 warnings.append(
                     {
                         "code": "scored_zero_demoted",
@@ -631,12 +676,14 @@ def normalize_tender_result(
 
 def validate_tender_result(structured_output: StructuredJSON) -> None:
     """Tender 组合版 validate：通用闸（verdict/policy_refs/风险维度清洗）之后追加评分一致性
-    三闸。三者操作的字段互不相交（通用闸不碰 extracted_data.scoring/plan），排列顺序对结果无影响
-    ——沿用拆分前 `_validate_audit_result` 内的原始调用顺序（scoring→score_mode→plan_shape）。
+    四闸。沿用拆分前 `_validate_audit_result` 内的原始调用顺序（scoring→score_mode→plan_shape），
+    KD5 的 pending_reason 闸插在 score_mode **之后**——score_mode 闸会把无依据的 0 分降级为
+    `score=null`，先跑 pending_reason 会漏检这批服务端新造的 null。
     """
     _validate_audit_result(structured_output)
     _verify_scoring_consistency(structured_output)
     _verify_score_mode_consistency(structured_output)
+    _verify_pending_reason(structured_output)
     _verify_plan_shape(structured_output)
 
 

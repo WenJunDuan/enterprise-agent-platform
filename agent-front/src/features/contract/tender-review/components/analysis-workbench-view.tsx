@@ -11,6 +11,7 @@ import type {
   TenderReviewMockData,
   TenderReviewMode,
 } from '../types'
+import type { TenderCompareStatus } from '../api'
 import { formatScore } from '../format'
 import { OverviewChecklistView } from './overview-checklist-view'
 import { ScoringOverviewPanel } from './scoring-overview-panel'
@@ -28,6 +29,9 @@ type AnalysisWorkbenchViewProps = {
   onActiveItem: (itemId: string) => void
   onHistory: () => void
   onReport: () => void
+  /** KD2：横比生命周期 + 重新横比入口（失败/过期时用户可自助重跑）。 */
+  compareRetrying?: boolean
+  onRetryCompare?: () => void
 }
 
 const viewLabels: Record<TenderReviewMode, string> = {
@@ -107,7 +111,11 @@ export function AnalysisWorkbenchView(props: AnalysisWorkbenchViewProps) {
       ) : props.mode === 'detail' ? (
         <DetailWorkbench {...props} />
       ) : (
-        <CompareWorkbench data={props.data} />
+        <CompareWorkbench
+          data={props.data}
+          retrying={props.compareRetrying}
+          onRetry={props.onRetryCompare}
+        />
       )}
     </div>
   )
@@ -542,7 +550,15 @@ function getItemBadge(item: ReviewItem) {
   }
 }
 
-function CompareWorkbench({ data }: { data: TenderReviewMockData }) {
+function CompareWorkbench({
+  data,
+  retrying,
+  onRetry,
+}: {
+  data: TenderReviewMockData
+  retrying?: boolean
+  onRetry?: () => void
+}) {
   const reviewBidders = data.reviewBidders ?? []
   const cards = data.bidderCards ?? []
   const projectInfo = data.projectInfo ?? emptyProjectInfo
@@ -551,7 +567,69 @@ function CompareWorkbench({ data }: { data: TenderReviewMockData }) {
       <div className='text-sm text-muted-foreground'>
         {reviewBidders.length} 家投标方 · {projectInfo.method ?? '—'} · 综合对比
       </div>
+      <CompareStatusBanner
+        notice={data.compareNotice}
+        retrying={retrying}
+        onRetry={onRetry}
+      />
       <BidderCompareCards cards={cards} />
+    </div>
+  )
+}
+
+const compareStatusText: Record<TenderCompareStatus, string> = {
+  none: '尚未开始横比：全部投标人评标完成后会自动开始。',
+  pending: '横比已排队，稍候自动刷新。',
+  running: '横比计算中，稍候自动刷新。',
+  failed: '横比未成功。',
+  ready: '横比已完成。',
+}
+
+/** 横比生命周期条：状态可见 + 失败可解释 + 一键重跑（ui-guidelines 三原则）。 */
+function CompareStatusBanner({
+  notice,
+  retrying,
+  onRetry,
+}: {
+  notice: TenderReviewMockData['compareNotice']
+  retrying?: boolean
+  onRetry?: () => void
+}) {
+  if (!notice) return null
+  const failed = notice.status === 'failed'
+  const busy = notice.status === 'pending' || notice.status === 'running'
+  const canRetry = Boolean(onRetry) && (failed || notice.stale)
+  if (notice.status === 'ready' && !notice.stale) return null
+  return (
+    <div
+      className={cn(
+        'flex flex-wrap items-center gap-3 rounded-lg border px-4 py-3 text-sm',
+        failed
+          ? 'border-red-300 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200'
+          : 'border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200'
+      )}
+      role='status'
+    >
+      <span>
+        {notice.stale && !failed
+          ? '投标人有变化，当前横比结果已过期。'
+          : compareStatusText[notice.status]}
+      </span>
+      {failed && notice.errorDetail ? (
+        <span className='text-xs opacity-80'>原因：{notice.errorDetail}</span>
+      ) : null}
+      {busy ? <span className='text-xs opacity-80'>正在计算…</span> : null}
+      {canRetry ? (
+        <button
+          type='button'
+          className='ml-auto rounded-md border border-current px-3 py-1 text-xs font-medium disabled:opacity-60'
+          onClick={onRetry}
+          disabled={retrying}
+          aria-label='重新横比'
+        >
+          {retrying ? '正在重新横比…' : '重新横比'}
+        </button>
+      ) : null}
     </div>
   )
 }

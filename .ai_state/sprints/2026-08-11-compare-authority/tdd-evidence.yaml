@@ -1,0 +1,183 @@
+sprint: 2026-08-11-compare-authority
+executor: generator subagent (model=opus), worktree .claude/worktrees/agent-a56af065140f2dc80
+baseline:
+  pytest_collected: 1162
+  pytest_preexisting_failures: 33
+  note: >-
+    基线 33 条失败为环境缺 ocr extra（pymupdf/python-pptx 未装）与 AUDIT_DIRECT_CONNECT 未配额度，
+    与本 sprint 无关。实测命令 `git stash push -u && uv run pytest -q && git stash pop`，
+    失败清单存 /tmp/baseline_failures.txt，每个 AC 的 green 判据 = 与该清单 diff 为空。
+
+records:
+  - id: KD5-pending-reason
+    ac_refs: [AC6, AC7]
+    test_file: tests/test_tender_pending_reason.py
+    red_command: uv run pytest tests/test_tender_pending_reason.py -q
+    red_summary: >-
+      7 failed, 4 passed —— schema 未声明 pending_reason 枚举（KeyError 'pending_reason'）、
+      validate_tender_result 对 score=null 缺原因不报错、prompt 未写产出义务、
+      服务端两条降级路径（_verify_score_mode_consistency 的 scored_zero_demoted 与
+      evidence._downgrade_scoring_item）造出的 null 不带枚举。
+    red_observed_at: "2026-08-11T02:53:00Z"
+    green_command: uv run pytest tests/test_tender_pending_reason.py -q && uv run pytest -q
+    green_summary: >-
+      11 passed（新文件）；全量与基线 diff 为空（33 failed / 1137 passed / 3 skipped）
+      —— 既有 null-score fixture 按新契约补 pending_reason：test_contract_registry.py 2 处、
+      test_tender_criteria_flow.py 3 处。uv run ruff check . → All checks passed。
+    green_observed_at: "2026-08-11T03:07:00Z"
+
+  - id: KD1-criteria-version-and-ref
+    ac_refs: [AC3, AC7]
+    test_file: tests/test_tender_criteria_ref.py
+    red_command: uv run pytest tests/test_tender_criteria_ref.py -q
+    red_summary: >-
+      1 error during collection —— ModuleNotFoundError: No module named
+      'server.tender.compare_input'（compute-on-read 版本函数、runner 版本注入与确定性
+      criteria_ref 打标、worker 的 ref 落库与 backfill 竞态消解全部不存在）。
+    red_observed_at: "2026-08-11T03:14:00Z"
+    green_command: uv run pytest tests/test_tender_criteria_ref.py -q && uv run pytest -q
+    green_summary: >-
+      8 passed（新文件）；全量与基线 diff 为空（33 failed / 1145 passed / 3 skipped）。
+      既有 test_tender_info_extraction 的两处 criteria 注入测试改 patch 到
+      compare_input.get_project_doc（注入路径下移到共用版本函数），并加断言：注入块含
+      compute_criteria_hash(SAMPLE_CRITERIA)。uv run ruff check . → All checks passed。
+    green_observed_at: "2026-08-11T03:21:46Z"
+
+  - id: KD3-KD4-price-item-and-bid-price-guardrails
+    ac_refs: [AC4, AC5, AC7]
+    test_file: tests/test_tender_compare_input.py
+    red_command: uv run pytest tests/test_tender_compare_input.py -q
+    red_summary: >-
+      1 error during collection —— ImportError: cannot import name
+      'collect_compare_input' from 'server.tender.compare_input'（价格项三态遍历、
+      bid_price ≤0 判非法、按投标人取最新、逐家排除不封池、note 随 reason 走全部不存在；
+      旧实现 compare_worker._find_price_item 首个 cross-bid 项非法即 return None）。
+    red_observed_at: "2026-08-11T03:29:00Z"
+    green_command: uv run pytest tests/test_tender_compare_input.py -q && uv run pytest -q
+    green_summary: >-
+      18 passed（新文件）；全量与基线 diff 为空。compare_input.py 276 行 / compare_guard.py
+      132 行 / compare_worker.py 202 行（原 299，判据迁出），均 ≤300。ruff All checks passed。
+    green_observed_at: "2026-08-11T03:44:31Z"
+
+  - id: KD2-backend-auto-trigger-and-status-route
+    ac_refs: [AC1, AC2, AC7]
+    test_file: tests/test_tender_compare.py
+    red_command: uv run pytest tests/test_tender_compare.py -q
+    red_summary: >-
+      9 failed, 8 passed —— GET 无结果仍 404（status/none/pending/running/failed 全无）、
+      失败态无路由暴露、error_detail 未脱敏、评标 worker 终态不触发横比、
+      tender-compare.md 仍写旧判据 criteria_inconsistent。
+    red_observed_at: "2026-08-11T03:37:00Z"
+    green_command: uv run pytest tests/test_tender_compare.py -q && uv run pytest -q
+    green_summary: >-
+      17 passed；全量 33 failed / 1160 passed / 3 skipped，与基线 33 条 diff 为空；
+      收集数 1196。ruff All checks passed。
+    green_observed_at: "2026-08-11T03:44:31Z"
+
+  - id: KD2-KD5-frontend
+    ac_refs: [AC2, AC6, AC7]
+    test_file: agent-front/src/features/contract/tender-review/compare-status.test.ts
+    red_command: cd agent-front && bun test src/features/contract/tender-review/compare-status.test.ts
+    red_summary: >-
+      0 pass / 1 fail / 1 error —— SyntaxError: Export named 'PENDING_REASON_LABELS' not found
+      in module model.ts（compareNotice 无 status/errorDetail，评分项无 pendingReason，
+      api 仍靠 404→null 猜横比状态）。
+    red_observed_at: "2026-08-11T03:50:00Z"
+    green_command: cd agent-front && bun test && bun run lint && bun run build
+    green_summary: >-
+      bun test 173 pass / 0 fail（基线 164 pass，+9：新增 8 + api.test 由 1 条 404 用例改为
+      2 条 status 用例）；eslint 无输出（0 问题）；tsc -b && vite build 成功（built in 621ms）。
+      注：worktree 内先执行 bun install --frozen-lockfile 装依赖（484 packages），
+      否则 bun test 因缺 react/lucide-react 报 4 errors。
+    green_observed_at: "2026-08-11T03:55:00Z"
+
+  - id: pass2-F1-F2-auto-trigger-real-chain
+    ac_refs: [AC1, AC7]
+    test_file: tests/test_tender_compare.py
+    red_command: uv run pytest tests/test_tender_compare.py::test_eval_worker_auto_compare_runs_end_to_end -q
+    red_summary: >-
+      1 failed —— RuntimeError: no running event loop（asyncio/tasks.py:394）：
+      maybe_schedule_compare 整段跑在 asyncio.to_thread 的工作线程里，schedule_compare_task
+      的 create_task 无 loop 可用；且 accepted 行已先写入 → 幽灵在途行永久锁死项目。
+      另有 RuntimeWarning: coroutine 'execute_compare_task' was never awaited。
+    red_observed_at: "2026-08-11T13:05:00Z"
+    green_command: uv run pytest tests/test_tender_compare.py -q && uv run pytest -q
+    green_summary: >-
+      18 passed（含新增真链路用例：只 mock _run_evaluation 与 run_command_json，断言
+      compare 任务真跑到 completed、结果落 tender_compare_results、评标不抛异常、
+      flusher 已 cancel 且无幽灵 accepted 行）；全量与基线 diff 为空；ruff All checks passed。
+    green_observed_at: "2026-08-11T13:12:51Z"
+
+  - id: pass2-F3-F7-blocked-reason-and-warning-text
+    ac_refs: [AC3, AC4]
+    test_file: tests/test_tender_compare_input.py
+    red_command: uv run pytest tests/test_tender_compare_input.py -q
+    red_summary: >-
+      2 failed, 19 passed —— 项目规则未定稿时 price_reason 短路，封锁原因误报 no_price_item
+      （应为 insufficient_comparable_bidders，正是本 sprint 要治的"原因与实际不符"病症）；
+      排除告警把 16 位内容 hash 摆给业务用户看。
+    red_observed_at: "2026-08-11T13:14:00Z"
+    green_command: uv run pytest tests/test_tender_compare_input.py -q && uv run pytest -q
+    green_summary: >-
+      21 passed（后随 F6 增至 24）；池级原因优先于价格项原因、池可比时价格项三态照常上报、
+      告警文案去 hash 三条用例锁定；全量与基线 diff 为空。
+    green_observed_at: "2026-08-11T13:16:28Z"
+
+  - id: pass2-F4-pending-reason-label
+    ac_refs: [AC6]
+    test_file: tests/test_tender_pending_reason.py
+    red_command: uv run pytest tests/test_tender_pending_reason.py -q
+    red_summary: >-
+      1 failed, 10 passed —— scored_zero_demoted 分支同时写
+      manual_review_reason=insufficient_evidence 却把 pending_reason 打成 non_responsive，
+      与 evidence.py 回查降级的 evidence_unresolved 不一致（贴错标签误导人工）。
+    red_observed_at: "2026-08-11T13:17:30Z"
+    green_command: uv run pytest tests/test_tender_pending_reason.py -q && uv run pytest -q
+    green_summary: 11 passed；两条降级路径枚举统一为 evidence_unresolved；全量与基线 diff 为空。
+    green_observed_at: "2026-08-11T13:19:00Z"
+
+  - id: pass2-F6-error-detail-whitelist
+    ac_refs: [AC2]
+    test_file: tests/test_tender_compare_input.py
+    red_command: uv run pytest tests/test_tender_compare_input.py -q
+    red_summary: >-
+      1 error during collection —— ImportError: cannot import name 'GENERIC_ERROR_DETAIL'
+      （旧实现是"透传 + 抹路径"的黑名单清洗：SQL 片段、异常类名照出，Bearer/sk-/api_key/token
+      一律不抹，且被屏蔽内容不落服务端日志）。
+    red_observed_at: "2026-08-11T13:20:00Z"
+    green_command: uv run pytest tests/test_tender_compare_input.py tests/test_tender_compare.py -q && uv run pytest -q
+    green_summary: >-
+      43 passed —— 白名单命中原文透出、未知内部异常固定文案、5 种凭证形态兜底抹除、
+      被屏蔽详情进服务端日志（caplog 断言）、路由层两条（已知业务原因 vs 未知内部异常）。
+      超时另登记业务原因 COMPARE_TIMEOUT_REASON（原 str(TimeoutError) 为空串 → 用户看不到原因）。
+      全量 33 failed / 1168 passed，与基线 diff 为空；ruff All checks passed。
+    green_observed_at: "2026-08-11T13:22:58Z"
+
+  - id: pass2-M1-F9-frontend-retry-and-column
+    ac_refs: [AC2, AC6]
+    test_file: agent-front/src/features/contract/tender-review/compare-status.test.ts
+    red_command: cd agent-front && bun test src/features/contract/tender-review/compare-status.test.ts
+    red_summary: >-
+      0 pass / 1 fail / 1 error —— SyntaxError: Export named 'describeCompareTriggerError'
+      not found（retryCompare 的 409 静默与错误文案逻辑内联在 hook 里、两处重复且零测试锚点）。
+    red_observed_at: "2026-08-11T13:24:00Z"
+    green_command: cd agent-front && bun test && bun run lint && bun run build
+    green_summary: >-
+      176 pass / 0 fail（+3：describeCompareTriggerError 静默/可读原因两分支 + api.test 的
+      triggerTenderCompare POST 端点用例）；判断逻辑抽成单一函数供自动触发与手动重跑共用；
+      F9「处理/关注点」列 68→112px、100→120px 并加 truncate+title；eslint 无输出；build 成功。
+    green_observed_at: "2026-08-11T13:27:00Z"
+
+  - id: pass2-D2-criteria-ref-schema
+    ac_refs: [AC3]
+    test_file: tests/test_tender_criteria_ref.py
+    red_command: uv run pytest tests/test_tender_criteria_ref.py -q
+    red_summary: >-
+      2 failed, 8 passed —— audit-result schema 未声明 criteria_ref（KeyError 'criteria_ref'），
+      source 取值靠 additionalProperties 放行，写错值无人拦。
+    red_observed_at: "2026-08-11T13:28:00Z"
+    green_command: uv run pytest tests/test_tender_criteria_ref.py -q && uv run pytest -q && uv run ruff check .
+    green_summary: >-
+      10 passed；schema 声明 required[version, source] + source 枚举 {project, self_parsed}；
+      全量 33 failed / 1170 passed，与基线 diff 为空；收集数 1206；ruff All checks passed。
+    green_observed_at: "2026-08-11T13:28:45Z"

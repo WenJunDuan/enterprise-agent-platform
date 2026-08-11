@@ -1072,7 +1072,12 @@ def test_worker_injects_stored_criteria_into_context(monkeypatch):
             "criteria_status": "ready",
         }
 
+    # KD1：criteria 注入改经 compare_input.resolve_project_criteria（与横比判据共用同一
+    # 版本计算），故 patch 点随之下移到该模块的 get_project_doc。
+    import server.tender.compare_input as compare_input
+
     monkeypatch.setattr(worker, "get_project_doc", fake_get_project_doc)
+    monkeypatch.setattr(compare_input, "get_project_doc", fake_get_project_doc)
     monkeypatch.setenv("TENDER_READ_DOC_LAYER", "1")
 
     preprocess_called = []
@@ -1098,6 +1103,10 @@ def test_worker_injects_stored_criteria_into_context(monkeypatch):
         f"Expected criteria injection marker in context. Got: {context[:500]}"
     )
     assert "综合评估法" in context, "Criteria content must be in the injected context"
+    # KD1：注入块必须带 criteria_version（结论据此回引，横比据此判可比）。
+    from server.stores.tender_compare_store import compute_criteria_hash
+
+    assert compute_criteria_hash(SAMPLE_CRITERIA) in context
 
 
 def test_worker_no_criteria_in_store_unchanged_behavior(monkeypatch):
@@ -1143,7 +1152,10 @@ def test_worker_no_criteria_in_store_unchanged_behavior(monkeypatch):
             "criteria_status": "pending",
         }
 
+    import server.tender.compare_input as compare_input
+
     monkeypatch.setattr(worker, "get_project_doc", fake_get_project_doc_no_criteria)
+    monkeypatch.setattr(compare_input, "get_project_doc", fake_get_project_doc_no_criteria)
     monkeypatch.setenv("TENDER_READ_DOC_LAYER", "1")
     monkeypatch.setattr(
         worker,
