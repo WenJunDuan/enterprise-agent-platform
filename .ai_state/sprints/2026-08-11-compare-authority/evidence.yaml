@@ -1,0 +1,57 @@
+sprint_slug: "2026-08-11-compare-authority"
+collected_evidence:
+  - tool_use_id: "toolu_011763GaWEvs6yCGuRZbha9J"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a56af065140f2dc80/agent-front && bun test 2>&1 | tail -5"
+    timestamp: "2026-08-11T03:45:02.287Z"
+  - tool_use_id: "toolu_01GyHGuUPZMdcPpFVt67K6kZ"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a56af065140f2dc80/agent-front && bun test 2>&1 | grep -E \"^\\(fail\\)|error:\" | head -12"
+    timestamp: "2026-08-11T03:45:10.739Z"
+  - tool_use_id: "toolu_01SLZT1p37iZgT5CWddS9eke"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a56af065140f2dc80/agent-front && bun test 2>&1 | tail -4"
+    timestamp: "2026-08-11T03:45:46.233Z"
+  - tool_use_id: "toolu_01SJ1H32mGTbUdm2seEyeUeV"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a56af065140f2dc80/agent-front && bun test src/features/contract/tender-review/compare-status.test.ts 2>&1 | tail -12; grep -n \"export function mapTenderReviewData\" -A 12 src/features/contract/tender-review/model.ts | head -20"
+    timestamp: "2026-08-11T03:46:38.838Z"
+  - tool_use_id: "toolu_01UbHhwn7ixmh1r5WqdZsDaU"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a56af065140f2dc80/agent-front && bun test src/features/contract/tender-review/compare-status.test.ts 2>&1 | tail -6"
+    timestamp: "2026-08-11T03:47:10.035Z"
+  - tool_use_id: "toolu_01NNNRvGdqe1THHC1d6ZNjHg"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a56af065140f2dc80/agent-front && bun run build 2>&1 | tail -20"
+    timestamp: "2026-08-11T03:50:16.678Z"
+  - tool_use_id: "toolu_011sXwJoRw3UKpCpszAtGcby"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a56af065140f2dc80/agent-front && bun test 2>&1 | grep -B 20 \"1 fail\" | head -40"
+    timestamp: "2026-08-11T03:53:32.052Z"
+  - tool_use_id: "toolu_01GeNveHGpwY4SGoFZZrXxYT"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a56af065140f2dc80/agent-front && bun test 2>&1 | grep -A 18 \"(fail)\" | head -30"
+    timestamp: "2026-08-11T03:54:55.645Z"
+  - tool_use_id: "toolu_01T4xotss6uuzzTyEbpB7kP7"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a56af065140f2dc80/agent-front && bun test src/features/contract/tender-review/compare-status.test.ts 2>&1 | grep -A 12 \"(fail)\" | head -20"
+    timestamp: "2026-08-11T13:25:41.742Z"
+  - tool_use_id: "toolu_01ENk4W5q63urWgJSQbc4HPF"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a56af065140f2dc80/agent-front && bun test src/features/contract/tender-review/compare-status.test.ts 2>&1 | grep -B 5 -A 20 \"POST 打到\" | head -40"
+    timestamp: "2026-08-11T13:25:53.670Z"
+  - tool_use_id: "toolu_01HcHjUEx3TwftkxDrdW6fW1"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a56af065140f2dc80/agent-front && bun test 2>&1 | tail -8"
+    timestamp: "2026-08-11T13:35:33.206Z"
