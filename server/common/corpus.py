@@ -168,6 +168,76 @@ def _normalize_filename(s: str) -> str:
     return s.rsplit("/", 1)[-1].strip()
 
 
+def _anchor_line_offsets(text: str) -> list[tuple[int, str]]:
+    """文本里所有页锚行的 ``(行首偏移, 锚行原文)``（按偏移升序）。"""
+    offsets: list[tuple[int, str]] = []
+    pos = 0
+    for line in text.split("\n"):
+        if parse_page_anchor(line) is not None:
+            offsets.append((pos, line.strip()))
+        pos += len(line) + 1
+    return offsets
+
+
+def text_has_page_anchor(text: str) -> bool:
+    """文本里是否存在页锚行（无锚文件的截断只能按字符切，须在 marker 里如实注明）。"""
+    return bool(_anchor_line_offsets(text))
+
+
+def _snap_back(text: str, limit: int, anchors: list[tuple[int, str]]) -> int:
+    """head 切点向前回退：优先到最近的页锚行首，退而求其次到行边界（锚行永不切半）。"""
+    candidates = [pos for pos, _ in anchors if pos <= limit]
+    if candidates:
+        return max(candidates)
+    newline = text.rfind("\n", 0, limit)
+    return newline + 1 if newline >= 0 else limit
+
+
+def _snap_forward(text: str, start: int, anchors: list[tuple[int, str]]) -> int:
+    """tail 起点向后推进：优先到最近的页锚行首，退而求其次到行边界。"""
+    candidates = [pos for pos, _ in anchors if pos >= start]
+    if candidates:
+        return min(candidates)
+    newline = text.find("\n", start)
+    return newline + 1 if newline >= 0 else start
+
+
+def split_head_tail_on_anchors(
+    text: str, head_n: int, tail_n: int
+) -> tuple[str, str, str | None]:
+    """按页锚行边界切出首尾两段，并算出尾段应重放的页锚（H2 KD3）。
+
+    旧的按字符硬切有两个错挂源：① 锚行被切半；② tail 首段内容在模型视角归属 head 末锚
+    （早得多的页）。本函数把切点吸附到锚行边界，并在尾段前重放其所属页锚。
+
+    Args:
+        text: 待切分文本（底稿块或 context 块）。
+        head_n: 首段字符预算。
+        tail_n: 尾段字符预算（含重放锚所占字符）。
+
+    Returns:
+        ``(head, tail, replay)``：``replay`` 是尾段应重放的锚行原文；尾段自带锚或全文无锚时为
+        ``None``。保证 ``len(head) + len(tail) + len(replay)+1 <= head_n + tail_n``。
+    """
+    anchors = _anchor_line_offsets(text)
+    head_cut = _snap_back(text, head_n, anchors) if head_n > 0 else 0
+    replay: str | None = None
+    tail_start = len(text)
+    # 两轮：先按满额预算定位尾段以求出重放锚，再扣掉重放锚占位重新定位（锚只会后移不会前移，
+    # 故一轮修正即收敛）；仍超预算则放弃重放（宁可少一个锚，也不越预算/不切半锚）。
+    for reserve in (0, None):
+        budget = tail_n if reserve == 0 else tail_n - (len(replay) + 1 if replay else 0)
+        if budget <= 0:
+            return text[:head_cut], "", None
+        tail_start = max(head_cut, _snap_forward(text, max(0, len(text) - budget), anchors))
+        anchored_start = any(pos == tail_start for pos, _ in anchors)
+        before = [line for pos, line in anchors if pos < tail_start]
+        replay = None if anchored_start or not before else before[-1]
+    if len(text) - tail_start + (len(replay) + 1 if replay else 0) > tail_n:
+        replay = None
+    return text[:head_cut], text[tail_start:], replay
+
+
 def _source_mentions_file(normalized_source: str, name: str) -> bool:
     """规范化 source 里是否点名了文件 ``name``：完整名或 stem(≥4 字符) 命中（不反向短子串）。"""
     stem = name.rsplit(".", 1)[0]
