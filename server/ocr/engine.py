@@ -787,6 +787,10 @@ def _recognize_via_paddle_cloud(
         "kind": "ocr",
         "pipeline_version": OCR_VL_PIPELINE_VERSION,
         "engine": "paddleocr-cloud",
+        # 页号是**云返回结果的顺序号**（_parse_cloud_jsonl 跨行累加），不是文档页号——云端跳页/
+        # 合并即全局平移。标出坐标系，pipeline._guard_cloud_page_count 据此比对 classify 页数，
+        # 不一致则整份 page_confidence=low（H2 KD1 cloud_seq）。
+        "page_artifact": "cloud_seq",
         "pages": _parse_cloud_jsonl(jsonl_text),
     }
 
