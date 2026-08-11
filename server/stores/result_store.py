@@ -68,6 +68,13 @@ class ResultStore(Protocol):
         tenant: str,
     ) -> dict[str, Any] | None: ...
 
+    def update_payload(
+        self,
+        request_id: str,
+        tenant: str,
+        payload: dict[str, Any],
+    ) -> None: ...
+
     def list_results_by_project(
         self,
         tenant: str,
@@ -189,6 +196,18 @@ class SQLiteResultStore:
         if row is None or row["payload"] is None:
             return None
         return json.loads(row["payload"])
+
+    def update_payload(
+        self,
+        request_id: str,
+        tenant: str,
+        payload: dict[str, Any],
+    ) -> None:
+        with connect_sqlite(self.db_path) as connection:
+            connection.execute(
+                "UPDATE results SET payload = ? WHERE request_id = ? AND tenant = ?",
+                (json.dumps(payload, ensure_ascii=False), request_id, tenant),
+            )
 
     def list_results_by_project(
         self,
@@ -435,6 +454,35 @@ def get_result_payload_by_request_id(
     tenant: str,
 ) -> dict[str, Any] | None:
     return RESULT_STORE.get_payload_by_request_id(request_id=request_id, tenant=tenant)
+
+
+def update_result_criteria_ref(
+    request_id: str,
+    tenant: str,
+    criteria_ref: dict[str, str],
+) -> None:
+    """把服务端权威判定的 ``criteria_ref`` 补写进已归档结论（KD1）。
+
+    结论归档发生在 ``json_bridge.run_agent_json`` 内部，而 ref 由 runner 在拿到 payload 之后
+    才确定性打上（不依赖模型回声），故需要这一次补写；否则横比读到的行永远没有 ref。
+
+    Args:
+        request_id: 结论 ID。
+        tenant: 租户作用域（WHERE 带租户，杜绝跨租户改写）。
+        criteria_ref: ``{"version", "source"}``。
+    """
+    stored = RESULT_STORE.get_payload_by_request_id(request_id=request_id, tenant=tenant)
+    if not isinstance(stored, dict):
+        return
+    response = stored.get("response")
+    if not isinstance(response, dict):
+        return
+    extracted = response.get("extracted_data")
+    if not isinstance(extracted, dict):
+        extracted = {}
+        response["extracted_data"] = extracted
+    extracted["criteria_ref"] = criteria_ref
+    RESULT_STORE.update_payload(request_id=request_id, tenant=tenant, payload=stored)
 
 
 def list_results_by_project(

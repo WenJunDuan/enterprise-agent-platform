@@ -48,11 +48,11 @@ counts:
   features_count: 2
   issues_count: 0
   refactors_count: 0
-  systems_count: 6
-  reviews_count: 61
-  cleanup_count: 2
+  systems_count: 7
+  reviews_count: 68
+  cleanup_count: 3
   compound:
-    learning: 12
+    learning: 13
     trick: 2
     decision: 8
     explore: 1
@@ -62,9 +62,9 @@ pointers:
   latest_review: "sprints/2026-07-30-demo-full-doc-ocr/reviews/pass7.md" # Pass7 CONCERNS：HTTP 200 body I/O fallback + PPTX GroupShape 图片信号
   latest_cleanup: "sprints/2026-07-30-demo-full-doc-ocr/cleanup-pass.md"
   latest_brainstorm: ""
-  latest_decisions: ["compound/2026-07-20-decision-ocr-as-standalone-service.md", "compound/2026-07-16-decision-carve-f6-schema-split-from-d2.md", "compound/2026-07-16-decision-schema-split-tender.md", "compound/2026-07-15-decision-ocr-service-layer.md", "compound/2026-07-02-decision-ocr-routing-ladder.md"]
+  latest_decisions: ["compound/2026-07-20-decision-ocr-as-standalone-service.md", "compound/2026-07-16-decision-schema-split-tender.md", "compound/2026-07-16-decision-carve-f6-schema-split-from-d2.md", "compound/2026-07-15-decision-ocr-service-layer.md", "compound/2026-07-02-decision-ocr-routing-ladder.md"]
   latest_lessons: ["compound/2026-07-30-learning-document-ingestion-deployment-evidence.md", "compound/2026-07-18-learning-prompt-gate-contradiction-literal-model.md", "compound/2026-07-18-learning-lazy-import-behavioral-seam.md", "compound/2026-07-15-learning-slots-dataclass-hollow-getattr.md", "compound/2026-07-01-learning-flash-tender-eval-inconsistency.md"]
-  latest_architecture_update: "2026-07-30T12:28:00Z"
+  latest_architecture_update: "2026-08-11T02:38:14.682Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
 next_action: ""
