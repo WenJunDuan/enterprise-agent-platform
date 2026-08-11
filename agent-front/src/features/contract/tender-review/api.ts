@@ -104,9 +104,21 @@ export type TenderCompareResult = {
   }>
 }
 
+/** 横比生命周期（KD2）：GET 恒 200，用 status 表达，不再靠 404 猜"还没算"。 */
+export type TenderCompareStatus =
+  | 'none'
+  | 'pending'
+  | 'running'
+  | 'failed'
+  | 'ready'
+
 export type TenderCompareResponse = {
   project_id: string
-  result: TenderCompareResult
+  status: TenderCompareStatus
+  /** failed 时的脱敏原因（服务端已去 stack trace / 路径）。 */
+  error_detail?: string | null
+  /** 尚未算出结果时为 null（status=none/pending/failed）。 */
+  result: TenderCompareResult | null
   stale: boolean
   computed_at?: string | null
   input_result_ids?: string[] | null
@@ -279,19 +291,6 @@ export async function getTenderCompare(
       headers: authHeaders(),
     }
   )
-  return handleResponse<TenderCompareResponse>(res)
-}
-
-export async function getTenderCompareOrNull(
-  projectId: string
-): Promise<TenderCompareResponse | null> {
-  const res = await fetch(
-    url(`/tender/projects/${encodeURIComponent(projectId)}/compare`),
-    {
-      headers: authHeaders(),
-    }
-  )
-  if (res.status === 404) return null
   return handleResponse<TenderCompareResponse>(res)
 }
 
@@ -560,16 +559,19 @@ export async function waitForTenderTask(
 
 export async function waitForTenderCompare(
   projectId: string,
-  options: WaitOptions<TenderCompareResponse | null> = {}
+  options: WaitOptions<TenderCompareResponse> = {}
 ): Promise<TenderCompareResponse> {
   const startedAt = Date.now()
   const intervalMs = options.intervalMs ?? DEFAULT_POLL_INTERVAL_MS
   const timeoutMs = options.timeoutMs ?? DEFAULT_POLL_TIMEOUT_MS
 
   for (;;) {
-    const compare = await getTenderCompareOrNull(projectId)
+    const compare = await getTenderCompare(projectId)
     options.onUpdate?.(compare)
-    if (compare && !compare.stale) return compare
+    if (compare.status === 'failed') {
+      throw new Error(compare.error_detail || '横比计算失败，请重新横比。')
+    }
+    if (compare.status === 'ready' && !compare.stale) return compare
     if (Date.now() - startedAt > timeoutMs) {
       throw new Error('横比结果等待超时，请稍后在分析中心重新查看。')
     }

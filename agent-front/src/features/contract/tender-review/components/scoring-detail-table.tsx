@@ -15,6 +15,7 @@ import type {
   TenderScoreEvidence,
   TenderScoringItem,
 } from '../types'
+import { resolvePendingReasonLabel } from '../model'
 
 type ScoringDetailTableProps = {
   items: TenderScoringItem[]
@@ -117,7 +118,7 @@ function CompactScoringRows({ items }: { items: TenderScoringItem[] }) {
               {formatMax(item.max)}
             </div>
             <div className='text-center text-muted-foreground'>
-              {getStatusLabel(item.status)}
+              {resolvePendingReasonLabel(item)}
             </div>
             <div className='line-clamp-2 leading-5 text-muted-foreground'>
               {item.basis || '—'}
@@ -156,9 +157,8 @@ function FullScoringRows({ items }: { items: TenderScoringItem[] }) {
               {getStatusLabel(item.status)}
             </div>
             <div className='text-center text-muted-foreground'>
-              {item.score == null || item.status === 'manual_review'
-                ? '待核验'
-                : '已记录'}
+              {/* KD5：待定原因显式化（枚举→中文文案），存量无字段仍回退"待核验"。 */}
+              {resolvePendingReasonLabel(item)}
             </div>
             <div className='leading-6 text-muted-foreground'>
               {item.basis || '—'}

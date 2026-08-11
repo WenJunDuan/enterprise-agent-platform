@@ -42,3 +42,51 @@ records:
       compare_input.get_project_doc（注入路径下移到共用版本函数），并加断言：注入块含
       compute_criteria_hash(SAMPLE_CRITERIA)。uv run ruff check . → All checks passed。
     green_observed_at: "2026-08-11T03:21:46Z"
+
+  - id: KD3-KD4-price-item-and-bid-price-guardrails
+    ac_refs: [AC4, AC5, AC7]
+    test_file: tests/test_tender_compare_input.py
+    red_command: uv run pytest tests/test_tender_compare_input.py -q
+    red_summary: >-
+      1 error during collection —— ImportError: cannot import name
+      'collect_compare_input' from 'server.tender.compare_input'（价格项三态遍历、
+      bid_price ≤0 判非法、按投标人取最新、逐家排除不封池、note 随 reason 走全部不存在；
+      旧实现 compare_worker._find_price_item 首个 cross-bid 项非法即 return None）。
+    red_observed_at: "2026-08-11T03:29:00Z"
+    green_command: uv run pytest tests/test_tender_compare_input.py -q && uv run pytest -q
+    green_summary: >-
+      18 passed（新文件）；全量与基线 diff 为空。compare_input.py 276 行 / compare_guard.py
+      132 行 / compare_worker.py 202 行（原 299，判据迁出），均 ≤300。ruff All checks passed。
+    green_observed_at: "2026-08-11T03:44:31Z"
+
+  - id: KD2-backend-auto-trigger-and-status-route
+    ac_refs: [AC1, AC2, AC7]
+    test_file: tests/test_tender_compare.py
+    red_command: uv run pytest tests/test_tender_compare.py -q
+    red_summary: >-
+      9 failed, 8 passed —— GET 无结果仍 404（status/none/pending/running/failed 全无）、
+      失败态无路由暴露、error_detail 未脱敏、评标 worker 终态不触发横比、
+      tender-compare.md 仍写旧判据 criteria_inconsistent。
+    red_observed_at: "2026-08-11T03:37:00Z"
+    green_command: uv run pytest tests/test_tender_compare.py -q && uv run pytest -q
+    green_summary: >-
+      17 passed；全量 33 failed / 1160 passed / 3 skipped，与基线 33 条 diff 为空；
+      收集数 1196。ruff All checks passed。
+    green_observed_at: "2026-08-11T03:44:31Z"
+
+  - id: KD2-KD5-frontend
+    ac_refs: [AC2, AC6, AC7]
+    test_file: agent-front/src/features/contract/tender-review/compare-status.test.ts
+    red_command: cd agent-front && bun test src/features/contract/tender-review/compare-status.test.ts
+    red_summary: >-
+      0 pass / 1 fail / 1 error —— SyntaxError: Export named 'PENDING_REASON_LABELS' not found
+      in module model.ts（compareNotice 无 status/errorDetail，评分项无 pendingReason，
+      api 仍靠 404→null 猜横比状态）。
+    red_observed_at: "2026-08-11T03:50:00Z"
+    green_command: cd agent-front && bun test && bun run lint && bun run build
+    green_summary: >-
+      bun test 173 pass / 0 fail（基线 164 pass，+9：新增 8 + api.test 由 1 条 404 用例改为
+      2 条 status 用例）；eslint 无输出（0 问题）；tsc -b && vite build 成功（built in 621ms）。
+      注：worktree 内先执行 bun install --frozen-lockfile 装依赖（484 packages），
+      否则 bun test 因缺 react/lucide-react 报 4 errors。
+    green_observed_at: "2026-08-11T03:55:00Z"
