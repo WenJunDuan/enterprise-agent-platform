@@ -152,3 +152,32 @@ records:
       超时另登记业务原因 COMPARE_TIMEOUT_REASON（原 str(TimeoutError) 为空串 → 用户看不到原因）。
       全量 33 failed / 1168 passed，与基线 diff 为空；ruff All checks passed。
     green_observed_at: "2026-08-11T13:22:58Z"
+
+  - id: pass2-M1-F9-frontend-retry-and-column
+    ac_refs: [AC2, AC6]
+    test_file: agent-front/src/features/contract/tender-review/compare-status.test.ts
+    red_command: cd agent-front && bun test src/features/contract/tender-review/compare-status.test.ts
+    red_summary: >-
+      0 pass / 1 fail / 1 error —— SyntaxError: Export named 'describeCompareTriggerError'
+      not found（retryCompare 的 409 静默与错误文案逻辑内联在 hook 里、两处重复且零测试锚点）。
+    red_observed_at: "2026-08-11T13:24:00Z"
+    green_command: cd agent-front && bun test && bun run lint && bun run build
+    green_summary: >-
+      176 pass / 0 fail（+3：describeCompareTriggerError 静默/可读原因两分支 + api.test 的
+      triggerTenderCompare POST 端点用例）；判断逻辑抽成单一函数供自动触发与手动重跑共用；
+      F9「处理/关注点」列 68→112px、100→120px 并加 truncate+title；eslint 无输出；build 成功。
+    green_observed_at: "2026-08-11T13:27:00Z"
+
+  - id: pass2-D2-criteria-ref-schema
+    ac_refs: [AC3]
+    test_file: tests/test_tender_criteria_ref.py
+    red_command: uv run pytest tests/test_tender_criteria_ref.py -q
+    red_summary: >-
+      2 failed, 8 passed —— audit-result schema 未声明 criteria_ref（KeyError 'criteria_ref'），
+      source 取值靠 additionalProperties 放行，写错值无人拦。
+    red_observed_at: "2026-08-11T13:28:00Z"
+    green_command: uv run pytest tests/test_tender_criteria_ref.py -q && uv run pytest -q && uv run ruff check .
+    green_summary: >-
+      10 passed；schema 声明 required[version, source] + source 枚举 {project, self_parsed}；
+      全量 33 failed / 1170 passed，与基线 diff 为空；收集数 1206；ruff All checks passed。
+    green_observed_at: "2026-08-11T13:28:45Z"

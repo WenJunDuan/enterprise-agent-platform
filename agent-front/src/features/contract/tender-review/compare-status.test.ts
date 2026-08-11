@@ -10,6 +10,7 @@ import { describe, expect, test } from 'bun:test'
 import {
   PENDING_REASON_LABELS,
   buildTenderReviewData,
+  describeCompareTriggerError,
   resolvePendingReasonLabel,
 } from './model'
 import type { TenderCompareResponse, TenderProjectDetailResponse } from './api'
@@ -158,5 +159,22 @@ describe('pending_reason 文案', () => {
       ]),
     })
     expect(resolvePendingReasonLabel(data.scoringItems?.[0])).toBe('已记录')
+  })
+})
+
+describe('重新横比触发（M1）', () => {
+  test('409「正在进行中」视作已触发 → 静默，不打扰用户', () => {
+    expect(
+      describeCompareTriggerError(
+        new Error('该招标项目横比正在进行中，请稍后查看结果')
+      )
+    ).toBeNull()
+  })
+
+  test('其余失败给可读原因（错误可解释）', () => {
+    expect(describeCompareTriggerError(new Error('参与横比的已完成投标人不足 2 家'))).toBe(
+      '参与横比的已完成投标人不足 2 家'
+    )
+    expect(describeCompareTriggerError('boom')).toBe('请稍后重试')
   })
 })

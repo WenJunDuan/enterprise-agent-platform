@@ -1378,6 +1378,24 @@ function parseScoreHits(raw: unknown): ScoreHit[] | undefined {
   return hits.length > 0 ? hits : undefined
 }
 
+/** 后端 409 的固定措辞：横比已在算，重复触发不是错误。 */
+const COMPARE_IN_FLIGHT_HINT = '正在进行中'
+
+/**
+ * 触发/重跑横比失败时该不该打扰用户，以及说什么。
+ *
+ * 自动触发（评标终态）与手动「重新横比」两个入口共用同一判断：409「正在进行中」说明服务端
+ * 已经在算，属正常路径 → 返回 null（静默）；其余返回可读原因，由调用方加动作前缀。
+ *
+ * @param error - 捕获到的异常。
+ * @returns 需要提示的原因文本；无需提示时 null。
+ */
+export function describeCompareTriggerError(error: unknown): string | null {
+  const message = error instanceof Error ? error.message.trim() : ''
+  if (message.includes(COMPARE_IN_FLIGHT_HINT)) return null
+  return message || '请稍后重试'
+}
+
 /** KD5：score=null 的待定原因 → 面向业务人员的中文文案（不暴露枚举英文）。 */
 export const PENDING_REASON_LABELS: Record<TenderPendingReason, string> = {
   cross_bid: '待全部投标报价横比',

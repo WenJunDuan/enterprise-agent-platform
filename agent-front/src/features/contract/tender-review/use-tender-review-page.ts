@@ -31,6 +31,7 @@ import type { ProjectFormData } from './components/create-review-view'
 import {
   buildDashboardSummary,
   buildTenderReviewData,
+  describeCompareTriggerError,
   filterReviewHistory,
   mapTenderProject,
 } from './model'
@@ -465,9 +466,8 @@ export function useTenderReviewPage(
       })
     },
     onError: (error: unknown) => {
-      const message = error instanceof Error ? error.message : ''
-      if (message.includes('正在进行中')) return
-      setSubmitError(`重新横比失败：${message || '请稍后重试'}`)
+      const detail = describeCompareTriggerError(error)
+      if (detail) setSubmitError(`重新横比失败：${detail}`)
     },
   })
 
@@ -556,9 +556,8 @@ export function useTenderReviewPage(
       // 去掉空 catch —— 失败要说人话（409=已在算，属正常，不打扰用户）。
       if (hasCompare) {
         void triggerTenderCompare(projectId).catch((error: unknown) => {
-          const message = error instanceof Error ? error.message : ''
-          if (message.includes('正在进行中')) return
-          setSubmitError(`横比触发失败：${message || '请稍后重试'}`)
+          const detail = describeCompareTriggerError(error)
+          if (detail) setSubmitError(`横比触发失败：${detail}`)
         })
       }
       void queryClient.invalidateQueries({
