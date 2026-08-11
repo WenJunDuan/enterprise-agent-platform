@@ -24,6 +24,7 @@ from server.stores.tender_doc_store import (
     update_project_doc_criteria,
 )
 from server.stores.tender_task_store import update_tender_progress, upsert_tender_task
+from server.tender.compare_worker import maybe_schedule_compare
 from server.tender.runner import run_tender_evaluation as _run_evaluation
 
 logger = logging.getLogger(__name__)
@@ -262,6 +263,11 @@ async def _execute_inner(
                 },
             )
         finally:
+            # KD2：**任何终态**（completed / timeout / failed）后都由服务端复查一次是否该入队横比
+            # ——横比触发不再依赖前端在场（旧实现唯一触发点是前端 fire-and-forget，失败即静默）。
+            # 放 finally 是因为"某家 failed、其余 ≥2 家已完成"同样应该出横比结果。
+            if project_id:
+                await asyncio.to_thread(maybe_schedule_compare, tenant, project_id)
             flusher.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await flusher  # 等 cancel 真正落地（cancel 仅在下个 loop cycle 注入 CancelledError）
