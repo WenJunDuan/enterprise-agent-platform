@@ -13,7 +13,6 @@ PaddleX 印章产线: https://paddlepaddle.github.io/PaddleX/latest/pipeline_usa
 from __future__ import annotations
 
 import base64
-import http.client
 import json
 import os
 import selectors
@@ -23,6 +22,7 @@ import ssl
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -32,6 +32,7 @@ from io import BytesIO
 from pathlib import Path
 
 from server.ocr import OcrDependencyError, OcrError
+from server.ocr import vlm_client
 from server.ocr.locks import FITZ_LOCK, PADDLE_LOCK
 
 # PaddleOCR-VL 完整 pipeline 可选启用；默认由 LiteLLM/OpenAI-compatible 端点做整页识别。
@@ -66,6 +67,14 @@ def _positive_int_env(name: str, default: int) -> int:
     except (TypeError, ValueError):
         return default
 
+
+# KD3 客户端并发闸：逐页 VLM 此前只在本地 paddle pipeline 接了 OCR_VL_MAX_CONCURRENCY，
+# openai-compatible 路径直接 urllib 裸调 → 预热 4×6 + inline 6 线程可 ~30 路并发打网关，
+# 页级超时暴增。进程级信号量与 office_convert 的 BoundedSemaphore 同构，默认 4。
+_VLM_MAX_CONCURRENCY = _positive_int_env("OCR_VL_MAX_CONCURRENCY", 4)
+_VLM_SEMAPHORE = threading.BoundedSemaphore(_VLM_MAX_CONCURRENCY)
+# KD1 单页重试的固定退避（秒）。常量而非 env：只有一个现实取值，测试经 monkeypatch 置 0。
+_VLM_RETRY_BACKOFF_SEC = 2.0
 
 OCR_MAX_PDF_PAGES = _positive_int_env("OCR_MAX_PDF_PAGES", 500)
 OCR_MAX_PAGE_PIXELS = _positive_int_env("OCR_MAX_PAGE_PIXELS", 25_000_000)
@@ -419,72 +428,137 @@ def _recognize_tesseract_page(
 def _call_openai_compatible_vlm(*, data_url: str, prompt: str) -> str:
     """Call the remote VLM while preserving the OCR fallback error boundary.
 
-    Recoverable transport, protocol, decoding, and response-shape failures are
-    normalized to ``OcrDependencyError``. Resource and cancellation errors are
-    intentionally allowed to propagate instead of being disguised as fallback.
+    传输与错误归一在 ``server.ocr.vlm_client``（H3 拆分）；本函数只负责把 engine 侧的运行时配置
+    （端点/模型/密钥/超时/TLS 上下文）绑上去——配置读取留在 engine 是有意为之：既有测试与部署
+    都以 ``engine.OCR_VL_*`` 为唯一调参面。
     """
-    body = {
-        "model": OCR_VL_MODEL_NAME,
-        "messages": [
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": data_url,
-                        },
-                    },
-                    {
-                        "type": "text",
-                        "text": prompt,
-                    },
-                ],
-            }
-        ],
-        "temperature": 0,
-        "max_tokens": 4096,
-    }
-    headers = {"Content-Type": "application/json"}
-    if OCR_VL_API_KEY:
-        headers["Authorization"] = f"Bearer {OCR_VL_API_KEY}"
-    request = urllib.request.Request(
-        _chat_completions_url(OCR_VL_SERVER_URL),
-        data=json.dumps(body).encode("utf-8"),
-        headers=headers,
+    return vlm_client.call_vlm(
+        url=_chat_completions_url(OCR_VL_SERVER_URL),
+        model=OCR_VL_MODEL_NAME,
+        api_key=OCR_VL_API_KEY,
+        data_url=data_url,
+        prompt=prompt,
+        timeout=min(OCR_VL_TIMEOUT, OCR_PAGE_TIMEOUT_SEC),
+        ssl_context=_SSL_CONTEXT,
     )
-    try:
-        with urllib.request.urlopen(
-            request, timeout=min(OCR_VL_TIMEOUT, OCR_PAGE_TIMEOUT_SEC), context=_SSL_CONTEXT
-        ) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        detail = f"HTTP Error {exc.code}: {exc.reason}"
-        try:
-            response_body = exc.read().decode("utf-8", errors="replace").strip()
-        except (OSError, UnicodeDecodeError, http.client.HTTPException):
-            response_body = ""
-        if response_body:
-            detail = f"{detail}；响应：{response_body[:1000]}"
-        raise OcrDependencyError(f"OCR VLM 远端调用失败：{detail}") from exc
-    except (
-        OSError,
-        urllib.error.URLError,
-        TimeoutError,
-        UnicodeDecodeError,
-        json.JSONDecodeError,
-        http.client.HTTPException,
-        ssl.SSLError,
-    ) as exc:
-        raise OcrDependencyError(f"OCR VLM 远端调用失败：{exc}") from exc
 
+
+def _call_vlm_page(*, data_url: str, prompt: str) -> str:
+    """单页 VLM 调用：并发闸 + 可恢复失败重试一次（KD1 + KD3）。
+
+    闸（``_VLM_SEMAPHORE``）保护网关不被数十路并发打崩——这是页级超时的源头之一。等待发生在
+    页 deadline 起算**之前**，故排队时长不吃页预算（页 deadline 的语义是"识别耗时"；排队饿死
+    由源头减压治，不由本函数计时）。
+
+    重试固定退避 ``_VLM_RETRY_BACKOFF_SEC``，且"退避 + 第二次调用"必须落在该页
+    ``OCR_PAGE_TIMEOUT_SEC`` 预算内；预算不足则直接抛出，由调用方按 0730 语义降级 Tesseract。
+
+    Args:
+        data_url: 页图 data URL。
+        prompt: 该页识别提示。
+
+    Returns:
+        VLM 返回的页 markdown。
+
+    Raises:
+        OcrDependencyError: 两次尝试都命中可恢复错误，或预算不足以重试。
+    """
+    with _VLM_SEMAPHORE:
+        deadline = time.monotonic() + OCR_PAGE_TIMEOUT_SEC
+        try:
+            return _call_openai_compatible_vlm(data_url=data_url, prompt=prompt)
+        except OcrDependencyError:
+            if time.monotonic() + _VLM_RETRY_BACKOFF_SEC >= deadline:
+                raise
+            time.sleep(_VLM_RETRY_BACKOFF_SEC)
+            return _call_openai_compatible_vlm(data_url=data_url, prompt=prompt)
+
+
+def _tesseract_page_or_raise(page: dict, vlm_error: OcrDependencyError) -> str:
+    """VLM 失败后的本地 Tesseract 兜底；兜底也失败则抛出合并了两侧原因的错误。"""
     try:
-        content = payload["choices"][0]["message"]["content"]
-    except (KeyError, IndexError, TypeError) as exc:
-        raise OcrDependencyError(f"OCR VLM 返回结构异常：{payload!r}") from exc
-    if not isinstance(content, str) or not content.strip():
-        raise OcrDependencyError(f"OCR VLM 返回结构异常：{payload!r}")
-    return content
+        return _recognize_tesseract_page(
+            page["content"], page_number=page["page_number"], mime_type=page["mime_type"]
+        )
+    except OcrDependencyError as fallback_error:
+        raise OcrDependencyError(
+            f"{vlm_error}; Tesseract fallback failed: {fallback_error}"
+        ) from fallback_error
+
+
+def _pdf_page_payload(page: dict, *, prompt: str, use_tesseract: bool) -> tuple[dict, bool]:
+    """识别一页并组装 payload。返回 ``(payload, use_tesseract)``——一旦降级，页序其后全降级
+    （0730 "页只发一次" + 页序连续性决策不变）。"""
+    if use_tesseract:
+        markdown = _recognize_tesseract_page(
+            page["content"], page_number=page["page_number"], mime_type=page["mime_type"]
+        )
+    else:
+        try:
+            markdown = _call_vlm_page(
+                data_url=_image_data_url(page["content"], page["mime_type"]),
+                prompt=f"{prompt}\nThis image is page {page['page_number']} of the PDF.",
+            )
+        except OcrDependencyError as vlm_error:
+            use_tesseract = True
+            markdown = _tesseract_page_or_raise(page, vlm_error)
+    payload = {
+        "markdown": markdown[:OCR_MAX_TEXT_CHARS_PER_PAGE],
+        "layout": [],
+        "page_number": page["page_number"],
+    }
+    if use_tesseract:
+        payload.update({"engine": "tesseract", "degraded": True, "clarity": "unknown"})
+    return payload, use_tesseract
+
+
+def _page_failure_marker(page_number: int, reason: object) -> dict:
+    """KD6：渲染中途失败时替代剩余页的单行标记页（页号 = 首个失败页）。"""
+    return {
+        "markdown": f"[第{page_number}页起识别失败: {reason}]",
+        "layout": [],
+        "page_number": page_number,
+        "error": str(reason),
+    }
+
+
+def _recognize_pdf_pages_via_vlm(
+    path: Path, *, prompt: str, on_page: Callable[[int, dict], None] | None
+) -> tuple[list[dict], bool, bool]:
+    """逐页识别 PDF，返回 ``(pages, degraded, partial)``。
+
+    KD6：页迭代器中途抛出的**结构化**错误（渲染超时/渲染进程失败等）不再冲出循环报废整份——
+    已成功页照常出稿，剩余页折成一行 ``[第M页起识别失败: …]`` 标记，结果标 ``partial``。
+    一页都没成功时维持原语义直接抛出（空 partial 底稿没有价值，且会掩盖整份失败）。
+    ``MemoryError`` / 取消 / 进程退出仍透传不伪装（0730 设计）。
+    """
+    pages: list[dict] = []
+    use_tesseract = False
+    partial = False
+    page_iterator = _iter_pdf_pages(path)
+    try:
+        while True:
+            try:
+                page = next(page_iterator)
+            except StopIteration:
+                break
+            except (OcrDependencyError, OcrError) as exc:
+                if not pages:
+                    raise
+                pages.append(_page_failure_marker(len(pages) + 1, exc))
+                partial = True
+                break
+            payload, use_tesseract = _pdf_page_payload(
+                page, prompt=prompt, use_tesseract=use_tesseract
+            )
+            pages.append(payload)
+            if on_page is not None:
+                on_page(page["page_number"], payload)
+    finally:
+        close_iterator = getattr(page_iterator, "close", None)
+        if callable(close_iterator):
+            close_iterator()
+    return pages, use_tesseract, partial
 
 
 def _recognize_via_openai_compatible(
@@ -513,74 +587,25 @@ def _recognize_via_openai_compatible(
         # 场景化识别目的（如评标：完整还原评分标准/扣分细则/废标条款表格）——追加在通用提取指令后。
         prompt = f"{prompt}\n{purpose}"
     degraded = False
+    partial = False
     if path.suffix.lower() == ".pdf":
-        pages = []
-        use_tesseract = False
-        page_iterator = _iter_pdf_pages(path)
-        try:
-            for page in page_iterator:
-                if use_tesseract:
-                    markdown = _recognize_tesseract_page(
-                        page["content"],
-                        page_number=page["page_number"],
-                        mime_type=page["mime_type"],
-                    )
-                else:
-                    try:
-                        markdown = _call_openai_compatible_vlm(
-                            data_url=_image_data_url(page["content"], page["mime_type"]),
-                            prompt=(
-                                f"{prompt}\nThis image is page {page['page_number']} of the PDF."
-                            ),
-                        )
-                    except OcrDependencyError as vlm_error:
-                        use_tesseract = True
-                        degraded = True
-                        try:
-                            markdown = _recognize_tesseract_page(
-                                page["content"],
-                                page_number=page["page_number"],
-                                mime_type=page["mime_type"],
-                            )
-                        except OcrDependencyError as fallback_error:
-                            raise OcrDependencyError(
-                                f"{vlm_error}; Tesseract fallback failed: {fallback_error}"
-                            ) from fallback_error
-                markdown = markdown[:OCR_MAX_TEXT_CHARS_PER_PAGE]
-                payload = {
-                    "markdown": markdown,
-                    "layout": [],
-                    "page_number": page["page_number"],
-                }
-                if use_tesseract:
-                    payload.update(
-                        {"engine": "tesseract", "degraded": True, "clarity": "unknown"}
-                    )
-                pages.append(payload)
-                if on_page is not None:
-                    on_page(page["page_number"], payload)
-        finally:
-            close_iterator = getattr(page_iterator, "close", None)
-            if callable(close_iterator):
-                close_iterator()
+        pages, degraded, partial = _recognize_pdf_pages_via_vlm(
+            path, prompt=prompt, on_page=on_page
+        )
     else:
         if content is None:
             content = _read_image_with_resource_limits(path)
         try:
-            markdown = _call_openai_compatible_vlm(
+            markdown = _call_vlm_page(
                 data_url=_image_data_url(content, _mime_type(path)),
                 prompt=prompt,
             )
         except OcrDependencyError as vlm_error:
             degraded = True
-            try:
-                markdown = _recognize_tesseract_page(
-                    content, page_number=1, mime_type=_mime_type(path)
-                )
-            except OcrDependencyError as fallback_error:
-                raise OcrDependencyError(
-                    f"{vlm_error}; Tesseract fallback failed: {fallback_error}"
-                ) from fallback_error
+            markdown = _tesseract_page_or_raise(
+                {"content": content, "page_number": 1, "mime_type": _mime_type(path)},
+                vlm_error,
+            )
         markdown = markdown[:OCR_MAX_TEXT_CHARS_PER_PAGE]
         pages = [{"markdown": markdown, "layout": [], "page_number": 1}]
         if degraded:
@@ -596,6 +621,9 @@ def _recognize_via_openai_compatible(
     }
     if degraded:
         result.update({"degraded": True, "clarity": "unknown"})
+    if partial:
+        # KD6：部分页缺失对下游状态机可见（doc 层落 partial，不冒充 ready）。
+        result["partial"] = True
     return result
 
 

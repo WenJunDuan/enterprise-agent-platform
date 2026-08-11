@@ -242,6 +242,8 @@ def test_vlm_failure_from_page_n_falls_back_without_duplicate_pages(tmp_path, mo
     monkeypatch.setattr(engine, "_iter_pdf_pages", lambda _path: iter(pages))
     monkeypatch.setattr(engine, "OCR_VL_SERVER_URL", "http://litellm.test/v1")
     monkeypatch.setattr(engine, "OCR_VL_MODEL_NAME", "paddleocr")
+    # H3 KD1：单页可恢复失败先重试 1 次再降级，故页 2 的 VLM 调用记两次（退避置 0 免测试墙钟膨胀）。
+    monkeypatch.setattr(engine, "_VLM_RETRY_BACKOFF_SEC", 0.0)
     vlm_calls: list[int] = []
     tess_calls: list[int] = []
 
@@ -269,7 +271,7 @@ def test_vlm_failure_from_page_n_falls_back_without_duplicate_pages(tmp_path, mo
         ),
     )
 
-    assert vlm_calls == [1, 2]
+    assert vlm_calls == [1, 2, 2]
     assert tess_calls == [2, 3, 4]
     assert callbacks == [1, 2, 3, 4]
     assert [page["page_number"] for page in result["pages"]] == [1, 2, 3, 4]
