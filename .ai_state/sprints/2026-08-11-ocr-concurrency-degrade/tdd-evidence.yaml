@@ -1,0 +1,137 @@
+sprint: 2026-08-11-ocr-concurrency-degrade
+executor: generator subagent (model=opus), worktree .claude/worktrees/agent-a13794b891d0fcd1e
+baseline:
+  pytest_collected: 1162
+  pytest_preexisting_failures: 33
+  note: >-
+    开工先跑 `uv run pytest -q -p no:randomly`，33 条既有失败（缺 ocr extra：fitz/pymupdf、
+    PIL 相关；AUDIT_DIRECT_CONNECT 未配）清单存 /tmp/baseline_failed.txt。口径 NO_NEW_FAILURES：
+    每个 AC 的 green 判据 = 全量失败清单与该基线 diff 为空。OCR 依赖缺失处一律 mock。
+  frontend: bun test（agent-front）基线 66 passed / 5 文件。
+
+records:
+  - id: KD1-KD3-KD6-engine
+    ac_refs: [AC1, AC3, AC4, AC7]
+    test_file: tests/test_ocr_engine_retry_gate.py
+    red_command: uv run pytest tests/test_ocr_engine_retry_gate.py -q -p no:randomly
+    red_summary: >-
+      9 failed —— engine 无 _VLM_RETRY_BACKOFF_SEC / _VLM_SEMAPHORE / _call_vlm_page
+      （AttributeError）；单页 VLM 失败即降级无重试；openai-compatible 路径无并发闸；
+      页迭代器中途抛错冲出循环报废整份（无 partial）。
+    red_observed_at: "2026-08-11T13:12:00Z"
+    green_command: >-
+      uv run pytest tests/test_ocr_engine_retry_gate.py tests/test_ocr_engine_fallback.py
+      tests/test_ocr_engine.py tests/test_ocr_pipeline.py tests/test_ocr_streaming_callback.py
+      -q -p no:randomly
+    green_summary: >-
+      新文件 9 passed；上述五文件失败清单与基线子集 diff 为空。存量
+      test_vlm_failure_from_page_n_falls_back_without_duplicate_pages 按 AC1 新契约更新
+      （页2 VLM 调用 [1,2] → [1,2,2]，退避 monkeypatch 置 0 免墙钟膨胀）。
+      engine.py 887 → 915 行（净 +28 ≤60），传输层按 design 拆入 server/ocr/vlm_client.py。
+    green_observed_at: "2026-08-11T13:20:00Z"
+
+  - id: KD2-doc-report
+    ac_refs: [AC2, AC3, AC7]
+    test_file: tests/test_ocr_doc_report.py
+    red_command: uv run pytest tests/test_ocr_doc_report.py -q -p no:randomly
+    red_summary: >-
+      9 failed, 1 passed —— pipeline 无 prewarm_and_report / OcrDocReport / OCR_DOC_STATUSES
+      （AttributeError）；partial 结果照常进文件缓存（get_cached 命中）；目录级"部分文件失败"
+      在返回值里无任何表征。
+    red_observed_at: "2026-08-11T13:23:16Z"
+    green_command: uv run pytest tests/test_ocr_doc_report.py -q -p no:randomly
+    green_summary: >-
+      10 passed。status 优先级 failed > partial > degraded > ready，failed_files 逐文件点名；
+      cache._is_low_fidelity 把 partial 与 degraded 一并挡在缓存外（0730 语义扩展）。
+      pipeline.py 791 → 841 行（净 +50 ≤60）。
+    green_observed_at: "2026-08-11T13:25:00Z"
+
+  - id: KD4-named-executor
+    ac_refs: [AC5, AC7]
+    test_file: tests/test_ocr_executor_pool.py
+    red_command: uv run pytest tests/test_ocr_executor_pool.py -q -p no:randomly
+    red_summary: >-
+      collection error —— config 无 get_ocr_concurrency_settings、prewarm_scheduler 无
+      get_ocr_executor / run_in_ocr_executor；OCR 仍走 asyncio 默认 to_thread 池。
+    red_observed_at: "2026-08-11T13:26:00Z"
+    green_command: >-
+      uv run pytest tests/test_ocr_executor_pool.py tests/test_layering.py
+      tests/test_ocr_prewarm_scheduler.py -q -p no:randomly
+    green_summary: >-
+      24 passed。对照测试实测：默认池路径下短 DB 调用被两路慢 OCR 饿死（>0.15s），命名池路径
+      <0.15s 且不足对照组一半；池为进程级单例、thread_name_prefix=ocr、规模取 OCR_EXECUTOR_WORKERS。
+      测试用收缩默认池（max_workers=2）+ 0.3s 假 OCR 复现饿死，无长 sleep。
+    green_observed_at: "2026-08-11T13:28:00Z"
+
+  - id: KD2-KD5-store-and-heartbeat
+    ac_refs: [AC2, AC3, AC6, AC7]
+    test_file: tests/test_tender_doc_ocr_status.py
+    red_command: uv run pytest tests/test_tender_doc_ocr_status.py -q -p no:randomly
+    red_summary: >-
+      collection error（ImportError: prewarm_and_text 已被 prewarm_and_report 取代）；
+      store 侧 OCR_STATUSES 只有 4 档、无 ocr_failed_files / case_path 列、无 touch_* 心跳、
+      未知 status 静默落库；doc_pipeline 对任何可用底稿一律写 ready。
+    red_observed_at: "2026-08-11T13:28:19Z"
+    green_command: >-
+      uv run pytest tests/test_tender_doc_ocr_status.py tests/test_tender_doc_store.py
+      tests/test_tender_prewarm.py tests/test_codex_p2_rework_fixes.py
+      tests/test_tender_upload_routes.py -q -p no:randomly
+    green_summary: >-
+      96 passed（含新文件 16）。幂等 PRAGMA+ALTER 加两列（沿用 tender_doc_store.py:77-101 同型，
+      无迁移框架/无 downgrade）；未知 ocr_status 抛 ValueError；心跳只刷 running 行；ticker 在
+      单文件 0.08s 识别期间触发 ≥2 次（证明是 doc 级周期而非文件间隙）；预热落在 ocr* 线程上。
+    green_observed_at: "2026-08-11T13:34:00Z"
+
+  - id: KD5-oracle-and-entry-decision
+    ac_refs: [AC2, AC3, AC6, AC7]
+    test_file: tests/test_tender_prewarm_oracle.py
+    red_command: >-
+      uv run pytest tests/test_tender_prewarm_oracle.py -q -p no:randomly
+      -k "in_flight or warning or rerun or degraded or failed_doc"
+    red_summary: >-
+      8 failed, 1 passed（全量跑会挂：旧实现按 360s/3s 迭代计数死等，被 pkill 中止——这本身即
+      "超时后无条件 inline 双跑"的现场）。缺 _is_prewarm_in_flight / 重跑 / warning 生成与注入；
+      _wait_doc_layer_ready 返回 None 无法区分 terminal/stale/超时。
+    red_observed_at: "2026-08-11T13:41:00Z"
+    green_command: >-
+      uv run pytest tests/test_tender_prewarm_oracle.py tests/test_tender_read_layer.py
+      tests/test_tender_context_slim_wiring.py tests/test_codex_p2_rework_fixes.py
+      tests/test_tender_info_extraction.py -q -p no:randomly
+    green_summary: >-
+      117 passed（含新文件 19）。in-flight oracle=running+updated_at 新鲜；in-flight 时 inline
+      调用计数=0，failed 时回落计数=1；degraded 只重跑一次后带 warning 照跑；未知枚举 fail-fast；
+      等待日志 tender_doc_layer_wait 实测输出。runner.py 328 → 318 行（读层拆入
+      server/tender/doc_layer.py 271 行），存量测试 patch 目标随之改打 doc_layer。
+    green_observed_at: "2026-08-11T14:02:00Z"
+
+  - id: AC6b-frontend-hard-gate
+    ac_refs: [AC6b, AC7]
+    test_file: >-
+      agent-front/src/features/contract/tender-review/ocr-status.test.ts,
+      agent-front/src/features/contract/tender-review/ocr-gate.test.ts
+    red_command: >-
+      bun test src/features/contract/tender-review/ocr-status.test.ts
+      src/features/contract/tender-review/ocr-gate.test.ts
+    red_summary: >-
+      0 pass / 2 fail（Cannot find module './ocr-status'）——OcrStatus 类型不含新枚举，
+      终态集与 isOcrReady 只认 ready（degraded → 轮询永不终止、开始分析永久禁用），
+      OcrDot 把 degraded 画成"进行中"蓝色脉冲，label 表缺两档。
+    red_observed_at: "2026-08-11T14:12:00Z"
+    green_command: bun test src/features/contract/tender-review/ && bun run build && bun run lint
+    green_summary: >-
+      76 pass / 0 fail（新增 10：ocr-status 6 + ocr-gate 4）；tsc -b + vite build 成功；
+      eslint 无输出。四点全落：类型补 degraded/partial、终态集与 canStart 走 isOcrTerminal/
+      isOcrUsable、label 与 OcrDot（受损态静态琥珀点）、criteria 提示文案按可用性判断；
+      创建页加受损告警提示。
+    green_observed_at: "2026-08-11T14:20:00Z"
+
+final_verification:
+  collected: 1222   # 1162 基线 + 60 新增（9+10+6+16+19）
+  full_suite: "33 failed, 1186 passed, 3 skipped —— 与基线清单 diff 为空（NO_NEW_FAILURES）"
+  ruff: "uv run ruff check server/ tests/ → All checks passed"
+  frontend: "bun test 76 pass / bun run build 成功 / bun run lint 无输出"
+  line_budgets: >-
+    engine.py 887→915 (+28 ≤60)；pipeline.py 791→841 (+50 ≤60)；runner.py 328→318 (-10 ≤40)；
+    新文件 vlm_client.py 117、doc_layer.py 271、ocr-status.ts 92 均 <300。
+    doc_pipeline.py 472→532：基线已越 300 线，本 sprint 净增 60（心跳 ticker + 报告落库），
+    design 未给该文件设上界，记为豁免（OCR 独立服务迁移时随 engine 一并重构）。
