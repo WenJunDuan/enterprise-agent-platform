@@ -263,11 +263,6 @@ async def _execute_inner(
                 },
             )
         finally:
-            # KD2：**任何终态**（completed / timeout / failed）后都由服务端复查一次是否该入队横比
-            # ——横比触发不再依赖前端在场（旧实现唯一触发点是前端 fire-and-forget，失败即静默）。
-            # 放 finally 是因为"某家 failed、其余 ≥2 家已完成"同样应该出横比结果。
-            if project_id:
-                await asyncio.to_thread(maybe_schedule_compare, tenant, project_id)
             flusher.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await flusher  # 等 cancel 真正落地（cancel 仅在下个 loop cycle 注入 CancelledError）
@@ -279,6 +274,21 @@ async def _execute_inner(
                 with contextlib.suppress(Exception):
                     await asyncio.to_thread(
                         update_tender_progress, request_id, progress_state["text"]
+                    )
+            # KD2：**任何终态**（completed / timeout / failed）后都由服务端复查一次是否该入队横比
+            # ——横比触发不再依赖前端在场（旧实现唯一触发点是前端 fire-and-forget，失败即静默）。
+            # "某家 failed、其余 ≥2 家已完成"同样应出横比结果，故放 finally；但排在**进度收尾之后**，
+            # 免得调度异常冲出 finally 时把 flusher.cancel 与 final-flush 一并跳过。
+            # 调度失败不改写本次评标结论（结论已落库），只记警告：schedule_compare_task 内部
+            # 已保证 accepted 行与协程同成败，不会留幽灵在途行。
+            if project_id:
+                try:
+                    await maybe_schedule_compare(tenant, project_id)
+                except Exception:
+                    logger.warning(
+                        "tender_compare_auto_schedule_failed",
+                        extra={"project_id": project_id, "tenant": tenant or "default"},
+                        exc_info=True,
                     )
 
 

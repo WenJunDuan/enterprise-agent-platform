@@ -63,11 +63,35 @@ def current_compare_signature(
     return compute_input_signature(signature.input_result_ids, signature.criteria_hash)
 
 
-def maybe_schedule_compare(tenant: str, project_id: str) -> str | None:
+def compare_recompute_needed(tenant: str, project_id: str) -> bool:
+    """当前参与集是否需要（重新）横比 —— **只读判定，可在工作线程执行**。
+
+    两个闸：参与集 ≥2 家可组池；输入签名相对已存结果**有变**（签名未变说明现有横比结果
+    仍对应当前参与集，重算是纯浪费）。"在途去重"不在这里判——那一步必须与"写 accepted 行"
+    在同一线程内不可分割地做（见 ``_schedule_if_idle``），放这里会留 TOCTOU 窗口。
+
+    Args:
+        tenant: 租户作用域。
+        project_id: 招标项目 ID。
+    """
+    project = get_project(project_id, tenant)
+    if project is None:
+        return False
+    signature = current_compare_signature(tenant, project_id, project)
+    if signature is None:
+        return False
+    stored = get_compare_result(project_id, tenant)
+    return stored is None or stored.get("input_signature") != signature
+
+
+async def maybe_schedule_compare(tenant: str, project_id: str) -> str | None:
     """评标终态后由服务端自动判定是否入队横比（KD2：触发不再依赖前端在场）。
 
-    三个闸全过才入队：参与集 ≥2 家、无在途 compare、输入签名相对已存结果**有变**
-    （签名未变说明现有横比结果仍然对应当前参与集，重算是纯浪费）。
+    **必须在事件循环线程 await**：重活（读全池结论、算签名）经 ``to_thread`` 移出 loop，
+    但真正的"查在途 + 写 accepted 行 + 起协程"三步留在 loop 线程同步做——三步之间没有
+    await 断点，故 check-then-act 天然原子（单线程 loop），也才拿得到 running loop
+    去 ``create_task``（旧实现整段进 to_thread，``create_task`` 在无 loop 的工作线程
+    必抛 RuntimeError，且 accepted 行已写下 → 项目被幽灵任务永久锁死）。
 
     Args:
         tenant: 租户作用域。
@@ -76,14 +100,14 @@ def maybe_schedule_compare(tenant: str, project_id: str) -> str | None:
     Returns:
         新建的 compare request_id；未满足触发条件时 None。
     """
-    project = get_project(project_id, tenant)
-    if project is None:
+    if not await asyncio.to_thread(compare_recompute_needed, tenant, project_id):
         return None
-    signature = current_compare_signature(tenant, project_id, project)
-    if signature is None or has_active_compare(tenant, project_id):
-        return None
-    stored = get_compare_result(project_id, tenant)
-    if stored is not None and stored.get("input_signature") == signature:
+    return _schedule_if_idle(tenant, project_id)
+
+
+def _schedule_if_idle(tenant: str, project_id: str) -> str | None:
+    """loop 线程内同步完成"查在途 → 入队"（无 await 断点 = 并发双触发只会有一个入队）。"""
+    if has_active_compare(tenant, project_id):
         return None
     request_id = new_request_id()
     schedule_compare_task(request_id=request_id, tenant=tenant, project_id=project_id)
@@ -189,14 +213,26 @@ def _task_row(
 
 
 def schedule_compare_task(*, request_id: str, tenant: str, project_id: str) -> None:
-    """Fire-and-forget compare task（tracked，防 GC）。
+    """Fire-and-forget compare task（tracked，防 GC）。**只能在事件循环线程调用。**
 
     先同步建 accepted 记录，使紧随的并发请求能经 ``has_active_compare`` 查到在途 → 防重（cc C1）。
+    "建 accepted 行"与"起协程"必须**同成败**：起协程失败（无 running loop 等）时把该行落
+    failed 再抛，否则 accepted 幽灵行会让 ``has_active_compare`` 恒 True、项目永久卡在
+    "横比进行中"，自动与手动触发全被闸死。
     """
     upsert_compare_task(
         _task_row(request_id, tenant, project_id, "accepted", "横比任务已提交", utc_now())
     )
-    task = asyncio.create_task(
-        execute_compare_task(request_id=request_id, tenant=tenant, project_id=project_id)
-    )
+    try:
+        task = asyncio.create_task(
+            execute_compare_task(request_id=request_id, tenant=tenant, project_id=project_id)
+        )
+    except RuntimeError as exc:
+        finished = utc_now()
+        row = _task_row(
+            request_id, tenant, project_id, "failed", "横比未能启动", finished, finished
+        )
+        row["error_detail"] = f"compare task not scheduled: {exc}"
+        upsert_compare_task(row)
+        raise
     _track(task)

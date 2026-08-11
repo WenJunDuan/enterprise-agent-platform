@@ -289,6 +289,8 @@ def test_get_compare_result_and_stale(client):
 
 
 def test_auto_schedule_compare_when_two_bidders_complete(monkeypatch):
+    import asyncio as _asyncio
+
     import server.tender.compare_worker as worker
 
     scheduled: list[str] = []
@@ -302,11 +304,13 @@ def test_auto_schedule_compare_when_two_bidders_complete(monkeypatch):
     _archive_bid(project_id, "B1", 1000.0)
     _archive_bid(project_id, "B2", 1200.0)
 
-    assert worker.maybe_schedule_compare("acme", project_id) is not None
+    assert _asyncio.run(worker.maybe_schedule_compare("acme", project_id)) is not None
     assert len(scheduled) == 1
 
 
 def test_auto_schedule_skips_when_single_bidder_or_active_or_unchanged(monkeypatch):
+    import asyncio as _asyncio
+
     import server.tender.compare_worker as worker
     from server.stores.tender_compare_store import upsert_compare_result
     from server.tender.compare_input import collect_compare_input
@@ -317,11 +321,11 @@ def test_auto_schedule_skips_when_single_bidder_or_active_or_unchanged(monkeypat
     )["project_id"]
     _seed_project_criteria(project_id)
     _archive_bid(project_id, "B1", 1000.0)
-    assert worker.maybe_schedule_compare("acme", project_id) is None  # 仅 1 家
+    assert _asyncio.run(worker.maybe_schedule_compare("acme", project_id)) is None  # 仅 1 家
 
     _archive_bid(project_id, "B2", 1200.0)
     _compare_task(project_id, "running", request_id="cmp-inflight")
-    assert worker.maybe_schedule_compare("acme", project_id) is None  # 在途
+    assert _asyncio.run(worker.maybe_schedule_compare("acme", project_id)) is None  # 在途
     _compare_task(project_id, "completed", request_id="cmp-inflight")  # 同一任务落终态
 
     _input, signature = collect_compare_input("acme", project_id, {})
@@ -331,9 +335,9 @@ def test_auto_schedule_skips_when_single_bidder_or_active_or_unchanged(monkeypat
         signature=signature,
     )
     # 签名未变 → 不重复算；第三家到达（签名变）→ 恰好再算一次
-    assert worker.maybe_schedule_compare("acme", project_id) is None
+    assert _asyncio.run(worker.maybe_schedule_compare("acme", project_id)) is None
     _archive_bid(project_id, "B3", 1100.0)
-    assert worker.maybe_schedule_compare("acme", project_id) is not None
+    assert _asyncio.run(worker.maybe_schedule_compare("acme", project_id)) is not None
 
 
 def test_eval_worker_triggers_compare_on_terminal_state(monkeypatch):
@@ -382,6 +386,89 @@ def test_eval_worker_triggers_compare_on_terminal_state(monkeypatch):
         )
 
     assert triggered == [project_id, project_id]  # failed 与 completed 都要复查
+
+
+def test_eval_worker_auto_compare_runs_end_to_end(monkeypatch):
+    """F1 回归：**不 mock 调度链**——评标终态 → 自动入队 → compare 真跑完并落库。
+
+    只 mock 两个外部边界（模型调用 ``_run_evaluation`` / ``run_command_json``），
+    生产真实链路 worker → maybe_schedule_compare → schedule_compare_task → create_task
+    全程真跑。旧实现把判定放 ``asyncio.to_thread``，``create_task`` 在无 loop 的工作线程
+    抛 RuntimeError：评标任务从 finally 冲出异常、accepted 幽灵行把项目永久锁在"横比进行中"。
+    """
+    import asyncio as _asyncio
+
+    import server.tender.compare_worker as compare_worker
+    import server.tender.worker as tender_worker
+    from server.common.agent_bridge import AgentRunMeta
+    from server.stores.tender_compare_store import get_compare_result
+    from server.stores.tender_compare_task_store import list_compare_tasks
+
+    project_id = get_or_create_project(
+        tenant="acme", tender_no=f"R-{uuid.uuid4().hex[:8]}"
+    )["project_id"]
+    criteria = _seed_project_criteria(project_id)
+    _archive_bid(project_id, "B1", 1000.0)
+    _archive_bid(project_id, "B2", 1200.0)
+
+    def _meta(request_id: str, schema_name: str) -> AgentRunMeta:
+        return AgentRunMeta(
+            request_id=request_id, conversation_id="c", claude_session_id="s",
+            resume_session_id=None, fork_from_session_id=None, schema_name=schema_name,
+            log_file="l", result_file="r", result_subtype="ok", cost_usd=0.0,
+            finished_at=None,
+        )
+
+    async def fake_eval(**kwargs):
+        return (
+            {"verdict": "manual_review", "claim_id": "B3",
+             "extracted_data": {"criteria": criteria}},
+            _meta(kwargs["request_id"], "tender/audit-result.schema.json"),
+        )
+
+    async def fake_compare(command_name, *args, schema_name, **opts):
+        return (
+            {"project_id": project_id, "bidders": [], "recommended": None,
+             "provisional": True, "warnings": [], "explanation": "横比完成",
+             "policy_refs": []},
+            _meta(opts["request_id"], schema_name),
+        )
+
+    monkeypatch.setattr(tender_worker, "_run_evaluation", fake_eval)
+    monkeypatch.setattr(compare_worker, "run_command_json", fake_compare)
+
+    leftovers: list[object] = []
+
+    async def scenario() -> None:
+        before = set(_asyncio.all_tasks())
+        await tender_worker.execute_tender_evaluation_task(
+            request_id=f"rid-{uuid.uuid4().hex[:6]}",
+            tenant="acme",
+            directory_path="/fake/dir",
+            source_mode="directory",
+            project_id=project_id,
+        )
+        background = list(compare_worker._BACKGROUND_TASKS)
+        assert background, "评标终态后应有 compare 后台任务在跑"
+        await _asyncio.gather(*background)
+        # flusher 已 cancel：除本协程与 compare 任务外不应留在途任务
+        leftovers.extend(
+            task
+            for task in _asyncio.all_tasks()
+            if not task.done()
+            and task is not _asyncio.current_task()
+            and task not in before
+            and task not in background
+        )
+
+    _asyncio.run(scenario())  # 评标任务本身不得抛异常
+
+    assert leftovers == []
+    stored = get_compare_result(project_id, "acme")
+    assert stored is not None and stored["payload"]["explanation"] == "横比完成"
+    statuses = [t.get("status") for t in list_compare_tasks("acme", group_id=project_id, limit=10)]
+    assert "completed" in statuses
+    assert "accepted" not in statuses  # 不留幽灵在途行
 
 
 # ── codex P1.1 / P1.2 污染回归（最关键）────────────────────────────────────────
