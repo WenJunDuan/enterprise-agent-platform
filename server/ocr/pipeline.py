@@ -8,11 +8,11 @@ from __future__ import annotations
 
 import logging
 import os
-import re
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from server.common.corpus import page_anchor, parse_page_anchor
 from server.ocr import OcrDependencyError, OcrError
 from server.ocr import boq as boq_extract
 from server.ocr import cache as ocr_cache
@@ -591,7 +591,7 @@ def _render_tables(tables: list[dict]) -> str:
 
 def _page_anchor(page_no: int) -> str:
     """页锚点：让模型 evidence/basis 能引到底稿真实页（G2 证据定位准确性）。"""
-    return f"【第 {page_no} 页】\n"
+    return page_anchor(page_no)
 
 
 # 识别失败标记前缀：识别失败时 _render_body 以此前缀打头该文件正文。
@@ -601,7 +601,6 @@ OCR_ERROR_PREFIX = "[识别失败]"
 # build_extraction_block 每个文件以此为头、空目录回退此占位（is_ocr_text_valid 据此剔除非内容行）。
 _FILE_HEADER_PREFIX = "### 文件:"
 _EMPTY_BLOCK_MARKER = "（无识别内容）"
-_PAGE_ANCHOR_PATTERN = re.compile(r"^【第\s+\d+\s+页】$")
 
 
 def is_ocr_text_valid(text: str) -> bool:
@@ -622,7 +621,9 @@ def is_ocr_text_valid(text: str) -> bool:
             not s
             or s.startswith(_FILE_HEADER_PREFIX)
             or s.startswith(OCR_ERROR_PREFIX)
-            or _PAGE_ANCHOR_PATTERN.fullmatch(s)
+            # 页锚点行（含【转换稿第M页】变体）不算内容——只有锚没有正文 = 假 ready（0730 教训）。
+            # 走 corpus 单点 pattern，锚变体扩展时不会漏这一处（H2 Round1-F4）。
+            or parse_page_anchor(s) is not None
         ):
             continue
         return True
