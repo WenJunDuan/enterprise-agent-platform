@@ -14,7 +14,7 @@ import {
   evaluateTenderProjectUpload,
   getDocsStatus,
   getTenderDocInfo,
-  getTenderCompareOrNull,
+  getTenderCompare,
   getTenderProject,
   getTenderProjectResult,
   getTenderTask,
@@ -262,17 +262,19 @@ export function useTenderReviewPage(
 
   const compareQuery = useQuery({
     queryKey: ['tender-project-compare', selectedProjectIdForQuery],
-    queryFn: () => getTenderCompareOrNull(selectedProjectIdForQuery),
+    queryFn: () => getTenderCompare(selectedProjectIdForQuery),
     enabled:
       shouldLoadSelectedProject &&
       (projectDetailQuery.data?.bidder_count ?? 0) >= 2,
     refetchInterval: (query) => {
+      // KD2：GET 恒 200 带 status，不再用 404/null 猜状态。横比由服务端在评标终态自动入队，
+      // 故 none 期间继续轮询等它出现；failed 停轮询（等用户点"重新横比"，不打转）；
+      // ready 且非 stale 才算终局。离屏由 react-query 自动停，无无界轮询风险。
       const compare = query.state.data
-      // 遗留③：首次横比由 triggerTenderCompare 异步生成，期间查询返回 null(404)。旧逻辑 null→停轮询
-      // → 首次横比永不出现停在空。query 仅在 ≥2 投标且在分析/报告屏时 enabled，故 null 时继续轮询
-      // （3s）直到横比生成；已生成且非 stale 才停（离屏由 react-query 自动停，无无界轮询风险）。
       if (compare == null) return 3000
-      return compare.stale ? 3000 : false
+      if (compare.status === 'failed') return false
+      if (compare.status === 'ready') return compare.stale ? 3000 : false
+      return 3000
     },
   })
 
@@ -453,6 +455,27 @@ export function useTenderReviewPage(
     uploadBidders.some((bidder) => bidder.files.some(hasNativeFile))
   const canStartReview = hasFilesSelected
 
+  // KD2「重新横比」：stale / failed 时用户可手动重跑（服务端 409=已在算，视作已触发）。
+  const retryCompareMutation = useMutation({
+    mutationFn: () => triggerTenderCompare(selectedProjectIdForQuery),
+    onSuccess: () => {
+      setSubmitError('')
+      void queryClient.invalidateQueries({
+        queryKey: ['tender-project-compare', selectedProjectIdForQuery],
+      })
+    },
+    onError: (error: unknown) => {
+      const message = error instanceof Error ? error.message : ''
+      if (message.includes('正在进行中')) return
+      setSubmitError(`重新横比失败：${message || '请稍后重试'}`)
+    },
+  })
+
+  function retryCompare() {
+    if (!selectedProjectIdForQuery) return
+    retryCompareMutation.mutate()
+  }
+
   const startReviewMutation = useMutation({
     mutationFn: submitReview,
     onSuccess: ({ projectId, requestIds, hasCompare }) => {
@@ -529,7 +552,15 @@ export function useTenderReviewPage(
       }
       setActiveEval(null)
       setProgress(100)
-      if (hasCompare) void triggerTenderCompare(projectId).catch(() => {})
+      // KD2：横比已由服务端在评标终态自动入队；这里的触发只是冗余兜底。
+      // 去掉空 catch —— 失败要说人话（409=已在算，属正常，不打扰用户）。
+      if (hasCompare) {
+        void triggerTenderCompare(projectId).catch((error: unknown) => {
+          const message = error instanceof Error ? error.message : ''
+          if (message.includes('正在进行中')) return
+          setSubmitError(`横比触发失败：${message || '请稍后重试'}`)
+        })
+      }
       void queryClient.invalidateQueries({
         queryKey: ['tender-project', projectId],
       })
@@ -1017,6 +1048,10 @@ export function useTenderReviewPage(
           .join('\n\n')
 
   return {
+    compareStatus: compareQuery.data?.status ?? 'none',
+    compareErrorDetail: compareQuery.data?.error_detail ?? null,
+    compareRetrying: retryCompareMutation.isPending,
+    retryCompare,
     screen,
     setScreen,
     reviewMode,
