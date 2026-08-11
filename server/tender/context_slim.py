@@ -10,10 +10,10 @@ evaluation_method）——两者都是 D6 docstructure._TAG_KEYWORDS 现成的�
 from __future__ import annotations
 
 import os
-import re
 import sqlite3
 from typing import Any
 
+from server.common.corpus import PAGE_ANCHOR_LINE_RE
 from server.ocr.docstructure import build_doc_structure, chapter_heading
 from server.ocr.rag import index_document, search
 from server.platform.config import resolve_model_context_window, resolve_model_max_output_tokens
@@ -40,7 +40,8 @@ _PREEXTRACT_KEYWORDS = (
     "废标",
     "否决",
 )
-_PAGE_ANCHOR_RE = re.compile(r"^\s*【第\s*\d+\s*页】")
+# 页锚点解析统一走 server.common.corpus 单点（含【转换稿第M页】变体，H2 KD0）
+_PAGE_ANCHOR_RE = PAGE_ANCHOR_LINE_RE
 # OCR 文本以中文为主，按 1 字符≈1 token 估算，宁可少送也不让网关再次超窗。
 _DEFAULT_CHARS_PER_TOKEN = 1.0
 _DEFAULT_CONTEXT_MARGIN_TOKENS = 4096

@@ -23,6 +23,8 @@ from __future__ import annotations
 import logging
 import re
 
+from server.common.corpus import ARTIFACT_ORIGINAL, page_anchor_text, parse_page_anchor
+
 logger = logging.getLogger(__name__)
 
 # is_boq 信号
@@ -32,8 +34,7 @@ _NATIVE_KINDS = frozenset({"pdf_text", "word", "excel", "text"})
 # 金额两档：严格（带小数/千分逗号，排除整数项目编码）；宽松（额外允许 ≥5 位纯整数，仅总价 label 用）
 _AMOUNT_STRICT = re.compile(r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+\.\d{1,2}")
 _AMOUNT_LOOSE = re.compile(r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+\.\d{1,2}|\d{5,}")
-# 页锚点（_page_anchor 产 ``【第 N 页】`` 独占行，带空格）
-_PAGE_RE = re.compile(r"^\s*【第\s*(\d+)\s*页】\s*$")
+# 页锚点解析统一走 server.common.corpus（唯一单点，含【转换稿第M页】变体，H2 KD0）
 # 大写中文金额（≥4 个大写数字/单位连写即视作金额大写校验行）
 _DAXIE_RE = re.compile(r"[壹贰叁肆伍陆柒捌玖零拾佰仟万亿圆元角分整]{4,}")
 
@@ -144,8 +145,9 @@ def _score_bidtotal(page: int | None, line: str, daxie: str | None, ctx: str) ->
     return score
 
 
-def _page_label(page: int | None) -> str:
-    return f"【第 {page} 页】" if page is not None else "【页未知】"
+def _page_label(page: int | None, artifact: str = ARTIFACT_ORIGINAL) -> str:
+    """摘要里重放的页锚点行。artifact 随原底稿——转换稿页不得冒充原文档页（H2 KD1）。"""
+    return page_anchor_text(page, artifact=artifact) if page is not None else "【页未知】"
 
 
 def extract_boq_summary(
@@ -171,16 +173,21 @@ def extract_boq_summary(
     try:
         lines = full_body.splitlines()
         cur_page: int | None = None
+        # 整份 body 属同一文件 → 同一 artifact 坐标系；由首个锚点确定，供摘要重放锚点用。
+        body_artifact = ARTIFACT_ORIGINAL
         since = 0
+
+        def anchor_line(page: int | None) -> str:
+            return _page_label(page, body_artifact)
 
         bidtotal_cands: list[tuple[int, int | None, str, str | None, float]] = []
         subtotals: list[tuple[int | None, str, float, str]] = []
         amounts: list[tuple[float, int | None, str]] = []
 
         for i, raw in enumerate(lines):
-            pm = _PAGE_RE.match(raw)
-            if pm:
-                cur_page = int(pm.group(1))
+            anchor = parse_page_anchor(raw)
+            if anchor is not None:
+                cur_page, body_artifact = anchor
                 since = 0
                 continue
             since += 1
@@ -223,12 +230,12 @@ def extract_boq_summary(
             bidtotal_cands.sort(key=lambda c: c[0], reverse=True)
             score, page, amt_str, daxie, amt = bidtotal_cands[0]
             chosen_value = amt
-            out.append(_page_label(page))
+            out.append(anchor_line(page))
             daxie_part = f"  (大写: {daxie})" if daxie else ""
             out.append(f"投标总价: {amt_str}{daxie_part}  [grand total · 候选打分={score}]")
             if len(bidtotal_cands) > 1:
                 cand_str = " / ".join(
-                    f"{_page_label(c[1])}={c[2]}" for c in bidtotal_cands[:6]
+                    f"{anchor_line(c[1])}={c[2]}" for c in bidtotal_cands[:6]
                 )
                 out.append(f"投标总价全部候选(供人核): {cand_str}")
 
@@ -236,7 +243,7 @@ def extract_boq_summary(
             subtotals.sort(key=lambda t: t[2], reverse=True)
             out.append(f"各类合计(共 {len(subtotals)} 处，列金额最大 {min(subtotal_limit, len(subtotals))})：")
             for page, label, amt, amt_str in subtotals[:subtotal_limit]:
-                out.append(_page_label(page))
+                out.append(anchor_line(page))
                 out.append(f"{label} {amt_str}")
 
         if amounts:
@@ -254,7 +261,7 @@ def extract_boq_summary(
             if uniq:
                 out.append(f"Top-{len(uniq)} 高价金额(供异常价抽查)：")
                 for val, page, snip in uniq:
-                    out.append(_page_label(page))
+                    out.append(anchor_line(page))
                     out.append(snip)
 
         out.append("[完整逐行清单未注入；逐项核验请人工查原文件]")

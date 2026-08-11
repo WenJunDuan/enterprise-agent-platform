@@ -65,8 +65,55 @@ def _max_corpus_chars() -> int:
 _TIER_RE = re.compile(r"^\s*={2,}\s*(.+?)\s*={2,}\s*$")
 # 文件头（两路径都有，build_extraction_block）：``### 文件: <name> (kind=..., route=...)``
 _FILE_RE = re.compile(r"^\s*#{2,}\s*文件[:：]\s*(.+?)\s*$")
-# 页锚点（_page_anchor 产 ``【第 N 页】``，带空格 → 正则吃空白）
-_PAGE_RE = re.compile(r"^\s*【第\s*(\d+)\s*页】\s*$")
+
+# ── 页锚点字符串协议（本模块是**唯一**解析单点，H2 page-provenance KD0）─────────────
+#
+# 锚点是跨模块字符串协议（OCR 渲染端产、tender/boq/docstructure/context_slim 解析端消费）。
+# 收拢前 pipeline._PAGE_ANCHOR_PATTERN / boq._PAGE_RE / context_slim._PAGE_ANCHOR_RE 各写一份，
+# 加 ``【转换稿第 M 页】`` 变体时漏掉任何一处都会静默失准（漏 pipeline 那处 → 仅含转换稿锚的
+# 空底稿被判有效假 ready）。故只在此定义，其余模块 import。
+#
+# 两种 artifact 坐标系：
+# - ``original``：``【第 N 页】``，N 是用户可直接回查的原文档页号。
+# - ``converted``：``【转换稿第 M 页】``，M 是 Office→PDF 转换稿的页号（LibreOffice 分页 ≠ Word
+#   分页），原文档页号不可靠 → 一律不冒充。
+PAGE_ANCHOR_LINE_RE = re.compile(
+    r"^\s*【(?:(?P<converted>转换稿)?第\s*(?P<page>\d+)\s*页)】\s*$"
+)
+ARTIFACT_ORIGINAL = "original"
+ARTIFACT_CONVERTED = "converted"
+
+
+def page_anchor_text(page_no: int, *, artifact: str = ARTIFACT_ORIGINAL) -> str:
+    """页锚点字面量（不含换行）：渲染端唯一产出点，与 ``parse_page_anchor`` 互为逆。"""
+    prefix = "转换稿" if artifact == ARTIFACT_CONVERTED else ""
+    return f"【{prefix}第 {page_no} 页】"
+
+
+def page_anchor(page_no: int) -> str:
+    """原件页锚点行（含换行）：让模型 evidence/basis 能引到底稿真实页。"""
+    return page_anchor_text(page_no) + "\n"
+
+
+def converted_page_anchor(page_no: int) -> str:
+    """转换稿页锚点行（含换行）：页号属于 Office→PDF 转换稿，非原文档页。"""
+    return page_anchor_text(page_no, artifact=ARTIFACT_CONVERTED) + "\n"
+
+
+def parse_page_anchor(line: str) -> tuple[int, str] | None:
+    """解析一行是否为页锚点 → ``(页号, artifact)``；不是锚点行返回 ``None``。
+
+    Args:
+        line: 底稿中的单行文本（允许首尾空白）。
+
+    Returns:
+        ``(page_no, "original"|"converted")``，页号取该 artifact 坐标系里的值。
+    """
+    match = PAGE_ANCHOR_LINE_RE.match(line or "")
+    if match is None:
+        return None
+    artifact = ARTIFACT_CONVERTED if match.group("converted") else ARTIFACT_ORIGINAL
+    return int(match.group("page")), artifact
 
 
 def _tier_of(label: str) -> str:
@@ -118,17 +165,22 @@ def _normalize_filename(s: str) -> str:
 
 
 def parse_corpus(evidence_source: str) -> list[dict[str, Any]]:
-    """把底稿切成 segments ``[{tier, file, page, text, clarity}]``（page 可为 None）。
+    """把底稿切成 segments ``[{tier, file, page, artifact, artifact_page, text, clarity}]``。
 
     两态统一处理：有 ``=== …底稿 ===`` 外层标记（doc-layer）按它定 tier；无标记（inline OCR）
-    按每个 ``### 文件:`` 文件名推断 tier。再在每文件块内按 ``【第 N 页】`` 切页。
+    按每个 ``### 文件:`` 文件名推断 tier。再在每文件块内按页锚点切页。
     每段带所属文件 clarity（low/unknown/clear，供 confidence 消费）。
+
+    页溯源（H2 KD1）：``artifact_page`` 是页号在其 artifact 坐标系里的值；``page`` 是**用户可回查
+    的原文档页号**——``original`` 锚两者相同，``converted``（Office→PDF 转换稿）锚 ``page=None``
+    （原 docx/xls 无可靠页映射，如实置空不猜）。无锚段两者皆 None。
     """
     segments: list[dict[str, Any]] = []
     cur_tier: str | None = None  # None = 隐式（由文件名推断）
     cur_file: str | None = None
     cur_clarity: str = "clear"
     cur_page: int | None = None
+    cur_artifact: str = ARTIFACT_ORIGINAL
     buf: list[str] = []
 
     def flush() -> None:
@@ -141,7 +193,9 @@ def parse_corpus(evidence_source: str) -> list[dict[str, Any]]:
                     {
                         "tier": tier,
                         "file": cur_file,
-                        "page": cur_page,
+                        "page": cur_page if cur_artifact == ARTIFACT_ORIGINAL else None,
+                        "artifact": cur_artifact,
+                        "artifact_page": cur_page,
                         "text": text,
                         "clarity": cur_clarity,
                     }
@@ -156,17 +210,19 @@ def parse_corpus(evidence_source: str) -> list[dict[str, Any]]:
             cur_file = None
             cur_clarity = "clear"
             cur_page = None
+            cur_artifact = ARTIFACT_ORIGINAL
             continue
         m_file = _FILE_RE.match(line)
         if m_file:
             flush()
             cur_file, cur_clarity = _parse_file_head(m_file.group(1))
             cur_page = None
+            cur_artifact = ARTIFACT_ORIGINAL
             continue
-        m_page = _PAGE_RE.match(line)
-        if m_page:
+        anchor = parse_page_anchor(line)
+        if anchor is not None:
             flush()
-            cur_page = int(m_page.group(1))
+            cur_page, cur_artifact = anchor
             continue
         buf.append(line)
     flush()
@@ -177,19 +233,26 @@ class CorpusIndex:
     """本案底稿的 file-level 索引 + 各 tier 规范化全文（供存在性主信号 + page 细化）。"""
 
     def __init__(self, segments: list[dict[str, Any]]):
-        # tier -> file -> page(int, None→0) -> 规范化页文本
+        # tier -> file -> artifact_page(int, 无锚→0) -> 规范化页文本
         self.tier_files: dict[str, dict[str, dict[int, str]]] = {}
         # 规范化文件名 → clarity（low/unknown/clear），供 confidence 消费
         self.clarity_map: dict[str, str] = {}
+        # 文件名（原样，与 tier_files 的 key 一致）→ artifact（original/converted），供页坐标系比对
+        self.artifact_map: dict[str, str] = {}
         parts: dict[str, list[str]] = {}
         for seg in segments:
-            tier, file, page = seg["tier"], seg["file"], seg["page"]
+            tier, file = seg["tier"], seg["file"]
+            page = seg["artifact_page"]
             clarity = seg.get("clarity", "clear")
             if file:
                 norm_name = _normalize_filename(file)
                 # 同文件多段 clarity 一致；非 clear 优先记（low/unknown 是风险信号）
                 if norm_name not in self.clarity_map or clarity != "clear":
                     self.clarity_map[norm_name] = clarity
+                if seg["artifact"] != ARTIFACT_ORIGINAL:
+                    self.artifact_map[file] = seg["artifact"]
+                else:
+                    self.artifact_map.setdefault(file, ARTIFACT_ORIGINAL)
             norm = normalize_text(seg["text"])
             if not norm:
                 continue
@@ -297,10 +360,24 @@ def page_status(index: CorpusIndex, tier: str, page: int | None, norm_quote: str
 # ── 出处解析 ──────────────────────────────────────────────────────────────────
 
 _PAGE_IN_SOURCE_RE = re.compile(r"第\s*(\d+)\s*页")
+_CONVERTED_IN_SOURCE_RE = re.compile(r"转换稿\s*第\s*\d+\s*页")
+
+
+def source_page_kind(source: str | None) -> str:
+    """出处引的是哪套页坐标：写「转换稿第M页」→ ``converted``，否则 ``original``。
+
+    与 ``parse_source`` 分开而不改其返回元数（既有调用方按 2-tuple 解包），H2 KD2。
+    """
+    if source and _CONVERTED_IN_SOURCE_RE.search(source):
+        return ARTIFACT_CONVERTED
+    return ARTIFACT_ORIGINAL
 
 
 def parse_source(source: str | None) -> tuple[str, int | None]:
-    """从出处文本解析 ``(tier, page)``：含「招标」→tender / 「投标」→bid / 否则 whole；页码取「第N页」。"""
+    """从出处文本解析 ``(tier, page)``：含「招标」→tender / 「投标」→bid / 否则 whole；页码取「第N页」。
+
+    页号是 artifact 坐标系里的值（「转换稿第M页」取 M）；哪套坐标见 ``source_page_kind``。
+    """
     if not source:
         return "whole", None
     tier = _tier_of(source)

@@ -6,7 +6,9 @@ import re
 from collections.abc import Sequence
 from typing import Any
 
-from server.ocr.boq import _AMOUNT_STRICT, _PAGE_CARRY_LINES, _PAGE_RE
+from server.common.corpus import PAGE_ANCHOR_LINE_RE as _PAGE_RE
+from server.common.corpus import parse_page_anchor
+from server.ocr.boq import _AMOUNT_STRICT, _PAGE_CARRY_LINES
 
 _FILE_HEADER_RE = re.compile(r"^\s*###\s*文件:\s*(.*?)\s+\(kind=")
 _MARKDOWN_TITLE_RE = re.compile(r"^\s*(#{1,6})\s+(.+?)\s*$")
@@ -48,9 +50,9 @@ def scan_page_context(lines: Sequence[str]) -> tuple[list[int | None], set[int]]
     current: int | None = None
     distance = 0
     for raw in lines:
-        match = _PAGE_RE.match(raw)
-        if match:
-            current = int(match.group(1))
+        anchor = parse_page_anchor(raw)
+        if anchor is not None:
+            current = anchor[0]
             pages.add(current)
             distance = 0
             page_of.append(current)
