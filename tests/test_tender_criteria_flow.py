@@ -303,6 +303,7 @@ def test_unjudgeable_item_null_score_passes(monkeypatch):
                         "max": 10,
                         "score": None,
                         "status": "manual_review",
+                        "pending_reason": "live_event",
                         "basis": "现场答辩环节，投标文件不可判定，需现场记录",
                     },
                 ],
@@ -484,7 +485,8 @@ def test_score_mode_skips_null_and_manual(monkeypatch):
                 "scoring": [
                     {"item": "技术方案", "max": 50, "score": 44, "status": "scored", "basis": "无明细不校验"},
                     {"item": "项目负责人答辩", "max": 10, "score": None,
-                     "status": "manual_review", "basis": "现场"},
+                     "status": "manual_review", "pending_reason": "live_event",
+                     "basis": "现场"},
                 ],
             },
             verdict="manual_review",
@@ -610,6 +612,7 @@ def test_tender_explanation_is_user_facing_and_score_summary_is_canonical(monkey
                         "max": 92,
                         "score": None,
                         "status": "manual_review",
+                        "pending_reason": "cross_bid",
                         "basis": "需全部投标报价",
                     },
                 ],
@@ -859,9 +862,13 @@ def _formula_criteria(formula_spec) -> dict:
 
 
 def _formula_scoring(status: str = "scored", score=10) -> list:
+    price_item = {"item": "价格分", "max": 10, "score": score, "status": status,
+                  "score_mode": "formula",
+                  "basis": "限价300、本家270、(300−270)/300=10%、floor得10分"}
+    if score is None:
+        price_item["pending_reason"] = "cross_bid"  # KD5：score=null 必带待定原因
     return [
-        {"item": "价格分", "max": 10, "score": score, "status": status,
-         "score_mode": "formula", "basis": "限价300、本家270、(300−270)/300=10%、floor得10分"},
+        price_item,
         {"item": "商务响应", "max": 40, "score": 36, "status": "scored",
          "score_mode": "deduction", "basis": "全响应"},
     ]

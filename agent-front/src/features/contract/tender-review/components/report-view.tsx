@@ -684,9 +684,13 @@ function ReportMeta({ data }: { data: TenderReviewMockData }) {
 
 function CompareNotice({ data }: { data: TenderReviewMockData }) {
   const notice = data.compareNotice
+  const failed = notice?.status === 'failed'
   if (
     !notice ||
-    (!notice.stale && !notice.provisional && notice.warnings.length === 0)
+    (!failed &&
+      !notice.stale &&
+      !notice.provisional &&
+      notice.warnings.length === 0)
   ) {
     return null
   }
@@ -694,13 +698,22 @@ function CompareNotice({ data }: { data: TenderReviewMockData }) {
   return (
     <Alert className='mt-6'>
       <AlertTitle>
-        {notice.stale
-          ? '横比结果已过期'
-          : notice.provisional
-            ? '横比结果待定'
-            : '横比告警'}
+        {failed
+          ? '横比未成功'
+          : notice.stale
+            ? '横比结果已过期'
+            : notice.provisional
+              ? '横比结果待定'
+              : '横比告警'}
       </AlertTitle>
       <AlertDescription className='mt-2 space-y-1'>
+        {failed ? (
+          <div>
+            本次横比未能完成
+            {notice.errorDetail ? `（${notice.errorDetail}）` : ''}
+            ，可在分析中心点「重新横比」重试。
+          </div>
+        ) : null}
         {notice.stale ? (
           <div>投标人有变化，请重新横比后再展示横比结果。</div>
         ) : null}

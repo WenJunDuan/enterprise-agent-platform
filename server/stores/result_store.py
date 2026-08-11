@@ -68,6 +68,13 @@ class ResultStore(Protocol):
         tenant: str,
     ) -> dict[str, Any] | None: ...
 
+    def update_payload(
+        self,
+        request_id: str,
+        tenant: str,
+        payload: dict[str, Any],
+    ) -> None: ...
+
     def list_results_by_project(
         self,
         tenant: str,
@@ -189,6 +196,18 @@ class SQLiteResultStore:
         if row is None or row["payload"] is None:
             return None
         return json.loads(row["payload"])
+
+    def update_payload(
+        self,
+        request_id: str,
+        tenant: str,
+        payload: dict[str, Any],
+    ) -> None:
+        with connect_sqlite(self.db_path) as connection:
+            connection.execute(
+                "UPDATE results SET payload = ? WHERE request_id = ? AND tenant = ?",
+                (json.dumps(payload, ensure_ascii=False), request_id, tenant),
+            )
 
     def list_results_by_project(
         self,
@@ -437,6 +456,35 @@ def get_result_payload_by_request_id(
     return RESULT_STORE.get_payload_by_request_id(request_id=request_id, tenant=tenant)
 
 
+def update_result_criteria_ref(
+    request_id: str,
+    tenant: str,
+    criteria_ref: dict[str, str],
+) -> None:
+    """把服务端权威判定的 ``criteria_ref`` 补写进已归档结论（KD1）。
+
+    结论归档发生在 ``json_bridge.run_agent_json`` 内部，而 ref 由 runner 在拿到 payload 之后
+    才确定性打上（不依赖模型回声），故需要这一次补写；否则横比读到的行永远没有 ref。
+
+    Args:
+        request_id: 结论 ID。
+        tenant: 租户作用域（WHERE 带租户，杜绝跨租户改写）。
+        criteria_ref: ``{"version", "source"}``。
+    """
+    stored = RESULT_STORE.get_payload_by_request_id(request_id=request_id, tenant=tenant)
+    if not isinstance(stored, dict):
+        return
+    response = stored.get("response")
+    if not isinstance(response, dict):
+        return
+    extracted = response.get("extracted_data")
+    if not isinstance(extracted, dict):
+        extracted = {}
+        response["extracted_data"] = extracted
+    extracted["criteria_ref"] = criteria_ref
+    RESULT_STORE.update_payload(request_id=request_id, tenant=tenant, payload=stored)
+
+
 def list_results_by_project(
     tenant: str,
     project_id: str,
@@ -447,6 +495,33 @@ def list_results_by_project(
     return RESULT_STORE.list_results_by_project(
         tenant=tenant, project_id=project_id, limit=limit, offset=offset
     )
+
+
+def list_latest_results_by_project(
+    tenant: str,
+    project_id: str,
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    """招标项目下**每个投标人最新一条**结论（KD4：同家重评不双行入横比池）。
+
+    去重键优先 ``bid_id``（投标文档标识，最稳定），无 bid_id 的散单退 ``claim_id``，
+    再退 ``request_id``（等于不去重）。底层查询已按 ``created_at DESC`` 排序，
+    故每个键**首次**出现的即最新一条。
+
+    Args:
+        tenant: 租户作用域。
+        project_id: 招标项目 ID。
+        limit: 底层取行上限（去重前）。
+    """
+    seen: set[str] = set()
+    latest: list[dict[str, Any]] = []
+    for row in list_results_by_project(tenant, project_id, limit=limit):
+        key = str(row.get("bid_id") or row.get("claim_id") or row.get("request_id"))
+        if key in seen:
+            continue
+        seen.add(key)
+        latest.append(row)
+    return latest
 
 
 def list_result_records_admin(

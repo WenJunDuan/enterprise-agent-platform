@@ -1,6 +1,7 @@
 import type { AuditResult } from '@/features/audit/types'
 import type {
   TenderCompareResponse,
+  TenderCompareStatus,
   TenderProjectDetailResponse,
   TenderProjectResponse,
   TenderProjectResultSummary,
@@ -22,6 +23,7 @@ import type {
   ScoreHit,
   TenderCompareScoreRow,
   TenderEligibilityCheck,
+  TenderPendingReason,
   TenderPolicyRef,
   TenderPriceCompareDetail,
   TenderScoreCategory,
@@ -151,7 +153,7 @@ export function mapTenderProject(
     name:
       project.title?.trim() || project.tender_no?.trim() || EMPTY_PROJECT_TITLE,
     code: project.tender_no?.trim() || project.project_id,
-    method: project.method?.trim() || compare?.result.method || DEFAULT_METHOD,
+    method: project.method?.trim() || compare?.result?.method || DEFAULT_METHOD,
     bidderCount,
     score: topScore == null || compareStale ? '-' : formatScore(topScore),
     date: formatDate(project.created_at),
@@ -321,17 +323,17 @@ function getRecommendedBidder(
 ) {
   if (compareStale) return '待重新横比'
   if (detail?.recommended_bidder) return detail.recommended_bidder
-  if (compare?.result.provisional === false && compare.result.recommended) {
-    return compare.result.recommended
+  if (compare?.result?.provisional === false && compare.result?.recommended) {
+    return compare.result?.recommended
   }
-  if (compare?.result.provisional) return '待人工复核'
+  if (compare?.result?.provisional) return '待人工复核'
   if (status === 'doing') return '分析中'
   return '暂未推荐'
 }
 
 function getTopCompareScore(compare?: TenderCompareResponse | null) {
-  if (!compare?.result.bidders.length) return null
-  const ranked = [...compare.result.bidders].sort(
+  if (!compare?.result?.bidders?.length) return null
+  const ranked = [...(compare.result?.bidders ?? [])].sort(
     (left, right) =>
       (left.rank ?? Number.MAX_SAFE_INTEGER) -
       (right.rank ?? Number.MAX_SAFE_INTEGER)
@@ -376,7 +378,7 @@ function buildProjectInfo(
     code:
       project?.tender_no?.trim() ||
       (project ? project.project_id : caseHeader?.code || '-'),
-    method: project?.method?.trim() || compare?.result.method || DEFAULT_METHOD,
+    method: project?.method?.trim() || compare?.result?.method || DEFAULT_METHOD,
     controlPrice: project?.control_price?.trim() || '-',
     reviewDate: formatChineseDate(date),
     reportNo: `TR-${formatDate(date).replaceAll('-', '')}-${id.slice(0, 8)}`,
@@ -423,7 +425,7 @@ function buildReviewBidders(
   const { detailBids, handNameByClaim, summaryNameByClaim } =
     buildBidderNameIndexes(project, resultSummaries)
 
-  if (compare?.result.bidders.length) {
+  if (compare?.result?.bidders?.length) {
     const bidders = [...compare.result.bidders]
       .sort(
         (left, right) =>
@@ -455,7 +457,7 @@ function buildReviewBidders(
     const hasCompleteRanking = bidders.every(
       (bidder) => bidder.total != null && bidder.rank != null
     )
-    return !compare.result.provisional && hasCompleteRanking
+    return !compare.result?.provisional && hasCompleteRanking
       ? rankReviewBiddersByScore(bidders)
       : bidders
   }
@@ -736,7 +738,7 @@ function buildEligibilityParagraphText(item: TenderEligibilityCheck) {
 function buildCompareGroups(
   compare?: TenderCompareResponse | null
 ): CompareGroup[] {
-  const bidders = compare?.result.bidders ?? []
+  const bidders = compare?.result?.bidders ?? []
   if (!bidders.length) return []
 
   const rows = [
@@ -786,7 +788,11 @@ function buildCompareNotice(
     compare?.stale
   )
   const result = compare?.result
+  const status: TenderCompareStatus = compare?.status ?? 'none'
   return {
+    status,
+    // 失败原因由服务端脱敏后下发；无则不给 errorDetail（避免"失败但没说为什么"）。
+    errorDetail: compare?.error_detail || undefined,
     stale,
     provisional: Boolean(result?.provisional),
     recommended: result?.recommended ?? null,
@@ -802,7 +808,7 @@ function buildComparePriceDetail(
   bidders: ReviewBidder[]
 ): TenderPriceCompareDetail | undefined {
   if (!compare) return undefined
-  const compareBidders = compare.result.bidders
+  const compareBidders = compare.result?.bidders ?? []
   if (!compareBidders.length || bidders.length < 2) return undefined
   const bidderByClaim = new Map(
     compareBidders.map((bidder) => [bidder.claim_id, bidder])
@@ -835,7 +841,7 @@ function buildPriceFormulaText(compare: TenderCompareResponse) {
     .find(Boolean)
   return (
     evidenceText ||
-    compare.result.explanation ||
+    compare.result?.explanation ||
     '价格分由横比结果按招标文件价格公式统一计算；前端仅展示 compare 侧返回结果。'
   )
 }
@@ -843,7 +849,7 @@ function buildPriceFormulaText(compare: TenderCompareResponse) {
 function buildComparePriceEvidence(
   compare: TenderCompareResponse
 ): TenderScoreEvidence[] {
-  const evidence = compare.result.evidence_chain ?? []
+  const evidence = compare.result?.evidence_chain ?? []
   return evidence
     .filter((item) =>
       `${item.source ?? ''} ${item.finding ?? ''} ${item.conclusion ?? ''}`.match(
@@ -1372,6 +1378,56 @@ function parseScoreHits(raw: unknown): ScoreHit[] | undefined {
   return hits.length > 0 ? hits : undefined
 }
 
+/** 后端 409 的固定措辞：横比已在算，重复触发不是错误。 */
+const COMPARE_IN_FLIGHT_HINT = '正在进行中'
+
+/**
+ * 触发/重跑横比失败时该不该打扰用户，以及说什么。
+ *
+ * 自动触发（评标终态）与手动「重新横比」两个入口共用同一判断：409「正在进行中」说明服务端
+ * 已经在算，属正常路径 → 返回 null（静默）；其余返回可读原因，由调用方加动作前缀。
+ *
+ * @param error - 捕获到的异常。
+ * @returns 需要提示的原因文本；无需提示时 null。
+ */
+export function describeCompareTriggerError(error: unknown): string | null {
+  const message = error instanceof Error ? error.message.trim() : ''
+  if (message.includes(COMPARE_IN_FLIGHT_HINT)) return null
+  return message || '请稍后重试'
+}
+
+/** KD5：score=null 的待定原因 → 面向业务人员的中文文案（不暴露枚举英文）。 */
+export const PENDING_REASON_LABELS: Record<TenderPendingReason, string> = {
+  cross_bid: '待全部投标报价横比',
+  external_data: '待外部数据核验',
+  live_event: '待现场答辩/演示',
+  evidence_unresolved: '出处待核实',
+  manual_mode: '待评委人工评分',
+  non_responsive: '投标未响应该项',
+}
+
+const PENDING_REASON_VALUES = new Set(Object.keys(PENDING_REASON_LABELS))
+
+/** 读取评分项的待定原因；脏值 / 存量缺字段一律返回 undefined（展示层回退"待核验"）。 */
+function parsePendingReason(value: unknown): TenderPendingReason | undefined {
+  const text = toText(value)
+  return PENDING_REASON_VALUES.has(text)
+    ? (text as TenderPendingReason)
+    : undefined
+}
+
+/**
+ * 评分项"关注点"列文案：有枚举用枚举文案，存量无枚举但未出分回退"待核验"，已出分显示"已记录"。
+ */
+export function resolvePendingReasonLabel(
+  item?: Pick<TenderScoringItem, 'pendingReason' | 'score' | 'status'> | null
+): string {
+  if (!item) return '已记录'
+  if (item.pendingReason) return PENDING_REASON_LABELS[item.pendingReason]
+  const pending = item.score == null || item.status === 'manual_review'
+  return pending ? '待核验' : '已记录'
+}
+
 function buildScoringItems(result?: AuditResult | null): TenderScoringItem[] {
   return getScoringItems(result).map((item, index) => {
     const title = toText(item.item) || `评分项 ${index + 1}`
@@ -1391,6 +1447,7 @@ function buildScoringItems(result?: AuditResult | null): TenderScoringItem[] {
       max,
       score,
       status,
+      pendingReason: parsePendingReason(item.pending_reason),
       basis: toText(item.basis) || result?.explanation || '暂无判定依据。',
       // 类目优先用招标文件标注的实际类目原名（criteria/scoring.category），动态分栏；
       // 旧数据无 category 时回退关键词推断的 tech/comm，保证不崩。
