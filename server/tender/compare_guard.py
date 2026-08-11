@@ -7,11 +7,7 @@
 
 from __future__ import annotations
 
-import logging
-import re
 from typing import Any
-
-logger = logging.getLogger(__name__)
 
 # 整池封锁时的逐家说明：按 **blocked_reason** 取（F9：旧实现无论何种原因都写"价格项满分未设"，
 # 与实际原因不符，误导人工）。
@@ -36,11 +32,6 @@ COMPARE_TIMEOUT_REASON = "横比计算超时，请稍后重新横比"
 KNOWN_BUSINESS_REASONS = (
     "参与横比的已完成投标人不足 2 家",
     COMPARE_TIMEOUT_REASON,
-)
-
-# 凭证兜底（防御纵深）：Bearer / sk-xxx / api_key= / token= 等形态一律抹掉。
-_CREDENTIAL_PATTERN = re.compile(
-    r"(?i)(?:bearer\s+\S+|sk-[\w\-]{6,}|(?:api[_-]?key|token|secret|password)\s*[:=]\s*\S+)"
 )
 
 _DETAIL_MAX_CHARS = 200
@@ -93,20 +84,21 @@ def sanitize_error_detail(detail: Any, limit: int = _DETAIL_MAX_CHARS) -> str:
     message = lines[-1] if lines[0].startswith("Traceback") else lines[0]
     known = _match_known_reason(message)
     if known is None:
-        # 详情只留服务端：写进消息体（而非 extra 字段）才能被常规日志采集与本地排障看到。
-        logger.warning("tender_compare_error_detail_masked: %s", raw)
+        # 本函数保持纯函数（GET 轮询热路径逐次调用）；完整详情由写入侧
+        # compare_worker._execute_inner 的 logger.exception("tender_compare_failed") 一次性落日志。
         return GENERIC_ERROR_DETAIL
-    # 已知业务原因也过一遍凭证兜底：上游可能把 token 拼进消息（防御纵深，不是重复校验）。
-    known = _CREDENTIAL_PATTERN.sub("[已隐去]", known)
     return known if len(known) <= limit else known[:limit] + "…"
 
 
 def _match_known_reason(message: str) -> str | None:
-    """命中白名单则返回该业务原因原文（去掉异常类名前缀），否则 None。"""
+    """命中白名单则返回**登记文案本身**，否则 None。
+
+    不回传命中位置之后的尾巴：尾巴可能携带路径/凭证等不可控内容（pass2-N3），
+    白名单语义就是"命中即用登记文案"。
+    """
     for reason in KNOWN_BUSINESS_REASONS:
         if reason in message:
-            index = message.index(reason)
-            return message[index:].strip()
+            return reason
     return None
 
 
