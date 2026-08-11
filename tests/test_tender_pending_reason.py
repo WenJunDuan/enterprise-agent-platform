@@ -114,8 +114,15 @@ def test_validate_ignores_scored_items_without_pending_reason():
     to.validate_tender_result(payload)
 
 
-def test_validate_leaves_expense_result_untouched():
-    """expense 结论无 scoring → 本闸恒不触发（跨域污染防回归）。"""
+def test_validate_leaves_expense_result_untouched(monkeypatch):
+    """expense 结论无 scoring → 本闸恒不触发（跨域污染防回归）。
+
+    规则引用真伪闸与本测试无关且依赖 gitignored 的 knowledge/（有无规则库行为不同，
+    worktree 无 knowledge 时假绿），置空使测试密闭。
+    """
+    from server.common import output_contracts as oc
+
+    monkeypatch.setattr(oc, "_load_known_rule_ids", lambda: set())
     payload = {
         "claim_id": "E1",
         "verdict": "approved",
