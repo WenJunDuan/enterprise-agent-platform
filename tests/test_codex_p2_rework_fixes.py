@@ -339,7 +339,7 @@ def test_p12_default_prewarm_max_is_4():
 
 
 def test_p13_project_doc_ocr_writes_failed_on_exception(monkeypatch):
-    """When prewarm_and_text raises, project doc row gets ocr_status=failed."""
+    """When prewarm_and_report raises, project doc row gets ocr_status=failed."""
     monkeypatch.setattr("server.routes.deps.TENANT_KEYS", {"default": _TOKEN})
     import server.api as api_module
     import server.routes.deps as deps_module
@@ -354,10 +354,10 @@ def test_p13_project_doc_ocr_writes_failed_on_exception(monkeypatch):
     def _raise(*args, **kwargs):
         raise RuntimeError("OCR engine down")
 
-    # S3: OCR 编排下沉 server.tender.doc_pipeline；prewarm_and_text 在该模块导入。
+    # S3: OCR 编排下沉 server.tender.doc_pipeline；prewarm_and_report 在该模块导入。
     import server.tender.doc_pipeline as pipeline
 
-    monkeypatch.setattr("server.tender.doc_pipeline.prewarm_and_text", _raise)
+    monkeypatch.setattr("server.tender.doc_pipeline.prewarm_and_report", _raise)
 
     client = TestClient(api_module.app)
     pid = _make_project(client)
@@ -374,12 +374,12 @@ def test_p13_project_doc_ocr_writes_failed_on_exception(monkeypatch):
     row = get_project_doc(pid, "default")
     assert row is not None
     assert row["ocr_status"] == "failed", (
-        "ocr_status must be 'failed' when prewarm_and_text raises"
+        "ocr_status must be 'failed' when prewarm_and_report raises"
     )
 
 
 def test_p13_bid_doc_ocr_writes_failed_on_exception(monkeypatch):
-    """When prewarm_and_text raises for bid, bid doc gets ocr_status=failed."""
+    """When prewarm_and_report raises for bid, bid doc gets ocr_status=failed."""
     monkeypatch.setattr("server.routes.deps.TENANT_KEYS", {"default": _TOKEN})
     import server.api as api_module
     import server.routes.deps as deps_module
@@ -396,7 +396,7 @@ def test_p13_bid_doc_ocr_writes_failed_on_exception(monkeypatch):
 
     import server.tender.doc_pipeline as pipeline
 
-    monkeypatch.setattr("server.tender.doc_pipeline.prewarm_and_text", _raise)
+    monkeypatch.setattr("server.tender.doc_pipeline.prewarm_and_report", _raise)
 
     client = TestClient(api_module.app)
     pid = _make_project(client)
@@ -451,7 +451,7 @@ def test_p13_bid_doc_ocr_task_function_exists():
 
 
 def test_p13_project_doc_ocr_writes_failed_on_rendered_error_block(monkeypatch):
-    """S3 review P1: prewarm_and_text 返回**渲染后的全失败底稿**（`### 文件:` 头 + `[识别失败]` 正文）
+    """S3 review P1: prewarm_and_report 返回**渲染后的全失败底稿**（`### 文件:` 头 + `[识别失败]` 正文）
     时，project doc 必须 ocr_status=failed —— is_ocr_text_valid 不能被文件头骗过（旧 startswith 会漏判）。"""
     monkeypatch.setattr("server.routes.deps.TENANT_KEYS", {"default": _TOKEN})
     import server.api as api_module
@@ -465,10 +465,12 @@ def test_p13_project_doc_ocr_writes_failed_on_rendered_error_block(monkeypatch):
     )
 
     import server.tender.doc_pipeline as pipeline
+    from server.ocr.pipeline import summarize_ocr_results
 
     error_block = "### 文件: bad.pdf (kind=pdf, route=ocr)\n[识别失败] OCR engine down"
     monkeypatch.setattr(
-        "server.tender.doc_pipeline.prewarm_and_text", lambda *a, **kw: error_block
+        "server.tender.doc_pipeline.prewarm_and_report",
+        lambda *a, **kw: (error_block, summarize_ocr_results([], error_block)),
     )
 
     client = TestClient(api_module.app)
@@ -497,10 +499,12 @@ def test_p13_bid_doc_ocr_writes_failed_on_rendered_error_block(monkeypatch):
     )
 
     import server.tender.doc_pipeline as pipeline
+    from server.ocr.pipeline import summarize_ocr_results
 
     error_block = "### 文件: bid.pdf (kind=pdf, route=ocr)\n[识别失败] OCR engine down"
     monkeypatch.setattr(
-        "server.tender.doc_pipeline.prewarm_and_text", lambda *a, **kw: error_block
+        "server.tender.doc_pipeline.prewarm_and_report",
+        lambda *a, **kw: (error_block, summarize_ocr_results([], error_block)),
     )
 
     client = TestClient(api_module.app)

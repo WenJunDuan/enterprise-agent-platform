@@ -1,0 +1,261 @@
+"""H3 KD2/KD5：doc 层 ocr_status 扩档（degraded/partial）+ failed_files 落库 + 预热心跳。
+
+此前 doc 层只有 ready|failed 两档：任一页降级 Tesseract 的低质底稿、以及 10 个文件失败 2 个的
+残缺底稿，都以 ``ready`` 永久落库 → 之后永不重跑、部分失败对状态机完全不可见。
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import uuid
+
+import pytest
+
+from server.ocr.pipeline import OcrDocReport
+from server.stores import tender_doc_store as store
+from server.tender import doc_pipeline
+
+
+def _pid() -> str:
+    return f"tp-{uuid.uuid4().hex[:16]}"
+
+
+def _seed_project(pid: str, *, case_path: str = "/case/tender") -> None:
+    store.upsert_project_doc(
+        project_id=pid,
+        tenant="t1",
+        tender_files="[]",
+        ocr_status="running",
+        case_path=case_path,
+    )
+
+
+def _seed_bid(pid: str, bid_id: str, *, case_path: str = "/case/bid") -> None:
+    store.upsert_bid_doc(
+        project_id=pid,
+        bid_id=bid_id,
+        tenant="t1",
+        bidder_name="投标人甲",
+        bid_files="[]",
+        ocr_status="running",
+        case_path=case_path,
+    )
+
+
+# ── store：枚举 + failed_files + case_path ────────────────────────────────────
+
+
+def test_ocr_statuses_include_degraded_and_partial():
+    assert {"pending", "running", "ready", "degraded", "partial", "failed"} == store.OCR_STATUSES
+
+
+@pytest.mark.parametrize("status", ["degraded", "partial"])
+def test_update_bid_doc_ocr_persists_new_statuses_with_failed_files(status):
+    pid, bid_id = _pid(), store.new_bid_id()
+    _seed_bid(pid, bid_id)
+
+    store.update_bid_doc_ocr(
+        pid,
+        bid_id,
+        tenant="t1",
+        ocr_text="底稿",
+        status=status,
+        failed_files=["broken-1.pdf", "broken-2.pdf"],
+    )
+
+    row = store.get_bid_doc(pid, bid_id, "t1")
+    assert row["ocr_status"] == status
+    assert json.loads(row["ocr_failed_files"]) == ["broken-1.pdf", "broken-2.pdf"]
+
+
+def test_update_project_doc_ocr_persists_failed_files():
+    pid = _pid()
+    _seed_project(pid)
+
+    store.update_project_doc_ocr(
+        pid,
+        tenant="t1",
+        ocr_text="底稿",
+        ocr_clarity=None,
+        status="partial",
+        failed_files=["x.pdf"],
+    )
+
+    row = store.get_project_doc(pid, "t1")
+    assert row["ocr_status"] == "partial"
+    assert json.loads(row["ocr_failed_files"]) == ["x.pdf"]
+
+
+@pytest.mark.parametrize(
+    "writer",
+    ["bid", "project"],
+)
+def test_unknown_ocr_status_is_rejected_fail_fast(writer):
+    """未知枚举值绝不静默落库（落进去后读侧只能猜，最坏被当 ready）。"""
+    pid, bid_id = _pid(), store.new_bid_id()
+    _seed_bid(pid, bid_id)
+    _seed_project(pid)
+
+    with pytest.raises(ValueError, match="ocr_status"):
+        if writer == "bid":
+            store.update_bid_doc_ocr(
+                pid, bid_id, tenant="t1", ocr_text="x", status="mostly-ready"
+            )
+        else:
+            store.update_project_doc_ocr(
+                pid, tenant="t1", ocr_text="x", ocr_clarity=None, status="mostly-ready"
+            )
+
+
+def test_upsert_persists_case_path_for_reruns():
+    """评标入口要能"自动重跑一次该 doc 的预热 OCR"，就必须知道文件落在哪。"""
+    pid, bid_id = _pid(), store.new_bid_id()
+    _seed_project(pid, case_path="/case/tender-42")
+    _seed_bid(pid, bid_id, case_path="/case/bid-42")
+
+    assert store.get_project_doc(pid, "t1")["case_path"] == "/case/tender-42"
+    assert store.get_bid_doc(pid, bid_id, "t1")["case_path"] == "/case/bid-42"
+
+
+def test_touch_only_refreshes_rows_still_running():
+    """心跳只刷在途行：终态行被"刷新"会让 stale 判定永远不触发。"""
+    pid, bid_id = _pid(), store.new_bid_id()
+    _seed_bid(pid, bid_id)
+    before = store.get_bid_doc(pid, bid_id, "t1")["updated_at"]
+
+    store.touch_bid_doc_ocr(pid, bid_id, tenant="t1")
+    touched = store.get_bid_doc(pid, bid_id, "t1")["updated_at"]
+
+    store.update_bid_doc_ocr(pid, bid_id, tenant="t1", ocr_text="ok", status="ready")
+    finished_at = store.get_bid_doc(pid, bid_id, "t1")["updated_at"]
+    store.touch_bid_doc_ocr(pid, bid_id, tenant="t1")
+
+    assert touched >= before
+    assert store.get_bid_doc(pid, bid_id, "t1")["updated_at"] == finished_at
+
+
+def test_touch_project_doc_only_refreshes_running_rows():
+    pid = _pid()
+    _seed_project(pid)
+    store.touch_project_doc_ocr(pid, tenant="t1")
+    assert store.get_project_doc(pid, "t1")["ocr_status"] == "running"
+
+    store.update_project_doc_ocr(
+        pid, tenant="t1", ocr_text="ok", ocr_clarity=None, status="ready"
+    )
+    finished_at = store.get_project_doc(pid, "t1")["updated_at"]
+    store.touch_project_doc_ocr(pid, tenant="t1")
+
+    assert store.get_project_doc(pid, "t1")["updated_at"] == finished_at
+
+
+# ── doc_pipeline：报告状态落库 + 心跳 ─────────────────────────────────────────
+
+
+def _patch_report(monkeypatch, report: OcrDocReport, text: str = "底稿正文") -> None:
+    monkeypatch.setattr(
+        doc_pipeline, "prewarm_and_report", lambda *_a, **_k: (text, report)
+    )
+
+
+@pytest.mark.parametrize(
+    "report,expected_status,expected_failed",
+    [
+        (OcrDocReport("ready", (), ()), "ready", None),
+        (OcrDocReport("degraded", (), ("scan.pdf",)), "degraded", []),
+        (OcrDocReport("partial", ("broken.pdf",), ()), "partial", ["broken.pdf"]),
+    ],
+)
+def test_bid_doc_ocr_writes_report_status(
+    monkeypatch, report, expected_status, expected_failed
+):
+    """AC2/AC3：degraded/partial 如实落库，绝不冒充 ready。"""
+    pid, bid_id = _pid(), store.new_bid_id()
+    _seed_bid(pid, bid_id)
+    _patch_report(monkeypatch, report)
+
+    asyncio.run(doc_pipeline.run_bid_doc_ocr(pid, bid_id, "/case/bid", tenant="t1"))
+
+    row = store.get_bid_doc(pid, bid_id, "t1")
+    assert row["ocr_status"] == expected_status
+    assert row["ocr_text"] == "底稿正文"
+    if expected_failed is not None:
+        assert json.loads(row["ocr_failed_files"] or "[]") == expected_failed
+
+
+def test_bid_doc_ocr_failed_report_writes_failed(monkeypatch):
+    pid, bid_id = _pid(), store.new_bid_id()
+    _seed_bid(pid, bid_id)
+    _patch_report(monkeypatch, OcrDocReport("failed", ("a.pdf",), ()), text="（无识别内容）")
+
+    asyncio.run(doc_pipeline.run_bid_doc_ocr(pid, bid_id, "/case/bid", tenant="t1"))
+
+    row = store.get_bid_doc(pid, bid_id, "t1")
+    assert row["ocr_status"] == "failed"
+    assert row["ocr_text"] is None
+
+
+def test_project_doc_degraded_still_runs_criteria_extraction(monkeypatch):
+    """降级底稿仍可解析评分标准——degraded 是质量信号，不是"没有底稿"。"""
+    pid = _pid()
+    _seed_project(pid)
+    _patch_report(monkeypatch, OcrDocReport("degraded", (), ("scan.pdf",)))
+    extracted: list[str] = []
+
+    async def _fake_extract(project_id, case_path, ocr_text, tenant):
+        extracted.append(ocr_text)
+
+    monkeypatch.setattr(doc_pipeline, "extract_project_doc_info", _fake_extract)
+
+    asyncio.run(doc_pipeline.run_project_doc_ocr(pid, "/case/tender", tenant="t1"))
+
+    assert store.get_project_doc(pid, "t1")["ocr_status"] == "degraded"
+    assert extracted == ["底稿正文"]
+
+
+def test_prewarm_touches_updated_at_on_a_doc_level_ticker(monkeypatch):
+    """KD5：心跳是 doc 级周期 ticker，不是"每处理完一个文件才 touch"。
+
+    单个大文件跑满整个预热窗口时也必须持续刷新——否则 updated_at 变陈旧，评标侧 in-flight
+    oracle 误判 stale → inline 双跑复活（正是本 sprint 要杀的病灶）。
+    """
+    pid, bid_id = _pid(), store.new_bid_id()
+    _seed_bid(pid, bid_id)
+    monkeypatch.setattr(doc_pipeline, "_PREWARM_TOUCH_INTERVAL_SEC", 0.01)
+    touches: list[int] = []
+    monkeypatch.setattr(
+        doc_pipeline, "touch_bid_doc_ocr", lambda *_a, **_k: touches.append(1)
+    )
+
+    def _slow_single_file_ocr(*_a, **_k):
+        import time
+
+        time.sleep(0.08)  # 一个大文件，中间没有"文件处理完"这种时机
+        return "底稿正文", OcrDocReport("ready", (), ())
+
+    monkeypatch.setattr(doc_pipeline, "prewarm_and_report", _slow_single_file_ocr)
+
+    asyncio.run(doc_pipeline.run_bid_doc_ocr(pid, bid_id, "/case/bid", tenant="t1"))
+
+    assert len(touches) >= 2, "ticker 必须在单文件识别期间反复刷新 updated_at"
+    assert store.get_bid_doc(pid, bid_id, "t1")["ocr_status"] == "ready"
+
+
+def test_prewarm_runs_on_the_named_ocr_executor(monkeypatch):
+    """KD4 接线：预热 OCR 必须落在命名池线程上，不占 asyncio 默认池。"""
+    pid, bid_id = _pid(), store.new_bid_id()
+    _seed_bid(pid, bid_id)
+    thread_names: list[str] = []
+
+    def _record_thread(*_a, **_k):
+        import threading
+
+        thread_names.append(threading.current_thread().name)
+        return "底稿正文", OcrDocReport("ready", (), ())
+
+    monkeypatch.setattr(doc_pipeline, "prewarm_and_report", _record_thread)
+
+    asyncio.run(doc_pipeline.run_bid_doc_ocr(pid, bid_id, "/case/bid", tenant="t1"))
+
+    assert thread_names and all(name.startswith("ocr") for name in thread_names)

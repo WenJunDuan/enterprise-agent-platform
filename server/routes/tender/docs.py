@@ -93,6 +93,7 @@ async def upload_tender_doc(
         tenant=tenant,
         tender_files=tender_files_json,
         ocr_status="running",
+        case_path=case_path,  # H3 KD2：评标入口据此对非 ready 底稿重跑一次预热 OCR
     )
 
     _start_project_doc_ocr_task(project_id, case_path, tenant=tenant, purpose=_TENDER_OCR_PURPOSE)
@@ -157,6 +158,7 @@ async def upload_bid_doc(
         bidder_name=bidder_name,
         bid_files=bid_files_json,
         ocr_status="running",
+        case_path=case_path,  # H3 KD2：同上
     )
 
     _start_bid_doc_ocr_task(project_id, bid_id, case_path, tenant=tenant, purpose=_TENDER_OCR_PURPOSE)
