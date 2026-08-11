@@ -34,7 +34,34 @@
     },
     "extracted_data": {
       "type": "object",
-      "additionalProperties": true
+      "additionalProperties": true,
+      "properties": {
+        "scoring": {
+          "type": "array",
+          "description": "逐评分项明细（tender 评标产出；expense 审核无此结构，不受本节约束）。",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+              "score": {
+                "type": ["number", "null"]
+              },
+              "pending_reason": {
+                "type": "string",
+                "enum": [
+                  "cross_bid",
+                  "external_data",
+                  "live_event",
+                  "evidence_unresolved",
+                  "manual_mode",
+                  "non_responsive"
+                ],
+                "description": "score=null 时【必填】的待定原因（服务端语义闸强制）：cross_bid=需全部投标报价横比；external_data=需外部数据（信用等）；live_event=需现场答辩/演示；evidence_unresolved=出处未核实/底稿读不清；manual_mode=评分方式本身为人工主观项；non_responsive=实质性不响应、无可评事实。score 非 null 时不应出现。"
+              }
+            }
+          }
+        }
+      }
     },
     "evidence_chain": {
       "type": "array",
