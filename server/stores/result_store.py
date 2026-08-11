@@ -497,6 +497,33 @@ def list_results_by_project(
     )
 
 
+def list_latest_results_by_project(
+    tenant: str,
+    project_id: str,
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    """招标项目下**每个投标人最新一条**结论（KD4：同家重评不双行入横比池）。
+
+    去重键优先 ``bid_id``（投标文档标识，最稳定），无 bid_id 的散单退 ``claim_id``，
+    再退 ``request_id``（等于不去重）。底层查询已按 ``created_at DESC`` 排序，
+    故每个键**首次**出现的即最新一条。
+
+    Args:
+        tenant: 租户作用域。
+        project_id: 招标项目 ID。
+        limit: 底层取行上限（去重前）。
+    """
+    seen: set[str] = set()
+    latest: list[dict[str, Any]] = []
+    for row in list_results_by_project(tenant, project_id, limit=limit):
+        key = str(row.get("bid_id") or row.get("claim_id") or row.get("request_id"))
+        if key in seen:
+            continue
+        seen.add(key)
+        latest.append(row)
+    return latest
+
+
 def list_result_records_admin(
     conversation_id: str | None = None,
     claim_id: str | None = None,
