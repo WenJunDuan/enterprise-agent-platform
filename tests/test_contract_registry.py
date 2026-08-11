@@ -619,7 +619,10 @@ def test_scoring_consistency_allows_null_score():
     # 不可判定项 score=null（manual_review）→ 跳过，不报错（呼应"绝不判 0"）。
     ok = _valid_audit_result(
         extracted_data={
-            "scoring": [{"item": "答辩", "max": 10, "score": None, "status": "manual_review"}]
+            "scoring": [
+                {"item": "答辩", "max": 10, "score": None, "status": "manual_review",
+                 "pending_reason": "live_event"}
+            ]
         }
     )
     out = apply_schema_semantics(TENDER_OUTPUT_SCHEMA_NAME, ok)
@@ -793,6 +796,7 @@ def test_r4_manual_review_item_no_completeness_warn():
                         "score": None,
                         "status": "manual_review",
                         "score_mode": "deduction",
+                        "pending_reason": "live_event",
                     }
                 ]
             }

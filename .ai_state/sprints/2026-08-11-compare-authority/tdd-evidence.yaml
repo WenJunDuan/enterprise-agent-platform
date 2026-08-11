@@ -1,0 +1,27 @@
+sprint: 2026-08-11-compare-authority
+executor: generator subagent (model=opus), worktree .claude/worktrees/agent-a56af065140f2dc80
+baseline:
+  pytest_collected: 1162
+  pytest_preexisting_failures: 33
+  note: >-
+    基线 33 条失败为环境缺 ocr extra（pymupdf/python-pptx 未装）与 AUDIT_DIRECT_CONNECT 未配额度，
+    与本 sprint 无关。实测命令 `git stash push -u && uv run pytest -q && git stash pop`，
+    失败清单存 /tmp/baseline_failures.txt，每个 AC 的 green 判据 = 与该清单 diff 为空。
+
+records:
+  - id: KD5-pending-reason
+    ac_refs: [AC6, AC7]
+    test_file: tests/test_tender_pending_reason.py
+    red_command: uv run pytest tests/test_tender_pending_reason.py -q
+    red_summary: >-
+      7 failed, 4 passed —— schema 未声明 pending_reason 枚举（KeyError 'pending_reason'）、
+      validate_tender_result 对 score=null 缺原因不报错、prompt 未写产出义务、
+      服务端两条降级路径（_verify_score_mode_consistency 的 scored_zero_demoted 与
+      evidence._downgrade_scoring_item）造出的 null 不带枚举。
+    red_observed_at: "2026-08-11T02:53:00Z"
+    green_command: uv run pytest tests/test_tender_pending_reason.py -q && uv run pytest -q
+    green_summary: >-
+      11 passed（新文件）；全量与基线 diff 为空（33 failed / 1137 passed / 3 skipped）
+      —— 既有 null-score fixture 按新契约补 pending_reason：test_contract_registry.py 2 处、
+      test_tender_criteria_flow.py 3 处。uv run ruff check . → All checks passed。
+    green_observed_at: "2026-08-11T03:07:00Z"
