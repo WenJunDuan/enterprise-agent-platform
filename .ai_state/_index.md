@@ -4,10 +4,10 @@
 version: "9.6.4"
 
 # === PACE 路由状态 ===
-path: "System" # 2026-07-30 demo 完整文档格式/OCR/criteria/双容器部署
-stage: "ship" # T1-T6 完成；0730b2 双镜像部署、运行中双 OCR/24 格式验收、导出与清理全绿
-current_sprint_slug: "2026-07-30-demo-full-doc-ocr"
-current_roadmap_slug: ""
+path: "System" # 2026-08-11 tender 评审加固 program：四路评审定根因(页锚/横比/并发)后立项，Fable 设计 / opus 实施
+stage: "impl" # 2026-08-11 用户拍板"设计review不要反复了，直接开始"：critic R1 已修订闭环，R2 复核结论仅记录不阻塞
+current_sprint_slug: "2026-08-11-compare-authority"
+current_roadmap_slug: "2026-08-11-tender-eval-hardening"
 skip_polish: false
 skip_architecture_check: false
 
@@ -48,31 +48,31 @@ counts:
   features_count: 2
   issues_count: 0
   refactors_count: 0
-  systems_count: 6
-  reviews_count: 61
-  cleanup_count: 2
+  systems_count: 10
+  reviews_count: 69
+  cleanup_count: 3
   compound:
-    learning: 12
+    learning: 13
     trick: 2
     decision: 8
-    explore: 1
+    explore: 2
 # === Pointers (指向最新相关文件) ===
 pointers:
-  latest_design: "sprints/2026-07-30-demo-full-doc-ocr/design.md"
+  latest_design: "sprints/2026-08-11-compare-authority/design.md" # H1；同批 H2 page-provenance / H3 ocr-concurrency-degrade 设计已就绪
   latest_review: "sprints/2026-07-30-demo-full-doc-ocr/reviews/pass7.md" # Pass7 CONCERNS：HTTP 200 body I/O fallback + PPTX GroupShape 图片信号
   latest_cleanup: "sprints/2026-07-30-demo-full-doc-ocr/cleanup-pass.md"
   latest_brainstorm: ""
   latest_decisions: ["compound/2026-07-20-decision-ocr-as-standalone-service.md", "compound/2026-07-16-decision-carve-f6-schema-split-from-d2.md", "compound/2026-07-16-decision-schema-split-tender.md", "compound/2026-07-15-decision-ocr-service-layer.md", "compound/2026-07-02-decision-ocr-routing-ladder.md"]
   latest_lessons: ["compound/2026-07-30-learning-document-ingestion-deployment-evidence.md", "compound/2026-07-18-learning-prompt-gate-contradiction-literal-model.md", "compound/2026-07-18-learning-lazy-import-behavioral-seam.md", "compound/2026-07-15-learning-slots-dataclass-hollow-getattr.md", "compound/2026-07-01-learning-flash-tender-eval-inconsistency.md"]
-  latest_architecture_update: "2026-07-30T12:28:00Z"
+  latest_architecture_update: "2026-08-11T01:45:11.504Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: ""
+next_action: "【2026-08-11 额度耗尽全线暂停】H1 开发完成未 review：5 commits 全在 worktree agent-a56af065140f2dc80(分支 worktree-agent-a56af065140f2dc80, tdd-evidence 5 条, AC 全 PASS 自报, 主 agent 已抽查行数/commit/证据属实)。恢复链: ①派 reviewer+spec-compliance 审该 worktree diff main..HEAD → ②evaluator 判定 → ③合 main → ④按 design 重派 H2(page-provenance)→H3(ocr-concurrency-degrade), 合并序 H1→H2→H3。全部 design 定稿在 sprints/ 三目录, roadmap 在 2026-08-11-tender-eval-hardening。H1 遗留风险两条见其 design 同目录(pending_reason 重试率需 runtime-verify; 存量项目重评前横比显示可比家数不足, 发布说明须预告)。"
 last_subagent: "codex-exec" # tender-report-dimensions D0-D5 headless (codex 0.142.1, gpt-5.5)；必须 env -u HTTP_PROXY -u HTTPS_PROXY 否则 streaming API 挂起，见 compound/2026-06-25-trick-codex-proxy-hangs-streaming.md
 last_subagent_at: "2026-06-25T00:00:00.000Z"
-active_worktrees: ["/Users/mac/workspace/enterprise-agent-platform-demo-full-doc-ocr-0730"]
+active_worktrees: [] # 原条目是远端机器(/Users/mac/...)的 worktree，本机不存在，2026-08-11 清理
 last_critic_round: 4 # demo-full-doc-ocr: R1-R3 修订，R4 PASS
-design_changed_after_impl: false # judgment-discipline 核心 R1-R3 已 ship,R4-R7 明确 backlog(非 in-flight)
+design_changed_after_impl: true
 
 # === 用户偏好 ===
 plan_critique_max_rounds: 4
