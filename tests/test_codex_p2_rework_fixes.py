@@ -110,7 +110,7 @@ def test_p11_load_doc_layer_with_bid_id_loads_only_that_bid(monkeypatch):
 
 
 def test_p11_load_doc_layer_without_bid_id_returns_none(monkeypatch):
-    """Without bid_id, _load_doc_layer_context returns None (no mixing all bids)."""
+    """Without bid_id, doc_layer.load_doc_layer_context returns None (no mixing all bids)."""
 
     monkeypatch.setattr(
         doc_layer,

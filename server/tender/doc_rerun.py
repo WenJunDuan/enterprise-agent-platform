@@ -20,6 +20,7 @@ import logging
 
 from server.platform.config import get_ocr_concurrency_settings
 from server.stores.tender_doc_store import (
+    decode_failed_files,
     get_bid_doc,
     get_project_doc,
     set_doc_ocr_status,
@@ -91,16 +92,7 @@ def _restore_snapshot(
     project_id: str, bid_id: str | None, tenant: str, snapshot: dict, *, is_project: bool
 ) -> None:
     """把一段 doc 行整体写回快照（文本 + 状态 + 问题文件清单一起）。"""
-    files = snapshot.get("ocr_failed_files")
-    failed_files = None
-    if files:
-        import json
-
-        try:
-            parsed = json.loads(files)
-            failed_files = [str(item) for item in parsed] if isinstance(parsed, list) else None
-        except (ValueError, TypeError):
-            failed_files = None
+    failed_files = decode_failed_files(snapshot.get("ocr_failed_files"))
     status = snapshot.get("ocr_status")
     if not status:
         return  # 补跑前就没有可回滚的状态（不该发生；无快照可回滚时保持现状）

@@ -45,6 +45,28 @@ def _encode_failed_files(failed_files: Sequence[str] | None) -> str | None:
     return json.dumps(list(failed_files), ensure_ascii=False)
 
 
+def decode_failed_files(raw: Any) -> list[str] | None:
+    """``_encode_failed_files`` 的逆：JSON 文本列 → 文件名列表。
+
+    与编码端对称、同处一个模块：列的编码格式只此一家知道，读侧（评标 warning 渲染、补跑回滚）
+    各自 ``json.loads`` 会让"格式住在 store、解析散在调用方"（review F6）。
+
+    Args:
+        raw: doc 行的 ``ocr_failed_files`` 列原值（JSON 文本 / None）。
+
+    Returns:
+        文件名列表；缺失 / 非 JSON / 非列表 → ``None``（沿用编码端 ``None`` = "不记"的语义，
+        与"记了个空清单"区分开）。
+    """
+    if not raw:
+        return None
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+    return [str(item) for item in parsed] if isinstance(parsed, list) else None
+
+
 def new_bid_id() -> str:
     """Generate a unique bid document id."""
     return f"bd-{uuid.uuid4().hex[:16]}"
