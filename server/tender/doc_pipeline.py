@@ -16,16 +16,10 @@ import json
 import logging
 import math
 import os
-from collections.abc import Callable
-from contextlib import suppress
 
 from server.common.command_adapter import run_command_json
-from server.ocr.pipeline import OcrDocReport, prewarm_and_report
-from server.ocr.prewarm_scheduler import (
-    get_upload_ocr_semaphore,
-    run_in_ocr_executor,
-    track_upload_ocr_task,
-)
+from server.ocr.pipeline import prewarm_and_report
+from server.ocr.prewarm_scheduler import run_prewarm_with_heartbeat, track_upload_ocr_task
 from server.stores.tender_doc_store import (
     touch_bid_doc_ocr,
     touch_project_doc_ocr,
@@ -44,44 +38,6 @@ logger = logging.getLogger(__name__)
 def _tender_slim_context_enabled() -> bool:
     """Return True when the opt-in tender context slimming path is enabled."""
     return os.getenv("TENDER_SLIM_CONTEXT", "0").lower() in {"1", "true", "yes"}
-
-
-# 预热心跳周期（秒）。必须 ≪ OCR_PREWARM_STALE_SEC（默认 300），否则评标侧 in-flight oracle
-# 会在两次心跳之间误判 stale。**doc 级 ticker**，不是"每处理完一个文件才 touch"——单个大文件
-# 可以独占整个预热窗口，按文件间隙刷新等于没刷新（KD5 critic R2-P2b）。
-_PREWARM_TOUCH_INTERVAL_SEC = 60.0
-
-
-async def _heartbeat(touch: Callable[[], None]) -> None:
-    """周期性刷新 doc 行 updated_at，直到被取消。心跳失败只记日志，不影响 OCR 本体。"""
-    while True:
-        await asyncio.sleep(_PREWARM_TOUCH_INTERVAL_SEC)
-        try:
-            await asyncio.to_thread(touch)
-        except Exception:
-            logger.debug("prewarm heartbeat touch failed", exc_info=True)
-
-
-async def _prewarm_with_heartbeat(
-    case_path: str, *, purpose: str | None, touch: Callable[[], None]
-) -> tuple[str, OcrDocReport]:
-    """在命名 OCR 池里跑目录预热（KD4），期间由 doc 级 ticker 维持 in-flight 心跳（KD5）。
-
-    Args:
-        case_path: 上传落盘目录。
-        purpose: OCR 场景提示。
-        touch: 刷新本 doc 行 updated_at 的同步函数。
-
-    Returns:
-        ``(底稿文本, OcrDocReport)``。
-    """
-    ticker = asyncio.create_task(_heartbeat(touch))
-    try:
-        return await run_in_ocr_executor(prewarm_and_report, case_path, purpose=purpose)
-    finally:
-        ticker.cancel()
-        with suppress(asyncio.CancelledError):
-            await ticker
 
 
 _EXTRACTION_OUTPUT_GUARD = (
@@ -378,65 +334,66 @@ async def run_project_doc_ocr(
         run_info_extraction: 是否在 OCR 成功后抽取 criteria/tender_info。评标入口的补底稿重跑
             （H3 KD2）传 False——那是一次 30-60s 的模型往返，与"补回缺失页"无关。
     """
-    # OCR 与抽取分两段：OCR 在信号量内（限并发的是 OCR 计算），抽取是模型调用，必须在信号量
-    # 外跑——否则一次 criteria 抽取（~30-60s 模型往返）会占住一个 OCR 名额，拖慢同项目投标文件
-    # 的 OCR → 拖慢 isOcrReady → 拖慢「开始分析」（违背 R1「不阻塞开始分析」）。
+    # OCR 与抽取分两段：上传并发闸只圈住 OCR 计算本身（在 run_prewarm_with_heartbeat 内取名额，
+    # 心跳早于排队起跑，review F2），抽取是模型调用必须在闸外——否则一次 criteria 抽取
+    # （~30-60s 模型往返）会占住一个 OCR 名额，拖慢同项目投标文件的 OCR → 拖慢 isOcrReady →
+    # 拖慢「开始分析」（违背 R1「不阻塞开始分析」）。状态写库同理不占名额。
     ocr_text: str | None = None
-    async with get_upload_ocr_semaphore():
+    try:
+        text, report = await run_prewarm_with_heartbeat(
+            prewarm_and_report,
+            case_path,
+            purpose=purpose,
+            touch=lambda: touch_project_doc_ocr(project_id, tenant=tenant),
+        )
+        # P1-3: 底稿完全不可用（全失败/空目录）→ 走 failed 分支，读层绝不能看到 stale ready。
+        if report.status == "failed":
+            raise ValueError(f"OCR returned error/empty text: {text[:100]!r}")
+        # 仅 OCR 写入在此 try（决定 ocr_status）。criteria_status=running 写移出（F1：否则其
+        # 失败会触发下面 except 把已写好的 ocr_status 误覆写成 failed）。
+        # H3 KD2：degraded/partial 如实落库（此前一律写 ready → 低质底稿永久固化）。
+        await asyncio.to_thread(
+            update_project_doc_ocr,
+            project_id,
+            tenant=tenant,
+            ocr_text=text,
+            ocr_clarity=None,
+            status=report.status,
+            failed_files=list(report.failed_files),
+        )
+        ocr_text = text
+    except Exception:
+        logger.warning(
+            "tender_project_doc_ocr_failed",
+            extra={"project_id": project_id, "case_path": case_path},
+            exc_info=True,
+        )
         try:
-            text, report = await _prewarm_with_heartbeat(
-                case_path,
-                purpose=purpose,
-                touch=lambda: touch_project_doc_ocr(project_id, tenant=tenant),
-            )
-            # P1-3: 底稿完全不可用（全失败/空目录）→ 走 failed 分支，读层绝不能看到 stale ready。
-            if report.status == "failed":
-                raise ValueError(f"OCR returned error/empty text: {text[:100]!r}")
-            # 仅 OCR 写入在此 try（决定 ocr_status）。criteria_status=running 写移出（F1：否则其
-            # 失败会触发下面 except 把已写好的 ocr_status 误覆写成 failed）。
-            # H3 KD2：degraded/partial 如实落库（此前一律写 ready → 低质底稿永久固化）。
             await asyncio.to_thread(
                 update_project_doc_ocr,
                 project_id,
                 tenant=tenant,
-                ocr_text=text,
+                ocr_text=None,
                 ocr_clarity=None,
-                status=report.status,
-                failed_files=list(report.failed_files),
+                status="failed",
             )
-            ocr_text = text
         except Exception:
-            logger.warning(
-                "tender_project_doc_ocr_failed",
-                extra={"project_id": project_id, "case_path": case_path},
-                exc_info=True,
+            logger.debug("failed to write project_doc ocr failed status", exc_info=True)
+        # F2：OCR 失败也置 criteria_status=failed，否则它停在 pending，前端 tenderDocInfo 轮询
+        # （只在 ready/failed 停）会对该项目无限轮询。
+        try:
+            await asyncio.to_thread(
+                update_project_doc_criteria_extracted,
+                project_id,
+                tenant,
+                criteria_json=None,
+                tender_info_json=None,
+                status="failed",
             )
-            try:
-                await asyncio.to_thread(
-                    update_project_doc_ocr,
-                    project_id,
-                    tenant=tenant,
-                    ocr_text=None,
-                    ocr_clarity=None,
-                    status="failed",
-                )
-            except Exception:
-                logger.debug("failed to write project_doc ocr failed status", exc_info=True)
-            # F2：OCR 失败也置 criteria_status=failed，否则它停在 pending，前端 tenderDocInfo 轮询
-            # （只在 ready/failed 停）会对该项目无限轮询。
-            try:
-                await asyncio.to_thread(
-                    update_project_doc_criteria_extracted,
-                    project_id,
-                    tenant,
-                    criteria_json=None,
-                    tender_info_json=None,
-                    status="failed",
-                )
-            except Exception:
-                logger.debug("failed to set criteria_status=failed on ocr failure", exc_info=True)
+        except Exception:
+            logger.debug("failed to set criteria_status=failed on ocr failure", exc_info=True)
 
-    # 信号量已释放：抽取（模型调用）不再占 OCR 名额。OCR 成功且调用方要抽取才抽。
+    # 闸外：抽取（模型调用）不占 OCR 名额。OCR 成功且调用方要抽取才抽。
     if ocr_text is not None and run_info_extraction:
         # OCR ready 即解锁开始分析；置 criteria_status=running（独立 try，F1：失败只记日志，绝不
         # 触发 OCR failed 路径）。随后抽取在末尾置 ready/failed，故 running 写失败也无碍最终状态。
@@ -475,41 +432,41 @@ async def run_bid_doc_ocr(
         tenant: Tenant scope forwarded to update_bid_doc_ocr.
         purpose: OCR engine purpose hint.
     """
-    async with get_upload_ocr_semaphore():
+    try:
+        text, report = await run_prewarm_with_heartbeat(
+            prewarm_and_report,
+            case_path,
+            purpose=purpose,
+            touch=lambda: touch_bid_doc_ocr(project_id, bid_id, tenant=tenant),
+        )
+        if report.status == "failed":
+            raise ValueError(f"OCR returned error/empty text: {text[:100]!r}")
+        await asyncio.to_thread(
+            update_bid_doc_ocr,
+            project_id,
+            bid_id,
+            tenant=tenant,
+            ocr_text=text,
+            status=report.status,
+            failed_files=list(report.failed_files),
+        )
+    except Exception:
+        logger.warning(
+            "tender_bid_doc_ocr_failed",
+            extra={"project_id": project_id, "bid_id": bid_id, "case_path": case_path},
+            exc_info=True,
+        )
         try:
-            text, report = await _prewarm_with_heartbeat(
-                case_path,
-                purpose=purpose,
-                touch=lambda: touch_bid_doc_ocr(project_id, bid_id, tenant=tenant),
-            )
-            if report.status == "failed":
-                raise ValueError(f"OCR returned error/empty text: {text[:100]!r}")
             await asyncio.to_thread(
                 update_bid_doc_ocr,
                 project_id,
                 bid_id,
                 tenant=tenant,
-                ocr_text=text,
-                status=report.status,
-                failed_files=list(report.failed_files),
+                ocr_text=None,
+                status="failed",
             )
         except Exception:
-            logger.warning(
-                "tender_bid_doc_ocr_failed",
-                extra={"project_id": project_id, "bid_id": bid_id, "case_path": case_path},
-                exc_info=True,
-            )
-            try:
-                await asyncio.to_thread(
-                    update_bid_doc_ocr,
-                    project_id,
-                    bid_id,
-                    tenant=tenant,
-                    ocr_text=None,
-                    status="failed",
-                )
-            except Exception:
-                logger.debug("failed to write bid_doc ocr failed status", exc_info=True)
+            logger.debug("failed to write bid_doc ocr failed status", exc_info=True)
 
 
 def start_project_doc_ocr_task(
