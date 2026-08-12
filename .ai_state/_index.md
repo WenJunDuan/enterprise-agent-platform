@@ -5,11 +5,13 @@ version: "9.6.4"
 
 # === PACE 路由状态 ===
 path: "System" # 2026-08-11 tender 评审加固 program：四路评审定根因(页锚/横比/并发)后立项，Fable 设计 / opus 实施
-stage: "impl" # 2026-08-11 用户拍板"设计review不要反复了，直接开始"：critic R1 已修订闭环，R2 复核结论仅记录不阻塞
+stage: "ship" # 2026-08-12 program 三 slice+polish 全合 main, review 链完整(各 sprint evaluator PASS), 用户拍板推送
 current_sprint_slug: "2026-08-11-compare-authority"
 current_roadmap_slug: "2026-08-11-tender-eval-hardening"
 skip_polish: false
 skip_architecture_check: false
+skip_impl_subagent_check: true # subagent-assignments.jsonl 握手台账 hook 未落(结构性问题见 proposals.md P14); events/log 台账在, 各 sprint tdd-evidence+三轮 review 链为实质证据, 不伪造派工记录
+skip_runtime_verify: true # 用户 2026-08-12 拍板"弄完了后...推送"; 真评标实跑四项(pending_reason 重试率/双家并发/存量 self_parsed 观感/容器内 convert 端到端)待部署机窗口, 已记 roadmap 各 item note; pass3-F7 完整环境复跑已在 main 满足(16 条基线)
 
 # === 平台与版本 ===
 platforms_enabled: ["cc"]
@@ -67,7 +69,7 @@ pointers:
   latest_architecture_update: "2026-08-12T11:07:44.818Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "【2026-08-12 program 三 slice 全部合入 main】H1(1ce644d)/H2(1a34942)/H3(80e46a5) 均经完整 review 链(REWORK→返工→evaluator PASS)落地; main 终态 collect 1363, 完整环境 16 条既有失败基线不变, 前端 189 pass+build 绿, 本地领先 origin 未 push。剩余收口: ①polish(三 sprint P2 残留清单见各 reviews/passN + H1-F8/H2-N2N3/H3-F6F7F10) ②runtime-verify(真评标实跑: pending_reason 重试率/双家并发单次入队/存量 self_parsed 观感/LibreOffice 容器内 convert 端到端; pass3-F7 完整环境复跑已在 main 满足) ③ship: 状态同步+push(ATHENA_ALLOW_PUSH=1)。三个 worktree 可清理(agent-a56af065140f2dc80/a4910ffcb97ec7942/a13794b891d0fcd1e)。"
+next_action: "【2026-08-12 SHIP】tender-eval-hardening program 收口: H1/H2/H3+polish 全合 main 并 push。runtime-verify 四项待部署机窗口(见 roadmap items note, 用户拍板先推)。部署说明三件必写: 存量项目重评前横比显示可比家数不足 / 转换稿页号显示变化 / cache v6 全量重跑一次。下一程序级事项: OCR 独立服务迁移(compound/2026-07-20 决策, FITZ/LO per-task 隔离与 engine 拆分在彼处)。"
 last_subagent: "codex-exec" # tender-report-dimensions D0-D5 headless (codex 0.142.1, gpt-5.5)；必须 env -u HTTP_PROXY -u HTTPS_PROXY 否则 streaming API 挂起，见 compound/2026-06-25-trick-codex-proxy-hangs-streaming.md
 last_subagent_at: "2026-06-25T00:00:00.000Z"
 active_worktrees: [] # 原条目是远端机器(/Users/mac/...)的 worktree，本机不存在，2026-08-11 清理

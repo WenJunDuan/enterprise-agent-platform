@@ -150,3 +150,8 @@ collected_evidence:
     result: pass
     command: "cd agent-front && bun install --frozen-lockfile 2>&1 | tail -1 && bun test 2>&1 | tail -2 && bun run build 2>&1 | tail -1 && bun run lint 2>&1 | tail -1; cd .."
     timestamp: "2026-08-12T09:25:43.110Z"
+  - tool_use_id: "toolu_019DtNrZxnBeNDige8sip5eU"
+    tool: "Bash"
+    result: pass
+    command: "bun test --cwd /Users/mi_manchi/workspace/enterprise-agent-platform/agent-front 2>&1 | tail -8"
+    timestamp: "2026-08-12T11:38:23.222Z"
