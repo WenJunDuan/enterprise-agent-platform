@@ -1,6 +1,6 @@
 """H2 页锚溯源 · 表格带锚（KD4，AC3）。
 
-旧行为：``read_pdf_text`` 收集 tables 时丢掉页号，``_render_body`` 把表格文本无锚拼在底稿**末尾**
+旧行为：``read_pdf_text`` 收集 tables 时丢掉页号，``draft_render.render_body`` 把表格文本无锚拼在底稿**末尾**
 → 模型按"最近锚点"把任意页的表格引成最后一页，且回查闸判 confirmed（错页畅通进结论）。
 
 本机无 pymupdf（OCR extra 未装）→ 用**假 fitz 模块**驱动 ``read_pdf_text`` 的真实循环逻辑，
@@ -15,7 +15,7 @@ from contextlib import contextmanager
 
 import pytest
 
-from server.ocr import native, pipeline
+from server.ocr import draft_render, native
 
 
 class _FakeTable:
@@ -103,7 +103,7 @@ def test_table_text_renders_under_its_own_page_anchor(tmp_path, fake_fitz, monke
     monkeypatch.setattr(native, "FITZ_LOCK", _no_lock())
     result = {"kind": "pdf_text", "route": "native", **native.read_pdf_text(tmp_path / "a.pdf")}
 
-    body = pipeline._render_body(result)
+    body = draft_render.render_body(result)
     second = body.index("【第 2 页】")
     third = body.index("【第 3 页】")
     assert second < body.index("路基工程") < third
@@ -122,7 +122,7 @@ def test_table_on_blank_scan_page_still_gets_its_anchor(tmp_path, fake_fitz, mon
     monkeypatch.setattr(native, "FITZ_LOCK", _no_lock())
     result = {"kind": "pdf_text", "route": "native", **native.read_pdf_text(tmp_path / "a.pdf")}
 
-    body = pipeline._render_body(result)
+    body = draft_render.render_body(result)
     assert "【第 2 页】\n规费\t300.00" in body
 
 
@@ -131,13 +131,13 @@ def test_converted_pdf_tables_use_converted_anchor(tmp_path, fake_fitz, monkeypa
     monkeypatch.setattr(native, "FITZ_LOCK", _no_lock())
     result = {"kind": "pdf_text", "route": "convert", **native.read_pdf_text(tmp_path / "a.pdf")}
 
-    body = pipeline._render_body(result)
+    body = draft_render.render_body(result)
     assert "【转换稿第 2 页】\n合计\t9.00" in body
 
 
 def test_tables_without_page_still_render_at_tail(tmp_path):
     """word/excel 等无页结构的表格（table 无 page 键）仍拼尾，行为不变。"""
-    body = pipeline._render_body(
+    body = draft_render.render_body(
         {
             "kind": "word",
             "route": "native",
@@ -162,6 +162,6 @@ def test_boq_summary_reads_table_amount_at_its_real_page(tmp_path, fake_fitz, mo
 
     from server.ocr.boq import extract_boq_summary
 
-    summary = extract_boq_summary("已标价工程量清单.pdf", pipeline._render_body(result))
+    summary = extract_boq_summary("已标价工程量清单.pdf", draft_render.render_body(result))
     assert summary is not None
     assert "【第 2 页】" in summary

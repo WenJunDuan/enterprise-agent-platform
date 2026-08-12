@@ -8,7 +8,7 @@ import pytest
 
 from server.ocr import formats, native
 from server.ocr.classify import classify
-from server.ocr import pipeline
+from server.ocr import draft_render, pipeline
 from server.routes.upload_helpers import validate_document_upload
 
 
@@ -113,7 +113,7 @@ def test_every_manifest_suffix_uploads_routes_and_yields_nonempty_contract(tmp_p
         result = pipeline._dispatch_extract(
             path, run_seal=False, purpose="contract-test", on_page=None
         )
-        rendered = pipeline._render_body(result)
+        rendered = draft_render.render_body(result)
 
         assert route["route"] in {"native", "convert", "ocr"}, suffix
         assert result.get("kind") != "manual", suffix

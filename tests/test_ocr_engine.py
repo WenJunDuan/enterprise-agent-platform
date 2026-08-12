@@ -112,7 +112,7 @@ def test_openai_compatible_http_error_includes_response_body(monkeypatch):
 
 
 def test_parse_cloud_jsonl_injects_continuous_page_number():
-    """整份云 OCR：_parse_cloud_jsonl 注入连续页号（跨 jsonl 行累加），_render_body 不再回退枚举。
+    """整份云 OCR：_parse_cloud_jsonl 注入连续页号（跨 jsonl 行累加），render_body 不再回退枚举。
 
     每行一个 layoutParsingResult，两行 → 页号 1、2；page_mismatch 回查定位（G2）依赖此连续页号。
     """

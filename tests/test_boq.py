@@ -12,7 +12,7 @@ from server.ocr.boq import (
     normalize_amount,
 )
 
-# 合成扉页 + 多单位工程片段（页锚点独占行，模拟 _render_body 产物）
+# 合成扉页 + 多单位工程片段（页锚点独占行，模拟 draft_render.render_body 产物）
 COVER = """### 文件: 1.05 已标价工程量清单.pdf (kind=pdf_text, route=native)
 【第 2 页】
 投标总价(小写): ______________
