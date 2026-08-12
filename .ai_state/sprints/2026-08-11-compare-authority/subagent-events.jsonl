@@ -64,3 +64,6 @@
 {"schema_version":1,"event":"SubagentStop","agent_id":"a155620781cfe9b90","agent_type":"reviewer","sprint_slug":"2026-08-11-compare-authority","timestamp":"2026-08-12T08:55:20.035Z"}
 {"schema_version":1,"event":"SubagentStart","agent_id":"a52b96999f5f45a01","agent_type":"evaluator","sprint_slug":"2026-08-11-compare-authority","timestamp":"2026-08-12T09:04:55.473Z"}
 {"schema_version":1,"event":"SubagentStop","agent_id":"a52b96999f5f45a01","agent_type":"evaluator","sprint_slug":"2026-08-11-compare-authority","timestamp":"2026-08-12T09:13:07.249Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"ad32a594fad71cd9a","agent_type":"polish-worker","sprint_slug":"2026-08-11-compare-authority","timestamp":"2026-08-12T11:07:44.976Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"ad32a594fad71cd9a","agent_type":"polish-worker","sprint_slug":"2026-08-11-compare-authority","timestamp":"2026-08-12T11:31:29.926Z"}
+{"schema_version":1,"event":"SubagentStop","agent_id":"ad32a594fad71cd9a","agent_type":"polish-worker","sprint_slug":"2026-08-11-compare-authority","timestamp":"2026-08-12T11:43:13.445Z"}

@@ -287,3 +287,16 @@
 - Agent ID: a52b96999f5f45a01
 - Last message: 核验完毕。所有独立抽验均已实测（代码、行数、collect、YAML 解析），给出判定。 ## Evidence Cross-Check (evaluator, 2026-08-11-ocr-concurrency-degrade) 无 checklist.yaml，对照 design.md AC1-AC7/AC6b 逐条核 `tdd-evidence.yaml`（worktree 内，10 条记
 
+## 2026-08-12T11:07:44.977Z · polish-worker
+- Event: SubagentStart
+- Agent ID: ad32a594fad71cd9a
+
+## 2026-08-12T11:31:29.927Z · polish-worker
+- Event: SubagentStart
+- Agent ID: ad32a594fad71cd9a
+
+## 2026-08-12T11:43:13.446Z · polish-worker
+- Event: SubagentStop
+- Agent ID: ad32a594fad71cd9a
+- Last message: Polish 完成。缩程指示到达时清单已全部做完并验证提交，故未再削减（F10/F7 已闭环，不需要 defer）。 ## 交付位置 工作在 worktree 分支 `worktree-agent-ad32a594fad71cd9a`（基线 `1af6abe`，5 个 commit，工作树干净）。harness 的 worktree 隔离禁止我在主 checkout 做 git 操作，所以没有直接
+
