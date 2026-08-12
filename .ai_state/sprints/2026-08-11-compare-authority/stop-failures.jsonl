@@ -4,3 +4,4 @@
 {"schema_version":1,"event":"StopFailure","error":"server_error","is_interrupt":false,"duration_ms":null,"timestamp":"2026-08-12T05:00:42.184Z"}
 {"schema_version":1,"event":"StopFailure","error":"server_error","is_interrupt":false,"duration_ms":null,"timestamp":"2026-08-12T02:39:07.567Z"}
 {"schema_version":1,"event":"StopFailure","error":"server_error","is_interrupt":false,"duration_ms":null,"timestamp":"2026-08-12T03:01:07.285Z"}
+{"event":"GateBlock","ts":"2026-08-12T11:45:16.506Z","session_id":"49945dc4-0101-4535-b575-0723a8181867","reason_sha1":"6aadbb139d0ca18632338d57ba61836b0309e672","stage":"ship","path":"System","consecutive":1}
