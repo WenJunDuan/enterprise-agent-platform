@@ -169,7 +169,10 @@ def _check_one(
             summary=summary,
             where=where,
         )
-    if status != "resolved" or _annotate_resolved():
+    # 页号被改写 / 页号不可核实是**异常态**，与 resolved 的"正常态标注"不同档：
+    # RESOLUTION_ANNOTATE_RESOLVED=0 只该关掉正常态标注，不能让静默改写页号不留痕（pass1 F4）。
+    page_anomaly = annotation.get("page") in {"page_corrected", "page_unverified"}
+    if status != "resolved" or page_anomaly or _annotate_resolved():
         container["resolution"] = annotation
 
     if status == "unresolved":
