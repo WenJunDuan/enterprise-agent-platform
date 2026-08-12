@@ -1,20 +1,226 @@
-# H2 page-provenance · TDD 证据（八字段全非空，逐 AC 真红真绿）
-# 基线：main@4d0a54c 全量 `uv run pytest -q` = 33 failed / 1126 passed / 3 skipped（收集 1162）。
-# 本环境 33 条既有失败 = 缺 ocr extra（pymupdf/pptx 等）+ AUDIT_DIRECT_CONNECT 未配，
-# 与本 sprint 无关；验收口径 NO_NEW_FAILURES（清单存于 /tmp/BASELINE_FAILURES_33.txt，
-# 生成命令：uv run pytest -q -p no:randomly 2>&1 | grep -E "^(FAILED|ERROR)" | sort）。
+# H2 page-provenance · TDD 证据（逐 AC 八字段全非空）
+#
+# 基线（impl 起点 main@4d0a54c）：`uv run pytest -q -p no:randomly`
+#   = 33 failed / 1126 passed / 3 skipped，`--collect-only` = 1162。
+# 本环境 33 条既有失败 = 缺 ocr extra（pymupdf / python-pptx 等）+ AUDIT_DIRECT_CONNECT 未配，
+# 与本 sprint 无关。验收口径 NO_NEW_FAILURES：
+#   开工存基线清单 `uv run pytest -q -p no:randomly 2>&1 | grep -E "^(FAILED|ERROR)" | sort
+#     > /tmp/BASELINE_FAILURES_33.txt`；每次提交前同命令生成 /tmp/cur.txt 后 diff，输出恒为空。
+# review pass1 返工后已 rebase 到含 H1 的 main@c4689fc（该基线 collect 1207，同样 33 failed）。
+#
+# 记法说明：backfill 记法（doc-style「tdd-evidence backfill 记法」）仅用于**先实现后补测**或
+# **本就无独立 red 阶段的集成/门禁动作**，均显式声明并附真实缺口证据（改动前的实测数字 / grep
+# 计数），不编造 red。其余条目均为本会话实测的真红真绿。
 
 records:
-  - ac_id: "AC1b + KD0 锚协议收拢"
+  # ── impl 阶段（KD0~KD5）────────────────────────────────────────────────────
+  - ac_id: "AC1b + KD0 锚协议收拢（Round1-F4 回归闸）"
     test_files:
       - tests/test_page_anchor_protocol.py
     red_command: "uv run pytest -q -p no:randomly tests/test_page_anchor_protocol.py"
     red_summary: >-
       首跑 collection ImportError: cannot import name 'converted_page_anchor' from
-      'server.common.corpus'（锚协议单点尚不存在）。补齐 corpus 侧后再跑：6 failed / 17 passed
-      —— is_ocr_text_valid 对「仅含【转换稿第 1 页】锚行」返回 True（Round1-F4 假 ready 直接复现，
-      3 例 parametrize 全红）、boq/docstructure/context_slim 三个平行解析点均不识别转换稿锚变体。
+      'server.common.corpus'（锚协议单点尚不存在）。补齐 corpus 侧后再跑 6 failed / 17 passed：
+      is_ocr_text_valid 对「仅含【转换稿第 1 页】锚行、无正文」的底稿返回 True
+      （Round1-F4 假 ready 直接复现，3 例 parametrize 全红）；boq / docstructure / context_slim
+      三个平行解析点均不识别转换稿锚变体。
     red_observed_at: "2026-08-11T13:05:00Z"
     green_command: "uv run pytest -q -p no:randomly tests/test_page_anchor_protocol.py"
-    green_summary: "23 passed（含 AC1b 的 3 例 reject + 1 例 accept；三个解析点收拢后均识别新锚变体）"
+    green_summary: >-
+      23 passed。锚点产出/解析收拢到 server/common/corpus.py 单点后，AC1b 的 3 例 reject +
+      1 例 accept 全绿，三个既有解析点均识别新变体。
     green_observed_at: "2026-08-11T13:14:00Z"
+
+  - ac_id: "AC1（服务端）· KD1/KD2 转换稿语义贯通 + 页单元 provenance"
+    test_files:
+      - tests/test_ocr_page_provenance.py
+      - tests/golden/extraction_block_original_no_tables.txt
+    red_command: "uv run pytest -q -p no:randomly tests/test_ocr_page_provenance.py"
+    red_summary: >-
+      9 failed / 2 passed。转换稿文件头无「已转换为PDF识别, 页号为转换稿页号」声明；_render_body
+      对 route=convert 产物仍渲染【第 1 页】（冒充原文档页）；extract_one 页级单元无
+      artifact / artifact_page 键（KeyError）；云 OCR 页数守卫不存在（result 无 page_confidence）；
+      CorpusIndex 无 page_unreliable_files。另 2 例本就该绿：golden 防回归闸（原件路径逐字节）
+      与「云页数一致时不标注」的反向用例。
+    red_observed_at: "2026-08-11T13:40:00Z"
+    green_command: "uv run pytest -q -p no:randomly tests/test_ocr_page_provenance.py"
+    green_summary: >-
+      11 passed。文件头带转换声明、锚渲染【转换稿第 M 页】、页单元 artifact=converted 且
+      page(原文档页号)=None、artifact_page=转换稿页号；云页数不符 → page_confidence=low +
+      文件头 [⚠页号存疑…]；原件路径 golden 逐字节一致。
+    green_observed_at: "2026-08-11T13:52:00Z"
+
+  - ac_id: "AC2 · KD3 截断按锚切"
+    test_files:
+      - tests/test_page_anchor_truncation.py
+    red_command: "uv run pytest -q -p no:randomly tests/test_page_anchor_truncation.py"
+    red_summary: >-
+      collection ImportError: cannot import name 'split_head_tail_on_anchors' from
+      'server.common.corpus'——锚感知切分原语不存在。当时两个消费方（pipeline._truncate_body 的
+      OCR_TRUNCATE_HEAD_TAIL=1 路径、context_slim._trim_context_block）都按字符硬切：
+      切点落页中时尾段无重放锚（内容在模型视角挂到 head 末锚），锚行可能被切半。
+    red_observed_at: "2026-08-11T14:05:00Z"
+    green_command: "uv run pytest -q -p no:randomly tests/test_page_anchor_truncation.py"
+    green_summary: >-
+      15 passed。残片正则 `【(?:转换稿)?第[^】]*$` 在 head_n 200..600 步进 37 的全量扫描下 0 命中；
+      切点落页中 → 尾段首行为重放锚；切点落锚行 → 不重复插锚；无锚文本回落字符切且 marker
+      注明「本文件无页锚」；总长不越 head_n+tail_n 预算；默认头截路径逐字节不变。
+    green_observed_at: "2026-08-11T14:18:00Z"
+
+  - ac_id: "AC3 · KD4 表格带锚"
+    test_files:
+      - tests/test_ocr_table_page_anchor.py
+    red_command: "uv run pytest -q -p no:randomly tests/test_ocr_table_page_anchor.py"
+    red_summary: >-
+      5 failed / 1 passed。read_pdf_text 产出的 tables 无 page 键，表格文本被无锚拼在底稿末尾。
+      最直观一条：第 2 页表格金额「分部分项合计 1,000,000.00」经 BOQ 摘要被记成【第 3 页】（末页），
+      正是"模型按最近锚点把任意页表格引成最后一页"的复现。本机无 pymupdf（属 33 条基线失败之一）
+      → 用假 fitz 模块驱动 read_pdf_text 的真实循环，被测的是页号是否随表保留。
+    red_observed_at: "2026-08-11T14:26:00Z"
+    green_command: "uv run pytest -q -p no:randomly tests/test_ocr_table_page_anchor.py"
+    green_summary: >-
+      6 passed。tables 带 page=2；表格文本渲染在【第 2 页】与【第 3 页】之间，底稿末尾无游离段；
+      纯表格页（正文空）也出锚；convert 路由用转换稿锚；word/excel 无页表格仍拼尾（行为不变）；
+      BOQ 摘要取到真实页。
+    green_observed_at: "2026-08-11T14:31:00Z"
+
+  - ac_id: "AC4 + AC5 · KD5 回查闸就地纠正/降级 + corpus key=0 分支"
+    test_files:
+      - tests/test_evidence_page_gate.py
+    red_command: "uv run pytest -q -p no:randomly tests/test_evidence_page_gate.py"
+    red_summary: >-
+      collection ImportError: cannot import name 'locate_quote_pages' from 'server.common.corpus'
+      （纠正所需的定位原语与 rewrite_source_page 都不存在）。当时的实际缺陷：page_mismatch 只计数、
+      不纠正、不降级；page_status 把 key=0（无锚段）当第 0 页，window=1 使无页锚文件里模型被迫
+      臆造的「第 1 页」恒判 confirmed；云页数守卫信号无人消费；结论无 page_unverified 告警通道。
+    red_observed_at: "2026-08-11T14:42:00Z"
+    green_command: "uv run pytest -q -p no:randomly tests/test_evidence_page_gate.py"
+    green_summary: >-
+      13 passed（经 pass1 F2/F4 返工后扩到 19 passed）。唯一命中他页 → source 就地改写 +
+      page_corrected{from,to}（evidence_chain 与 scoring award_hits 两条链路各一例）；多处命中 /
+      页号存疑文件 → page_unverified 且进 extracted_data.validation_warnings；无锚文件不再
+      「第 1 页恒 confirmed」（改判 file_level），无页号出处照常 resolved；转换稿出处按转换稿坐标
+      confirmed 且回填 page_kind=converted。
+    green_observed_at: "2026-08-11T14:55:00Z"
+
+  - ac_id: "AC1（前端展示点）· KD2 转换稿标注"
+    test_files:
+      - agent-front/src/features/contract/tender-review/model.test.ts
+    red_command: >-
+      backfill 声明: 测试先于实现写就, 但当时 worktree 的 agent-front/node_modules 为空目录,
+      bun test 无法执行, 故无独立 red 阶段的实测输出; 缺口证据见 red_summary
+    red_summary: >-
+      改动前实测缺口：`git grep -c formatEvidenceSourceLabel 10da257 -- model.ts` = 0（函数不存在）；
+      evidence_chain 渲染处（model.ts:685）直接 `label: item.source`，转换稿出处与原件出处渲染
+      完全相同；`git grep -c 转换稿 10da257 -- agent-front/src` = 0，前端无任何区分转换稿页号的
+      代码路径。依赖装好后对该提交复跑此测试文件即报
+      `SyntaxError: export named 'formatEvidenceSourceLabel' not found in model.ts`。
+    red_observed_at: "2026-08-11T15:02:00Z"
+    green_command: "cd agent-front && bun test src/features/contract/tender-review/model.test.ts"
+    green_summary: >-
+      51 pass / 0 fail（新增 3 例）：转换稿出处渲染为「… 转换稿第 3 页（原文档页号不可用）」；
+      page_kind 缺省时按 source 文本兜底识别；原件出处逐字不变。配套契约：
+      audit-result.schema.json evidence_chain 增可选 page_kind；tender-evaluate.md 增
+      「出处页号书写规则」（三种坐标系 + 无锚文件不得编页号）。
+    green_observed_at: "2026-08-11T15:08:00Z"
+
+  - ac_id: "AC6 · 质量门（红绿齐备 / NO_NEW_FAILURES / ruff / cache bump / 前端三件 / 部署预告）"
+    test_files:
+      - tests/test_ocr_pipeline.py
+      - .ai_state/sprints/2026-08-11-page-provenance/tdd-evidence.yaml
+      - deploy/TROUBLESHOOTING.md
+    red_command: "uv run pytest -q -p no:randomly tests/test_ocr_pipeline.py -k cache_version_bump"
+    red_summary: >-
+      cache bump 一项有真实 red：既有断言 assert cache._CACHE_VERSION == 'v5' 在 bump 后失败
+      （AssertionError: assert 'v6' == 'v5'），迫使显式确认「底稿结构变更必须让旧缓存失效」这一
+      契约并补理由注释。质量门其余分项（NO_NEW_FAILURES / ruff / 前端三件 / 部署预告）是
+      **门禁校验动作而非可先失败的测试**，按 backfill 记法记：改动前 deploy/ 下对 converted 页号
+      行为变化与缓存重跑的说明为 0 处（`grep -rc 转换稿 deploy/` 全 0）。
+    red_observed_at: "2026-08-11T14:20:00Z"
+    green_command: >-
+      uv run pytest -q -p no:randomly; uv run ruff check server/ tests/;
+      cd agent-front && bun test && bun run build && bun run lint
+    green_summary: >-
+      pytest 33 failed / 1250 passed / 3 skipped，失败集合与基线清单 diff 为空（NO_NEW_FAILURES）；
+      collect 1275 = 1207（含 H1 的 main 基线）+ 68 本 sprint 新增。ruff `All checks passed!`。
+      前端 179 pass / 0 fail、`vite build ✓ built`、`eslint .` 无输出。cache _CACHE_VERSION = "v6"
+      且带 5 行 bump 理由注释；deploy/TROUBLESHOOTING.md 新增 D0「converted 页号行为变化 +
+      OCR 缓存 v6 全量重跑」部署预告。
+    green_observed_at: "2026-08-11T16:05:00Z"
+
+  # ── review pass1 返工 ──────────────────────────────────────────────────────
+  - ac_id: "pass1 F2 · 页号纠正跨文件误纠"
+    test_files:
+      - tests/test_evidence_page_gate.py
+    red_command: "uv run pytest -q -p no:randomly tests/test_evidence_page_gate.py"
+    red_summary: >-
+      2 failed / 14 passed。quote 只在**别的文件**里唯一命中时，页号仍被改写而文件名不动：
+      断言 source == '投标A.pdf 第 3 页' 实得 '投标A.pdf 第 7 页'（第 7 页属投标B.pdf，该出处在
+      底稿中根本不存在，却被标成 page_corrected 正面状态）；source 未点名任何文件时同样被改写
+      （断言 '第 3 页' 实得 '第 7 页'）。
+    red_observed_at: "2026-08-11T15:41:00Z"
+    green_command: "uv run pytest -q -p no:randomly tests/test_evidence_page_gate.py"
+    green_summary: >-
+      16 passed。_corrected_page 只在 source 点名的文件内找唯一命中（新增
+      CorpusIndex.source_names_file，复用既有 _source_mentions_file）；跨文件 / 未点名 →
+      page_unverified 且不改写；点名文件内唯一命中仍照常纠正（AC4 主用例回归通过）。
+    green_observed_at: "2026-08-11T15:45:00Z"
+
+  - ac_id: "pass1 F4 · 页号异常态不受 resolved 标注开关抑制"
+    test_files:
+      - tests/test_evidence_page_gate.py
+    red_command: "uv run pytest -q -p no:randomly tests/test_evidence_page_gate.py"
+    red_summary: >-
+      2 failed / 17 passed。RESOLUTION_ANNOTATE_RESOLVED=0 时页号被就地改写却不写 resolution：
+      page_corrected 用例 KeyError: 'resolution'（source 已变成「投标文件.pdf 第 9 页」却无任何
+      痕迹），page_unverified 用例同样 KeyError —— 静默改写，人工无从发现。
+    red_observed_at: "2026-08-11T15:52:00Z"
+    green_command: "uv run pytest -q -p no:randomly tests/test_evidence_page_gate.py"
+    green_summary: >-
+      19 passed。page_corrected / page_unverified 属异常态，无条件写 resolution；正常态
+      confirmed 仍受开关抑制（新增回归用例锁死，修复未把开关整个架空）。
+    green_observed_at: "2026-08-11T15:55:00Z"
+
+  - ac_id: "pass1 F3 · RAG 页锚未收拢 + 区间锚不在协议内"
+    test_files:
+      - tests/test_rag_page_artifact.py
+    red_command: "uv run pytest -q -p no:randomly tests/test_rag_page_artifact.py"
+    red_summary: >-
+      5 failed / 0 passed。page_anchor_text 不接受 page_end（TypeError）；parse_page_anchor 不认
+      【第 3-5 页】区间锚（返回 None）；build_doc_structure 产物无 page_artifact 键（KeyError）；
+      rag.search 命中的 page_anchor 对转换稿文档仍渲染【第 M 页】——D8 底稿瘦身链路里转换稿页号
+      继续冒充原文档页。
+    red_observed_at: "2026-08-11T16:12:00Z"
+    green_command: >-
+      uv run pytest -q -p no:randomly tests/test_rag_page_artifact.py tests/test_rag.py
+      tests/test_docstructure.py
+    green_summary: >-
+      27 passed。区间锚纳入协议（可渲染、可解析，解析取起始页）；docstructure 产物带
+      page_artifact 并同步 doc-structure.schema.json；rag_store chunk 增 page_artifact 列，
+      rag.search 经 corpus.page_anchor_text 渲染 → 转换稿文档命中一律【转换稿第 M 页】。
+    green_observed_at: "2026-08-11T16:20:00Z"
+
+  - ac_id: "pass1 M5 · rebase H1 + 共享契约合并复核"
+    test_files:
+      - .claude/contracts/common/audit-result.schema.json
+      - .claude/commands/tender-evaluate.md
+      - agent-front/src/features/contract/tender-review/model.ts
+    red_command: >-
+      backfill 声明: rebase 与契约合并是集成动作, 不存在可先失败的单测; 缺口证据见 red_summary
+    red_summary: >-
+      改动前分支基于 main@4d0a54c，而 main 已前进到 c4689fc（含 H1 compare-authority 合并
+      1ce644d）。三个共享契约文件双方都改过：H1 给 audit-result.schema.json 加 criteria_ref /
+      pending_reason，H2 加 page_kind；tender-evaluate.md 与前端 model.ts 亦双方各有增量。
+      现状直接合并必冲突或回退 H1（合并阻断项）。
+    red_observed_at: "2026-08-11T15:20:00Z"
+    green_command: >-
+      git rebase main; uv run pytest -q -p no:randomly;
+      cd agent-front && bun test && bun run build && bun run lint
+    green_summary: >-
+      6 个 commit rebase 到 c4689fc 完成；三个共享契约文件全部 auto-merge 成功、双方内容并存
+      （schema 里 criteria_ref/pending_reason 计数 2、page_kind 计数 1；tender-evaluate.md 的
+      「出处页号书写规则」与 H1 段落共存；model.ts 的 formatEvidenceSourceLabel 计数 2）。
+      仅 .ai_state 的 _index.md / stop-failures.jsonl 冲突，一律取 main 侧（主 agent 领域）。
+      rebase 后 pytest 33 failed / 1239 passed，与基线清单 diff 为空；前端 179 pass /
+      build ✓ / eslint 净 —— 这即共享契约复核结论。
+    green_observed_at: "2026-08-11T15:35:00Z"
