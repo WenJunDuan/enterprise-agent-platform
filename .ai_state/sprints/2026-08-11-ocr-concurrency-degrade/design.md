@@ -77,7 +77,9 @@ executor 治理用 stdlib `concurrent.futures.ThreadPoolExecutor` + `loop.run_in
 - 评标入口（runner）对非 ready：`degraded/partial` → 先自动重跑**一次**该 doc 的预热 OCR
   （只重跑失败/降级文件，命中缓存的成功文件零成本）；重跑后仍非 ready → 评标继续但结论
   强制注入 warning（"以下文件底稿降级/缺失：..."），依赖这些文件的评分项由模型按现行
-  evidence 缺失规则处理——**不静默**。`failed` → 阻塞报错。
+  evidence 缺失规则处理——**不静默**。`failed` → 按 AC6 语义走 inline 回落（预热已停无双跑），
+  不阻塞报错。【pass1-D3 更正 2026-08-12：本行原文"阻塞报错"与 AC6 自相矛盾，实现取 AC6 一侧
+  （阻塞会让单文件失败废掉整单），reviewer/spec-compliance 均判合理，据此回改设计文本。】
 - H1 接口对齐：横比完成态判定只认 ready/degraded/partial 结论中**已成功产出**的结果行，
   枚举值命名与 H1 保持一致（合并前对齐）。
 - **前端硬门同步**（Round1-F1，P0）：doc 状态有独立前端消费点，新枚举不进前端会把用户锁死——
