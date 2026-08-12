@@ -291,7 +291,7 @@ def read_pdf_text(
                     for row in table.extract()
                 ]
                 if any(any(cell.strip() for cell in row) for row in rows):
-                    # 页号必须随表走（H2 KD4）：丢了它，_render_body 只能把表格无锚拼在底稿末尾，
+                    # 页号必须随表走（H2 KD4）：丢了它，draft_render.render_body 只能把表格无锚拼在底稿末尾，
                     # 模型按"最近锚点"把任意页的表格引成最后一页，且回查闸判 confirmed。
                     tables.append({"rows": rows, "page": page_no})
     if on_page is not None:  # 锁已释放，此时才回放（buffer-then-fire）

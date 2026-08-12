@@ -15,7 +15,9 @@ from server.ocr import prewarm_scheduler
 from server.platform.config import get_ocr_concurrency_settings
 
 _SLOW_SEC = 0.3
-_STARVATION_THRESHOLD_SEC = 0.15
+# 对照组"确实被饿死"的判据：短调用至少等掉半个 OCR 调用（说明它排在 OCR 后面）。
+# 派生自 _SLOW_SEC 而非写死秒数——实验组一侧改用**相对**比较，见测试内说明。
+_STARVATION_RATIO = 0.5
 
 
 def _slow_ocr_call() -> str:
@@ -75,11 +77,12 @@ def test_named_pool_keeps_db_writes_off_the_ocr_queue():
     default_pool_latency = _run_with_tiny_default_pool(_ocr_on_default_pool)
     named_pool_latency = _run_with_tiny_default_pool(_ocr_on_named_pool)
 
-    assert default_pool_latency > _STARVATION_THRESHOLD_SEC, (
+    assert default_pool_latency > _SLOW_SEC * _STARVATION_RATIO, (
         "对照组未复现默认池饿死现象，测试失去意义"
     )
-    assert named_pool_latency < _STARVATION_THRESHOLD_SEC
-    assert named_pool_latency < default_pool_latency / 2
+    # 实验组只做**相对**比较：机器负载会整体抬高两侧墙钟，绝对上界（原 <0.15s）在慢机上是纯
+    # flake 面，而"命名池比默认池快一个数量级以上"才是本 AC 真正要断言的性质（review F7）。
+    assert named_pool_latency * 10 < default_pool_latency
 
 
 def test_ocr_executor_is_a_named_bounded_pool():

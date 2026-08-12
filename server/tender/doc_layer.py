@@ -72,22 +72,30 @@ def is_prewarm_in_flight(row: dict | None, *, stale_sec: float) -> bool:
     return (datetime.now(timezone.utc) - updated_at).total_seconds() < stale_sec
 
 
-def load_doc_layer_context(project_id: str, bid_id: str | None, tenant: str) -> str | None:
-    """P2 评标读层：从 tender_doc_store 取已预热的 OCR 底稿并拼为上下文字符串。
+def _build_doc_context(
+    project_id: str, bid_id: str | None, tenant: str, *, slim: bool
+) -> str | None:
+    """P2 评标读层公共体：取招标层 + **当前被评标这一家**的投标层底稿，拼成上下文字符串。
 
-    **P1-1 修复**：只加载招标层 + **当前被评标这一家**的投标层（by bid_id）。
-    旧实现拼接所有投标文件 → 多家材料污染同一 context，错乱 claim_id/scoring。
-    无 bid_id（legacy 散单/无法定位当前家）→ 返回 None 回落串行 OCR（天然正确，
-    case_path 就是该家散单目录）。招标层或当前家 not-ready/failed/缺失 → 返回 None。
-    任何异常 → 静默返回 None，**绝不拖垮评标**。
+    全量版与 D8 瘦身版只差"招标底稿要不要按 criteria 瘦"一处（review F10：两个 loader 曾是
+    逐行孪生，读层判据改一次要同步改两遍）。
+
+    **P1-1 修复**：只加载当前家（by bid_id）。旧实现拼接所有投标文件 → 多家材料污染同一
+    context，错乱 claim_id/scoring。无 bid_id（legacy 散单/无法定位当前家）→ 返回 None 回落
+    串行 OCR（天然正确，case_path 就是该家散单目录）。招标层或当前家 not-ready/failed/缺失
+    → 返回 None。DB/IO 异常 → 静默返回 None，**绝不拖垮评标**。
 
     Args:
         project_id: 招标项目 ID。
         bid_id: 当前被评标的投标文件 ID；为 None 时跳过读层（安全回落）。
         tenant: 租户作用域。
+        slim: 招标底稿是否走 D8 criteria 驱动瘦身；投标底稿任何情况下都原样透传。
 
     Returns:
         "招标底稿 + 当前家投标底稿"组合字符串，或 None 触发回落。
+
+    Raises:
+        ValueError: doc 行带未知 ocr_status（见 :func:`doc_ocr_status`）。
     """
     # 无 bid_id → 无法精确定位当前家，绝不混入其他家材料，直接回落
     if not bid_id:
@@ -99,9 +107,19 @@ def load_doc_layer_context(project_id: str, bid_id: str | None, tenant: str) -> 
         bid = get_bid_doc(project_id, bid_id, tenant)
         if doc_ocr_status(bid) not in DOC_LAYER_USABLE_STATUSES or not bid.get("ocr_text"):
             return None
+        tender_text = project_doc["ocr_text"]
+        if slim:
+            criteria = _parse_stored_criteria(project_doc.get("criteria"))
+            slim_text = (
+                build_slim_tender_context(tender_text, criteria, file_name=project_id)
+                if criteria is not None
+                else None
+            )
+            # criteria 缺失、或瘦身产不出完整结果 → 保留招标全文（宁可长，不可缺）
+            tender_text = slim_text if slim_text is not None else tender_text
         bidder = bid.get("bidder_name") or bid["bid_id"]
         parts: list[str] = [
-            f"=== 招标文件底稿 ===\n{project_doc['ocr_text']}",
+            f"=== 招标文件底稿 ===\n{tender_text}",
             f"=== 投标文件（{bidder}）底稿 ===\n{bid['ocr_text']}",
         ]
         return "\n\n".join(parts)
@@ -110,8 +128,17 @@ def load_doc_layer_context(project_id: str, bid_id: str | None, tenant: str) -> 
         # blanket catch 只留给下面的 DB/IO 故障，否则同一个 ValueError 有两种命运（review F4）。
         raise
     except Exception:
-        logger.warning("load_doc_layer_context failed, falling back", exc_info=True)
+        logger.warning(
+            "doc layer context load failed, falling back",
+            extra={"project_id": project_id, "bid_id": bid_id, "slim": slim},
+            exc_info=True,
+        )
         return None
+
+
+def load_doc_layer_context(project_id: str, bid_id: str | None, tenant: str) -> str | None:
+    """读层全量版：招标底稿整份进上下文。语义见 :func:`_build_doc_context`。"""
+    return _build_doc_context(project_id, bid_id, tenant, slim=False)
 
 
 def slim_context_enabled() -> bool:
@@ -131,37 +158,11 @@ def _parse_stored_criteria(raw: str | None) -> dict | None:
 
 
 def load_doc_layer_context_slim(project_id: str, bid_id: str | None, tenant: str) -> str | None:
-    """Load doc-layer context with an optional criteria-driven tender-document reduction.
+    """读层瘦身版（D8）：招标底稿按 criteria 裁剪，裁不安全时自动回落全文。
 
-    This preserves the full tender text when criteria are unavailable or slimming cannot safely
-    produce a complete result; the current bidder's document is always passed through unchanged.
+    语义见 :func:`_build_doc_context`；投标底稿永远原样透传，不参与瘦身。
     """
-    if not bid_id:
-        return None
-    try:
-        project_doc = get_project_doc(project_id, tenant)
-        if doc_ocr_status(project_doc) not in DOC_LAYER_USABLE_STATUSES:
-            return None
-        bid = get_bid_doc(project_id, bid_id, tenant)
-        if doc_ocr_status(bid) not in DOC_LAYER_USABLE_STATUSES or not bid.get("ocr_text"):
-            return None
-        bidder = bid.get("bidder_name") or bid["bid_id"]
-        tender_text = project_doc["ocr_text"]
-        criteria = _parse_stored_criteria(project_doc.get("criteria"))
-        if criteria is not None:
-            slim_text = build_slim_tender_context(tender_text, criteria, file_name=project_id)
-            if slim_text is not None:
-                tender_text = slim_text
-        parts: list[str] = [
-            f"=== 招标文件底稿 ===\n{tender_text}",
-            f"=== 投标文件（{bidder}）底稿 ===\n{bid['ocr_text']}",
-        ]
-        return "\n\n".join(parts)
-    except ValueError:
-        raise  # 同 load_doc_layer_context：枚举违约不吞（review F4）
-    except Exception:
-        logger.warning("load_doc_layer_context_slim failed, falling back", exc_info=True)
-        return None
+    return _build_doc_context(project_id, bid_id, tenant, slim=True)
 
 
 async def wait_doc_layer_ready(project_id: str, bid_id: str, tenant: str) -> str:

@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from server.ocr import pipeline
+from server.ocr import draft_render, pipeline
 from server.platform.paths import PROJECT_ROOT
 
 _GOLDEN = PROJECT_ROOT / "tests" / "golden" / "extraction_block_original_no_tables.txt"
@@ -75,7 +75,7 @@ def test_converted_file_header_declares_conversion():
 
 
 def test_converted_body_uses_converted_page_anchor_only():
-    body = pipeline._render_body(_converted_result())
+    body = draft_render.render_body(_converted_result())
     assert "【转换稿第 1 页】\n拟派项目负责人张三" in body
     assert "【转换稿第 2 页】\n业绩一览表" in body
     assert "【第 1 页】" not in body
@@ -83,7 +83,7 @@ def test_converted_body_uses_converted_page_anchor_only():
 
 def test_converted_ocr_pages_also_use_converted_anchor():
     """convert → 下游走 OCR（扫描版 docx 转 PDF）时锚同样是转换稿坐标。"""
-    body = pipeline._render_body(
+    body = draft_render.render_body(
         {
             "path": "/case/投标文件.doc",
             "kind": "ocr",

@@ -23,6 +23,7 @@ uv run python .claude/skills/ocr-page/ocr.py <文件路径> [--pages N-M] [--sea
 
 ## 读输出
 - 输出是带 `【第N页】` 锚点的逐页文本；**引证据时页码 N 照抄这里的锚点数字**（不是文档印刷页号）。
+- `[错误] …`（stderr，非 0 退出）→ 识别失败，按"读不清"窄情形降 `manual_review`（`insufficient_evidence`），**不要据此判 0**。
 
 ## 转换稿文件（Office → PDF）
 底稿文件头标了 `route=convert, 已转换为PDF识别, 页号为转换稿页号`、锚点形如 `【转换稿第M页】` 的文件，
@@ -33,7 +34,6 @@ uv run python .claude/skills/ocr-page/ocr.py <文件路径> [--pages N-M] [--sea
   再对转换稿 PDF 跑本 skill；`--pages` 传的也是转换稿页号。
 - 引证据时出处写 `文件名 转换稿第M页`，并给该条 `evidence_chain` 加 `"page_kind": "converted"`；
   **不要写成 `第M页`** 冒充原文档页。
-- `[错误] …`（stderr，非 0 退出）→ 识别失败，按"读不清"窄情形降 `manual_review`（`insufficient_evidence`），**不要据此判 0**。
 
 ## 边界
 - 只读、不写文件、不改库；带 content-sha256 缓存，重复同文件不重复跑。

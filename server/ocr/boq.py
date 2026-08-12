@@ -11,7 +11,7 @@
   允许纯整数 ≥5 位，治整数总价漏抽）。
 - 投标总价**候选打分**（扉页/前5页 + 小写 + 大写校验，减"单位工程/税金"局部小计上下文），非取首个。
 - **页锚点独占一行**输出（R1 evidence_resolution `_PAGE_RE` 要求），逐字保留金额（R1 可回查）。
-- **page-carry 行距上限**：`_render_body` 把无页号的 ``tables`` 段追加在 blocks 后 → 该段金额不得
+- **page-carry 行距上限**：`draft_render.render_body` 把无页号的 ``tables`` 段追加在 blocks 后 → 该段金额不得
   继承末页页号（codex P1#4），超 carry 行距 → 页 None。
 - 仅 native blocks 路径（数字文本层）；扫描件 BOQ（OCR pages 管道表格）超本轮范围 → R3。
 
@@ -162,7 +162,7 @@ def extract_boq_summary(
 
     Args:
         name: 文件名（用于摘要头）。
-        full_body: ``_render_body`` 产物（含 ``【第 N 页】`` 锚点 + 可能的无锚点 tables 尾段）。
+        full_body: ``draft_render.render_body`` 产物（含 ``【第 N 页】`` 锚点 + 可能的无锚点 tables 尾段）。
         top_n: Top-N 高价金额条数。
         max_chars: 摘要长度上限（None → 不限；调用方传 MAX//4）。
         subtotal_limit: 各类合计最多列出条数（其余只报总数）。

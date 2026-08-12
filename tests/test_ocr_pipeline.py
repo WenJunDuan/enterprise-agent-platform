@@ -60,9 +60,9 @@ def test_build_block_renders_ocr_pages_list():
 
 def test_render_body_adds_page_anchors_ocr():
     """G2：OCR 页底稿带页锚点【第N页】，模型可据此精确引页。"""
-    from server.ocr.pipeline import _render_body
+    from server.ocr.draft_render import render_body
 
-    body = _render_body(
+    body = render_body(
         {"kind": "ocr", "pages": [{"markdown": "甲页"}, {"markdown": "乙页", "page_number": 2}]}
     )
     assert "【第 1 页】" in body and "甲页" in body
@@ -246,9 +246,9 @@ def test_pptx_without_scan_signal_or_with_sufficient_text_stays_native(
 
 def test_render_body_adds_page_anchors_pdf_text():
     """G2：native pdf_text blocks 一页一项 → 按页打锚点，跳空页保留页号。"""
-    from server.ocr.pipeline import _render_body
+    from server.ocr.draft_render import render_body
 
-    body = _render_body({"kind": "pdf_text", "blocks": ["首页正文", "   ", "第三页正文"]})
+    body = render_body({"kind": "pdf_text", "blocks": ["首页正文", "   ", "第三页正文"]})
     assert "【第 1 页】\n首页正文" in body
     assert "【第 2 页】" not in body  # 空白页跳过
     assert "【第 3 页】\n第三页正文" in body  # 页号仍对应真实页
@@ -256,9 +256,9 @@ def test_render_body_adds_page_anchors_pdf_text():
 
 def test_render_body_no_anchors_for_word_blocks():
     """word/text 的 blocks 非页结构 → 不打页锚点（避免误导页号）。"""
-    from server.ocr.pipeline import _render_body
+    from server.ocr.draft_render import render_body
 
-    body = _render_body({"kind": "word", "blocks": ["段落一", "段落二"]})
+    body = render_body({"kind": "word", "blocks": ["段落一", "段落二"]})
     assert "【第" not in body
     assert "段落一" in body and "段落二" in body
 
@@ -570,7 +570,7 @@ def test_office_conversion_never_sends_original_container_bytes_to_ocr(tmp_path,
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# P1：pymupdf read_pdf_text + _render_body 同时渲染 blocks 和 tables
+# P1：pymupdf read_pdf_text + draft_render.render_body 同时渲染 blocks 和 tables
 # ═════════════════════════════════════════════════════════════════════════════
 
 
@@ -865,7 +865,7 @@ def test_build_inline_audit_prompt_no_ocr_block_omits_section(tmp_path):
 
 
 def _big_boq_blocks(n_filler_pages: int = 80) -> list[str]:
-    """合成大 BOQ：扉页(总价) + 多页填充行项，逐页一 block（_render_body 按页加锚点）。"""
+    """合成大 BOQ：扉页(总价) + 多页填充行项，逐页一 block（draft_render.render_body 按页加锚点）。"""
     cover = (
         "1. 扉页\n投标总价(小写):\n381574199.97\n(大写):\n"
         "叁亿捌仟壹佰伍拾柒万肆仟壹佰玖拾玖元玖角柒分\n投标人:\n二建"

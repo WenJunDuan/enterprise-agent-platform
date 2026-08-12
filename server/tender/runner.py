@@ -30,6 +30,7 @@ from server.tender.context_slim import bound_tender_context
 from server.tender.output import TENDER_OUTPUT_SCHEMA_NAME
 from server.platform.config import get_tender_eval_settings
 from server.stores.session_store import new_conversation_id
+from server.stores.tender_doc_store import decode_failed_files
 
 logger = logging.getLogger(__name__)
 
@@ -66,18 +67,6 @@ TENDER_CONTRACT_MAX_RETRY = int(os.getenv("TENDER_CONTRACT_MAX_RETRY", "2"))
 # 不走全局 build_options 默认 → 不拖慢 audit，codex r4 P1）；env 可调或设非法值走端点默认。
 _TENDER_EFFORT = os.getenv("TENDER_REASONING_EFFORT", "xhigh")
 
-def _decode_failed_files(row: dict | None) -> list[str]:
-    """解析 doc 行的 ``ocr_failed_files`` JSON 列；缺失/损坏 → 空列表（warning 仍照发）。"""
-    raw = (row or {}).get("ocr_failed_files")
-    if not raw:
-        return []
-    try:
-        parsed = json.loads(raw)
-    except (ValueError, TypeError):
-        return []
-    return [str(item) for item in parsed] if isinstance(parsed, list) else []
-
-
 def _ocr_integrity_warnings(
     project_doc: dict | None, bid_doc: dict | None
 ) -> list[dict[str, object]]:
@@ -91,7 +80,9 @@ def _ocr_integrity_warnings(
         status = doc_layer.doc_ocr_status(row)
         if status not in doc_layer.DOC_LAYER_IMPAIRED_STATUSES:
             continue
-        files = _decode_failed_files(row)
+        # 列解析走 store 的 decode（编解码同处一家）；"没记清单"与"清单为空"在 warning 里同义，
+        # 故 None 归一成 []（warning 照发，只是不点名文件）。
+        files = decode_failed_files((row or {}).get("ocr_failed_files")) or []
         detail = "部分文件识别失败或缺页" if status == "partial" else "含降级识别段（本地兜底引擎）"
         named = f"：{'、'.join(files)}" if files else ""
         warnings.append(

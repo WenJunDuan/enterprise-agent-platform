@@ -281,7 +281,7 @@ def _augment_mixed_pdf_blocks(
 
     比"整份转云 OCR"更优——避免用云 OCR 覆盖 341 数字页的原生高保真文本（OCR 反而引误差），
     且只送扫描页（更省）、单 job（更快）、复用已验证的云文件提交路径（无新接口）。回填后页号仍
-    取真实页（blocks 一页一项 → _render_body 按真实页打锚点），evidence 回查【第N页】不失准。
+    取真实页（blocks 一页一项 → render_body 按真实页打锚点），evidence 回查【第N页】不失准。
 
     返回 None → 调用方回退整份云 OCR（Layer 1），覆盖三种"子集路径不可靠"情形（与"无法抽页"
     对称，最大化张謇出真分机会，整份云路径的页→内容映射由云直接给出，不依赖本函数 offset 假设）：
@@ -308,7 +308,7 @@ def _augment_mixed_pdf_blocks(
         return None  # ③ 页数不匹配 → 放弃按 offset 回填（会错位），回退整份云 OCR
     # ocr_pages 按提交顺序对应 blank_indices，回填到**真实页位** blocks[blank_indices[offset]]。
     # 注意：ocr_pages[*]["page_number"] 是**子集相对序号**(1..M)，非原始页号——真实页号由 blocks
-    # 下标经 _render_body 的 enumerate 给出，故此处只取 markdown，切勿用其 page_number 打锚点。
+    # 下标经 render_body 的 enumerate 给出，故此处只取 markdown，切勿用其 page_number 打锚点。
     for offset, true_idx in enumerate(blank_indices):
         markdown = ocr_pages[offset].get("markdown") or ""
         if markdown.strip():  # 空 OCR 文本不覆盖，保留原空白页跳过逻辑
@@ -367,7 +367,7 @@ def _emit_pages_from_blocks(blocks: list[str], on_page: _PageCallback) -> None:
     review pass1 F1 修复核心：页级事件只在内容**最终确定**后发一次——不再有 native 先发
     空白页、OCR/子集增强再对同页发真实内容的重复/过期问题。payload 结构对齐
     ``native.read_pdf_text`` 的 on_page 契约（``{"text": ...}``）。空白页仍发（保留页号、内容
-    可空），与 ``_render_body`` 的页锚策略一致，不跳页导致页号错位。全程锁外触发（调用时
+    可空），与 ``render_body`` 的页锚策略一致，不跳页导致页号错位。全程锁外触发（调用时
     native/augment 已返回，FITZ_LOCK/云 OCR job 早已释放）。
     """
     for page_no, block in enumerate(blocks, start=1):
@@ -661,7 +661,7 @@ def extract_dir(
         )
 
 
-# 识别失败标记前缀：识别失败时 _render_body 以此前缀打头该文件正文。
+# 识别失败标记前缀：识别失败时 render_body 以此前缀打头该文件正文。
 # 公开常量 + is_ocr_text_valid 是 OCR 域唯一权威，消费方（评标上传 OCR 编排）据此判文本有效性，
 # 不要在调用层各自硬编码该字符串（S3 消重：原 routes/tender.py 重复定义了一份）。
 # 渲染细节（页锚 artifact 坐标系 / 表格挂页）在 server.ocr.draft_render，本模块只做编排。
@@ -695,9 +695,6 @@ def is_ocr_text_valid(text: str) -> bool:
             continue
         return True
     return False
-
-
-_render_body = render_body  # 渲染实现在 draft_render；保留旧名供既有调用方/测试引用
 
 
 def file_clarity(result: dict, *, threshold: float = OCR_CLARITY_MIN_CONFIDENCE) -> str:
@@ -749,7 +746,7 @@ def build_extraction_block(results: list[dict]) -> str:
             f"{_FILE_HEADER_PREFIX} {name} (kind={result.get('kind')}, "
             f"route={result.get('route')}{converted_header_note(result)})"
         )
-        full_body = _render_body(result)
+        full_body = render_body(result)
         if len(full_body) > MAX_FILE_BLOCK_CHARS:
             summary = (
                 boq_extract.extract_boq_summary(

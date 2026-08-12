@@ -50,7 +50,7 @@ counts:
   refactors_count: 0
   systems_count: 10
   reviews_count: 75
-  cleanup_count: 3
+  cleanup_count: 6
   compound:
     learning: 13
     trick: 2
@@ -62,9 +62,9 @@ pointers:
   latest_review: "sprints/2026-07-30-demo-full-doc-ocr/reviews/pass7.md" # Pass7 CONCERNS：HTTP 200 body I/O fallback + PPTX GroupShape 图片信号
   latest_cleanup: "sprints/2026-07-30-demo-full-doc-ocr/cleanup-pass.md"
   latest_brainstorm: ""
-  latest_decisions: ["compound/2026-07-20-decision-ocr-as-standalone-service.md", "compound/2026-07-16-decision-carve-f6-schema-split-from-d2.md", "compound/2026-07-16-decision-schema-split-tender.md", "compound/2026-07-15-decision-ocr-service-layer.md", "compound/2026-07-02-decision-ocr-routing-ladder.md"]
+  latest_decisions: ["compound/2026-07-20-decision-ocr-as-standalone-service.md", "compound/2026-07-16-decision-schema-split-tender.md", "compound/2026-07-16-decision-carve-f6-schema-split-from-d2.md", "compound/2026-07-15-decision-ocr-service-layer.md", "compound/2026-07-02-decision-ocr-routing-ladder.md"]
   latest_lessons: ["compound/2026-07-30-learning-document-ingestion-deployment-evidence.md", "compound/2026-07-18-learning-prompt-gate-contradiction-literal-model.md", "compound/2026-07-18-learning-lazy-import-behavioral-seam.md", "compound/2026-07-15-learning-slots-dataclass-hollow-getattr.md", "compound/2026-07-01-learning-flash-tender-eval-inconsistency.md"]
-  latest_architecture_update: "2026-08-11T01:45:11.504Z"
+  latest_architecture_update: "2026-08-12T11:07:44.818Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
 next_action: "【2026-08-12 program 三 slice 全部合入 main】H1(1ce644d)/H2(1a34942)/H3(80e46a5) 均经完整 review 链(REWORK→返工→evaluator PASS)落地; main 终态 collect 1363, 完整环境 16 条既有失败基线不变, 前端 189 pass+build 绿, 本地领先 origin 未 push。剩余收口: ①polish(三 sprint P2 残留清单见各 reviews/passN + H1-F8/H2-N2N3/H3-F6F7F10) ②runtime-verify(真评标实跑: pending_reason 重试率/双家并发单次入队/存量 self_parsed 观感/LibreOffice 容器内 convert 端到端; pass3-F7 完整环境复跑已在 main 满足) ③ship: 状态同步+push(ATHENA_ALLOW_PUSH=1)。三个 worktree 可清理(agent-a56af065140f2dc80/a4910ffcb97ec7942/a13794b891d0fcd1e)。"
