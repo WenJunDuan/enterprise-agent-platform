@@ -29,7 +29,7 @@ items:
     effort: L
     wave: 1
     depends_on: []
-    status: in_progress # 2026-08-11 已交付未评审: 6 commits 在 worktree agent-a4910ffcb97ec7942, AC 自报全 PASS, collect 1230 主 agent 核实; ⚠️两处待核: tdd-evidence 实测仅 1 条记录(自报5条,证据缺口); 前端 build/eslint 因 worktree 无 node_modules 标 blocked-by-env。恢复链: bun install 后补跑前端三件 → reviewer+spec-compliance → evaluator → rebase H1 合并(共享契约复核: audit-result.schema/tender-evaluate.md/model.ts/api.ts)
+    status: in_progress # 2026-08-12 代码已合 main(merge 1a34942, 14 commits): review pass1 REWORK(2 P0: 证据缺失/跨文件误纠 + M5 未rebase)→返工→pass2 全闭合→evaluator PASS; 待办: polish(N2/N3/F7/F8/第二golden)+runtime-verify(LibreOffice 容器内 convert 端到端)后随 program ship
     note: >
       design 见 sprints/2026-08-11-page-provenance/design.md。红区：generator model=opus +
       isolation worktree。核心：页单元带 {source_file, artifact, artifact_page, original_page}；
