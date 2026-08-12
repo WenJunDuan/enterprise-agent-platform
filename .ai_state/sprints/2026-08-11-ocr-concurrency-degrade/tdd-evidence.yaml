@@ -4,9 +4,14 @@ baseline:
   pytest_collected: 1162
   pytest_preexisting_failures: 33
   note: >-
-    开工先跑 `uv run pytest -q -p no:randomly`，33 条既有失败（缺 ocr extra：fitz/pymupdf、
-    PIL 相关；AUDIT_DIRECT_CONNECT 未配）清单存 /tmp/baseline_failed.txt。口径 NO_NEW_FAILURES：
-    每个 AC 的 green 判据 = 全量失败清单与该基线 diff 为空。OCR 依赖缺失处一律 mock。
+    开工先跑 `uv run pytest -q -p no:randomly`，33 条既有失败清单存 /tmp/baseline_failed.txt。
+    口径 NO_NEW_FAILURES：每个 AC 的 green 判据 = 全量失败清单与该基线 diff 为空。
+    OCR 依赖缺失处一律 mock。
+  preexisting_failure_composition: >-
+    更正（pass1 reviewer 用主仓完整 venv 复测，本条如实转录）：33 = **完整环境下的 16 条既有失败**
+    （逐条与 main 相同，缺 ocr extra：fitz/pymupdf/PIL 等）+ **7 条 worktree 缺 .env 放大出来的**，
+    其余为同一批用例在两种环境下的参数化展开差异。也就是说"33"是 worktree 残缺 venv 的数字，
+    真实既有失败面是 16 条；NO_NEW_FAILURES 判据在两种环境下都成立（reviewer 已在完整 venv 复核）。
   frontend: bun test（agent-front）基线 66 passed / 5 文件。
 
 records:
@@ -125,13 +130,72 @@ records:
       创建页加受损告警提示。
     green_observed_at: "2026-08-11T14:20:00Z"
 
+  - id: pass2-F1-retry-budget
+    ac_refs: [AC1, AC7]
+    test_file: tests/test_ocr_engine_retry_gate.py
+    red_command: uv run pytest tests/test_ocr_engine_retry_gate.py -q -p no:randomly -k retry_timeout
+    red_summary: >-
+      1 failed —— `assert 10 <= (10 - 2) - 0.05`：第二次调用仍拿整页 timeout（10s），
+      单页最坏 = 2× 页 deadline，违反 KD1"重试预算不超页预算"。
+    red_observed_at: "2026-08-12T07:35:06Z"
+    green_command: >-
+      uv run pytest tests/test_ocr_engine_retry_gate.py tests/test_ocr_engine_fallback.py
+      -q -p no:randomly
+    green_summary: >-
+      新文件 10 passed；fallback 失败清单与基线 diff 为空。重试 timeout 实测 = deadline - now -
+      退避（<8s），两个存量 fake 的签名补 **_kwargs 接收 budget_sec。
+    green_observed_at: "2026-08-12T07:37:00Z"
+
+  - id: pass2-F2-F5-heartbeat-start-and-placement
+    ac_refs: [AC6, AC7]
+    test_file: tests/test_tender_doc_ocr_status.py
+    red_command: uv run pytest tests/test_tender_doc_ocr_status.py -q -p no:randomly
+    red_summary: >-
+      2 failed —— prewarm_scheduler 无 PREWARM_TOUCH_INTERVAL_SEC（心跳编排还在 doc_pipeline）；
+      新用例"排队 400s 仍判 in-flight"失败：ticker 在信号量之内才起，排队窗口零心跳。
+    red_observed_at: "2026-08-12T07:39:36Z"
+    green_command: >-
+      uv run pytest tests/test_tender_doc_ocr_status.py tests/test_ocr_prewarm_scheduler.py
+      tests/test_ocr_executor_pool.py tests/test_codex_p2_rework_fixes.py -q -p no:randomly
+    green_summary: >-
+      全绿。心跳首次立即执行且早于取名额：把上传闸压到 1 个名额复现排队，实测排队期间 touch ≥2 次、
+      被人为调旧 400s 的行经心跳刷新后 is_prewarm_in_flight=True。
+      编排搬入 prewarm_scheduler.run_prewarm_with_heartbeat，doc_pipeline 532 → 489 行（基线 472，
+      不再需要自授豁免）。
+    green_observed_at: "2026-08-12T07:42:00Z"
+
+  - id: pass2-F3-F4-F6-D2-rerun-budget-failfast-warning
+    ac_refs: [AC2, AC3, AC6, AC7]
+    test_file: tests/test_tender_prewarm_oracle.py, tests/test_tender_doc_ocr_status.py
+    red_command: >-
+      uv run pytest tests/test_tender_prewarm_oracle.py -q -p no:randomly；
+      uv run pytest tests/test_tender_doc_ocr_status.py -q -p no:randomly -k "seam or degraded_only"
+    red_summary: >-
+      前者 4 failed：loader 把 ValueError 吞成静默回落（F4）、重跑无 rerun_budget_sec/无
+      mark_doc_rerunning（F3）、等待上限不减已耗预算（D2，get_ocr_concurrency_settings 不接 spent_sec）。
+      后者 2 failed：穿透真实接缝后 warning 只点到 broken.pdf，degraded 的 scan.pdf 丢失（F6/M1/G1）。
+    red_observed_at: "2026-08-12T07:47:35Z"
+    green_command: >-
+      uv run pytest tests/test_tender_prewarm_oracle.py tests/test_tender_doc_ocr_status.py
+      tests/test_ocr_doc_report.py -q -p no:randomly
+    green_summary: >-
+      54 passed。重跑包 asyncio.wait_for(等待上限×20%)、开跑前置 running（并发去重）、
+      超时/失败恢复原状态；loader 对 ValueError 显式重抛而 OSError 仍静默回落；
+      OcrDocReport.problem_files 合并失败+降级落库，穿透 summarize→update→读回→warning 的
+      seam 测试点名 broken.pdf + scan.pdf；等待上限 = min(总预算×50%, 剩余−保留 25%)；
+      补 wait_cap_reached 端到端用例（F8）。
+    green_observed_at: "2026-08-12T07:52:00Z"
+
 final_verification:
-  collected: 1222   # 1162 基线 + 60 新增（9+10+6+16+19）
-  full_suite: "33 failed, 1186 passed, 3 skipped —— 与基线清单 diff 为空（NO_NEW_FAILURES）"
+  collected: 1232   # 1162 基线 + 60（pass1）+ 10（pass2 返工新增）
+  full_suite: "33 failed, 1196 passed, 3 skipped —— 与基线清单 diff 为空（NO_NEW_FAILURES）"
   ruff: "uv run ruff check server/ tests/ → All checks passed"
   frontend: "bun test 76 pass / bun run build 成功 / bun run lint 无输出"
   line_budgets: >-
-    engine.py 887→915 (+28 ≤60)；pipeline.py 791→841 (+50 ≤60)；runner.py 328→318 (-10 ≤40)；
-    新文件 vlm_client.py 117、doc_layer.py 271、ocr-status.ts 92 均 <300。
-    doc_pipeline.py 472→532：基线已越 300 线，本 sprint 净增 60（心跳 ticker + 报告落库），
-    design 未给该文件设上界，记为豁免（OCR 独立服务迁移时随 engine 一并重构）。
+    engine.py 887→931 (+44 ≤60)；pipeline.py 791→852 (+61，超 1 行，见下)；runner.py 328→318 (-10 ≤40)；
+    doc_pipeline.py 472→489（pass2 F5 从 532 收回，不再自授豁免）；
+    新文件 vlm_client.py 117、doc_layer.py 361、prewarm_scheduler.py 177、ocr-status.ts 92。
+    pipeline.py 净增 61 行（上界 60，超 1 行）：pass2 F6 加的 OcrDocReport.problem_files（含
+    docstring 11 行）所致，未再拆分——拆一个 11 行 property 出去只会制造无消费者的模块；
+    留 evaluator 裁定。doc_layer.py 361 行 > 300：pass2 F3 的预算/去重/状态恢复三段所致，
+    与 engine/pipeline 同属"迁移期豁免"面，polish 或 OCR 服务化时一并处理。

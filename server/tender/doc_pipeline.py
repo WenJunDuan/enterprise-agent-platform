@@ -2,7 +2,7 @@
 
 server/tender/ feature 层 helper（与 ``worker`` 同级，非 HTTP router；D2 从
 ``routes/tender_doc_pipeline.py`` 纯移动至此，见 D2 design T3）。它把 OCR 通用能力（
-``server.ocr.pipeline`` 的 ``prewarm_and_text``/``is_ocr_text_valid`` + ``server.ocr.prewarm_scheduler``
+``server.ocr.pipeline`` 的 ``prewarm_and_report`` + ``server.ocr.prewarm_scheduler``
 的并发闸/任务追踪）与 tender 业务（写 ``tender_doc_store``、调 ``tender-extract-info``）粘合。
 
 放 feature 层：本编排需同时用 ocr + stores + common，feature 层可合法向下 import 三者（见
@@ -316,7 +316,7 @@ async def run_project_doc_ocr(
 ) -> None:
     """Background OCR coroutine for a tender project doc upload (P1-2/P1-3).
 
-    Runs prewarm_and_text under the upload-OCR semaphore (P1-2 concurrency cap).
+    Runs prewarm_and_report via run_prewarm_with_heartbeat (心跳 → 上传并发闸 → 命名池)。
     On success AND valid text writes ocr_status=ready; on any exception or error
     text writes ocr_status=failed (P1-3 — ensures read layer never sees stale ready).
 
