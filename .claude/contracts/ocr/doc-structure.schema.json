@@ -7,6 +7,11 @@
   "properties": {
     "file": { "type": "string" },
     "page_count": { "type": ["integer", "null"], "minimum": 1 },
+    "page_artifact": {
+      "type": "string",
+      "enum": ["original", "converted"],
+      "description": "页号所属坐标系：original=原文档页；converted=Office→PDF 转换稿页号，原文档页号不可用"
+    },
     "chapters": {
       "type": "array",
       "items": { "$ref": "#/$defs/chapter" }

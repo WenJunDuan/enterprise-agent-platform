@@ -77,17 +77,27 @@ _FILE_RE = re.compile(r"^\s*#{2,}\s*文件[:：]\s*(.+?)\s*$")
 # - ``original``：``【第 N 页】``，N 是用户可直接回查的原文档页号。
 # - ``converted``：``【转换稿第 M 页】``，M 是 Office→PDF 转换稿的页号（LibreOffice 分页 ≠ Word
 #   分页），原文档页号不可靠 → 一律不冒充。
+# 区间锚 ``【第 3-5 页】``（RAG chunk 跨页时用）同属本协议，解析取**起始页**。
 PAGE_ANCHOR_LINE_RE = re.compile(
-    r"^\s*【(?:(?P<converted>转换稿)?第\s*(?P<page>\d+)\s*页)】\s*$"
+    r"^\s*【(?:(?P<converted>转换稿)?第\s*(?P<page>\d+)(?:\s*-\s*(?P<page_end>\d+))?\s*页)】\s*$"
 )
 ARTIFACT_ORIGINAL = "original"
 ARTIFACT_CONVERTED = "converted"
 
 
-def page_anchor_text(page_no: int, *, artifact: str = ARTIFACT_ORIGINAL) -> str:
-    """页锚点字面量（不含换行）：渲染端唯一产出点，与 ``parse_page_anchor`` 互为逆。"""
+def page_anchor_text(
+    page_no: int, *, artifact: str = ARTIFACT_ORIGINAL, page_end: int | None = None
+) -> str:
+    """页锚点字面量（不含换行）：渲染端唯一产出点，与 ``parse_page_anchor`` 互为逆。
+
+    Args:
+        page_no: 起始页号（在 ``artifact`` 坐标系里）。
+        artifact: ``original``（原文档页）或 ``converted``（Office→PDF 转换稿页）。
+        page_end: 跨页 chunk 的结束页；与 ``page_no`` 相同或 None → 渲染单页锚。
+    """
     prefix = "转换稿" if artifact == ARTIFACT_CONVERTED else ""
-    return f"【{prefix}第 {page_no} 页】"
+    span = f"{page_no}-{page_end}" if page_end is not None and page_end != page_no else f"{page_no}"
+    return f"【{prefix}第 {span} 页】"
 
 
 def page_anchor(page_no: int) -> str:
