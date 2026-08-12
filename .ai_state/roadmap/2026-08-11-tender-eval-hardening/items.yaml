@@ -14,7 +14,7 @@ items:
     effort: L
     wave: 0
     depends_on: []
-    status: pending
+    status: in_progress # 2026-08-11 代码已合 main(merge 1ce644d, 9+1 commits): review pass1 REWORK(P0 调度缺陷)→pass2→evaluator PASS; 待办: polish(F8)+runtime-verify(pending_reason 重试率/双家并发单次入队)后方可 ship
     note: >
       design 见 sprints/2026-08-11-compare-authority/design.md。红区：generator model=opus +
       isolation worktree。核心：横比判据从"N 份转录副本 hash 相等"改为"引用同一 criteria 版本"；
@@ -29,7 +29,7 @@ items:
     effort: L
     wave: 1
     depends_on: []
-    status: pending
+    status: in_progress # 2026-08-11 已交付未评审: 6 commits 在 worktree agent-a4910ffcb97ec7942, AC 自报全 PASS, collect 1230 主 agent 核实; ⚠️两处待核: tdd-evidence 实测仅 1 条记录(自报5条,证据缺口); 前端 build/eslint 因 worktree 无 node_modules 标 blocked-by-env。恢复链: bun install 后补跑前端三件 → reviewer+spec-compliance → evaluator → rebase H1 合并(共享契约复核: audit-result.schema/tender-evaluate.md/model.ts/api.ts)
     note: >
       design 见 sprints/2026-08-11-page-provenance/design.md。红区：generator model=opus +
       isolation worktree。核心：页单元带 {source_file, artifact, artifact_page, original_page}；
@@ -44,7 +44,7 @@ items:
     effort: L
     wave: 1
     depends_on: [H1]
-    status: pending
+    status: in_progress # 2026-08-11 已交付未评审: 7 commits 在 worktree agent-a13794b891d0fcd1e, AC 自报全 PASS(含前端硬门), collect 1222 主 agent 核实; 自报偏离4处(KD2冲突按AC6/摘要改结构化产物侧/拆 vlm_client+doc_layer/新增 case_path 列)需 review 重点核; tdd-evidence 自报6条待核。恢复链: reviewer+spec-compliance → evaluator → rebase H2 后合并(engine/pipeline 共享契约复核)
     note: >
       design 见 sprints/2026-08-11-ocr-concurrency-degrade/design.md。红区：generator model=opus +
       isolation worktree。核心：单页 VLM 可恢复错误重试 1 次再降级；降级/部分失败底稿不以 ready

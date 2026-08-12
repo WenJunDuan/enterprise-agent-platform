@@ -129,3 +129,116 @@
 - Agent ID: ac8a89bfd6b05500e
 - Last message: 核验完毕。以下为返回主 agent 追加到 `/Users/mi_manchi/workspace/enterprise-agent-platform/.ai_state/sprints/2026-08-11-compare-authority/reviews/pass2.md` 末尾的内容。 ## Evidence Cross-Check (evaluator, 2026-08-11-compa
 
+## 2026-08-11T14:12:33.867Z · generator
+- Event: SubagentStart
+- Agent ID: a13794b891d0fcd1e
+
+## 2026-08-11T14:16:19.725Z · generator
+- Event: SubagentStop
+- Agent ID: a4910ffcb97ec7942
+- Last message: H2 page-provenance 实施完成，6 个 commit 全部落盘在 worktree `agent-a4910ffcb97ec7942`（未 push、未合 main）。 **AC 逐条** - AC1 转换链路 PASS —— convert 路由文件头带 `已转换为PDF识别, 页号为转换稿页号`、页锚渲染 `【转换稿第 M 页】`、结论 evidence 回填 `page_ki
+
+## 2026-08-11T14:17:36.025Z · generator
+- Event: SubagentStop
+- Agent ID: a13794b891d0fcd1e
+- Last message: H3 实施完成，工作树干净（仅 `.ai_state/_index.md` 被 hook 改动，未提交）。 **AC 逐条** - AC1 重试 — PASS。单页 VLM 首失败第二次成功 → 仍是 VLM 结果、无降级、页序连续；两次失败 → 该页起 Tesseract，与 0730 一致；页预算不足以覆盖退避时不重试。图片路径同语义。 - AC2 降级不落 ready — PASS。engi
+
+## 2026-08-12T01:49:40.164Z · reviewer
+- Event: SubagentStart
+- Agent ID: a8b44981f89d614da
+
+## 2026-08-12T01:49:47.112Z · spec-compliance
+- Event: SubagentStart
+- Agent ID: a045a4215da58a849
+
+## 2026-08-12T02:11:33.814Z · reviewer
+- Event: SubagentStart
+- Agent ID: a8b44981f89d614da
+
+## 2026-08-12T02:11:56.479Z · spec-compliance
+- Event: SubagentStop
+- Agent ID: a045a4215da58a849
+- Last message: `## Spec Compliance (spec-compliance, 2026-08-12T00:00Z)` **核查基准更正**：任务给的 `git diff main..HEAD`（两点）不可用——本分支基线是 `4d0a54c`，main 已前进到 `c4689fc`（H1 已合入），两点 diff 里 7768 行"删除"绝大部分是 main 的新内容而非本 sprint 改动。下述
+
+## 2026-08-12T02:26:44.626Z · reviewer
+- Event: SubagentStop
+- Agent ID: a8b44981f89d614da
+- Last message: # Review Pass 1 — Sprint 2026-08-11-page-provenance (H2) 审查基线：`git diff 4d0a54c..HEAD`（merge-base，已排除 main 上 H1 的内容，未把「缺 H1」当缺陷）。实测：`uv run pytest -q -p no:randomly` = **33 failed / 1194 passed / 3 sk
+
+## 2026-08-12T02:33:10.008Z · generator
+- Event: SubagentStart
+- Agent ID: a4910ffcb97ec7942
+
+## 2026-08-12T02:39:53.069Z · generator
+- Event: SubagentStart
+- Agent ID: a4910ffcb97ec7942
+
+## 2026-08-12T04:14:18.231Z · generator
+- Event: SubagentStart
+- Agent ID: a4910ffcb97ec7942
+
+## 2026-08-12T04:23:01.049Z · generator
+- Event: SubagentStop
+- Agent ID: a4910ffcb97ec7942
+- Last message: H2 pass1 返工完成，工作区干净，13 个 commit 全部落在 worktree（未 push、未合 main）。 **返工清单逐项处置** | 项 | 处置 | 证据 | |---|---|---| | M5 rebase H1（P0 阻断） | 已做 | 6 commit rebase 到 c4689fc；三个共享契约文件全部 auto-merge、双方并存（schema 内 cri
+
+## 2026-08-12T04:23:46.393Z · reviewer
+- Event: SubagentStart
+- Agent ID: a55674a00b1e47bab
+
+## 2026-08-12T04:32:10.082Z · reviewer
+- Event: SubagentStart
+- Agent ID: a55674a00b1e47bab
+
+## 2026-08-12T04:58:57.463Z · reviewer
+- Event: SubagentStart
+- Agent ID: a55674a00b1e47bab
+
+## 2026-08-12T07:14:34.706Z · reviewer
+- Event: SubagentStart
+- Agent ID: a9aa6d014f7043556
+
+## 2026-08-12T07:14:50.947Z · reviewer
+- Event: SubagentStart
+- Agent ID: ad091772833bca719
+
+## 2026-08-12T07:14:58.220Z · spec-compliance
+- Event: SubagentStart
+- Agent ID: ad13aa060fe0c95ec
+
+## 2026-08-12T07:25:55.035Z · spec-compliance
+- Event: SubagentStop
+- Agent ID: ad13aa060fe0c95ec
+- Last message: 以下为完整可落盘段落，供合并进 `.ai_state/sprints/2026-08-11-ocr-concurrency-degrade/reviews/passN.md`。 --- ## Spec Compliance (spec-compliance, 2026-08-12T07:24:06Z) **比对范围**：merge-base diff `git diff 4d0a54c..HEAD
+
+## 2026-08-12T07:28:47.762Z · reviewer
+- Event: SubagentStart
+- Agent ID: ad091772833bca719
+
+## 2026-08-12T07:29:10.049Z · reviewer
+- Event: SubagentStart
+- Agent ID: a9aa6d014f7043556
+
+## 2026-08-12T07:30:30.238Z · reviewer
+- Event: SubagentStop
+- Agent ID: a9aa6d014f7043556
+- Last message: # Review Pass 2 — Sprint 2026-08-11-page-provenance (H2) 审对象：worktree `agent-a4910ffcb97ec7942`，rebase 到 main=c4689fc 后的 7 个返工 commit（`3ae8820..HEAD`，81643a2…8988f01）。reviewer 实跑复核：worktree 全量 `33 fai
+
+## 2026-08-12T07:31:27.625Z · reviewer
+- Event: SubagentStop
+- Agent ID: ad091772833bca719
+- Last message: # Review Pass 1 — Sprint 2026-08-11-ocr-concurrency-degrade (H3) 审查基线：`git diff $(git merge-base main HEAD)..HEAD`（merge-base 4d0a54c，7 commits，32 文件，+2695/-373）。未把缺 H1/H2 内容计为缺陷。 ## Findings（按严重度排序） 
+
+## 2026-08-12T07:33:52.523Z · evaluator
+- Event: SubagentStart
+- Agent ID: a580f657b1a3eeb25
+
+## 2026-08-12T07:34:11.077Z · generator
+- Event: SubagentStart
+- Agent ID: a13794b891d0fcd1e
+
+## 2026-08-12T07:35:40.906Z · evaluator
+- Event: SubagentStop
+- Agent ID: a580f657b1a3eeb25
+- Last message: 核验完毕。豁免表五行数逐项实测吻合、tdd-evidence 恰 11 条、collect 实测 1286、14 commits 全部落在 c4689fc（含 H1）之上——pass2 的关键可复跑证据我均独立复核为真。以下为返回给主 agent 的两段。 ## Evidence Cross-Check (evaluator, 2026-08-11-page-provenance) 对照面：des
+

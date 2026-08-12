@@ -136,7 +136,8 @@ tests/test_ocr_pipeline.py, test_ocr_native_formats.py, test_tender_*  全 KD �
 - 全量测试收集数 = 1162（`uv run pytest --collect-only -q | tail -1`）。
 - `server/ocr/pipeline.py` = 791 行、`server/ocr/engine.py` = 887 行、
   `server/tender/context_slim.py` = 284 行（`wc -l`）。前两者基线已越 300 线，豁免见影响范围节
-  （上界：本 sprint 各文件净增 ≤60 行，超出即拆新模块）；context_slim 改后须 ≤300。
+  （上界：净增 ≤60 行**仅限 pipeline.py / engine.py 两文件**，超出即拆新模块；corpus/evidence
+  的上界以下方"基线补记与豁免"表为准，两处并存不矛盾——pass2-N1 澄清）；context_slim 改后须 ≤300。
 
 ## 风险与缓解
 
