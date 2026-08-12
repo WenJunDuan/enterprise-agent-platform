@@ -163,9 +163,14 @@ def _patch_report(monkeypatch, report: OcrDocReport, text: str = "底稿正文")
 @pytest.mark.parametrize(
     "report,expected_status,expected_failed",
     [
-        (OcrDocReport("ready", (), ()), "ready", None),
-        (OcrDocReport("degraded", (), ("scan.pdf",)), "degraded", []),
-        (OcrDocReport("partial", ("broken.pdf",), ()), "partial", ["broken.pdf"]),
+        (OcrDocReport("ready", (), ()), "ready", []),
+        # F6：降级文件也进"有问题的文件"清单，warning 才点得出名字。
+        (OcrDocReport("degraded", (), ("scan.pdf",)), "degraded", ["scan.pdf"]),
+        (
+            OcrDocReport("partial", ("broken.pdf",), ("scan.pdf",)),
+            "partial",
+            ["broken.pdf", "scan.pdf"],
+        ),
     ],
 )
 def test_bid_doc_ocr_writes_report_status(
@@ -241,6 +246,63 @@ def test_prewarm_touches_updated_at_on_a_doc_level_ticker(monkeypatch):
 
     assert len(touches) >= 2, "ticker 必须在单文件识别期间反复刷新 updated_at"
     assert store.get_bid_doc(pid, bid_id, "t1")["ocr_status"] == "ready"
+
+
+def test_degraded_and_failed_files_survive_the_real_seam_into_the_warning(monkeypatch):
+    """F6/spec-M1/G1：穿透 summarize_ocr_results → update_bid_doc_ocr → 读回 → 结论 warning。
+
+    只 mock 到 OCR 引擎边界（``pipeline.extract_dir``），中间的归纳、落库、读回、渲染全走真实
+    实现——此前测试用手工构造的 doc 行绕过了这条接缝，degraded 文件名一路丢到 warning 里为空。
+    """
+    from server.ocr import pipeline
+    from server.tender import runner
+
+    pid, bid_id = _pid(), store.new_bid_id()
+    _seed_bid(pid, bid_id)
+    results = [
+        {"path": "/case/bid/ok.pdf", "kind": "ocr", "pages": [{"markdown": "正文", "page_number": 1}]},
+        {
+            "path": "/case/bid/scan.pdf",
+            "kind": "ocr",
+            "pages": [{"markdown": "降级正文", "page_number": 1}],
+            "degraded": True,
+        },
+        {"path": "/case/bid/broken.pdf", "kind": "error", "error": "boom"},
+    ]
+    monkeypatch.setattr(pipeline, "extract_dir", lambda *_a, **_k: results)
+
+    asyncio.run(doc_pipeline.run_bid_doc_ocr(pid, bid_id, "/case/bid", tenant="t1"))
+
+    row = store.get_bid_doc(pid, bid_id, "t1")
+    assert row["ocr_status"] == "partial"
+    warnings = runner._ocr_integrity_warnings(None, row)
+    assert len(warnings) == 1
+    assert set(warnings[0]["files"]) == {"broken.pdf", "scan.pdf"}
+    assert "scan.pdf" in warnings[0]["message"], "降级文件也要点名（此前只点名彻底失败的）"
+
+
+def test_degraded_only_doc_still_names_the_degraded_file(monkeypatch):
+    """F6：纯 degraded（无失败文件）时 warning 也必须点名，否则用户无从判断影响面。"""
+    from server.ocr import pipeline
+    from server.tender import runner
+
+    pid, bid_id = _pid(), store.new_bid_id()
+    _seed_bid(pid, bid_id)
+    results = [
+        {
+            "path": "/case/bid/scan.pdf",
+            "kind": "ocr",
+            "pages": [{"markdown": "降级正文", "page_number": 1}],
+            "degraded": True,
+        }
+    ]
+    monkeypatch.setattr(pipeline, "extract_dir", lambda *_a, **_k: results)
+
+    asyncio.run(doc_pipeline.run_bid_doc_ocr(pid, bid_id, "/case/bid", tenant="t1"))
+
+    row = store.get_bid_doc(pid, bid_id, "t1")
+    assert row["ocr_status"] == "degraded"
+    assert runner._ocr_integrity_warnings(None, row)[0]["files"] == ["scan.pdf"]
 
 
 def _age_bid_row(pid: str, bid_id: str, seconds: float) -> None:

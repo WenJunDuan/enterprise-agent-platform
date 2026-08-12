@@ -359,7 +359,7 @@ async def run_project_doc_ocr(
             ocr_text=text,
             ocr_clarity=None,
             status=report.status,
-            failed_files=list(report.failed_files),
+            failed_files=list(report.problem_files),  # 失败 + 降级合并落库（F6）
         )
         ocr_text = text
     except Exception:
@@ -448,7 +448,7 @@ async def run_bid_doc_ocr(
             tenant=tenant,
             ocr_text=text,
             status=report.status,
-            failed_files=list(report.failed_files),
+            failed_files=list(report.problem_files),  # 失败 + 降级合并落库（F6）
         )
     except Exception:
         logger.warning(

@@ -17,7 +17,12 @@ import time
 from datetime import datetime, timezone
 
 from server.platform.config import get_ocr_concurrency_settings
-from server.stores.tender_doc_store import OCR_STATUSES, get_bid_doc, get_project_doc
+from server.stores.tender_doc_store import (
+    OCR_STATUSES,
+    get_bid_doc,
+    get_project_doc,
+    set_doc_ocr_status,
+)
 from server.tender.context_slim import build_slim_tender_context
 
 logger = logging.getLogger(__name__)
@@ -34,6 +39,8 @@ DOC_LAYER_USABLE_STATUSES = frozenset({"ready", "degraded", "partial"})
 DOC_LAYER_TERMINAL_STATUSES = DOC_LAYER_USABLE_STATUSES | {"failed"}
 # 需要"入口自动重跑一次预热"的降级态。
 DOC_LAYER_IMPAIRED_STATUSES = frozenset({"degraded", "partial"})
+# 补底稿重跑最多占用等待上限的这个比例（F3：重跑不能和评标抢预算）。
+_RERUN_BUDGET_RATIO = 0.2
 
 
 def doc_ocr_status(row: dict | None) -> str | None:
@@ -104,6 +111,10 @@ def load_doc_layer_context(project_id: str, bid_id: str | None, tenant: str) -> 
             f"=== 投标文件（{bidder}）底稿 ===\n{bid['ocr_text']}",
         ]
         return "\n\n".join(parts)
+    except ValueError:
+        # 枚举违约是**内部不变量被破坏**，必须炸出来（与 wait_doc_layer_ready 同一归宿）；
+        # blanket catch 只留给下面的 DB/IO 故障，否则同一个 ValueError 有两种命运（review F4）。
+        raise
     except Exception:
         logger.warning("load_doc_layer_context failed, falling back", exc_info=True)
         return None
@@ -152,6 +163,8 @@ def load_doc_layer_context_slim(project_id: str, bid_id: str | None, tenant: str
             f"=== 投标文件（{bidder}）底稿 ===\n{bid['ocr_text']}",
         ]
         return "\n\n".join(parts)
+    except ValueError:
+        raise  # 同 load_doc_layer_context：枚举违约不吞（review F4）
     except Exception:
         logger.warning("load_doc_layer_context_slim failed, falling back", exc_info=True)
         return None
@@ -162,7 +175,7 @@ async def wait_doc_layer_ready(project_id: str, bid_id: str, tenant: str) -> str
 
     用户「上传即 OCR」后可能在 OCR 未完就点开始分析 → 评标提交时预热还在跑。此前到点即无条件
     回落 inline 全量重 OCR，而预热并不取消 → 同批文件双份流水线、负载翻倍正反馈。现在只在
-    **预热确实在途**（``_is_prewarm_in_thight`` oracle）时继续等；不在途才放行回落，此时无双跑。
+    **预热确实在途**（``is_prewarm_in_flight`` oracle）时继续等；不在途才放行回落，此时无双跑。
 
     Returns:
         - ``terminal``：两层都到终态，可判复用/回落。
@@ -226,17 +239,34 @@ async def rerun_prewarm_for_degraded_docs(
     criteria 抽取（那是一次 30-60s 的模型往返，与补底稿无关）。
 
     无 ``case_path``（H3 之前上传的老行）→ 跳过重跑，由调用方走 warning 路径。
-    重跑本身失败只记日志：它是"尽力补救"，不能反过来拖垮评标。
+
+    两条护栏（review F3——重跑挂在评标关键路径上）：
+
+    1. **预算封顶**：整段重跑包在 ``asyncio.wait_for(rerun_budget_sec())`` 里。降级文件不进缓存
+       必然全量重算，加上还要排上传闸的队，无上限的补跑可以把整单推向 TENDER_TIMEOUT。
+       超时即放弃，调用方照常用手上的降级底稿 + 结论 warning。
+    2. **并发去重**：开跑前把行置回 ``running``（``mark_doc_rerunning``），并发评标的
+       in-flight oracle 因此判"已经有人在补"而继续等，不会各自再补一遍。超时/失败则把状态
+       放回原值，读层继续用那份降级底稿——补跑失败不能让可用底稿反而变得不可用。
     """
     # 局部 import 破环：doc_pipeline → runner → 本模块 → doc_pipeline。
     from server.tender import doc_pipeline
     from server.tender.runner import TENDER_OCR_PURPOSE
 
     project_doc, bid_doc = rows
-    try:
-        if doc_ocr_status(project_doc) in DOC_LAYER_IMPAIRED_STATUSES and project_doc.get(
-            "case_path"
-        ):
+    project_status = doc_ocr_status(project_doc)
+    bid_status = doc_ocr_status(bid_doc)
+    rerun_project = project_status in DOC_LAYER_IMPAIRED_STATUSES and bool(
+        (project_doc or {}).get("case_path")
+    )
+    rerun_bid = bid_status in DOC_LAYER_IMPAIRED_STATUSES and bool(
+        (bid_doc or {}).get("case_path")
+    )
+    if not rerun_project and not rerun_bid:
+        return
+
+    async def _rerun() -> None:
+        if rerun_project:
             await doc_pipeline.run_project_doc_ocr(
                 project_id,
                 project_doc["case_path"],
@@ -244,7 +274,7 @@ async def rerun_prewarm_for_degraded_docs(
                 purpose=TENDER_OCR_PURPOSE,
                 run_info_extraction=False,
             )
-        if doc_ocr_status(bid_doc) in DOC_LAYER_IMPAIRED_STATUSES and bid_doc.get("case_path"):
+        if rerun_bid:
             await doc_pipeline.run_bid_doc_ocr(
                 project_id,
                 bid_id,
@@ -252,12 +282,72 @@ async def rerun_prewarm_for_degraded_docs(
                 tenant=tenant,
                 purpose=TENDER_OCR_PURPOSE,
             )
+
+    await asyncio.to_thread(
+        mark_doc_rerunning,
+        project_id,
+        bid_id,
+        tenant,
+        project=rerun_project,
+        bid=rerun_bid,
+    )
+    try:
+        await asyncio.wait_for(_rerun(), timeout=rerun_budget_sec())
+        return
+    except (TimeoutError, asyncio.TimeoutError):
+        logger.warning(
+            "tender_doc_layer_rerun_timeout",
+            extra={"project_id": project_id, "bid_id": bid_id},
+        )
     except Exception:
         logger.warning(
             "tender_doc_layer_rerun_failed",
             extra={"project_id": project_id, "bid_id": bid_id},
             exc_info=True,
         )
+    await asyncio.to_thread(
+        _restore_status_after_failed_rerun,
+        project_id,
+        bid_id,
+        tenant,
+        project_status if rerun_project else None,
+        bid_status if rerun_bid else None,
+    )
+
+
+def rerun_budget_sec() -> float:
+    """补底稿重跑的时间预算：等待上限的一小片（F3）。
+
+    重跑是"尽力补救"而非必需项，不能和评标本身抢预算；下界 1s 防配置把它压成 0 后每次必超时。
+    """
+    return max(1.0, get_ocr_concurrency_settings().doc_layer_wait_cap_sec * _RERUN_BUDGET_RATIO)
+
+
+def mark_doc_rerunning(
+    project_id: str, bid_id: str | None, tenant: str, *, project: bool, bid: bool
+) -> None:
+    """把将要重跑的 doc 行置回 ``running``（保留 ocr_text），让并发评标经 oracle 去重。"""
+    if project:
+        set_doc_ocr_status(project_id, None, tenant=tenant, status="running")
+    if bid and bid_id:
+        set_doc_ocr_status(project_id, bid_id, tenant=tenant, status="running")
+
+
+def _restore_status_after_failed_rerun(
+    project_id: str,
+    bid_id: str | None,
+    tenant: str,
+    project_status: str | None,
+    bid_status: str | None,
+) -> None:
+    """重跑超时/失败后把行状态放回原值——否则它会一直停在 running，读层拿不到可用底稿。"""
+    try:
+        if project_status:
+            set_doc_ocr_status(project_id, None, tenant=tenant, status=project_status)
+        if bid_status and bid_id:
+            set_doc_ocr_status(project_id, bid_id, tenant=tenant, status=bid_status)
+    except Exception:
+        logger.warning("tender_doc_layer_rerun_status_restore_failed", exc_info=True)
 
 
 async def read_doc_rows(
