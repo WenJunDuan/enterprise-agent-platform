@@ -164,6 +164,63 @@ def test_timed_out_rerun_never_leaves_the_row_stuck_running(monkeypatch):
     assert store.get_bid_doc(pid, bid_id, "t1")["ocr_status"] == "degraded"
 
 
+def test_degraded_to_partial_is_worse_and_rolls_back(monkeypatch):
+    """pass3-F2：partial（整文件正文缺失）严格劣于 degraded（仅引擎降级）。
+
+    排序须与 summarize_ocr_results 的既有定义（failed > partial > degraded > ready，
+    pipeline.py docstring）一致：补跑把 degraded 跑成 partial 是内容覆盖变少，必须回滚。
+    """
+    pid, bid_id = _pid(), store.new_bid_id()
+    _seed_impaired_bid(pid, bid_id)  # degraded + 旧文本
+    monkeypatch.setattr(
+        doc_pipeline,
+        "prewarm_and_report",
+        lambda *_a, **_k: ("只剩一半的底稿", OcrDocReport("partial", ("broken.pdf",), ())),
+    )
+
+    asyncio.run(
+        doc_rerun.rerun_prewarm_for_degraded_docs(pid, bid_id, "t1", _rows(pid, bid_id))
+    )
+
+    row = store.get_bid_doc(pid, bid_id, "t1")
+    assert row["ocr_status"] == "degraded", "degraded→partial 属劣化，须回滚"
+    assert row["ocr_text"] == "旧的降级底稿"
+
+
+def test_cancelled_rerun_still_settles_and_restores(monkeypatch):
+    """pass3-F1：补跑在途被取消（评标整单超时）后，行不得停在 running。
+
+    CancelledError 是 BaseException，不被 except Exception 捕获——结算必须走 finally
+    且无 await 点，否则取消冲出函数、mark_doc_rerunning 置的 running 无人收拾，
+    前端轮询永不终止（pass1-F1 锁死形态由常规超时触发）。
+    """
+    pid, bid_id = _pid(), store.new_bid_id()
+    _seed_impaired_bid(pid, bid_id)
+    monkeypatch.setattr(doc_rerun, "rerun_budget_sec", lambda **_k: 30.0)
+
+    async def _slow(*_a, **_k):
+        await asyncio.sleep(10)
+
+    monkeypatch.setattr(doc_pipeline, "run_bid_doc_ocr", _slow)
+
+    async def _scenario() -> None:
+        task = asyncio.get_running_loop().create_task(
+            doc_rerun.rerun_prewarm_for_degraded_docs(pid, bid_id, "t1", _rows(pid, bid_id))
+        )
+        await asyncio.sleep(0.2)  # 让 mark_doc_rerunning 与 _rerun 真正起跑
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    asyncio.run(_scenario())
+
+    row = store.get_bid_doc(pid, bid_id, "t1")
+    assert row["ocr_status"] == "degraded", "取消后行不得卡在 running"
+    assert row["ocr_text"] == "旧的降级底稿"
+
+
 def test_rerun_budget_shrinks_with_the_budget_already_spent(monkeypatch):
     """N3：等待预热吃掉的时间要计入——等满上限后补跑预算必须显著收缩。"""
     monkeypatch.setenv("TENDER_TIMEOUT_SEC", "600")
