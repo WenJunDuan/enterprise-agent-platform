@@ -57,7 +57,7 @@ tender_worker._run_evaluation
   总价虽在 p2 扉页未被截，但**淹没在 ~210 页密集表行噪音里**，模型不稳定识别。
 - **`is_boq`**（文件名关键词 或 内容表头特征）→ **`extract_boq_summary`**：确定性抽**投标总价**（扉页/前5页 +
   小写 + 大写校验候选打分，非取首个）/ 各类合计 / Top-N 高价 → 几 KB 紧凑摘要替代从头截
-  （`pipeline._render_body`：`len>MAX` 且 is_boq 时注入摘要，否则回落首尾各半截 0.7/0.3，绝不只取前 N）。
+  （`draft_render.render_body`：`len>MAX` 且 is_boq 时注入摘要，否则回落首尾各半截 0.7/0.3，绝不只取前 N）。
 - **perf**（`server/ocr/native.py`）：超大 PDF（>500 页，env `OCR_FIND_TABLES_MAX_PAGES`）**跳过逐页
   `find_tables`**（8417 页耗 324s + 产 17970 冗余表）→ BOQ 首跑 OCR **324s→28.9s（11×）**。
 - 摘要页锚点**独占行** + 逐字保留金额（满足 R1 `_PAGE_RE` 回查）。扫描件 BOQ（OCR pages 表格）留 backlog。
