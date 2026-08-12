@@ -379,7 +379,9 @@ def test_loader_still_falls_back_on_db_failure(monkeypatch):
 
 def test_rerun_is_bounded_by_a_timeout_and_degrades_to_warning(monkeypatch):
     """F3：重跑挂在评标关键路径上，必须有预算上限；超时放弃（调用方走 warning），不拖垮评标。"""
-    monkeypatch.setattr(doc_rerun, "rerun_budget_sec", lambda: 0.05)
+    # pass3-F4：签名须跟生产调用 rerun_budget_sec(spent_sec=...) 一致，否则 TypeError 被
+    # blanket catch 吞掉、_never_finishes 从未被 await，本测试空转无鉴别力。
+    monkeypatch.setattr(doc_rerun, "rerun_budget_sec", lambda **_k: 0.05)
     import server.tender.doc_pipeline as doc_pipeline
 
     async def _never_finishes(*_a, **_k):

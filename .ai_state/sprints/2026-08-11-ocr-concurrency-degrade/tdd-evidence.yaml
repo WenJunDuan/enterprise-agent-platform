@@ -219,3 +219,19 @@ final_verification:
     doc_pipeline.py 472→489（pass2 F5 从 532 收回）；
     新文件 vlm_client.py 117、doc_layer.py 234、doc_rerun.py 234、prewarm_scheduler.py 177、
     ocr-status.ts 92 —— 均 <300（pass3 N4 把补跑写侧从 doc_layer 361 行里拆出）。
+
+  - id: pass3-review-F1-F5
+    ac_refs: "pass3 review F1(取消绕过结算)/F2(partial 判等)/F3(结算读裸奔)/F4(测试空转)/F5(预算入 try)"
+    test_file: tests/test_tender_doc_rerun.py
+    red_command: "uv run pytest tests/test_tender_doc_rerun.py -q -p no:randomly (新增 2 用例, 修复前)"
+    red_summary: >-
+      test_degraded_to_partial_is_worse_and_rolls_back: partial 与 degraded 判等被保留,
+      断言 degraded 失败; test_cancelled_rerun_still_settles_and_restores: 取消冲出函数
+      行卡 running, 断言 degraded 失败。2 failed, 5 passed 实测。
+    red_observed_at: "2026-08-12T10:30:00+08:00"
+    green_command: "uv run pytest tests/test_tender_doc_rerun.py tests/test_tender_prewarm_oracle.py -q -p no:randomly -W error::RuntimeWarning"
+    green_summary: >-
+      32 passed。修复: _STATUS_RANK partial 降为 1(与 pipeline 序对齐); 结算移入 finally 且
+      改同步调用(取消安全, 无 await 点); _settle_segment 整段 try 自防护段间独立; budget 提出
+      try; oracle 测试 lambda 签名改 **_k(-W error 证实无未 await 协程)。主 agent 绿区直做。
+    green_observed_at: "2026-08-12T10:40:00+08:00"

@@ -33,7 +33,9 @@ logger = logging.getLogger(__name__)
 # 补底稿重跑最多占用等待上限的这个比例（F3：补跑不能和评标本身抢预算）。
 _RERUN_BUDGET_RATIO = 0.2
 # 底稿"好坏"排序：只有更好或持平的结果才保留，否则回滚快照（N1）。
-_STATUS_RANK = {"ready": 3, "degraded": 2, "partial": 2}
+# 与 pipeline.summarize_ocr_results 的既有序对齐（failed > partial > degraded > ready，
+# 即 partial 整文件正文缺失严格劣于 degraded 仅引擎降级，pass3-F2）。
+_STATUS_RANK = {"ready": 3, "degraded": 2, "partial": 1}
 
 
 def rerun_budget_sec(*, spent_sec: float = 0.0) -> float:
@@ -129,20 +131,27 @@ def _settle_segment(
 
     逐段结算天然覆盖 N2："已经补好的段"因为不劣于快照而被保留，"超时/失败的段"（行还停在
     running 或被写成 failed+NULL）才回滚——不会因为另一段超时就把补好的段一起刷回去。
+
+    整段自防护（pass3-F3）：读回与回滚都在 try 内。补跑只是尽力补救，结算的 DB 故障
+    不得冲出本函数拖垮整单评标，也不得牵连另一段的结算（段间独立成败）。
     """
-    current = (
-        get_project_doc(project_id, tenant)
-        if is_project
-        else get_bid_doc(project_id, bid_id, tenant)
-    )
-    if _is_not_worse(current, snapshot):
-        return
     try:
+        current = (
+            get_project_doc(project_id, tenant)
+            if is_project
+            else get_bid_doc(project_id, bid_id, tenant)
+        )
+        if _is_not_worse(current, snapshot):
+            return
         _restore_snapshot(project_id, bid_id, tenant, snapshot, is_project=is_project)
     except Exception:
         logger.warning(
-            "tender_doc_layer_rerun_restore_failed",
-            extra={"project_id": project_id, "bid_id": bid_id, "scope": "project" if is_project else "bid"},
+            "tender_doc_layer_rerun_settle_failed",
+            extra={
+                "project_id": project_id,
+                "bid_id": bid_id,
+                "scope": "project" if is_project else "bid",
+            },
             exc_info=True,
         )
 
@@ -207,11 +216,14 @@ async def rerun_prewarm_for_degraded_docs(
                 purpose=TENDER_OCR_PURPOSE,
             )
 
+    # 预算计算在 try 之外：它抛错属编程错误，应 fail-fast，不得混进"补跑失败"的
+    # 外部失败语义被 blanket catch 降级成一行 warning（pass3-F5，F4 的空转测试即此坑）。
+    budget = rerun_budget_sec(spent_sec=spent_sec)
     await asyncio.to_thread(
         mark_doc_rerunning, project_id, bid_id, tenant, project=rerun_project, bid=rerun_bid
     )
     try:
-        await asyncio.wait_for(_rerun(), timeout=rerun_budget_sec(spent_sec=spent_sec))
+        await asyncio.wait_for(_rerun(), timeout=budget)
     except (TimeoutError, asyncio.TimeoutError):
         logger.warning(
             "tender_doc_layer_rerun_timeout", extra={"project_id": project_id, "bid_id": bid_id}
@@ -222,13 +234,15 @@ async def rerun_prewarm_for_degraded_docs(
             extra={"project_id": project_id, "bid_id": bid_id},
             exc_info=True,
         )
-    # 无论成功、超时还是抛错都要结算——``run_*_doc_ocr`` 吞掉异常后会"正常返回"却已把行写成
-    # failed + NULL 文本（pass2 N1 的实测破口），只看异常判断不了结果好坏。
-    if rerun_project:
-        await asyncio.to_thread(
-            _settle_segment, project_id, None, tenant, project_snapshot, is_project=True
-        )
-    if rerun_bid:
-        await asyncio.to_thread(
-            _settle_segment, project_id, bid_id, tenant, bid_snapshot, is_project=False
-        )
+    finally:
+        # 结算在 finally：成功、超时、抛错、**取消**四路都必须收拾 mark_doc_rerunning 置下的
+        # running（pass3-F1——CancelledError 是 BaseException，try/except Exception 接不住；
+        # 评标整单超时的 wait_for 取消正是常态触发路径）。结算故意用同步调用而非 to_thread：
+        # 取消态下任何 await 点都会立刻再抛 CancelledError，同步 sqlite 微秒级写在 loop 线程
+        # 是"取消安全"的必要代价（与 compare_worker._schedule_if_idle 同一权衡先例）。
+        # ``run_*_doc_ocr`` 吞掉异常后会"正常返回"却已把行写成 failed + NULL 文本
+        # （pass2 N1 的实测破口），只看异常判断不了结果好坏，故无条件结算。
+        if rerun_project:
+            _settle_segment(project_id, None, tenant, project_snapshot, is_project=True)
+        if rerun_bid:
+            _settle_segment(project_id, bid_id, tenant, bid_snapshot, is_project=False)
