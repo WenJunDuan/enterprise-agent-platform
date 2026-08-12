@@ -155,7 +155,9 @@ def test_read_layer_disabled_always_falls_back(monkeypatch):
     )
 
     # When disabled, doc layer load must NOT be called, fallback must be called
-    assert not load_called, "_load_doc_layer_context must not be called when layer disabled"
+    assert not load_called, (
+        "doc_layer.load_doc_layer_context must not be called when layer disabled"
+    )
     assert preprocess_called, "ocr_preprocess_block must be called when layer disabled"
 
 
@@ -191,7 +193,9 @@ def test_read_layer_no_project_id_falls_back(monkeypatch):
         )
     )
 
-    assert not load_called, "_load_doc_layer_context must not be called when project_id is None"
+    assert not load_called, (
+        "doc_layer.load_doc_layer_context must not be called when project_id is None"
+    )
     assert preprocess_called
 
 
