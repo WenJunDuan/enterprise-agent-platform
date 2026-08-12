@@ -1351,6 +1351,7 @@ function buildEligibilityEvidence(raw: UnknownRecord): TenderScoreEvidence[] {
       conclusion: item.conclusion?.trim(),
       condition: item.condition?.trim(),
       points: item.points ?? null,
+      page_kind: item.page_kind,
     }
     if (
       !normalized.source &&
@@ -1875,6 +1876,7 @@ function buildScoringEvidence(
       conclusion: item.conclusion?.trim(),
       condition: item.condition?.trim(),
       points: item.points ?? null,
+      page_kind: item.page_kind,
     }
     if (
       !normalized.source &&
