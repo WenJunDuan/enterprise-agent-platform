@@ -212,6 +212,26 @@ def _snap_forward(text: str, start: int, anchors: list[tuple[int, str]]) -> int:
     return newline + 1 if newline >= 0 else start
 
 
+def _locate_tail(
+    text: str, head_cut: int, anchors: list[tuple[int, str]], budget: int
+) -> tuple[int, str | None]:
+    """按 ``budget`` 字符定位尾段起点，并给出该起点需要重放的页锚。
+
+    Args:
+        text: 待切分全文。
+        head_cut: 首段切点（尾段起点不得越过它）。
+        anchors: ``_anchor_line_offsets`` 产物。
+        budget: 尾段可用字符数。
+
+    Returns:
+        ``(tail_start, replay)``：起点自带锚行、或其之前根本没有锚时 ``replay`` 为 ``None``。
+    """
+    tail_start = max(head_cut, _snap_forward(text, max(0, len(text) - budget), anchors))
+    anchored_start = any(pos == tail_start for pos, _ in anchors)
+    before = [line for pos, line in anchors if pos < tail_start]
+    return tail_start, None if anchored_start or not before else before[-1]
+
+
 def split_head_tail_on_anchors(
     text: str, head_n: int, tail_n: int
 ) -> tuple[str, str, str | None]:
@@ -231,18 +251,18 @@ def split_head_tail_on_anchors(
     """
     anchors = _anchor_line_offsets(text)
     head_cut = _snap_back(text, head_n, anchors) if head_n > 0 else 0
-    replay: str | None = None
-    tail_start = len(text)
-    # 两轮：先按满额预算定位尾段以求出重放锚，再扣掉重放锚占位重新定位（锚只会后移不会前移，
-    # 故一轮修正即收敛）；仍超预算则放弃重放（宁可少一个锚，也不越预算/不切半锚）。
-    for reserve in (0, None):
-        budget = tail_n if reserve == 0 else tail_n - (len(replay) + 1 if replay else 0)
+    if tail_n <= 0:
+        return text[:head_cut], "", None
+    # 两趟定位（原为 ``for reserve in (0, None)`` 的双轮循环，review F8 展开）：
+    # 先按满额预算定位以求出重放锚，再扣掉重放锚占位重新定位——锚只会后移不会前移，故一趟修正
+    # 即收敛。不需要重放锚时第二趟与第一趟同参、结果相同，直接跳过。
+    tail_start, replay = _locate_tail(text, head_cut, anchors, tail_n)
+    if replay:
+        budget = tail_n - (len(replay) + 1)
         if budget <= 0:
             return text[:head_cut], "", None
-        tail_start = max(head_cut, _snap_forward(text, max(0, len(text) - budget), anchors))
-        anchored_start = any(pos == tail_start for pos, _ in anchors)
-        before = [line for pos, line in anchors if pos < tail_start]
-        replay = None if anchored_start or not before else before[-1]
+        tail_start, replay = _locate_tail(text, head_cut, anchors, budget)
+    # 仍超预算则放弃重放（宁可少一个锚，也不越预算/不切半锚）。
     if len(text) - tail_start + (len(replay) + 1 if replay else 0) > tail_n:
         replay = None
     return text[:head_cut], text[tail_start:], replay

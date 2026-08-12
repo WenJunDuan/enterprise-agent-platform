@@ -78,7 +78,7 @@ def _route(container, route, handler, has_text, reason, page_count=None, mixed_p
         "handler": handler,
         "has_text_layer": has_text,
         # 页数（int）。刻意命名 page_count 而非 pages —— OCR 引擎产物里的 pages 是
-        # list[每页内容]，同名会让下游 _render_body 把整数当列表迭代而崩。
+        # list[每页内容]，同名会让下游 draft_render.render_body 把整数当列表迭代而崩。
         "page_count": page_count,
         # 混合 PDF 标记（仅 PDF 有意义；其余容器恒 False）。供 pipeline gate 整份转云 OCR。
         "mixed_pdf": mixed_pdf,

@@ -8,7 +8,12 @@ TABLE_NAME = "rag_chunks"
 
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
-    """Create the structured-RAG FTS5 table when it does not already exist."""
+    """Create the structured-RAG FTS5 table when it does not already exist.
+
+    本表仅用于 ``:memory:`` 连接（每次检索现建现用），故 ``IF NOT EXISTS`` 足够；
+    改成持久化库后列增删必须 drop + rebuild —— FTS5 虚拟表不支持 ``ALTER TABLE``，
+    老库会带着旧列静默存活。
+    """
     conn.execute(
         """
         CREATE VIRTUAL TABLE IF NOT EXISTS rag_chunks USING fts5(

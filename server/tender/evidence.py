@@ -116,7 +116,11 @@ def _annotate_page(
         container["page_kind"] = ARTIFACT_CONVERTED
     pstat = page_status(index, tier, page, norm_quote)
     if pstat == "page_mismatch":
-        summary["page_mismatch"] = summary.get("page_mismatch", 0) + 1
+        # 计的是"检出页不符"这件事，不是终态：下面每条 page_mismatch 都会被纠正成
+        # page_corrected 或降级成 page_unverified，终态永远不留 page_mismatch。
+        # 键名带 _detected 正是为此——旧名 ``page_mismatch`` 让人误读成"仍有 N 条错页
+        # 未处理"，而它其实与 page_corrected + page_unverified 的和重叠计数（review F7）。
+        summary["page_mismatch_detected"] = summary.get("page_mismatch_detected", 0) + 1
     if page is not None and index.source_names_page_unreliable_file(source):
         pstat = "page_unverified"
     elif pstat == "page_mismatch":
@@ -339,7 +343,8 @@ def resolve_audit_evidence(structured_output: Any, evidence_source: str) -> Any:
             "resolved": 0,
             "weak_match": 0,
             "unresolved": 0,
-            "page_mismatch": 0,
+            # 检出的页不符条数（= page_corrected + 因页不符降的 page_unverified，非终态）
+            "page_mismatch_detected": 0,
             "page_corrected": 0,
             "page_unverified": 0,
             "page_unverified_refs": [],
