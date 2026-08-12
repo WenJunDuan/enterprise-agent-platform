@@ -4,7 +4,8 @@ import {
   createTenderProject,
   deleteTenderTask,
   evaluateTenderProjectUpload,
-  getTenderCompareOrNull,
+  getTenderCompare,
+  triggerTenderCompare,
   listTenderProjects,
   retryTenderTask,
 } from './api'
@@ -180,16 +181,61 @@ describe('contract tender review api', () => {
     ])
   })
 
-  test('getTenderCompareOrNull treats missing compare as null', async () => {
+  // M1：「重新横比」入口 —— POST 打到 compare 端点并返回受理信息。
+  test('triggerTenderCompare posts to the compare endpoint', async () => {
     globalThis.fetch = (async (input, init) => {
       calls.push({ input, init })
-      return jsonResponse({ detail: '尚未生成横比结果，请先触发 compare' }, 404)
+      return jsonResponse({
+        request_id: 'cmp-1',
+        status: 'accepted',
+        mode: 'compare',
+        task_status_url: '/tender/projects/project-1/compare',
+      })
     }) as typeof fetch
 
-    const compare = await getTenderCompareOrNull('project-1')
+    const accepted = await triggerTenderCompare('project-1')
 
-    expect(compare).toBeNull()
     expect(calls[0]?.input).toBe('/tender/projects/project-1/compare')
+    expect(calls[0]?.init?.method).toBe('POST')
+    expect(accepted.mode).toBe('compare')
+  })
+
+  // KD2：GET 恒 200 带 status，前端不再有 404→null 分支（没算过是 status=none，不是"不存在"）。
+  test('getTenderCompare returns lifecycle status when nothing computed yet', async () => {
+    globalThis.fetch = (async (input, init) => {
+      calls.push({ input, init })
+      return jsonResponse({
+        project_id: 'project-1',
+        status: 'none',
+        error_detail: null,
+        result: null,
+        stale: false,
+      })
+    }) as typeof fetch
+
+    const compare = await getTenderCompare('project-1')
+
+    expect(compare.status).toBe('none')
+    expect(compare.result).toBeNull()
+    expect(calls[0]?.input).toBe('/tender/projects/project-1/compare')
+  })
+
+  test('getTenderCompare surfaces failed status with sanitized detail', async () => {
+    globalThis.fetch = (async (input, init) => {
+      calls.push({ input, init })
+      return jsonResponse({
+        project_id: 'project-1',
+        status: 'failed',
+        error_detail: '横比调用超时',
+        result: null,
+        stale: false,
+      })
+    }) as typeof fetch
+
+    const compare = await getTenderCompare('project-1')
+
+    expect(compare.status).toBe('failed')
+    expect(compare.error_detail).toBe('横比调用超时')
   })
 
   // A①: createTenderProject sends all 6 project fields in body
@@ -308,22 +354,21 @@ describe('contract tender review api', () => {
     expect(calls.every((call) => call.init?.method === 'POST')).toBe(true)
   })
 
-  // E②: getTenderCompareOrNull does not throw on 404 — returns null silently (no console error)
-  test('getTenderCompareOrNull does not throw on 404 and returns null silently', async () => {
+  // E②（KD2 改写）：横比未就绪不再是 404 静默 null，而是 status=none；
+  // 真 404 只剩"项目不存在"，必须抛错让用户看见，不能再吞。
+  test('getTenderCompare throws on 404 (project missing) instead of silently returning null', async () => {
     globalThis.fetch = (async () => {
-      return jsonResponse({ detail: '横比未就绪' }, 404)
+      return jsonResponse({ detail: 'Tender project not found' }, 404)
     }) as typeof fetch
 
     let thrownError: unknown = null
-    let result: unknown = 'NOT_SET'
     try {
-      result = await getTenderCompareOrNull('project-single-bidder')
+      await getTenderCompare('project-missing')
     } catch (error) {
       thrownError = error
     }
 
-    expect(thrownError).toBeNull()
-    expect(result).toBeNull()
+    expect(thrownError).toBeInstanceOf(Error)
   })
 
   // B⑥: evaluateTenderProjectUpload for append-bidder to existing project

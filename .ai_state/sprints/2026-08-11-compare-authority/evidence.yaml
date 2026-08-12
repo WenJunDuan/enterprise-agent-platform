@@ -1,0 +1,137 @@
+sprint_slug: "2026-08-11-compare-authority"
+collected_evidence:
+  - tool_use_id: "toolu_011763GaWEvs6yCGuRZbha9J"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a56af065140f2dc80/agent-front && bun test 2>&1 | tail -5"
+    timestamp: "2026-08-11T03:45:02.287Z"
+  - tool_use_id: "toolu_01GyHGuUPZMdcPpFVt67K6kZ"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a56af065140f2dc80/agent-front && bun test 2>&1 | grep -E \"^\\(fail\\)|error:\" | head -12"
+    timestamp: "2026-08-11T03:45:10.739Z"
+  - tool_use_id: "toolu_01SLZT1p37iZgT5CWddS9eke"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a56af065140f2dc80/agent-front && bun test 2>&1 | tail -4"
+    timestamp: "2026-08-11T03:45:46.233Z"
+  - tool_use_id: "toolu_01SJ1H32mGTbUdm2seEyeUeV"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a56af065140f2dc80/agent-front && bun test src/features/contract/tender-review/compare-status.test.ts 2>&1 | tail -12; grep -n \"export function mapTenderReviewData\" -A 12 src/features/contract/tender-review/model.ts | head -20"
+    timestamp: "2026-08-11T03:46:38.838Z"
+  - tool_use_id: "toolu_01UbHhwn7ixmh1r5WqdZsDaU"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a56af065140f2dc80/agent-front && bun test src/features/contract/tender-review/compare-status.test.ts 2>&1 | tail -6"
+    timestamp: "2026-08-11T03:47:10.035Z"
+  - tool_use_id: "toolu_01NNNRvGdqe1THHC1d6ZNjHg"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a56af065140f2dc80/agent-front && bun run build 2>&1 | tail -20"
+    timestamp: "2026-08-11T03:50:16.678Z"
+  - tool_use_id: "toolu_011sXwJoRw3UKpCpszAtGcby"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a56af065140f2dc80/agent-front && bun test 2>&1 | grep -B 20 \"1 fail\" | head -40"
+    timestamp: "2026-08-11T03:53:32.052Z"
+  - tool_use_id: "toolu_01GeNveHGpwY4SGoFZZrXxYT"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a56af065140f2dc80/agent-front && bun test 2>&1 | grep -A 18 \"(fail)\" | head -30"
+    timestamp: "2026-08-11T03:54:55.645Z"
+  - tool_use_id: "toolu_01T4xotss6uuzzTyEbpB7kP7"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a56af065140f2dc80/agent-front && bun test src/features/contract/tender-review/compare-status.test.ts 2>&1 | grep -A 12 \"(fail)\" | head -20"
+    timestamp: "2026-08-11T13:25:41.742Z"
+  - tool_use_id: "toolu_01ENk4W5q63urWgJSQbc4HPF"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a56af065140f2dc80/agent-front && bun test src/features/contract/tender-review/compare-status.test.ts 2>&1 | grep -B 5 -A 20 \"POST 打到\" | head -40"
+    timestamp: "2026-08-11T13:25:53.670Z"
+  - tool_use_id: "toolu_01HcHjUEx3TwftkxDrdW6fW1"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a56af065140f2dc80/agent-front && bun test 2>&1 | tail -8"
+    timestamp: "2026-08-11T13:35:33.206Z"
+  - tool_use_id: "toolu_01LBJmksxX82MLXoCZ6J5qdi"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a13794b891d0fcd1e/agent-front && bun test src/features/contract/tender-review/ocr-status.test.ts src/features/contract/tender-review/ocr-gate.test.ts 2>&1 | tail -15"
+    timestamp: "2026-08-11T14:01:36.787Z"
+  - tool_use_id: "toolu_01NiChuWafyuDpFZUvj7iDyy"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a4910ffcb97ec7942/agent-front && bun test src/features/contract/tender-review/model.test.ts 2>&1 | tail -12"
+    timestamp: "2026-08-11T14:12:46.495Z"
+  - tool_use_id: "toolu_01Fq7Sr62DK3vTrW46C5oa6E"
+    tool: "Bash"
+    result: pass
+    command: "uv run python -c \"\nimport pathlib\np=pathlib.Path('agent-front/src/features/contract/tender-review/components/analyzing-view.tsx'); s=p.read_text()\ns=s.replace(\\\"import { MarkdownView } from './markdown-view'\\\",\\\"import { isOcrUsable, ocrDotClass, ocrStatusLabel } from '../ocr-status'\\nimport { MarkdownView } from './markdown-view'\\\",1)\np.write_text(s)\nprint('ok')\n\"\ncd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a13794b891d0fcd1e/agent-front && bun test src/featur"
+    timestamp: "2026-08-11T14:12:59.732Z"
+  - tool_use_id: "toolu_01CBvsKdfBuhTk3u6eUhS6vQ"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a4910ffcb97ec7942/agent-front && bun test 2>&1 | tail -6"
+    timestamp: "2026-08-11T14:13:11.451Z"
+  - tool_use_id: "toolu_01RLNMwCNrHZu4MxcHeq6T2a"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a13794b891d0fcd1e/agent-front && bun run build 2>&1 | tail -8"
+    timestamp: "2026-08-11T14:13:12.779Z"
+  - tool_use_id: "toolu_01PzdtdAz7CtC1rw1Q38FFtN"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a4910ffcb97ec7942/agent-front && bun test 2>&1 | grep -E \"^(\\(fail\\)|error:|.*fail)\" | head -20"
+    timestamp: "2026-08-11T14:13:19.376Z"
+  - tool_use_id: "toolu_01TX2BkieZeJxYGC9u49AdDQ"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a13794b891d0fcd1e/agent-front && bun run lint 2>&1 | tail -8"
+    timestamp: "2026-08-11T14:13:26.819Z"
+  - tool_use_id: "toolu_01Kyv1MBKhiih6qx5BZBdpQ5"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a4910ffcb97ec7942/agent-front && bun run build 2>&1 | tail -8"
+    timestamp: "2026-08-11T14:13:35.675Z"
+  - tool_use_id: "toolu_0187sUqzEPvLQjeX8A2R3d6C"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a4910ffcb97ec7942/agent-front && bun install --frozen-lockfile 2>&1 | tail -2 && bun test 2>&1 | tail -3"
+    timestamp: "2026-08-12T01:48:42.547Z"
+  - tool_use_id: "toolu_01YAiNagifLgF2qonzA2qH1f"
+    tool: "Bash"
+    result: pass
+    command: "bun run build 2>&1 | tail -2 && bun run lint 2>&1 | tail -3; echo \"EXIT=$?\""
+    timestamp: "2026-08-12T01:49:15.382Z"
+  - tool_use_id: "toolu_01UMHXtwHJ3UoLhmn6DEZnmp"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a4910ffcb97ec7942/agent-front && bun test 2>&1 | tail -5"
+    timestamp: "2026-08-12T02:37:16.536Z"
+  - tool_use_id: "toolu_01AWvKBny8r19syQxMiuwbAL"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a4910ffcb97ec7942/agent-front && bun run build 2>&1 | tail -5"
+    timestamp: "2026-08-12T02:37:28.839Z"
+  - tool_use_id: "toolu_01JCpZXddUW7QRvJayR3Ncrz"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a4910ffcb97ec7942/agent-front && bun run lint 2>&1 | tail -5"
+    timestamp: "2026-08-12T02:37:39.818Z"
+  - tool_use_id: "toolu_01RFqTzvC2JkNVAYU4rP2khP"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a4910ffcb97ec7942/agent-front && bun test 2>&1 | tail -4 && bun run build 2>&1 | tail -2 && bun run lint 2>&1 | tail -3"
+    timestamp: "2026-08-12T02:55:04.356Z"
+  - tool_use_id: "toolu_0121KBt9Ve2us89e2se7do7J"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a4910ffcb97ec7942/agent-front && bun test 2>&1 | tail -4"
+    timestamp: "2026-08-12T04:20:48.955Z"
+  - tool_use_id: "toolu_019iZ74nGxt1GNUdFTf9Mo2q"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a4910ffcb97ec7942/agent-front && bun run build 2>&1 | tail -2; bun run lint 2>&1 | tail -2"
+    timestamp: "2026-08-12T04:21:07.357Z"

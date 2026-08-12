@@ -6,7 +6,10 @@ import re
 from collections.abc import Sequence
 from typing import Any
 
-from server.ocr.boq import _AMOUNT_STRICT, _PAGE_CARRY_LINES, _PAGE_RE
+from server.common.corpus import ARTIFACT_ORIGINAL
+from server.common.corpus import PAGE_ANCHOR_LINE_RE as _PAGE_RE
+from server.common.corpus import parse_page_anchor
+from server.ocr.boq import _AMOUNT_STRICT, _PAGE_CARRY_LINES
 
 _FILE_HEADER_RE = re.compile(r"^\s*###\s*文件:\s*(.*?)\s+\(kind=")
 _MARKDOWN_TITLE_RE = re.compile(r"^\s*(#{1,6})\s+(.+?)\s*$")
@@ -48,9 +51,9 @@ def scan_page_context(lines: Sequence[str]) -> tuple[list[int | None], set[int]]
     current: int | None = None
     distance = 0
     for raw in lines:
-        match = _PAGE_RE.match(raw)
-        if match:
-            current = int(match.group(1))
+        anchor = parse_page_anchor(raw)
+        if anchor is not None:
+            current = anchor[0]
             pages.add(current)
             distance = 0
             page_of.append(current)
@@ -324,6 +327,15 @@ def _file_name(block: str, explicit: str | None) -> str:
     return ""
 
 
+def _page_artifact(lines: Sequence[str]) -> str:
+    """本文档页号所属坐标系：出现过转换稿锚即 ``converted``，否则 ``original``。"""
+    for raw in lines:
+        anchor = parse_page_anchor(raw)
+        if anchor is not None and anchor[1] != ARTIFACT_ORIGINAL:
+            return anchor[1]
+    return ARTIFACT_ORIGINAL
+
+
 def build_doc_structure(block_or_body: str, *, file_name: str | None = None) -> dict[str, Any]:
     """Build a schema-shaped document structure from a pipeline extraction block."""
     lines = (block_or_body or "").splitlines()
@@ -331,6 +343,9 @@ def build_doc_structure(block_or_body: str, *, file_name: str | None = None) -> 
     return {
         "file": _file_name(block_or_body or "", file_name),
         "page_count": max(pages) if pages else None,
+        # 页号所属坐标系（H2 pass1 F3）：一份文档整体属同一 artifact，下游 RAG chunk 据此
+        # 渲染锚点，避免转换稿页号在检索链路上再次冒充原文档页。
+        "page_artifact": _page_artifact(lines),
         "chapters": parse_chapters(lines, page_of),
         "entities": extract_entities(lines, page_of),
         "tables": merge_tables(lines, page_of),

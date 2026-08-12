@@ -20,7 +20,11 @@ import re
 import sys
 from pathlib import Path
 
-_PAGE_RE = re.compile(r"^\s*【第\s*(\d+)\s*页】\s*$")
+# 页锚点协议的**真相源**是 server/common/corpus.py（PAGE_ANCHOR_LINE_RE / parse_page_anchor）。
+# 本 skill 以独立脚本分发（不 import 服务端包），故复刻一份；改锚点格式时两处必须同改，
+# 否则 converted 文件的 --pages 过滤会静默返回空（H2 pass1 F5）。
+# 变体：【第 N 页】原件 / 【转换稿第 M 页】Office→PDF 转换稿 / 【第 3-5 页】RAG 区间锚。
+_PAGE_RE = re.compile(r"^\s*【(?:转换稿)?第\s*(\d+)(?:\s*-\s*\d+)?\s*页】\s*$")
 
 
 def _slice_pages(body: str, spec: str) -> str:

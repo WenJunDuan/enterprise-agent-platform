@@ -23,7 +23,11 @@ _CACHE_DIR = DATA_ROOT / "ocr-cache"
 # （扫描页空白），与新键不同的 result——若不 bump，同内容文件命中旧缓存会绕过子集 OCR。
 # v3：文档分诊/老 Word 读取路径修复。旧缓存可能把可直读的 .doc 固化成 manual，必须整体失效。
 # v4：后端镜像补齐 catdoc。v3 可能已经缓存了无转换器时的 UTF-16 二进制噪声，不能复用。
-_CACHE_VERSION = "v5"
+# v5：全格式直读 + OCR 兜底路由梯（0730 demo-full-doc-ocr），旧缓存里 Office 件多为 manual。
+# v6：页溯源（H2 page-provenance）。产物新增 page_confidence/page_count_* 字段、convert 路由页锚
+#     改 ``【转换稿第M页】``、pdf 表格带 page 并挂到所属页锚下——旧 v5 缓存的是"转换页冒充原文档页
+#     + 表格无锚拼尾"的底稿，复用会让本 sprint 的页码修复静默失效。部署后每文件重跑一次。
+_CACHE_VERSION = "v6"
 
 
 def _engine_fingerprint() -> str:

@@ -53,3 +53,20 @@ stage 由 ship 回退 plan(sprint 本体确未 ship, 之前切 ship 是记账错
 (main 4dbf829); 全部验收证据在 `sprints/2026-07-18-prompt-single-source/`(route-note.md /
 spike/verify-results.jsonl)与 roadmap items.yaml decisions_made。本 proposals 提交后 main 领先
 origin 1 个 .ai_state 记账 commit(plan 态 push 被 pre-bash-guard 挡, 属预期), 下个 ship 窗口随行推送。
+
+### P14 · 跨机合入已 ship 的 sprint 会被 generator 台账卡死 Stop (2026-08-11)
+
+实况: sprint `2026-07-30-demo-full-doc-ocr` 在远端机器完整走完 System 契约并部署(评审 pass1-7 /
+cleanup-pass / tdd-evidence 均已提交), 远端 `_index.md` 停在 `stage=ship` 随 git 合入本机。本机
+fast-forward 合并(dd664a8→4d0a54c)后, 每次 Stop 都对该 sprint 重跑 ship 全契约, 而
+`subagent-assignments.jsonl` / `subagent-events.jsonl` 是 subagent-tracker hook 写在**执行机本地**、
+未随 git 提交的台账 → 本机结构性缺失, 无合法产出路径(补造派工记录=伪证, 门禁自己禁止)。
+
+本次处置(不绕过): 按 delivery-gate P8 idle 合法态, 把 `_index.md` 的 path/stage/current_sprint_slug
+清空释放(该 sprint 确已在远端 ship, 证据链在 sprint 目录与部署 docs commit 24a933d/4d0a54c);
+顺带清掉指向远端机器路径的 active_worktrees 残留。
+
+候选解(下版评估): ① ship 收口时把两份 subagent jsonl 台账纳入 sprint 目录提交(与 reviews 同级,
+本就在 gate 的 allowedExact 白名单); ② delivery-gate 识别「合入态」— reviewed commit 已是
+origin/main 祖先且非本机产出时, 降为只读校验; ③ ship 完成后由 hook 自动把 _index 置 idle,
+不把 stage=ship 留给下一台机器。倾向①+③组合: ①让证据可迁移, ③消除跨机残留态。

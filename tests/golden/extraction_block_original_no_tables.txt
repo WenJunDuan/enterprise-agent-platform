@@ -1,0 +1,13 @@
+### 文件: 招标文件.pdf (kind=pdf_text, route=native)
+【第 1 页】
+第一页正文
+
+【第 3 页】
+第三页正文
+
+### 文件: 扫描件.jpg (kind=ocr, route=ocr)
+【第 1 页】
+扫描第一页
+
+【第 2 页】
+扫描第二页

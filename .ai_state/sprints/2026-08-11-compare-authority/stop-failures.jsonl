@@ -1,0 +1,6 @@
+{"schema_version":1,"event":"StopFailure","error":"server_error","is_interrupt":false,"duration_ms":null,"timestamp":"2026-08-12T02:29:19.812Z"}
+{"schema_version":1,"event":"StopFailure","error":"server_error","is_interrupt":false,"duration_ms":null,"timestamp":"2026-08-12T04:31:27.377Z"}
+{"schema_version":1,"event":"StopFailure","error":"server_error","is_interrupt":false,"duration_ms":null,"timestamp":"2026-08-12T04:58:16.136Z"}
+{"schema_version":1,"event":"StopFailure","error":"server_error","is_interrupt":false,"duration_ms":null,"timestamp":"2026-08-12T05:00:42.184Z"}
+{"schema_version":1,"event":"StopFailure","error":"server_error","is_interrupt":false,"duration_ms":null,"timestamp":"2026-08-12T02:39:07.567Z"}
+{"schema_version":1,"event":"StopFailure","error":"server_error","is_interrupt":false,"duration_ms":null,"timestamp":"2026-08-12T03:01:07.285Z"}
