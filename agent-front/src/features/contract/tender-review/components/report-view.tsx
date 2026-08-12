@@ -1,7 +1,7 @@
 import { ArrowLeft, Printer } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { getAdvisoryLabel } from '../model'
+import { formatEvidenceSourceLabel, getAdvisoryLabel } from '../model'
 import type {
   IssueCategory,
   IssueItem,
@@ -618,7 +618,11 @@ function EvidenceText({ evidence }: { evidence: TenderScoreEvidence[] }) {
     <div className='mt-2 text-xs leading-5 text-muted-foreground'>
       {evidence.map((item, index) => (
         <div key={index}>
-          {[item.source, item.finding, item.conclusion]
+          {[
+            formatEvidenceSourceLabel(item.source, item.page_kind),
+            item.finding,
+            item.conclusion,
+          ]
             .filter(Boolean)
             .join('：')}
         </div>
@@ -636,7 +640,10 @@ function EmptySectionText({ children }: { children: React.ReactNode }) {
 }
 
 function getEvidenceSources(evidence: TenderScoreEvidence[]) {
-  const sources = evidence.map((item) => item.source).filter(Boolean)
+  // 转换稿页号在主视图也要显式标注，否则复核人照着翻原件必然对不上（H2 pass1 M1）
+  const sources = evidence
+    .map((item) => formatEvidenceSourceLabel(item.source, item.page_kind))
+    .filter(Boolean)
   return sources.length ? sources.join('、') : '—'
 }
 

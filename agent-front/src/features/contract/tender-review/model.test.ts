@@ -9,6 +9,7 @@ import {
   buildTenderReviewData,
   deriveReviewDimension,
   filterReviewHistory,
+  formatEvidenceSourceLabel,
   getAdvisoryLabel,
   mapTenderProject,
 } from './model'
@@ -2052,5 +2053,26 @@ describe('contract tender review model', () => {
     expect(checklist.find((i) => i.requirement === '必交材料')?.status).toBe(
       'unmet'
     )
+  })
+})
+
+describe('evidence source page provenance (H2)', () => {
+  test('marks converted-draft page numbers as not original document pages', () => {
+    expect(
+      formatEvidenceSourceLabel('投标文件.docx 转换稿第 3 页', 'converted')
+    ).toBe('投标文件.docx 转换稿第 3 页（原文档页号不可用）')
+  })
+
+  test('detects converted citations even when page_kind is absent', () => {
+    expect(formatEvidenceSourceLabel('投标文件.docx 转换稿第 3 页')).toBe(
+      '投标文件.docx 转换稿第 3 页（原文档页号不可用）'
+    )
+  })
+
+  test('leaves original-page citations untouched', () => {
+    expect(formatEvidenceSourceLabel('投标文件.pdf 第 3 页')).toBe(
+      '投标文件.pdf 第 3 页'
+    )
+    expect(formatEvidenceSourceLabel(undefined)).toBe('')
   })
 })

@@ -20,6 +20,7 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             tag UNINDEXED,
             page_start UNINDEXED,
             page_end UNINDEXED,
+            page_artifact UNINDEXED,
             tokenize='trigram'
         )
         """
@@ -38,9 +39,11 @@ def insert_rows(conn: sqlite3.Connection, rows: list[dict]) -> None:
     conn.executemany(
         """
         INSERT INTO rag_chunks (
-            chunk_text, chunk_id, file, chapter_path, chapter_title, tag, page_start, page_end
+            chunk_text, chunk_id, file, chapter_path, chapter_title, tag, page_start, page_end,
+            page_artifact
         ) VALUES (
-            :chunk_text, :chunk_id, :file, :chapter_path, :chapter_title, :tag, :page_start, :page_end
+            :chunk_text, :chunk_id, :file, :chapter_path, :chapter_title, :tag, :page_start,
+            :page_end, :page_artifact
         )
         """,
         rows,
@@ -56,7 +59,7 @@ def query_rows(
     cur.row_factory = sqlite3.Row
     sql = """
         SELECT chunk_id, file, chapter_path, chapter_title, tag, page_start, page_end,
-               chunk_text, bm25(rag_chunks) AS rank
+               page_artifact, chunk_text, bm25(rag_chunks) AS rank
         FROM rag_chunks
         WHERE rag_chunks MATCH ?
     """

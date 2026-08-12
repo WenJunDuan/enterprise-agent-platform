@@ -658,6 +658,29 @@ function buildCategories(result?: AuditResult | null): ReviewCategoryData[] {
   }))
 }
 
+/** 转换稿出处：底稿页锚形如「转换稿第M页」，或结论显式带 page_kind=converted。 */
+const CONVERTED_SOURCE_RE = /转换稿\s*第\s*\d+\s*页/
+
+/**
+ * 渲染证据出处标签，转换稿页号显式说明其非原文档页。
+ *
+ * Office 文件经 LibreOffice 转 PDF 后识别，转换稿分页 ≠ 原文档分页，页号无法回查原件——
+ * 直接展示会让复核人翻错页（H2 page-provenance KD2）。
+ *
+ * @param source - 结论里的出处字符串。
+ * @param pageKind - 后端标注的页坐标系（缺省视为 original，存量兼容）。
+ * @returns 可直接展示的出处标签；source 为空时返回空串。
+ */
+export function formatEvidenceSourceLabel(
+  source?: string | null,
+  pageKind?: string | null
+): string {
+  const text = source ?? ''
+  if (!text) return ''
+  const converted = pageKind === 'converted' || CONVERTED_SOURCE_RE.test(text)
+  return converted ? `${text}（原文档页号不可用）` : text
+}
+
 function buildParagraphs(
   result?: AuditResult | null,
   scoringItems: TenderScoringItem[] = buildScoringItems(result)
@@ -684,7 +707,9 @@ function buildParagraphs(
   if (evidence.length) {
     return evidence.map((item, index) => ({
       loc: index,
-      label: item.source || `证据 ${index + 1}`,
+      label:
+        formatEvidenceSourceLabel(item.source, item.page_kind) ||
+        `证据 ${index + 1}`,
       text: [item.finding, item.conclusion].filter(Boolean).join('；'),
     }))
   }
@@ -1326,6 +1351,7 @@ function buildEligibilityEvidence(raw: UnknownRecord): TenderScoreEvidence[] {
       conclusion: item.conclusion?.trim(),
       condition: item.condition?.trim(),
       points: item.points ?? null,
+      page_kind: item.page_kind,
     }
     if (
       !normalized.source &&
@@ -1850,6 +1876,7 @@ function buildScoringEvidence(
       conclusion: item.conclusion?.trim(),
       condition: item.condition?.trim(),
       points: item.points ?? null,
+      page_kind: item.page_kind,
     }
     if (
       !normalized.source &&
