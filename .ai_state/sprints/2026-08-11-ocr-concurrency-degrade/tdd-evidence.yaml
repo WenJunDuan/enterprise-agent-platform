@@ -186,16 +186,36 @@ records:
       补 wait_cap_reached 端到端用例（F8）。
     green_observed_at: "2026-08-12T07:52:00Z"
 
+  - id: pass3-N1-N2-N3-N4-N6-rerun-safety
+    ac_refs: [AC2, AC3, AC7]
+    test_file: tests/test_tender_doc_rerun.py, tests/test_tender_prewarm_oracle.py
+    red_command: uv run pytest tests/test_tender_doc_rerun.py -q -p no:randomly
+    red_summary: >-
+      collection error（ImportError: server.tender 无 doc_rerun）——N4 模块未拆；随后逐条实测：
+      N1 补跑失败后 ocr_text 被 run_bid_doc_ocr 的失败分支写成 NULL 且 status=failed（旧 restore
+      只回滚 status 且因"补跑正常返回"根本不触发）；N2 project 成功 + bid 超时会把 project 刷回
+      degraded；N3 rerun_budget_sec 无 spent_sec 生产调用方，等满上限后预算不收缩。
+    red_observed_at: "2026-08-12T08:09:10Z"
+    green_command: >-
+      uv run pytest tests/test_tender_doc_rerun.py tests/test_tender_prewarm_oracle.py
+      tests/test_tender_doc_ocr_status.py tests/test_ocr_doc_report.py -q -p no:randomly
+    green_summary: >-
+      全绿（新文件 5 passed）。快照 + 逐段结算：补跑失败后 text/status/failed_files 三者都回到
+      补跑前值（真实 store 行 + 真实 run_*_doc_ocr，仅换 prewarm_and_report）；补跑成功不被回滚；
+      project 成功 + bid 超时只回滚 bid；超时后行不停在 running；rerun_budget_sec(spent=400)
+      < fresh/2 且下界 1s；runner 实测 elapsed 透传（断言 spent_sec > 0）。
+      doc_rerun.py 234 行 / doc_layer.py 234 行，均在 300 硬线内（N4）。
+    green_observed_at: "2026-08-12T08:22:00Z"
+
 final_verification:
-  collected: 1232   # 1162 基线 + 60（pass1）+ 10（pass2 返工新增）
-  full_suite: "33 failed, 1196 passed, 3 skipped —— 与基线清单 diff 为空（NO_NEW_FAILURES）"
+  collected: 1237   # 1162 基线 + 60（pass1）+ 10（pass2）+ 5（pass3 doc_rerun）
+  full_suite: "33 failed, 1201 passed, 3 skipped —— 与基线清单 diff 为空（NO_NEW_FAILURES）"
   ruff: "uv run ruff check server/ tests/ → All checks passed"
   frontend: "bun test 76 pass / bun run build 成功 / bun run lint 无输出"
   line_budgets: >-
-    engine.py 887→931 (+44 ≤60)；pipeline.py 791→852 (+61，超 1 行，见下)；runner.py 328→318 (-10 ≤40)；
-    doc_pipeline.py 472→489（pass2 F5 从 532 收回，不再自授豁免）；
-    新文件 vlm_client.py 117、doc_layer.py 361、prewarm_scheduler.py 177、ocr-status.ts 92。
-    pipeline.py 净增 61 行（上界 60，超 1 行）：pass2 F6 加的 OcrDocReport.problem_files（含
-    docstring 11 行）所致，未再拆分——拆一个 11 行 property 出去只会制造无消费者的模块；
-    留 evaluator 裁定。doc_layer.py 361 行 > 300：pass2 F3 的预算/去重/状态恢复三段所致，
-    与 engine/pipeline 同属"迁移期豁免"面，polish 或 OCR 服务化时一并处理。
+    全部上界与硬线在 pass3 后均已闭合，无自授豁免：
+    engine.py 887→931 (+44 ≤60)；pipeline.py 791→851 (+60 ≤60，N5 压 docstring 后机械闭合，
+    实测 `git diff --numstat` = 68/8)；runner.py 328→327 (-1 ≤40)；
+    doc_pipeline.py 472→489（pass2 F5 从 532 收回）；
+    新文件 vlm_client.py 117、doc_layer.py 234、doc_rerun.py 234、prewarm_scheduler.py 177、
+    ocr-status.ts 92 —— 均 <300（pass3 N4 把补跑写侧从 doc_layer 361 行里拆出）。

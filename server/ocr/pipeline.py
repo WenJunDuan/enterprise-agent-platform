@@ -764,10 +764,10 @@ class OcrDocReport(NamedTuple):
 
     @property
     def problem_files(self) -> tuple[str, ...]:
-        """失败 + 降级文件的合并清单（保序去重）。
+        """失败 + 降级文件的合并清单（保序去重）；落库与结论 warning 都用这一份。
 
-        落库与结论 warning 都用这一份：用户要知道的是"哪些材料的底稿不可靠"，
-        "彻底没读出来"和"用兜底引擎凑合读出来"对评分项的影响是同一类（证据可能不完整）。
+        用户要知道的是"哪些材料的底稿不可靠"——"彻底没读出来"和"用兜底引擎凑合读出来"
+        对评分项的影响是同一类（证据可能不完整）。
         """
         merged = list(self.failed_files)
         merged.extend(name for name in self.degraded_files if name not in merged)
@@ -788,13 +788,12 @@ def summarize_ocr_results(results: list[dict], text: str) -> OcrDocReport:
 
     优先级 failed > partial > degraded > ready：
 
-    - ``failed``：底稿无任何真实内容行（全失败 / 空目录）——读层绝不能拿它当底稿。
+    - ``failed``：底稿无任何真实内容行（全失败/空目录）——读层绝不能拿它当底稿。
     - ``partial``：有文件识别失败，或某文件渲染中途失败只出了部分页（KD6）。
     - ``degraded``：底稿完整但含 Tesseract 降级段——不得以 ready 永久落库（0730 KD3 只挡了
       文件缓存层，doc 层 DB 是漏的那一半）。
 
-    判据取自**结构化产物**而非回读渲染文本：degraded/partial 是引擎侧事实，文本里只有渲染痕迹，
-    回读解析会随渲染格式漂移。
+    判据取自**结构化产物**而非回读渲染文本：后者只有渲染痕迹，解析会随渲染格式漂移。
     """
     failed = tuple(_result_file_name(r) for r in results if r.get("kind") == "error")
     partial = tuple(_result_file_name(r) for r in results if r.get("partial") is True)

@@ -392,6 +392,12 @@ CPU/内存、restart policy 与旧容器严格一致；后端 `/health` 和前�
    进程重启遗留的僵尸 `running` 因心跳停摆而变陈旧，评标按 failed 处理并立刻走 inline。
    若看到"评标不等预热直接 inline"，先查该行 `updated_at` 是不是已经陈旧。
 
+4. **补跑超时后闸可能短暂超额**。评标对 degraded/partial 底稿会自动补跑一次，补跑有预算上限；
+   超时放弃时协程被取消、上传闸名额立刻归还，但**底层 OCR 线程仍在跑完当前文件**。因此超时后的
+   几十秒内，实际在途的 OCR 可能比 `OCR_PREWARM_MAX` 允许的多一两个。这是已知边界（任务级抢占
+   要等 OCR 服务化才能干净做到），表现为短时负载尖峰，不影响正确性；持续超额则应查是不是补跑
+   被反复触发（同一 doc 反复 degraded）。
+
 相关环境变量：`OCR_EXECUTOR_WORKERS`（OCR 命名线程池，默认 4；OCR 不再占用 asyncio 默认池，
 状态写库不会被 OCR 饿死）、`OCR_VL_MAX_CONCURRENCY`（逐页 VLM 客户端并发闸，默认 4，
 现在对 openai-compatible 端点真正生效）、`OCR_PREWARM_STALE_SEC`。
