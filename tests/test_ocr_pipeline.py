@@ -393,7 +393,8 @@ def test_ocr_cache_version_bump_invalidates_stale_manual_result(tmp_path, monkey
     """缓存版本升级后，旧版本的 manual 结果不能继续遮蔽当前直读/OCR。"""
     import server.ocr.cache as cache
 
-    assert cache._CACHE_VERSION == "v5"
+    # H2 page-provenance：底稿结构变更（转换稿锚 / 表格挂页 / page_confidence）随行 bump v5→v6
+    assert cache._CACHE_VERSION == "v6"
     monkeypatch.setattr(cache, "_CACHE_DIR", tmp_path / "ocr-cache")
     monkeypatch.setattr(cache, "OCR_CACHE_ENABLED", True)
     doc = tmp_path / "招标文件.doc"

@@ -93,6 +93,22 @@
 - **真因**：规则文件的 **文件名、`category` 字段、`rule_id` 前缀必须三者一致**。`server/platform/asset_validation.py` 强校验：`category == 文件名(去.rules.json)`，`rule_id` 以 `{domain}_{category}_` 开头。
 - **解法**：三者对齐。例：接待规则文件名 `entertainment.rules.json` → `category: entertainment` → `rule_id: expense_entertainment_NNN`（不要文件名叫 reception 而 category 叫 entertainment）。
 
+### D0. 【部署预告 · H2 页锚溯源】converted 页号行为变化 + OCR 缓存 v6 全量重跑
+本版（sprint `2026-08-11-page-provenance`）上线后有两个**预期内**的可见变化，事先知会用户，勿当故障：
+
+1. **Office 文件（docx/xls/ppt 等）的证据页号变了**。这类文件走 LibreOffice 转 PDF 后识别，
+   页号本就是**转换稿页号**（LibreOffice 分页 ≠ Word 分页），旧版把它当原文档页展示，用户照着翻
+   原件必然对不上。现在如实标注：底稿文件头写 `已转换为PDF识别, 页号为转换稿页号`，锚点为
+   `【转换稿第M页】`，结论出处写「转换稿第M页」，前端显示「（原文档页号不可用）」。
+   要核这类页，须在**同版本容器内用同参数 LibreOffice** 重新转换后再翻转换稿（见 ocr-page skill）。
+2. **OCR 缓存版本 v5 → v6，旧缓存整体失效**。底稿结构变了（转换稿锚 / 表格挂到所属页锚下 /
+   `page_confidence` 字段），复用 v5 会让本次页码修复静默失效。部署后**每个文件首次访问会重跑一次
+   识别**（扫描件明显变慢，属一次性成本），之后恢复缓存命中。无需手工清理 `data/ocr-cache`，
+   版本号已进缓存键；磁盘吃紧时可自行删旧目录。
+
+另：云 OCR 返回页数与文档页数不一致时，该文件底稿头会出现 `[⚠页号存疑…]`，结论里其证据页号标
+`page_unverified` —— 这是新增的守卫告警，不是识别失败。
+
 ### D2. 规则文件改了但审核没用上
 - **真因**：`knowledge/` 是**挂载目录**，要同步到目标机 `/opt/application/audit-agent/knowledge/`；它被 gitignore，不在镜像/仓库里。
 - **说明**：内联 `/audit` 直接 glob `knowledge/expense/*.json` 注入 prompt，**不调用任何 skill**（skill 是旧编排流的废弃脚手架，删了不影响审核）。

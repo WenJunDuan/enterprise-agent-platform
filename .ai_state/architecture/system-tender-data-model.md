@@ -35,8 +35,14 @@ tender_projects (招标项目实体)
 4. **名册 = results.project_id ∪ 活跃 tender_tasks**（codex P1.1 Phase1）：删任务后已完成投标人仍从
    results 显示（结论 durable，独立于任务删除）。
 5. **回看独立于任务**：`GET /projects/{id}/results/{request_id}` 直读 results.payload，删任务后仍可取完整结论。
-6. **criteria 一致性 + stale**（codex P1.4/P2.6）：收集**全量**各家 criteria hash；不一致标
-   `criteria_inconsistent`→命令 manual_review；input_signature 覆盖参与集+全量 hash，追加/重评后旧 compare 标 stale。
+6. **criteria 可比性 = 版本引用 + stale**（2026-08-11 compare-authority 替换旧"全量 hash 字节等价"判据）：
+   项目权威 criteria 的 `criteria_version` 为 compute-on-read 内容 hash（runner 注入与 collect 共用同一函数）；
+   各家结论携带 `criteria_ref{version, source: project|self_parsed}`，可比 ⇔ ref 同 version 且等于当前权威。
+   self_parsed/存量无 ref 结论**逐家排除**（`exclusion_reason=criteria_stale`，其余 ≥2 家照比），可比家数 <2 才
+   整池 `insufficient_comparable_bidders` 转人工；报价护栏（缺失/≤0/非有限 → `bid_price_invalid` 逐家排除，
+   数量级差 ≥100 倍 → `bid_price_unit_mismatch` 整池转人工，不自动换算单位）。触发已后端化（评标终态落库后
+   自动入队，loop 线程内 check-then-act 原子），`GET /projects/{id}/compare` 恒 200 暴露
+   none/pending/running/failed(脱敏 error_detail)/ready + stale；追加/重评后旧 compare 标 stale 并自动重算。
 7. **推荐终局护栏**（codex P1.5）：`recommended` 可 null + `provisional` + `warnings`；仅排名第一明确+无异常低价+
    有效投标≥3+国有资金(evalmethod_013) 才给终局推荐；详情联动须 `provisional is False and recommended` 才展示。
 

@@ -5,6 +5,18 @@ allowed-tools: Read, Glob, Skill, Task
 
 读取指定投标目录（含招标文件 + 投标文件各章节），**在当前会话内一次性完成评标并直接输出最终结论**。**若服务端已注入「OCR/直读底稿」**（确定性预处理文本，带 `【第N页】` 页锚点，并已按评标目的重点还原评分标准/扣分细则表格）**则优先使用它**；必要时再 `Read` 原文件（PDF/图片/文本均可）核验定位。
 
+### 出处页号书写规则（硬性，页锚溯源）
+
+底稿里页锚有两种坐标系，**出处必须照抄底稿里实际出现的那一种，不得互换、不得臆造**：
+
+- `【第 N 页】`（原件直读/扫描）→ 出处写 `文件名 第N页`。
+- `【转换稿第 M 页】`（文件头标注 `已转换为PDF识别, 页号为转换稿页号`；Office 文件转 PDF 后识别，
+  **原文档页号不可知**）→ 出处写 `文件名 转换稿第M页`，并给该条 `evidence_chain` 条目加
+  `"page_kind": "converted"`。**严禁**把转换稿页号写成 `第M页` 冒充原文档页。
+- **该文件在底稿里根本没有页锚**（native word/excel 整份直读）→ 出处**只写文件名 + 章节/标题**，
+  **不要编页号**；回查按文件级逐字原文判定，不写页号不扣分，编造页号反而会被标记不可核实。
+- 文件头带 `[⚠页号存疑…]` 的文件：页号仅供参考，出处照写但结论里该页号会被标 `page_unverified`。
+
 ## 执行方式（单 agent 内联五步，少往返）
 
 为把单次评标压进可控时延，**默认不 spawn 子 agent**，由你在本会话内连续完成 S0–S4。仅当投标章节特别多、单会话读不下时，才用 `Task` 把 S2 事实抽取按章节并行拆给子 agent，再合并。
@@ -59,6 +71,7 @@ allowed-tools: Read, Glob, Skill, Task
   - `manual`：外部数据未提供、截图/扫描件读不清、主体库/信用中国/动态监管需在线核验、材料疑似存在但无法确认时，标人工核验；不得据“上下文没给外部结果”直接判失败。
   - 若招标文件明显存在资格审查章节但 `criteria.eligibility_rules[]` 为空，说明 S1 漏抽，必须先回到 S1 补抽；不要让 Python 或服务端兜底猜规则。
 - 对照 S1 的 `criteria` 每一项，结合事实底稿（必要时按页锚点 `【第N页】` 回读原文）判定，写入 `extracted_data.scoring`，每项 `{item, max, score, status, score_mode, basis, …按 mode 的明细}`（`item`/`max`/`score_mode` 与 criteria 对应项一致）。**按该项 `score_mode` 判分**：
+  - ⚠ **凡 `score:null` 的项，必须同时给 `pending_reason`（硬性，缺失或取值不在枚举内 → 整单契约失败）**：`cross_bid`（需全部投标报价一起横比，如价格分）/ `external_data`（需外部数据，如企业信用查询结果）/ `live_event`（需现场答辩、演示、样品评审）/ `evidence_unresolved`（材料疑似已提供但底稿读不清、未还原、未定位到）/ `manual_mode`（该项评分方式本身是主观人工项，`score_mode:manual`）/ `non_responsive`（投标实质性不响应、该维度无任何可评事实）。`score` 非 null 的项**不要**写该字段。选最贴切的一个，不要用 `evidence_unresolved` 兜住一切。
   - `deduction`（满分扣减）→ **逐条核对该项 `deductions`**：命中写一条 `deduction_hits`：`{deduction_id 回链, condition, points_each, times 命中次数, deducted 本条共扣, evidence:{source 文件+第N页+章节, quote 触发扣分的投标原文片段}}`，未命中不写。`score = max − Σdeducted`（≥0，完全满足=max）。**已识别的每个问题点都要落成一条 `deduction_hits` 并摘上下文 quote**，禁止笼统"扣X分"或只写"不通过"。
   - `banded`（档次给分，优10良7中4 等离散档）→ 依 `bands` 选档写 `selected_band:{level, points, reason}`，`score = 该档 points`。**档次分是离散给分，不要伪造扣分明细**（那个 7 分不是"扣 3 分"）。
     - **主观档次项（`evaluator_type=subjective`，如技术方案「完整/较完整/基本」、应急响应「完善/部分」）**：`selected_band` 是**初评建议分**，须带 low_confidence，`reason` 写清归此档的依据，并在 `explanation` 注明「主观项为初评建议，最终以评委会评分为准」——**不冒充客观确定分**。
@@ -105,7 +118,7 @@ allowed-tools: Read, Glob, Skill, Task
 2. `claim_id` 为**投标人稳定标识**（优先统一社会信用代码，次投标人名称），便于 server 按投标人追加 / 去重；并把**招标项目标识**写入 `extracted_data.tender_project_id`（优先招标编号，次项目名），供 server 按招标分组、横向比较。
 3. `explanation` / `reasons` / `evidence_chain` 用中文，措辞平实、专业、克制（像评标/审计意见）：禁用夸张或口语词（硬伤、铁证、实锤等），定性留有余地（用"疑似/需人工核实"，证据不确凿不下终局结论）。
 4. `manual_review` 时，`explanation` 必须写明哪些评分项不能自动判定、缺什么材料、哪条规则无法闭合，并填 `manual_review_reason`（只能取 `missing_approval` / `rule_gap` / `data_conflict` / `insufficient_evidence` / `budget_exceeded` / `invoice_invalid` / `pre_approval_mismatch` 之一最贴切者）。
-5. `extracted_data.eligibility_checks` 为最高优先级资格审查结果，必须先于 `scoring` 产出；`extracted_data.scoring` 为逐评分项 `{item, max, score, status, score_mode, basis, …按 mode 的 deduction_hits/selected_band/award_hits}`。资格审查不计入合计，未判定评分项 `score:null` 不计入合计。废标/资格走 `extracted_data.disqualification_hits` / `eligibility_checks`（独立 gate，**不混入 scoring**）。并在文字中说明需要什么外部输入（现场记录/外部评价表/全部投标报价）。
+5. `extracted_data.eligibility_checks` 为最高优先级资格审查结果，必须先于 `scoring` 产出；`extracted_data.scoring` 为逐评分项 `{item, max, score, status, score_mode, basis, pending_reason（仅 score=null 时必填）, …按 mode 的 deduction_hits/selected_band/award_hits}`。资格审查不计入合计，未判定评分项 `score:null` 不计入合计。废标/资格走 `extracted_data.disqualification_hits` / `eligibility_checks`（独立 gate，**不混入 scoring**）。并在文字中说明需要什么外部输入（现场记录/外部评价表/全部投标报价）。
 6. 只返回一个 JSON 对象，直接符合 `audit-result` 契约；不要输出 Markdown、表格、前言或任何 JSON 之外的文字。
    - **整个回复必须是单个 JSON 对象**：**首字符是 `{`、末字符是 `}`**；分析/思考只能写在 `<think></think>` 内，`</think>` 之后只准有这一个 JSON 对象；**禁止任何英文散文、要点列表或 JSON 之外的解释性文字**（违反会致服务端解析失败、整单评标失败）。
    - **JSON 合法性（极重要，违反会致解析失败）**：字符串值内引用项目名 / 项目号 / 投标人 / 评分项时，**一律用中文引号「」或『』**，**严禁在字符串值里用半角双引号 `"`**（会提前闭合字符串、破坏 JSON）；确需则转义为 `\"`。例：写 `"未响应「华为南通」项目"`，不要写 `"未响应"华为南通"项目"`。

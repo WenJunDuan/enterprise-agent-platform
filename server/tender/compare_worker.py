@@ -1,10 +1,11 @@
 """Background execution for tender price-comparison (project-level cross-bid).
 
-收集招标项目下所有 completed 投标人结论(``results``)→校验各家 criteria 一致→组装
-``/tender-compare`` 输入→调命令(``archive_to_results=False``，不污染 ``results``，codex P1.1)
-→把横比结论存 ``tender_compare_results``(带输入签名供 stale，codex P2.6)。
+本模块只管**任务生命周期**：并发闸 → 组装输入（判据在 ``server.tender.compare_input``）→
+调命令(``archive_to_results=False``，不污染 ``results``，codex P1.1) → 服务端护栏兜底 →
+把横比结论存 ``tender_compare_results``(带输入签名供 stale，codex P2.6)。
 
 任务状态机走独立的 ``tender_compare_tasks`` 表(codex P1.2)，与单投标人评标任务隔离。
+横比的触发不再依赖前端在场：评标 worker 每家终态后调 ``maybe_schedule_compare``（KD2）。
 """
 
 from __future__ import annotations
@@ -12,22 +13,22 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import math
 import os
 from typing import Any
 
 from server.common.command_adapter import run_command_json
 from server.platform.logging_setup import logging_context
-from server.stores.request_store import utc_now
-from server.stores.result_store import list_results_by_project
+from server.stores.request_store import new_request_id, utc_now
 from server.stores.session_store import new_conversation_id
 from server.stores.tender_compare_store import (
-    CompareSignature,
-    compute_criteria_hash,
+    compute_input_signature,
+    get_compare_result,
     upsert_compare_result,
 )
 from server.stores.tender_compare_task_store import list_compare_tasks, upsert_compare_task
 from server.stores.tender_project_store import get_project
+from server.tender.compare_guard import COMPARE_TIMEOUT_REASON, enforce_compare_guardrails
+from server.tender.compare_input import collect_compare_input
 
 logger = logging.getLogger(__name__)
 
@@ -51,145 +52,71 @@ def has_active_compare(tenant: str, project_id: str) -> bool:
     )
 
 
-def collect_compare_input(
+def current_compare_signature(
     tenant: str, project_id: str, project: dict[str, Any]
-) -> tuple[dict[str, Any], CompareSignature] | None:
-    """收集 completed 投标人评分事实 → ``/tender-compare`` 输入 + 输入签名。
+) -> str | None:
+    """当前参与集的输入签名；池内结论不足 2 条（无法 compare）时 None。"""
+    collected = collect_compare_input(tenant, project_id, project)
+    if collected is None:
+        return None
+    _input, signature = collected
+    return compute_input_signature(signature.input_result_ids, signature.criteria_hash)
 
-    返回 None 表示参与的 completed 投标人 < 2（compare 无意义，调用方回 400）。
-    各家 criteria 取出算 hash 作一致性指纹（codex P1.4/P2.6）；具体一致性判定交 Claude。
+
+def compare_recompute_needed(tenant: str, project_id: str) -> bool:
+    """当前参与集是否需要（重新）横比 —— **只读判定，可在工作线程执行**。
+
+    两个闸：参与集 ≥2 家可组池；输入签名相对已存结果**有变**（签名未变说明现有横比结果
+    仍对应当前参与集，重算是纯浪费）。"在途去重"不在这里判——那一步必须与"写 accepted 行"
+    在同一线程内不可分割地做（见 ``_schedule_if_idle``），放这里会留 TOCTOU 窗口。
+
+    Args:
+        tenant: 租户作用域。
+        project_id: 招标项目 ID。
     """
-    rows = list_results_by_project(tenant, project_id, limit=200)
-    bidders: list[dict[str, Any]] = []
-    result_ids: list[str] = []
-    criteria_seen: Any = None
-    criteria_entries: list[Any] = []
-    criteria_hashes: set[str] = set()  # codex P1.1：覆盖**全量**各家 criteria，非只第一份
-    for row in rows:
-        # list_results_by_project 的 payload 列是未解析 JSON 字符串（SELECT *），需 loads。
-        payload = row.get("payload")
-        if isinstance(payload, str):
-            try:
-                payload = json.loads(payload)
-            except (TypeError, ValueError):
-                continue
-        response = payload.get("response") if isinstance(payload, dict) else None
-        if not isinstance(response, dict):
-            continue
-        extracted = response.get("extracted_data") or {}
-        crit = extracted.get("criteria")
-        criteria_entries.append(crit)
-        if crit:
-            criteria_hashes.add(compute_criteria_hash(crit))
-            if criteria_seen is None:
-                criteria_seen = crit
-        result_ids.append(str(row["request_id"]))
-        bidders.append(
-            {
-                "claim_id": response.get("claim_id") or row.get("claim_id"),
-                "bid_price": extracted.get("bid_price"),
-                "scoring": extracted.get("scoring", []),
-                "verdict": response.get("verdict"),
-            }
-        )
-    if len(bidders) < 2:
+    project = get_project(project_id, tenant)
+    if project is None:
+        return False
+    signature = current_compare_signature(tenant, project_id, project)
+    if signature is None:
+        return False
+    stored = get_compare_result(project_id, tenant)
+    return stored is None or stored.get("input_signature") != signature
+
+
+async def maybe_schedule_compare(tenant: str, project_id: str) -> str | None:
+    """评标终态后由服务端自动判定是否入队横比（KD2：触发不再依赖前端在场）。
+
+    **必须在事件循环线程 await**：重活（读全池结论、算签名）经 ``to_thread`` 移出 loop，
+    但真正的"查在途 + 写 accepted 行 + 起协程"三步留在 loop 线程同步做——三步之间没有
+    await 断点，故 check-then-act 天然原子（单线程 loop），也才拿得到 running loop
+    去 ``create_task``（旧实现整段进 to_thread，``create_task`` 在无 loop 的工作线程
+    必抛 RuntimeError，且 accepted 行已写下 → 项目被幽灵任务永久锁死）。
+
+    Args:
+        tenant: 租户作用域。
+        project_id: 招标项目 ID。
+
+    Returns:
+        新建的 compare request_id；未满足触发条件时 None。
+    """
+    if not await asyncio.to_thread(compare_recompute_needed, tenant, project_id):
         return None
-    # codex P1.1：各家 criteria 不全一致 → 标记，命令据此走 manual_review，不任取一份当权威公式。
-    criteria_inconsistent = len(criteria_hashes) > 1
-    price_items = [_find_price_item(criteria) for criteria in criteria_entries]
-    all_price_items_valid = len(price_items) == len(bidders) and all(
-        item is not None for item in price_items
-    )
-    price_comparison_blocked = criteria_inconsistent or not all_price_items_valid
-    blocked_reason = (
-        "criteria_inconsistent"
-        if criteria_inconsistent
-        else "price_item_missing_or_invalid" if not all_price_items_valid else None
-    )
-    price_item = price_items[0] if not price_comparison_blocked else None
-    compare_input = {
-        "project_id": project_id,
-        "method": (criteria_seen or {}).get("method") if isinstance(criteria_seen, dict) else None,
-        "funding_type": project.get("funding_type") or "unknown",
-        "control_price": project.get("control_price"),
-        "criteria_price_item": price_item,
-        "price_comparison_blocked": price_comparison_blocked,
-        "price_comparison_blocked_reason": blocked_reason,
-        "criteria_inconsistent": criteria_inconsistent,
-        "bidders": bidders,
-    }
-    signature = CompareSignature(
-        input_result_ids=result_ids,
-        # 签名覆盖全量 criteria hash 集（codex P1.1）：任一家 criteria 变化都触发 stale。
-        criteria_hash=compute_criteria_hash(sorted(criteria_hashes)),
-    )
-    return compare_input, signature
+    return _schedule_if_idle(tenant, project_id)
 
 
-def _find_price_item(criteria: Any) -> Any:
-    """返回可横比的价格项；满分未知的项目绝不进入横比算分。"""
-    if not isinstance(criteria, dict):
+def _schedule_if_idle(tenant: str, project_id: str) -> str | None:
+    """loop 线程内同步完成"查在途 → 入队"（无 await 断点 = 并发双触发只会有一个入队）。"""
+    if has_active_compare(tenant, project_id):
         return None
-    for item in criteria.get("items", []):
-        if not (
-            isinstance(item, dict) and item.get("tag") == "requires_cross_bid_comparison"
-        ):
-            continue
-        max_score = item.get("max")
-        if (
-            isinstance(max_score, (int, float))
-            and not isinstance(max_score, bool)
-            and math.isfinite(max_score)
-            and max_score >= 0
-        ):
-            return {
-                "item": item.get("item"),
-                "max": max_score,
-                "scoring_rule": item.get("scoring_rule"),
-            }
-        return None
-    return None
-
-
-def enforce_price_comparison_block(
-    payload: dict[str, Any], compare_input: dict[str, Any]
-) -> None:
-    """Fail closed for any invalid/missing price item or inconsistent criteria set."""
-    if not compare_input.get("price_comparison_blocked"):
-        return
-    model_bidders = payload.get("bidders")
-    model_by_claim = {
-        bidder.get("claim_id"): bidder
-        for bidder in model_bidders
-        if isinstance(bidder, dict)
-    } if isinstance(model_bidders, list) else {}
-    payload["bidders"] = [
-        {
-            "claim_id": bidder.get("claim_id"),
-            "bid_price": bidder.get("bid_price"),
-            "price_score": None,
-            "other_score": (model_by_claim.get(bidder.get("claim_id")) or {}).get(
-                "other_score"
-            ),
-            "total_score": None,
-            "rank": None,
-            "status": "manual_review",
-            "note": "价格项满分未设，需人工确认后再横比。",
-        }
-        for bidder in compare_input.get("bidders", [])
-        if isinstance(bidder, dict)
-    ]
-    reason = compare_input.get("price_comparison_blocked_reason")
-    warning = (
-        "各投标人评分标准不一致，已停止价格横比与排名，需人工复核。"
-        if reason == "criteria_inconsistent"
-        else "价格项缺失或满分无效，已停止价格横比与排名，需人工复核。"
+    request_id = new_request_id()
+    schedule_compare_task(request_id=request_id, tenant=tenant, project_id=project_id)
+    logger.info(
+        "tender_compare_auto_scheduled",
+        extra={"project_id": project_id, "tenant": tenant or "default",
+               "request_id": request_id},
     )
-    warnings = payload.get("warnings")
-    payload["warnings"] = [*warnings, warning] if isinstance(warnings, list) else [warning]
-    payload["recommended"] = None
-    payload["provisional"] = True
-    payload["explanation"] = warning
+    return request_id
 
 
 async def _run_compare(*, request_id: str, tenant: str, compare_input: dict[str, Any]):
@@ -237,7 +164,7 @@ async def _execute_inner(*, request_id: str, tenant: str, project_id: str) -> No
             # codex P2.4：以服务端 project_id 为准，杜绝 Claude 回填错 project_id 致 GET 自相矛盾。
             if isinstance(stored, dict):
                 stored["project_id"] = project_id
-                enforce_price_comparison_block(stored, compare_input)
+                enforce_compare_guardrails(stored, compare_input)
             await asyncio.to_thread(
                 upsert_compare_result,
                 project_id=project_id,
@@ -257,7 +184,11 @@ async def _execute_inner(*, request_id: str, tenant: str, project_id: str) -> No
             )
             finished = utc_now()
             row = _task_row(request_id, tenant, project_id, "failed", "横比失败", finished, finished)
-            row["error_detail"] = str(exc)
+            # 超时 str(exc) 是空串，用户会看到"失败但没说为什么"；给一句已登记的业务原因
+            # （compare_guard.KNOWN_BUSINESS_REASONS 白名单内，可原文回前端）。
+            row["error_detail"] = (
+                COMPARE_TIMEOUT_REASON if isinstance(exc, asyncio.TimeoutError) else str(exc)
+            )
             await asyncio.to_thread(upsert_compare_task, row)
 
 
@@ -286,14 +217,26 @@ def _task_row(
 
 
 def schedule_compare_task(*, request_id: str, tenant: str, project_id: str) -> None:
-    """Fire-and-forget compare task（tracked，防 GC）。
+    """Fire-and-forget compare task（tracked，防 GC）。**只能在事件循环线程调用。**
 
     先同步建 accepted 记录，使紧随的并发请求能经 ``has_active_compare`` 查到在途 → 防重（cc C1）。
+    "建 accepted 行"与"起协程"必须**同成败**：起协程失败（无 running loop 等）时把该行落
+    failed 再抛，否则 accepted 幽灵行会让 ``has_active_compare`` 恒 True、项目永久卡在
+    "横比进行中"，自动与手动触发全被闸死。
     """
     upsert_compare_task(
         _task_row(request_id, tenant, project_id, "accepted", "横比任务已提交", utc_now())
     )
-    task = asyncio.create_task(
-        execute_compare_task(request_id=request_id, tenant=tenant, project_id=project_id)
-    )
+    try:
+        task = asyncio.create_task(
+            execute_compare_task(request_id=request_id, tenant=tenant, project_id=project_id)
+        )
+    except RuntimeError as exc:
+        finished = utc_now()
+        row = _task_row(
+            request_id, tenant, project_id, "failed", "横比未能启动", finished, finished
+        )
+        row["error_detail"] = f"compare task not scheduled: {exc}"
+        upsert_compare_task(row)
+        raise
     _track(task)

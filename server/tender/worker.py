@@ -17,12 +17,14 @@ import os
 
 from server.platform.logging_setup import logging_context
 from server.stores.request_store import utc_now
+from server.stores.result_store import update_result_criteria_ref
 from server.stores.tender_doc_store import (
     backfill_bid_doc_bidder_name,
     get_project_doc,
     update_project_doc_criteria,
 )
 from server.stores.tender_task_store import update_tender_progress, upsert_tender_task
+from server.tender.compare_worker import maybe_schedule_compare
 from server.tender.runner import run_tender_evaluation as _run_evaluation
 
 logger = logging.getLogger(__name__)
@@ -168,8 +170,12 @@ async def _execute_inner(
             # 写到招标层 → 同项目后续家评标 S1 读层命中复用，不再重复解析。异常不崩主流程。
             if project_id and isinstance(payload, dict):
                 criteria = (payload.get("extracted_data") or {}).get("criteria")
-                await asyncio.to_thread(
+                became_authority = await asyncio.to_thread(
                     _backfill_criteria, project_id, tenant, criteria
+                )
+                # KD1：ref 补写进已归档结论（归档早于 runner 打标），并消解 backfill 竞态。
+                await asyncio.to_thread(
+                    _persist_criteria_ref, request_id, tenant, payload, became_authority
                 )
             # X2：投标单位名称只填空回填（bids 层），挂靠同一 completed 分支。
             # bid_id=None（散单/非 prewarm）时无法定位 (project_id, bid_id) 行，安全跳过。
@@ -269,13 +275,28 @@ async def _execute_inner(
                     await asyncio.to_thread(
                         update_tender_progress, request_id, progress_state["text"]
                     )
+            # KD2：**任何终态**（completed / timeout / failed）后都由服务端复查一次是否该入队横比
+            # ——横比触发不再依赖前端在场（旧实现唯一触发点是前端 fire-and-forget，失败即静默）。
+            # "某家 failed、其余 ≥2 家已完成"同样应出横比结果，故放 finally；但排在**进度收尾之后**，
+            # 免得调度异常冲出 finally 时把 flusher.cancel 与 final-flush 一并跳过。
+            # 调度失败不改写本次评标结论（结论已落库），只记警告：schedule_compare_task 内部
+            # 已保证 accepted 行与协程同成败，不会留幽灵在途行。
+            if project_id:
+                try:
+                    await maybe_schedule_compare(tenant, project_id)
+                except Exception:
+                    logger.warning(
+                        "tender_compare_auto_schedule_failed",
+                        extra={"project_id": project_id, "tenant": tenant or "default"},
+                        exc_info=True,
+                    )
 
 
 def _backfill_criteria(
     project_id: str | None,
     tenant: str,
     criteria: object,
-) -> None:
+) -> bool:
     """回填评标 criteria 到招标层（首个写入者赢，已存不覆盖，散单/异常静默跳过）。
 
     评标 completed 后，若 payload.extracted_data.criteria 存在，调本函数把评分标准
@@ -285,29 +306,69 @@ def _backfill_criteria(
         project_id: 招标项目 ID；为 None（散单）时直接返回。
         tenant: 租户作用域。
         criteria: 已解析的 criteria 对象（dict）；为 None/空时跳过。
+
+    Returns:
+        True 当且仅当**本次**写入使该家 criteria 成为项目权威（KD1 据此把 ref 升为 project）。
     """
     if not project_id or not criteria:
-        return
+        return False
     try:
         import json as _json
 
         existing = get_project_doc(project_id, tenant)
         if existing is None:
             # 招标层记录不存在（旧散单迁移等），安全跳过。
-            return
+            return False
         if existing.get("criteria"):
             # 已存非空 → 首个写入者赢，不覆盖。
-            return
+            return False
         criteria_json = _json.dumps(criteria, ensure_ascii=False)
         update_project_doc_criteria(project_id, tenant, criteria_json)
         logger.info(
             "tender_criteria_backfilled",
             extra={"project_id": project_id, "tenant": tenant or "default"},
         )
+        return True
     except Exception:
         logger.warning(
             "tender_criteria_backfill_failed",
             extra={"project_id": project_id, "tenant": tenant or "default"},
+            exc_info=True,
+        )
+        return False
+
+
+def _persist_criteria_ref(
+    request_id: str,
+    tenant: str,
+    payload: dict[str, object],
+    became_authority: bool,
+) -> None:
+    """把 runner 打的 ``criteria_ref`` 补写进已归档结论，并消解 backfill 竞态（KD1）。
+
+    评标开始时项目权威缺位 → runner 记 ``self_parsed``；但若本家 criteria 恰好赢得 backfill，
+    本家**就是**权威，ref 须升为 ``project``（否则横比会把唯一权威来源自己排除掉）。
+    输给别家则保持 ``self_parsed``，横比时排除该家并提示重评。
+
+    Args:
+        request_id: 结论 ID。
+        tenant: 租户作用域。
+        payload: 评标结论（runner 已打 extracted_data.criteria_ref）。
+        became_authority: 本次 backfill 是否使本家 criteria 成为项目权威。
+    """
+    extracted = payload.get("extracted_data")
+    ref = extracted.get("criteria_ref") if isinstance(extracted, dict) else None
+    if not isinstance(ref, dict):
+        return
+    if became_authority and ref.get("source") == "self_parsed":
+        ref = {**ref, "source": "project"}
+        extracted["criteria_ref"] = ref
+    try:
+        update_result_criteria_ref(request_id, tenant, ref)
+    except Exception:
+        logger.warning(
+            "tender_criteria_ref_persist_failed",
+            extra={"request_id": request_id, "tenant": tenant or "default"},
             exc_info=True,
         )
 

@@ -102,6 +102,8 @@ export function ScreenContent({ page }: { page: TenderReviewPageState }) {
           onActiveItem={page.setActiveItemId}
           onHistory={() => page.openHistory()}
           onReport={() => page.openReport()}
+          compareRetrying={page.compareRetrying}
+          onRetryCompare={page.retryCompare}
         />
       )
     case 'report':

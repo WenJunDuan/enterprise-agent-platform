@@ -8,16 +8,23 @@ from __future__ import annotations
 
 import logging
 import os
-import re
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import NamedTuple
 
+from server.common.corpus import ARTIFACT_CONVERTED, ARTIFACT_ORIGINAL, parse_page_anchor
 from server.ocr import OcrDependencyError, OcrError
 from server.ocr import boq as boq_extract
 from server.ocr import cache as ocr_cache
 from server.ocr.classify import classify
+from server.ocr.draft_render import (
+    OCR_ERROR_PREFIX,
+    converted_header_note,
+    page_confidence_note,
+    render_body,
+    truncate_body,
+)
 from server.ocr.engine import extract_pdf_subset, recognize, recognize_seal
 from server.ocr.office_convert import convert_office_to_pdf
 from server.ocr.native import native_read
@@ -147,9 +154,30 @@ UnitCallback = Callable[[dict], None]
 _PageCallback = Callable[[int, dict], None]
 
 
-def _make_unit(*, file: str, page: int | None, status: str, payload: dict, from_cache: bool) -> dict:
-    """组装单元事件 dict（页级/文件级统一 schema，见 design.md 单元事件回调签名）。"""
-    return {"file": file, "page": page, "status": status, "payload": payload, "from_cache": from_cache}
+def _make_unit(
+    *,
+    file: str,
+    page: int | None,
+    status: str,
+    payload: dict,
+    from_cache: bool,
+    artifact: str = ARTIFACT_ORIGINAL,
+) -> dict:
+    """组装单元事件 dict（页级/文件级统一 schema，见 design.md 单元事件回调签名）。
+
+    页溯源（H2 KD1）：``artifact`` 说明页号属于哪个坐标系，``artifact_page`` 是该坐标系里的页号，
+    ``page`` 是**用户可回查的原文档页号**——转换稿（Office→PDF）无可靠原页映射故置 None，绝不猜。
+    ``file`` 即 provenance 模型的 source_file 维度（沿用既有键名，不新增同值键）。
+    """
+    return {
+        "file": file,
+        "page": page if artifact == ARTIFACT_ORIGINAL else None,
+        "artifact": artifact,
+        "artifact_page": page,
+        "status": status,
+        "payload": payload,
+        "from_cache": from_cache,
+    }
 
 
 def _call_native_read(path: Path, on_page: _PageCallback | None) -> dict:
@@ -445,10 +473,47 @@ def _dispatch_extract(
             )
         return {**route, **native}
     if route["route"] == "ocr":
-        return _call_recognize_with_seal(
-            path, route, run_seal=run_seal, purpose=purpose, on_page=on_page
+        return _guard_cloud_page_count(
+            _call_recognize_with_seal(
+                path, route, run_seal=run_seal, purpose=purpose, on_page=on_page
+            ),
+            route,
         )
     return {**route, "kind": "manual"}
+
+
+def _tag_page_artifact(on_page: _PageCallback | None, artifact: str) -> _PageCallback | None:
+    """给页级回调固定 artifact 标（同一 dispatch 分支内所有页同坐标系）。
+
+    包一层而不是改 ``on_page`` 签名——下游 ``native_read`` / ``engine.recognize`` 只认
+    ``(page_no, payload)`` 两参，artifact 是 pipeline 侧才知道的分诊信息。
+    """
+    if on_page is None:
+        return None
+    return lambda page_no, payload: on_page(page_no, payload, artifact=artifact)
+
+
+def _guard_cloud_page_count(result: dict, route: dict) -> dict:
+    """云 OCR 页号守卫（H2 KD1 cloud_seq）：云按结果顺序枚举页号，跳页即全局平移。
+
+    classify 已产出文档真实页数；与云返回页数不一致 → 整份标 ``page_confidence=low``（页号仍按序
+    钉住，但底稿文件头显式标注、回查闸把该文件证据全部降 page_unverified，见 KD5）。
+    """
+    if result.get("page_artifact") != "cloud_seq":
+        return result
+    expected = route.get("page_count")
+    pages = result.get("pages")
+    if not isinstance(expected, int) or not isinstance(pages, list) or len(pages) == expected:
+        return result
+    logger.warning(
+        "cloud_ocr_page_count_mismatch", extra={"expected": expected, "returned": len(pages)}
+    )
+    return {
+        **result,
+        "page_confidence": "low",
+        "page_count_expected": expected,
+        "page_count_returned": len(pages),
+    }
 
 
 def _convert_and_dispatch(
@@ -459,7 +524,13 @@ def _convert_and_dispatch(
     purpose: str | None,
     on_page: _PageCallback | None,
 ) -> dict:
-    """Convert Office input to PDF, then reuse the PDF native/OCR ladder."""
+    """Convert Office input to PDF, then reuse the PDF native/OCR ladder.
+
+    页溯源（H2 KD2）：下游拿到的页号是**转换稿 PDF** 的页号（LibreOffice 分页 ≠ Word 分页），
+    故页级单元一律打 ``converted`` 标（原文档页号不可知 → page=None），底稿渲染也换成
+    ``【转换稿第 M 页】``。
+    """
+    converted_on_page = _tag_page_artifact(on_page, ARTIFACT_CONVERTED)
     with convert_office_to_pdf(path) as pdf:
         pdf_route = classify(pdf)
         if pdf_route["route"] == "native":
@@ -470,15 +541,18 @@ def _convert_and_dispatch(
                 native,
                 run_seal=run_seal,
                 purpose=purpose,
-                on_page=on_page,
+                on_page=converted_on_page,
             )
         else:
-            downstream = _call_recognize_with_seal(
-                pdf,
+            downstream = _guard_cloud_page_count(
+                _call_recognize_with_seal(
+                    pdf,
+                    pdf_route,
+                    run_seal=run_seal,
+                    purpose=purpose,
+                    on_page=converted_on_page,
+                ),
                 pdf_route,
-                run_seal=run_seal,
-                purpose=purpose,
-                on_page=on_page,
             )
     return {
         **original_route,
@@ -516,11 +590,18 @@ def _extract_one_raw(
         # on_page 只在真有回调时才构造成非 None——保持 on_unit_complete=None（默认）时
         # on_page 全链路仍是 None，_call_native_read/_call_recognize_with_seal 才会走
         # "不多传 kwarg" 分支，与存量对 native_read/_recognize_with_seal 的旧签名 mock 兼容。
-        def _on_page(page_no: int, payload: dict) -> None:
+        def _on_page(page_no: int, payload: dict, *, artifact: str = ARTIFACT_ORIGINAL) -> None:
             nonlocal page_emitted
             page_emitted = True
             on_unit_complete(
-                _make_unit(file=file_str, page=page_no, status="ok", payload=payload, from_cache=False)
+                _make_unit(
+                    file=file_str,
+                    page=page_no,
+                    status="ok",
+                    payload=payload,
+                    from_cache=False,
+                    artifact=artifact,
+                )
             )
 
         on_page = _on_page
@@ -580,29 +661,13 @@ def extract_dir(
         )
 
 
-def _render_tables(tables: list[dict]) -> str:
-    lines: list[str] = []
-    for table in tables:
-        if table.get("name"):
-            lines.append(f"[表: {table['name']}]")
-        for row in table.get("rows", []):
-            lines.append("\t".join(str(cell) for cell in row))
-    return "\n".join(lines)
-
-
-def _page_anchor(page_no: int) -> str:
-    """页锚点：让模型 evidence/basis 能引到底稿真实页（G2 证据定位准确性）。"""
-    return f"【第 {page_no} 页】\n"
-
-
 # 识别失败标记前缀：识别失败时 _render_body 以此前缀打头该文件正文。
 # 公开常量 + is_ocr_text_valid 是 OCR 域唯一权威，消费方（评标上传 OCR 编排）据此判文本有效性，
 # 不要在调用层各自硬编码该字符串（S3 消重：原 routes/tender.py 重复定义了一份）。
-OCR_ERROR_PREFIX = "[识别失败]"
+# 渲染细节（页锚 artifact 坐标系 / 表格挂页）在 server.ocr.draft_render，本模块只做编排。
 # build_extraction_block 每个文件以此为头、空目录回退此占位（is_ocr_text_valid 据此剔除非内容行）。
 _FILE_HEADER_PREFIX = "### 文件:"
 _EMPTY_BLOCK_MARKER = "（无识别内容）"
-_PAGE_ANCHOR_PATTERN = re.compile(r"^【第\s+\d+\s+页】$")
 
 
 def is_ocr_text_valid(text: str) -> bool:
@@ -623,46 +688,16 @@ def is_ocr_text_valid(text: str) -> bool:
             not s
             or s.startswith(_FILE_HEADER_PREFIX)
             or s.startswith(OCR_ERROR_PREFIX)
-            or _PAGE_ANCHOR_PATTERN.fullmatch(s)
+            # 页锚点行（含【转换稿第M页】变体）不算内容——只有锚没有正文 = 假 ready（0730 教训）。
+            # 走 corpus 单点 pattern，锚变体扩展时不会漏这一处（H2 Round1-F4）。
+            or parse_page_anchor(s) is not None
         ):
             continue
         return True
     return False
 
 
-def _render_body(result: dict) -> str:
-    if result.get("error"):
-        return f"{OCR_ERROR_PREFIX} {result['error']}"
-    # pages 仅指 OCR 引擎产物（list[每页 {markdown}]）；native 文件的页数在 page_count，
-    # 不在此。isinstance 守卫防止把页数整数误当列表迭代。
-    pages = result.get("pages")
-    if isinstance(pages, list) and pages:
-        # 每页加页锚点（page_number 缺/None 才回退序号；不用 `or` 以免 page_number=0 被吞）。
-        return "\n\n".join(
-            _page_anchor(pn if (pn := page.get("page_number")) is not None else idx)
-            + (page.get("markdown") or "")
-            for idx, page in enumerate(pages, start=1)
-        )
-    # native：blocks(正文) 与 tables(表) 可并存（pdf_text/word 两者都有）→ **都渲染**。
-    # 旧逻辑 tables 分支吃掉 blocks 会丢正文；P1 给 pdf_text 加了 find_tables 后更明显，故合并。
-    segments: list[str] = []
-    blocks = result.get("blocks")
-    if blocks:
-        # pdf_text 的 blocks 一页一项（read_pdf_text 逐页 append）→ 按页打锚点，跳空页但保留页号，
-        # 让模型能引真实页（G2）；其余 kind（word/text）blocks 非页结构，原样拼。
-        if result.get("kind") == "pdf_text":
-            segments.append(
-                "\n\n".join(
-                    _page_anchor(i) + b
-                    for i, b in enumerate(blocks, start=1)
-                    if isinstance(b, str) and b.strip()
-                )
-            )
-        else:
-            segments.append("\n".join(blocks))
-    if result.get("tables"):
-        segments.append(_render_tables(result["tables"]))
-    return "\n\n".join(seg for seg in segments if seg.strip())
+_render_body = render_body  # 渲染实现在 draft_render；保留旧名供既有调用方/测试引用
 
 
 def file_clarity(result: dict, *, threshold: float = OCR_CLARITY_MIN_CONFIDENCE) -> str:
@@ -691,30 +726,12 @@ def file_clarity(result: dict, *, threshold: float = OCR_CLARITY_MIN_CONFIDENCE)
     return "clear"
 
 
-# R2：通用截断「从头切」是否改「首尾切」（保尾部，如合同付款节点/落款）。**默认关**——
-# expense/audit 关键字段多在头部，贸然减头部预算会回归；tender 大非 BOQ 文件需保尾可经 env 开。
-def _truncate_head_tail_enabled() -> bool:
-    return os.getenv("OCR_TRUNCATE_HEAD_TAIL", "0").lower() in {"1", "true", "yes"}
-
-
 def _truncate_body(full_body: str) -> str:
-    """大文件截断：默认头截（向后兼容）；OCR_TRUNCATE_HEAD_TAIL=1 则首尾截（保尾）。
+    """大文件截断（实现见 ``draft_render.truncate_body``，KD3 按页锚切）。
 
-    截断标记**不含 `【第N页】` 字样**——免破 evidence-resolution 的 parse_corpus 页索引（R1 协同）。
+    上限每次调用时从模块常量读——测试与灰度会 monkeypatch ``MAX_FILE_BLOCK_CHARS``。
     """
-    n = len(full_body)
-    if _truncate_head_tail_enabled():
-        head_n = int(MAX_FILE_BLOCK_CHARS * 0.7)
-        tail_n = MAX_FILE_BLOCK_CHARS - head_n
-        marker = (
-            f"\n\n...[内容已截断：本文件共 {n} 字符，保留首 {head_n} + 尾 {tail_n}，"
-            f"中间省略；相关字段请标 low_confidence / needs_review]\n\n"
-        )
-        return full_body[:head_n] + marker + full_body[-tail_n:]
-    return full_body[:MAX_FILE_BLOCK_CHARS] + (
-        f"\n\n...[内容已截断：本文件共 {n} 字符，仅保留前 {MAX_FILE_BLOCK_CHARS}；"
-        f"尾部信息（如合同付款节点）可能丢失，相关字段请标 low_confidence / needs_review]"
-    )
+    return truncate_body(full_body, MAX_FILE_BLOCK_CHARS)
 
 
 def build_extraction_block(results: list[dict]) -> str:
@@ -728,7 +745,10 @@ def build_extraction_block(results: list[dict]) -> str:
     parts: list[str] = []
     for result in results:
         name = Path(result.get("path", "?")).name
-        head = f"{_FILE_HEADER_PREFIX} {name} (kind={result.get('kind')}, route={result.get('route')})"
+        head = (
+            f"{_FILE_HEADER_PREFIX} {name} (kind={result.get('kind')}, "
+            f"route={result.get('route')}{converted_header_note(result)})"
+        )
         full_body = _render_body(result)
         if len(full_body) > MAX_FILE_BLOCK_CHARS:
             summary = (
@@ -745,6 +765,7 @@ def build_extraction_block(results: list[dict]) -> str:
         if seals:
             head += f" [检出印章 {len(seals)} 枚]"
         head += _CLARITY_NOTE.get(file_clarity(result), "")
+        head += page_confidence_note(result)
         parts.append(f"{head}\n{body}".rstrip())
     return "\n\n".join(parts) or _EMPTY_BLOCK_MARKER
 

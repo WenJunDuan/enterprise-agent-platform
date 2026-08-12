@@ -10,10 +10,14 @@ evaluation_method）——两者都是 D6 docstructure._TAG_KEYWORDS 现成的�
 from __future__ import annotations
 
 import os
-import re
 import sqlite3
 from typing import Any
 
+from server.common.corpus import (
+    PAGE_ANCHOR_LINE_RE,
+    split_head_tail_on_anchors,
+    text_has_page_anchor,
+)
 from server.ocr.docstructure import build_doc_structure, chapter_heading
 from server.ocr.rag import index_document, search
 from server.platform.config import resolve_model_context_window, resolve_model_max_output_tokens
@@ -40,7 +44,8 @@ _PREEXTRACT_KEYWORDS = (
     "废标",
     "否决",
 )
-_PAGE_ANCHOR_RE = re.compile(r"^\s*【第\s*\d+\s*页】")
+# 页锚点解析统一走 server.common.corpus 单点（含【转换稿第M页】变体，H2 KD0）
+_PAGE_ANCHOR_RE = PAGE_ANCHOR_LINE_RE
 # OCR 文本以中文为主，按 1 字符≈1 token 估算，宁可少送也不让网关再次超窗。
 _DEFAULT_CHARS_PER_TOKEN = 1.0
 _DEFAULT_CONTEXT_MARGIN_TOKENS = 4096
@@ -85,17 +90,28 @@ def _preextract_char_budget(model: str | None = None) -> int | None:
 
 
 def _trim_context_block(block: str, limit: int) -> str:
-    """Trim one selected block while retaining both its heading-side and tail evidence."""
+    """Trim one selected block while retaining both its heading-side and tail evidence.
+
+    KD3：切点吸附到页锚行边界、尾段前重放所属页锚——旧的按字符硬切会把尾段内容挂到 head 末锚
+    （早得多的页），并可能把锚行切半，是"证据页码对不上"的主链路成因（评标主链路无条件套用）。
+    无页锚的块（native word 等）按字符切，marker 里如实注明。
+    """
     if len(block) <= limit:
         return block
     if limit <= 0:
         return ""
-    marker = "\n...[章节中间内容省略，章节首尾保留]...\n"
+    has_anchor = text_has_page_anchor(block)
+    marker = (
+        "\n...[章节中间内容省略，章节首尾保留]...\n"
+        if has_anchor
+        else "\n...[章节中间内容省略，章节首尾保留；本文件无页锚，按字符切]...\n"
+    )
     if limit <= len(marker):
         return block[:limit]
     body_limit = limit - len(marker)
-    head = (body_limit * 2) // 3
-    return block[:head] + marker + block[-(body_limit - head) :]
+    head_n = (body_limit * 2) // 3
+    head, tail, replay = split_head_tail_on_anchors(block, head_n, body_limit - head_n)
+    return head + marker + (f"{replay}\n" if replay else "") + tail
 
 
 def _keyword_windows(lines: list[str]) -> list[tuple[int, int]]:
