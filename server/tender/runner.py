@@ -18,12 +18,13 @@ import asyncio
 import json
 import logging
 import os
+import time
 from pathlib import Path
 from typing import Any, Callable
 
 from server.common.command_adapter import run_command_json
 from server.ocr.pipeline import ocr_preprocess_block
-from server.tender import doc_layer
+from server.tender import doc_layer, doc_rerun
 from server.tender.context_slim import bound_tender_context
 from server.tender.output import TENDER_OUTPUT_SCHEMA_NAME
 from server.platform.config import get_tender_eval_settings
@@ -133,6 +134,7 @@ async def _resolve_doc_layer(
         ``(doc 层底稿文本 | None, warnings)``；文本为 None 时调用方回落 inline OCR。
     """
     warnings: list[dict[str, object]] = []
+    waited_from = time.monotonic()
     if bid_id:
         outcome = await doc_layer.wait_doc_layer_ready(project_id, bid_id, tenant)
         if outcome == "wait_cap_reached":
@@ -146,8 +148,15 @@ async def _resolve_doc_layer(
             )
         elif outcome == "terminal":
             rows = await doc_layer.read_doc_rows(project_id, bid_id, tenant)
-            if any(doc_layer.doc_ocr_status(row) in doc_layer.DOC_LAYER_IMPAIRED_STATUSES for row in rows):
-                await doc_layer.rerun_prewarm_for_degraded_docs(project_id, bid_id, tenant, rows)
+            if any(
+                doc_layer.doc_ocr_status(row) in doc_layer.DOC_LAYER_IMPAIRED_STATUSES
+                for row in rows
+            ):
+                # 等预热花掉的时间要计入补跑预算（review N3）——否则等满上限后还能再放一段
+                # 全尺寸补跑，把整单继续往 TENDER_TIMEOUT 推。
+                await doc_rerun.rerun_prewarm_for_degraded_docs(
+                    project_id, bid_id, tenant, rows, spent_sec=time.monotonic() - waited_from
+                )
     loader = (
         doc_layer.load_doc_layer_context_slim
         if doc_layer.slim_context_enabled()

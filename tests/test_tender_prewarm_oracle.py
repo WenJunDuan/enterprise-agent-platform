@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from server.tender import doc_layer, runner
+from server.tender import doc_layer, doc_rerun, runner
 
 
 def _row(status: str, *, age_sec: float = 0.0, text: str = "底稿", **extra) -> dict:
@@ -168,7 +168,7 @@ def test_degraded_docs_are_rerun_exactly_once(monkeypatch):
         _row("partial", case_path="/case/tender"),
         _row("degraded", case_path="/case/bid"),
     )
-    asyncio.run(doc_layer.rerun_prewarm_for_degraded_docs("tp-1", "bid-1", "t1", rows))
+    asyncio.run(doc_rerun.rerun_prewarm_for_degraded_docs("tp-1", "bid-1", "t1", rows))
 
     assert reruns == [("project", "/case/tender"), ("bid", "/case/bid")]
 
@@ -185,7 +185,7 @@ def test_rerun_is_skipped_when_case_path_is_unknown(monkeypatch):
     monkeypatch.setattr(doc_pipeline, "run_project_doc_ocr", _explode)
 
     asyncio.run(
-        doc_layer.rerun_prewarm_for_degraded_docs(
+        doc_rerun.rerun_prewarm_for_degraded_docs(
             "tp-1", "bid-1", "t1", (_row("ready"), _row("partial"))
         )
     )
@@ -314,10 +314,11 @@ def test_degraded_doc_reruns_once_then_warns_and_keeps_evaluating(monkeypatch):
     _count_inline_ocr(monkeypatch, inline_calls)
     reruns: list = []
 
-    async def _rerun(*_a, **_k):
-        reruns.append(True)
+    async def _rerun(*_a, spent_sec=0.0, **_k):
+        # N3：等预热花掉的时间必须被实测出来并透传进补跑预算，不能永远按 0 算。
+        reruns.append(spent_sec)
 
-    monkeypatch.setattr(doc_layer, "rerun_prewarm_for_degraded_docs", _rerun)
+    monkeypatch.setattr(doc_rerun, "rerun_prewarm_for_degraded_docs", _rerun)
     _patch_rows(
         monkeypatch,
         [_row("ready", text="招标底稿")],
@@ -342,6 +343,7 @@ def test_degraded_doc_reruns_once_then_warns_and_keeps_evaluating(monkeypatch):
     )
 
     assert len(reruns) == 1, "只重跑一次"
+    assert reruns[0] > 0, "补跑预算要扣掉等预热已经花掉的时间（N3 实测透传）"
     assert inline_calls == [], "有可用底稿就不该再跑一遍 inline"
     warnings = payload["extracted_data"]["ocr_warnings"]
     assert warnings[0]["files"] == ["chapter-3.pdf"]
@@ -377,18 +379,18 @@ def test_loader_still_falls_back_on_db_failure(monkeypatch):
 
 def test_rerun_is_bounded_by_a_timeout_and_degrades_to_warning(monkeypatch):
     """F3：重跑挂在评标关键路径上，必须有预算上限；超时放弃（调用方走 warning），不拖垮评标。"""
-    monkeypatch.setattr(doc_layer, "rerun_budget_sec", lambda: 0.05)
+    monkeypatch.setattr(doc_rerun, "rerun_budget_sec", lambda: 0.05)
     import server.tender.doc_pipeline as doc_pipeline
 
     async def _never_finishes(*_a, **_k):
         await asyncio.sleep(10)
 
     monkeypatch.setattr(doc_pipeline, "run_bid_doc_ocr", _never_finishes)
-    monkeypatch.setattr(doc_layer, "mark_doc_rerunning", lambda *_a, **_k: None)
+    monkeypatch.setattr(doc_rerun, "mark_doc_rerunning", lambda *_a, **_k: None)
     started = time.monotonic()
 
     asyncio.run(
-        doc_layer.rerun_prewarm_for_degraded_docs(
+        doc_rerun.rerun_prewarm_for_degraded_docs(
             "tp-1", "bid-1", "t1", (_row("ready"), _row("partial", case_path="/case/bid"))
         )
     )
@@ -402,7 +404,7 @@ def test_rerun_marks_row_running_so_concurrent_evaluations_dedupe(monkeypatch):
 
     marked: list[tuple] = []
     monkeypatch.setattr(
-        doc_layer, "mark_doc_rerunning", lambda *args, **kwargs: marked.append(args)
+        doc_rerun, "mark_doc_rerunning", lambda *args, **kwargs: marked.append(args)
     )
 
     async def _fake_bid_ocr(*_a, **_k):
@@ -411,7 +413,7 @@ def test_rerun_marks_row_running_so_concurrent_evaluations_dedupe(monkeypatch):
     monkeypatch.setattr(doc_pipeline, "run_bid_doc_ocr", _fake_bid_ocr)
 
     asyncio.run(
-        doc_layer.rerun_prewarm_for_degraded_docs(
+        doc_rerun.rerun_prewarm_for_degraded_docs(
             "tp-1", "bid-1", "t1", (_row("ready"), _row("degraded", case_path="/case/bid"))
         )
     )
@@ -463,7 +465,7 @@ def test_ready_docs_produce_no_warning_and_no_rerun(monkeypatch):
     captured: dict = {}
     _patch_command(monkeypatch, captured)
     monkeypatch.setattr(
-        doc_layer,
+        doc_rerun,
         "rerun_prewarm_for_degraded_docs",
         lambda *_a, **_k: pytest.fail("ready 底稿不该触发重跑"),
     )
