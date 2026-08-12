@@ -44,7 +44,7 @@ items:
     effort: L
     wave: 1
     depends_on: [H1]
-    status: in_progress # 2026-08-11 已交付未评审: 7 commits 在 worktree agent-a13794b891d0fcd1e, AC 自报全 PASS(含前端硬门), collect 1222 主 agent 核实; 自报偏离4处(KD2冲突按AC6/摘要改结构化产物侧/拆 vlm_client+doc_layer/新增 case_path 列)需 review 重点核; tdd-evidence 自报6条待核。恢复链: reviewer+spec-compliance → evaluator → rebase H2 后合并(engine/pipeline 共享契约复核)
+    status: in_progress # 2026-08-12 代码已合 main(merge 80e46a5, 17 commits): 三轮 review(pass1 P1×5→pass2 N1 P0→pass3 F1-F5)→evaluator PASS; 待办: polish(F6/F7/F10/N8/F9残留)+runtime-verify(完整环境复跑为 pass3-F7 前置; 真评标实跑)后随 program ship
     note: >
       design 见 sprints/2026-08-11-ocr-concurrency-degrade/design.md。红区：generator model=opus +
       isolation worktree。核心：单页 VLM 可恢复错误重试 1 次再降级；降级/部分失败底稿不以 ready

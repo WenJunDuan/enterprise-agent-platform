@@ -242,3 +242,48 @@
 - Agent ID: a580f657b1a3eeb25
 - Last message: 核验完毕。豁免表五行数逐项实测吻合、tdd-evidence 恰 11 条、collect 实测 1286、14 commits 全部落在 c4689fc（含 H1）之上——pass2 的关键可复跑证据我均独立复核为真。以下为返回给主 agent 的两段。 ## Evidence Cross-Check (evaluator, 2026-08-11-page-provenance) 对照面：des
 
+## 2026-08-12T07:51:45.954Z · generator
+- Event: SubagentStop
+- Agent ID: a13794b891d0fcd1e
+- Last message: Pass-2 返工完成，工作树干净（仅 hook 改的 `.ai_state/_index.md` 未提交）。 **逐项处置** - F1 重试预算 — 已修。`_call_openai_compatible_vlm` 增 `budget_sec`，`_call_vlm_page` 重试时传 `deadline - now - 退避`；新测断言首次 timeout=10s、重试 ≤ 剩余预算（<8
+
+## 2026-08-12T07:52:57.786Z · reviewer
+- Event: SubagentStart
+- Agent ID: a6d27c0e20a45bb83
+
+## 2026-08-12T08:06:34.558Z · reviewer
+- Event: SubagentStop
+- Agent ID: a6d27c0e20a45bb83
+- Last message: # Review Pass 2 — Sprint 2026-08-11-ocr-concurrency-degrade (H3) 审对象：worktree `agent-a13794b891d0fcd1e`，`git diff c560144~4..HEAD`（4 commits，14 文件 +682/-169）。 实测：`uv run ruff check server/ tests/` → A
+
+## 2026-08-12T08:07:23.737Z · generator
+- Event: SubagentStart
+- Agent ID: a13794b891d0fcd1e
+
+## 2026-08-12T08:28:39.980Z · generator
+- Event: SubagentStop
+- Agent ID: a13794b891d0fcd1e
+- Last message: Pass-3 返工完成，工作树干净（仅 hook 改的 `.ai_state/_index.md` 未提交）。 **逐项处置** - N1 [P0] 补跑失败覆写可用底稿 — 已修。每段补跑走「快照 → 补跑 → 结算」：读回最终行，只有**状态档位不低于快照且文本还在**才保留，否则 text + status + failed_files 整体回滚。关键点是结算无条件执行——`run_*_do
+
+## 2026-08-12T08:41:05.262Z · reviewer
+- Event: SubagentStart
+- Agent ID: a155620781cfe9b90
+
+## 2026-08-12T08:53:52.204Z · reviewer
+- Event: SubagentStart
+- Agent ID: a155620781cfe9b90
+
+## 2026-08-12T08:55:20.035Z · reviewer
+- Event: SubagentStop
+- Agent ID: a155620781cfe9b90
+- Last message: # Review Pass 3 — 2026-08-11-ocr-concurrency-degrade (H3) 审对象：d87299e / 2fecb12（8 文件 +479/-160）。reviewer 实测：ruff `All checks passed`；全量 `1237 collected, 33 failed / 1201 passed / 3 skipped`（33 failed 
+
+## 2026-08-12T09:04:55.474Z · evaluator
+- Event: SubagentStart
+- Agent ID: a52b96999f5f45a01
+
+## 2026-08-12T09:13:07.249Z · evaluator
+- Event: SubagentStop
+- Agent ID: a52b96999f5f45a01
+- Last message: 核验完毕。所有独立抽验均已实测（代码、行数、collect、YAML 解析），给出判定。 ## Evidence Cross-Check (evaluator, 2026-08-11-ocr-concurrency-degrade) 无 checklist.yaml，对照 design.md AC1-AC7/AC6b 逐条核 `tdd-evidence.yaml`（worktree 内，10 条记
+
