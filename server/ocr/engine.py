@@ -425,20 +425,31 @@ def _recognize_tesseract_page(
     return text
 
 
-def _call_openai_compatible_vlm(*, data_url: str, prompt: str) -> str:
+def _call_openai_compatible_vlm(
+    *, data_url: str, prompt: str, budget_sec: float | None = None
+) -> str:
     """Call the remote VLM while preserving the OCR fallback error boundary.
 
     传输与错误归一在 ``server.ocr.vlm_client``（H3 拆分）；本函数只负责把 engine 侧的运行时配置
     （端点/模型/密钥/超时/TLS 上下文）绑上去——配置读取留在 engine 是有意为之：既有测试与部署
     都以 ``engine.OCR_VL_*`` 为唯一调参面。
+
+    Args:
+        data_url: 页图 data URL。
+        prompt: 识别提示。
+        budget_sec: 本次调用可用的剩余时间预算（秒）。``None`` = 整页预算。重试时由
+            ``_call_vlm_page`` 传入剩余量，防"两次尝试各拿整页 timeout"把单页拖成两倍页 deadline。
     """
+    timeout = min(OCR_VL_TIMEOUT, OCR_PAGE_TIMEOUT_SEC)
+    if budget_sec is not None:
+        timeout = min(timeout, budget_sec)
     return vlm_client.call_vlm(
         url=_chat_completions_url(OCR_VL_SERVER_URL),
         model=OCR_VL_MODEL_NAME,
         api_key=OCR_VL_API_KEY,
         data_url=data_url,
         prompt=prompt,
-        timeout=min(OCR_VL_TIMEOUT, OCR_PAGE_TIMEOUT_SEC),
+        timeout=timeout,
         ssl_context=_SSL_CONTEXT,
     )
 
@@ -450,8 +461,10 @@ def _call_vlm_page(*, data_url: str, prompt: str) -> str:
     页 deadline 起算**之前**，故排队时长不吃页预算（页 deadline 的语义是"识别耗时"；排队饿死
     由源头减压治，不由本函数计时）。
 
-    重试固定退避 ``_VLM_RETRY_BACKOFF_SEC``，且"退避 + 第二次调用"必须落在该页
-    ``OCR_PAGE_TIMEOUT_SEC`` 预算内；预算不足则直接抛出，由调用方按 0730 语义降级 Tesseract。
+    重试固定退避 ``_VLM_RETRY_BACKOFF_SEC``，且"首次尝试 + 退避 + 第二次调用"整体必须落在该页
+    ``OCR_PAGE_TIMEOUT_SEC`` 预算内：第二次调用的 timeout **收敛为剩余预算**（review F1——否则
+    两次各拿整页 timeout，单页最坏 2× 页 deadline，比不重试更糟）。剩余预算不够退避则直接抛出，
+    由调用方按 0730 语义降级 Tesseract。
 
     Args:
         data_url: 页图 data URL。
@@ -468,10 +481,13 @@ def _call_vlm_page(*, data_url: str, prompt: str) -> str:
         try:
             return _call_openai_compatible_vlm(data_url=data_url, prompt=prompt)
         except OcrDependencyError:
-            if time.monotonic() + _VLM_RETRY_BACKOFF_SEC >= deadline:
+            remaining = deadline - time.monotonic() - _VLM_RETRY_BACKOFF_SEC
+            if remaining <= 0:
                 raise
             time.sleep(_VLM_RETRY_BACKOFF_SEC)
-            return _call_openai_compatible_vlm(data_url=data_url, prompt=prompt)
+            return _call_openai_compatible_vlm(
+                data_url=data_url, prompt=prompt, budget_sec=remaining
+            )
 
 
 def _tesseract_page_or_raise(page: dict, vlm_error: OcrDependencyError) -> str:

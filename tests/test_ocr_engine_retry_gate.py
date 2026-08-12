@@ -43,7 +43,7 @@ def test_page_vlm_failure_retries_once_and_keeps_vlm_result(tmp_path, monkeypatc
     _configure_remote(monkeypatch)
     attempts: list[int] = []
 
-    def fake_vlm(*, data_url, prompt):
+    def fake_vlm(*, data_url, prompt, **_kwargs):
         page_no = int(prompt.split("page ")[1].split(" ")[0])
         attempts.append(page_no)
         if page_no == 2 and attempts.count(2) == 1:
@@ -74,7 +74,7 @@ def test_page_vlm_failure_twice_degrades_from_that_page(tmp_path, monkeypatch):
     vlm_calls: list[int] = []
     tess_calls: list[int] = []
 
-    def fake_vlm(*, data_url, prompt):
+    def fake_vlm(*, data_url, prompt, **_kwargs):
         page_no = int(prompt.split("page ")[1].split(" ")[0])
         vlm_calls.append(page_no)
         if page_no == 2:
@@ -111,7 +111,7 @@ def test_retry_is_skipped_when_page_budget_cannot_cover_backoff(tmp_path, monkey
     monkeypatch.setattr(engine, "OCR_PAGE_TIMEOUT_SEC", 1)
     vlm_calls: list[str] = []
 
-    def fake_vlm(*, data_url, prompt):
+    def fake_vlm(*, data_url, prompt, **_kwargs):
         vlm_calls.append(prompt)
         raise OcrDependencyError("gateway down")
 
@@ -126,6 +126,40 @@ def test_retry_is_skipped_when_page_budget_cannot_cover_backoff(tmp_path, monkey
     assert result["degraded"] is True
 
 
+def test_retry_timeout_is_capped_by_the_remaining_page_budget(tmp_path, monkeypatch):
+    """AC1/F1：第二次调用的 timeout 必须收敛到"剩余预算"，否则单页最坏耗时是页 deadline 的两倍。"""
+    pdf, pages = _pdf_with_pages(tmp_path, 1)
+    monkeypatch.setattr(engine, "_iter_pdf_pages", lambda _path: iter(pages))
+    _configure_remote(monkeypatch)
+    monkeypatch.setattr(engine, "OCR_PAGE_TIMEOUT_SEC", 10)
+    monkeypatch.setattr(engine, "_VLM_RETRY_BACKOFF_SEC", 2.0)
+    monkeypatch.setattr(engine, "OCR_VL_TIMEOUT", 120.0)
+    timeouts: list[float] = []
+
+    def fake_call_vlm(*, url, model, api_key, data_url, prompt, timeout, ssl_context):
+        timeouts.append(timeout)
+        if len(timeouts) == 1:
+            time.sleep(0.05)  # 首次尝试自身也吃掉一点预算
+            raise OcrDependencyError("gateway 502")
+        return "vlm-1"
+
+    monkeypatch.setattr(engine.vlm_client, "call_vlm", fake_call_vlm)
+    monkeypatch.setattr(
+        engine,
+        "_recognize_tesseract_page",
+        lambda *_a, **_k: pytest.fail("retry success must not fall back to tesseract"),
+    )
+
+    result = engine._recognize_via_openai_compatible(pdf)
+
+    assert len(timeouts) == 2
+    assert timeouts[0] == 10  # 首次 = 整页预算
+    # 第二次 ≤ 剩余预算（10 - 首次耗时 - 2s 退避），且严格小于整页预算。
+    assert 0 < timeouts[1] <= 10 - 2 - 0.05
+    assert result["pages"][0]["markdown"] == "vlm-1"
+    assert "degraded" not in result
+
+
 def test_image_page_also_retries_once_before_degrading(tmp_path, monkeypatch):
     """AC1：图片（单页）路径与 PDF 页共用同一重试语义。"""
     image = tmp_path / "scan.png"
@@ -133,7 +167,7 @@ def test_image_page_also_retries_once_before_degrading(tmp_path, monkeypatch):
     _configure_remote(monkeypatch)
     calls: list[int] = []
 
-    def fake_vlm(*, data_url, prompt):
+    def fake_vlm(*, data_url, prompt, **_kwargs):
         calls.append(1)
         if len(calls) == 1:
             raise OcrDependencyError("gateway 503")
@@ -164,7 +198,7 @@ def test_vlm_calls_never_exceed_configured_concurrency(monkeypatch):
     lock = threading.Lock()
     state = {"live": 0, "peak": 0}
 
-    def fake_vlm(*, data_url, prompt):
+    def fake_vlm(*, data_url, prompt, **_kwargs):
         with lock:
             state["live"] += 1
             state["peak"] = max(state["peak"], state["live"])
@@ -199,7 +233,7 @@ def test_gate_wait_does_not_consume_the_page_deadline(monkeypatch):
     monkeypatch.setattr(engine, "_VLM_SEMAPHORE", gate)
     calls: list[float] = []
 
-    def fake_vlm(*, data_url, prompt):
+    def fake_vlm(*, data_url, prompt, **_kwargs):
         calls.append(time.monotonic())
         if len(calls) == 1:
             raise OcrDependencyError("gateway 502")

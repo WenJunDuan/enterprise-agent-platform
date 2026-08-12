@@ -247,7 +247,8 @@ def test_vlm_failure_from_page_n_falls_back_without_duplicate_pages(tmp_path, mo
     vlm_calls: list[int] = []
     tess_calls: list[int] = []
 
-    def fake_vlm(*, data_url, prompt):
+    # **_kwargs：H3 KD1 重试会额外传 budget_sec（剩余页预算）。
+    def fake_vlm(*, data_url, prompt, **_kwargs):
         page_no = int(prompt.split("page ")[1].split(" ")[0])
         vlm_calls.append(page_no)
         if page_no == 2:
@@ -292,7 +293,8 @@ def test_vlm_success_page_then_tesseract_failure_keeps_partial_callback(tmp_path
     monkeypatch.setattr(engine, "OCR_VL_SERVER_URL", "http://litellm.test/v1")
     monkeypatch.setattr(engine, "OCR_VL_MODEL_NAME", "paddleocr")
 
-    def vlm(*, data_url, prompt):
+    # **_kwargs：H3 KD1 重试会额外传 budget_sec（剩余页预算）。
+    def vlm(*, data_url, prompt, **_kwargs):
         if "page 2" in prompt:
             raise OcrDependencyError("gateway down")
         assert engine.FITZ_LOCK.locked() is False
