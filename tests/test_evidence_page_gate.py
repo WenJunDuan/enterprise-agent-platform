@@ -206,6 +206,38 @@ _TWO_FILES = (
 )
 
 
+def test_page_corrected_is_recorded_even_when_resolved_annotation_is_off(monkeypatch):
+    """F4：RESOLUTION_ANNOTATE_RESOLVED=0 只关"正常态标注"，页号被改写属异常态必须留痕。"""
+    monkeypatch.setenv("RESOLUTION_ANNOTATE_RESOLVED", "0")
+    out = _chain_output("投标文件.pdf 第 3 页", "业绩一览 某某高速公路路基工程 合同金额一亿元")
+    resolve_audit_evidence(out, _ANCHORED)
+
+    item = out["evidence_chain"][0]
+    assert item["source"] == "投标文件.pdf 第 9 页"
+    assert item["resolution"]["page_corrected"] == {"from": 3, "to": 9}
+
+
+def test_page_unverified_is_recorded_even_when_resolved_annotation_is_off(monkeypatch):
+    monkeypatch.setenv("RESOLUTION_ANNOTATE_RESOLVED", "0")
+    corpus = (
+        "### 文件: 投标A.pdf (kind=pdf_text)\n【第 2 页】\n共同的关键承诺原文内容一致\n"
+        "### 文件: 投标B.pdf (kind=pdf_text)\n【第 2 页】\n共同的关键承诺原文内容一致\n"
+    )
+    out = _chain_output("投标文件 第 2 页", "共同的关键承诺原文内容一致")
+    resolve_audit_evidence(out, corpus)
+
+    assert out["evidence_chain"][0]["resolution"]["page"] == "page_unverified"
+
+
+def test_normal_confirmed_annotation_still_suppressed_when_switched_off(monkeypatch):
+    """回归：正常态（confirmed）仍受开关抑制，F4 修复不得把开关整个架空。"""
+    monkeypatch.setenv("RESOLUTION_ANNOTATE_RESOLVED", "0")
+    out = _chain_output("投标文件.pdf 第 6 页", "拟派项目负责人张三 建造师注册编号A12345")
+    resolve_audit_evidence(out, _ANCHORED)
+
+    assert "resolution" not in out["evidence_chain"][0]
+
+
 def test_cross_file_unique_hit_is_not_silently_rewritten():
     """quote 只在**别的文件**里唯一命中 → 不得改写页号（否则造出底稿中不存在的出处）。"""
     out = _chain_output("投标A.pdf 第 3 页", "独有的关键业绩原文某某互通立交工程")
