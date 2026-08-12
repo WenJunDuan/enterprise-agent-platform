@@ -14,6 +14,8 @@ Findings:
 
 from __future__ import annotations
 
+from server.tender import doc_layer  # noqa: E402  (H3: 读层拆出后测试改打这里)
+
 import asyncio
 import io
 import os
@@ -82,15 +84,14 @@ def _fake_meta(request_id: str):
 
 def test_p11_load_doc_layer_with_bid_id_loads_only_that_bid(monkeypatch):
     """When bid_id provided, only that bid's OCR text is included; list_bid_docs NOT called."""
-    import server.tender.runner as worker
 
     monkeypatch.setattr(
-        worker,
+        doc_layer,
         "get_project_doc",
         lambda pid, tenant: {"ocr_status": "ready", "ocr_text": "招标底稿内容"},
     )
     monkeypatch.setattr(
-        worker,
+        doc_layer,
         "get_bid_doc",
         lambda pid, bid_id, tenant: {
             "bid_id": bid_id,
@@ -99,7 +100,7 @@ def test_p11_load_doc_layer_with_bid_id_loads_only_that_bid(monkeypatch):
             "bidder_name": "当前投标人",
         },
     )
-    result = worker._load_doc_layer_context("tp-1", "bid-current", "acme")
+    result = doc_layer.load_doc_layer_context("tp-1", "bid-current", "acme")
 
     assert result is not None, "should return text when bid and project are ready"
     assert "当前家投标底稿" in result
@@ -110,28 +111,26 @@ def test_p11_load_doc_layer_with_bid_id_loads_only_that_bid(monkeypatch):
 
 def test_p11_load_doc_layer_without_bid_id_returns_none(monkeypatch):
     """Without bid_id, _load_doc_layer_context returns None (no mixing all bids)."""
-    import server.tender.runner as worker
 
     monkeypatch.setattr(
-        worker,
+        doc_layer,
         "get_project_doc",
         lambda pid, tenant: {"ocr_status": "ready", "ocr_text": "招标底稿"},
     )
-    result = worker._load_doc_layer_context("tp-1", None, "acme")
+    result = doc_layer.load_doc_layer_context("tp-1", None, "acme")
     assert result is None, "without bid_id, must return None to avoid mixing all bids"
 
 
 def test_p11_load_doc_layer_bid_not_ready_returns_none(monkeypatch):
     """When current bid's OCR is not ready, returns None (fallback)."""
-    import server.tender.runner as worker
 
     monkeypatch.setattr(
-        worker,
+        doc_layer,
         "get_project_doc",
         lambda pid, tenant: {"ocr_status": "ready", "ocr_text": "招标底稿"},
     )
     monkeypatch.setattr(
-        worker,
+        doc_layer,
         "get_bid_doc",
         lambda pid, bid_id, tenant: {
             "bid_id": bid_id,
@@ -141,36 +140,34 @@ def test_p11_load_doc_layer_bid_not_ready_returns_none(monkeypatch):
         },
     )
 
-    result = worker._load_doc_layer_context("tp-1", "bid-running", "acme")
+    result = doc_layer.load_doc_layer_context("tp-1", "bid-running", "acme")
     assert result is None
 
 
 def test_p11_load_doc_layer_bid_not_found_returns_none(monkeypatch):
     """When bid_id not found, returns None."""
-    import server.tender.runner as worker
 
     monkeypatch.setattr(
-        worker,
+        doc_layer,
         "get_project_doc",
         lambda pid, tenant: {"ocr_status": "ready", "ocr_text": "招标底稿"},
     )
-    monkeypatch.setattr(worker, "get_bid_doc", lambda pid, bid_id, tenant: None)
+    monkeypatch.setattr(doc_layer, "get_bid_doc", lambda pid, bid_id, tenant: None)
 
-    result = worker._load_doc_layer_context("tp-1", "bid-missing", "acme")
+    result = doc_layer.load_doc_layer_context("tp-1", "bid-missing", "acme")
     assert result is None
 
 
 def test_p11_load_doc_layer_failed_bid_returns_none(monkeypatch):
     """When bid ocr_status=failed, returns None (no fallback to failed text)."""
-    import server.tender.runner as worker
 
     monkeypatch.setattr(
-        worker,
+        doc_layer,
         "get_project_doc",
         lambda pid, tenant: {"ocr_status": "ready", "ocr_text": "招标底稿"},
     )
     monkeypatch.setattr(
-        worker,
+        doc_layer,
         "get_bid_doc",
         lambda pid, bid_id, tenant: {
             "bid_id": bid_id,
@@ -180,7 +177,7 @@ def test_p11_load_doc_layer_failed_bid_returns_none(monkeypatch):
         },
     )
 
-    result = worker._load_doc_layer_context("tp-1", "bid-failed", "acme")
+    result = doc_layer.load_doc_layer_context("tp-1", "bid-failed", "acme")
     assert result is None, "failed OCR must not be used"
 
 
@@ -196,7 +193,7 @@ def test_p11_run_evaluation_passes_bid_id_to_load_context(monkeypatch):
         load_calls["tenant"] = tenant
         return "=== SCOPED OCR ==="
 
-    monkeypatch.setattr(worker, "_load_doc_layer_context", spy_load)
+    monkeypatch.setattr(doc_layer, "load_doc_layer_context", spy_load)
     monkeypatch.setattr(worker, "ocr_preprocess_block", lambda *a, **kw: "fallback")
     monkeypatch.setenv("TENDER_READ_DOC_LAYER", "1")
 
@@ -231,12 +228,12 @@ def test_p11_multiple_bids_only_current_bid_in_context(monkeypatch):
     }
 
     monkeypatch.setattr(
-        worker,
+        doc_layer,
         "get_project_doc",
         lambda pid, tenant: {"ocr_status": "ready", "ocr_text": "招标文件底稿"},
     )
     monkeypatch.setattr(
-        worker,
+        doc_layer,
         "get_bid_doc",
         lambda pid, bid_id, tenant: bids_data.get(bid_id),
     )
@@ -339,7 +336,7 @@ def test_p12_default_prewarm_max_is_4():
 
 
 def test_p13_project_doc_ocr_writes_failed_on_exception(monkeypatch):
-    """When prewarm_and_text raises, project doc row gets ocr_status=failed."""
+    """When prewarm_and_report raises, project doc row gets ocr_status=failed."""
     monkeypatch.setattr("server.routes.deps.TENANT_KEYS", {"default": _TOKEN})
     import server.api as api_module
     import server.routes.deps as deps_module
@@ -354,10 +351,10 @@ def test_p13_project_doc_ocr_writes_failed_on_exception(monkeypatch):
     def _raise(*args, **kwargs):
         raise RuntimeError("OCR engine down")
 
-    # S3: OCR 编排下沉 server.tender.doc_pipeline；prewarm_and_text 在该模块导入。
+    # S3: OCR 编排下沉 server.tender.doc_pipeline；prewarm_and_report 在该模块导入。
     import server.tender.doc_pipeline as pipeline
 
-    monkeypatch.setattr("server.tender.doc_pipeline.prewarm_and_text", _raise)
+    monkeypatch.setattr("server.tender.doc_pipeline.prewarm_and_report", _raise)
 
     client = TestClient(api_module.app)
     pid = _make_project(client)
@@ -374,12 +371,12 @@ def test_p13_project_doc_ocr_writes_failed_on_exception(monkeypatch):
     row = get_project_doc(pid, "default")
     assert row is not None
     assert row["ocr_status"] == "failed", (
-        "ocr_status must be 'failed' when prewarm_and_text raises"
+        "ocr_status must be 'failed' when prewarm_and_report raises"
     )
 
 
 def test_p13_bid_doc_ocr_writes_failed_on_exception(monkeypatch):
-    """When prewarm_and_text raises for bid, bid doc gets ocr_status=failed."""
+    """When prewarm_and_report raises for bid, bid doc gets ocr_status=failed."""
     monkeypatch.setattr("server.routes.deps.TENANT_KEYS", {"default": _TOKEN})
     import server.api as api_module
     import server.routes.deps as deps_module
@@ -396,7 +393,7 @@ def test_p13_bid_doc_ocr_writes_failed_on_exception(monkeypatch):
 
     import server.tender.doc_pipeline as pipeline
 
-    monkeypatch.setattr("server.tender.doc_pipeline.prewarm_and_text", _raise)
+    monkeypatch.setattr("server.tender.doc_pipeline.prewarm_and_report", _raise)
 
     client = TestClient(api_module.app)
     pid = _make_project(client)
@@ -451,7 +448,7 @@ def test_p13_bid_doc_ocr_task_function_exists():
 
 
 def test_p13_project_doc_ocr_writes_failed_on_rendered_error_block(monkeypatch):
-    """S3 review P1: prewarm_and_text 返回**渲染后的全失败底稿**（`### 文件:` 头 + `[识别失败]` 正文）
+    """S3 review P1: prewarm_and_report 返回**渲染后的全失败底稿**（`### 文件:` 头 + `[识别失败]` 正文）
     时，project doc 必须 ocr_status=failed —— is_ocr_text_valid 不能被文件头骗过（旧 startswith 会漏判）。"""
     monkeypatch.setattr("server.routes.deps.TENANT_KEYS", {"default": _TOKEN})
     import server.api as api_module
@@ -465,10 +462,12 @@ def test_p13_project_doc_ocr_writes_failed_on_rendered_error_block(monkeypatch):
     )
 
     import server.tender.doc_pipeline as pipeline
+    from server.ocr.pipeline import summarize_ocr_results
 
     error_block = "### 文件: bad.pdf (kind=pdf, route=ocr)\n[识别失败] OCR engine down"
     monkeypatch.setattr(
-        "server.tender.doc_pipeline.prewarm_and_text", lambda *a, **kw: error_block
+        "server.tender.doc_pipeline.prewarm_and_report",
+        lambda *a, **kw: (error_block, summarize_ocr_results([], error_block)),
     )
 
     client = TestClient(api_module.app)
@@ -497,10 +496,12 @@ def test_p13_bid_doc_ocr_writes_failed_on_rendered_error_block(monkeypatch):
     )
 
     import server.tender.doc_pipeline as pipeline
+    from server.ocr.pipeline import summarize_ocr_results
 
     error_block = "### 文件: bid.pdf (kind=pdf, route=ocr)\n[识别失败] OCR engine down"
     monkeypatch.setattr(
-        "server.tender.doc_pipeline.prewarm_and_text", lambda *a, **kw: error_block
+        "server.tender.doc_pipeline.prewarm_and_report",
+        lambda *a, **kw: (error_block, summarize_ocr_results([], error_block)),
     )
 
     client = TestClient(api_module.app)

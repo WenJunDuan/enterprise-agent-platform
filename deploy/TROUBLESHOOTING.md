@@ -384,3 +384,37 @@ CPU/内存、restart policy 与旧容器严格一致；后端 `/health` 和前�
   `agent-front:0730b1`（含已无引用的旧 image ID），没有执行全局 `image prune`。删除后旧 tag/ID
   均不可 inspect，当前 `0730b2` 双容器仍运行，后端 `/health` 与前端 `/` 均为 HTTP 200，
   新导出包再次校验为 `OK`。被删备份与旧镜像不可从本机 Docker 恢复。
+
+## I. 并发评标：底稿降级 / 双跑 / 等待日志怎么读（H3）
+
+**症状：两个标并发跑，第二个标大量缺结果。** 先按下面三条对号入座，再动手。
+
+1. **doc 状态不再只有 ready/failed**。`tender_project_docs` / `tender_bid_docs` 的 `ocr_status`
+   现在是 `pending|running|ready|degraded|partial|failed`：
+   - `degraded` = 底稿完整但含 Tesseract 降级段（VLM 两次都失败才降级）；
+   - `partial` = 部分文件失败或某文件渲染中途失败，失败清单在同表 `ocr_failed_files`（JSON）。
+   两者都**可用**：评标照跑，结论 `extracted_data.ocr_warnings` 点名受影响文件。
+   `SELECT bid_id, ocr_status, ocr_failed_files FROM tender_bid_docs WHERE project_id = ?;`
+   是排查第一条命令。未知状态值会让评标直接抛 `unknown ocr_status`（fail-fast，不静默当 ready）。
+
+2. **评标等预热的日志**。评标发现预热在途时不再另起一套 inline OCR（那正是负载翻倍的来源），
+   而是每 60s 打一条 `tender_doc_layer_wait`，带 `project_id / bid_id / project_ocr_status /
+   bid_ocr_status / remaining_sec`。看到它持续输出 = 正在等预热，不是卡死。
+   等待上限从 `TENDER_TIMEOUT_SEC` 派生（50%），到点会转 inline 回落并在结论里留 warning。
+   `tender_ocr_source` 仍标 `doc_layer_reuse` / `inline_ocr`，用来确认到底跑了几套 OCR。
+
+3. **"预热在途"怎么判**。判据是 doc 行 `ocr_status=running` **且** `updated_at` 距今
+   < `OCR_PREWARM_STALE_SEC`（默认 300s）；预热流水线每 60s 刷一次 `updated_at`。
+   进程重启遗留的僵尸 `running` 因心跳停摆而变陈旧，评标按 failed 处理并立刻走 inline。
+   若看到"评标不等预热直接 inline"，先查该行 `updated_at` 是不是已经陈旧。
+
+4. **补跑超时后闸可能短暂超额**。评标对 degraded/partial 底稿会自动补跑一次，补跑有预算上限；
+   超时放弃时协程被取消、上传闸名额立刻归还，但**底层 OCR 线程仍在跑完当前文件**。因此超时后的
+   几十秒内，实际在途的 OCR 可能比 `OCR_PREWARM_MAX` 允许的多一两个。这是已知边界（任务级抢占
+   要等 OCR 服务化才能干净做到），表现为短时负载尖峰，不影响正确性；持续超额则应查是不是补跑
+   被反复触发（同一 doc 反复 degraded）。
+
+相关环境变量：`OCR_EXECUTOR_WORKERS`（OCR 命名线程池，默认 4；OCR 不再占用 asyncio 默认池，
+状态写库不会被 OCR 饿死）、`OCR_VL_MAX_CONCURRENCY`（逐页 VLM 客户端并发闸，默认 4，
+现在对 openai-compatible 端点真正生效）、`OCR_PREWARM_STALE_SEC`。
+注意：旧的 `TENDER_DOC_LAYER_WAIT_SEC`（固定 360s）**已废弃**，改由上面的派生上限接管。

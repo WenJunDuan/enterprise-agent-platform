@@ -61,6 +61,15 @@ def _read_bytes(path: Any) -> bytes | None:
         return None
 
 
+def _is_low_fidelity(result: dict) -> bool:
+    """降级（Tesseract 段）或部分（渲染中途失败）底稿不进/不出缓存。
+
+    永久缓存低质结果 = 之后永不重跑 VLM（0730 KD3 决策）；H3 KD6 的 partial 底稿同理——
+    缓存它会把"这次少了几页"固化成永久事实。
+    """
+    return result.get("degraded") is True or result.get("partial") is True
+
+
 def get_cached(path: Any, *, purpose: str | None = None, run_seal: bool = False) -> dict | None:
     """命中返回缓存的识别产物 dict；未命中 / 未启用 / 读失败 → None。"""
     if not OCR_CACHE_ENABLED:
@@ -73,7 +82,7 @@ def get_cached(path: Any, *, purpose: str | None = None, run_seal: bool = False)
         loaded = json.loads(cache_file.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
-    if not isinstance(loaded, dict) or loaded.get("degraded") is True:
+    if not isinstance(loaded, dict) or _is_low_fidelity(loaded):
         return None
     return loaded
 
@@ -84,7 +93,7 @@ def put_cached(
     """写缓存（临时文件 + 原子 rename，并发安全）。任何失败静默——缓存绝不拖垮主识别流程。"""
     if not OCR_CACHE_ENABLED:
         return
-    if result.get("degraded") is True:
+    if _is_low_fidelity(result):
         return
     content = _read_bytes(path)
     if content is None:

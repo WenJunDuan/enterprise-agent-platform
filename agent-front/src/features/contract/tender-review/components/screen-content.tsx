@@ -43,6 +43,7 @@ export function ScreenContent({ page }: { page: TenderReviewPageState }) {
           uploadedBidderIds={page.uploadedBidderIds}
           uploadingBidderIds={page.uploadingBidderIds}
           isOcrReady={page.isOcrReady}
+          ocrNotice={page.ocrNotice}
           hasUploaded={page.uploadProjectId !== null}
           docsStatus={page.docsStatus}
           uploadError={page.uploadError}

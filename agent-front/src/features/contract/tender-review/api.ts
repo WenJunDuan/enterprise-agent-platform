@@ -362,8 +362,19 @@ export async function deleteTenderProject(projectId: string): Promise<void> {
 
 // ── P3 OCR 预热 API ────────────────────────────────────────────────────────────
 
-/** OCR status values from the backend. */
-export type OcrStatus = 'pending' | 'running' | 'ready' | 'failed'
+/**
+ * OCR status values from the backend.
+ *
+ * H3 KD2 新增两档：`degraded`（底稿完整但含本地兜底引擎的降级段）、`partial`（部分文件失败或
+ * 缺页）。两者都是**终态且底稿可用**——判据统一走 `./ocr-status`，不要在消费点各写 `=== 'ready'`。
+ */
+export type OcrStatus =
+  | 'pending'
+  | 'running'
+  | 'ready'
+  | 'degraded'
+  | 'partial'
+  | 'failed'
 
 export type DocsStatusTenderDoc = {
   ocr_status: OcrStatus

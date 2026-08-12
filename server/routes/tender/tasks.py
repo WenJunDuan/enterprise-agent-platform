@@ -98,7 +98,7 @@ async def _submit_bid_evaluation(
         raise HTTPException(status_code=503, detail="评标队列已满，请稍后重试")
     request_id = new_request_id()
     # R6-R2：前端传 prewarm bid_id（上传即 OCR 时 uploadBid 返回的）→ 评标据此复用已预热的 OCR 底稿
-    # （worker _load_doc_layer_context 按 bid_id 读 doc 层），免重 OCR（实测省一遍 ~5min）。缺省 None
+    # （doc_layer.load_doc_layer_context 按 bid_id 读 doc 层），免重 OCR（实测省一遍 ~5min）。缺省 None
     # → 走原 inline OCR 路径（向后兼容 directory/legacy）。
     prewarm_bid_id: str | None = None
 

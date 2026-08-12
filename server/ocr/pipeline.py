@@ -11,6 +11,7 @@ import os
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import NamedTuple
 
 from server.common.corpus import ARTIFACT_CONVERTED, ARTIFACT_ORIGINAL, parse_page_anchor
 from server.ocr import OcrDependencyError, OcrError
@@ -672,7 +673,7 @@ _EMPTY_BLOCK_MARKER = "（无识别内容）"
 def is_ocr_text_valid(text: str) -> bool:
     """True iff the rendered OCR block contains at least one line of real recognized content.
 
-    ``prewarm_and_text``→``build_extraction_block`` 把每个文件渲染成 ``### 文件: …`` 头 + 正文；
+    ``prewarm_and_report``→``build_extraction_block`` 把每个文件渲染成 ``### 文件: …`` 头 + 正文；
     识别失败的文件正文以 ``OCR_ERROR_PREFIX`` 打头，空目录回退 ``_EMPTY_BLOCK_MARKER``。
     **不能只看整体 startswith(prefix)**——文件头在最前，全失败时整体不以 prefix 开头会被误判有效
     （后台 OCR 会把失败件写成 ocr_status=ready）。逐行剔除文件头/失败行/空行/空占位后，只要还剩
@@ -769,24 +770,83 @@ def build_extraction_block(results: list[dict]) -> str:
     return "\n\n".join(parts) or _EMPTY_BLOCK_MARKER
 
 
-def prewarm_and_text(case_dir: str, *, purpose: str | None = None) -> str:
-    """预热 content-sha256 缓存并返回目录 OCR 底稿文本（P2 上传即 OCR 解耦）。
+class OcrDocReport(NamedTuple):
+    """目录级 OCR 明细：doc 层状态 + 逐文件失败/降级清单（KD2 状态粒度的判据源）。
+
+    Attributes:
+        status: ``OCR_DOC_STATUSES`` 之一。
+        failed_files: 完全失败或只出了部分页的文件名（供结论 warning 点名）。
+        degraded_files: 含 Tesseract 降级段的文件名。
+    """
+
+    status: str
+    failed_files: tuple[str, ...]
+    degraded_files: tuple[str, ...]
+
+    @property
+    def problem_files(self) -> tuple[str, ...]:
+        """失败 + 降级文件的合并清单（保序去重）；落库与结论 warning 都用这一份。
+
+        用户要知道的是"哪些材料的底稿不可靠"——"彻底没读出来"和"用兜底引擎凑合读出来"
+        对评分项的影响是同一类（证据可能不完整）。
+        """
+        merged = list(self.failed_files)
+        merged.extend(name for name in self.degraded_files if name not in merged)
+        return tuple(merged)
+
+
+# doc 层 OCR 状态枚举（H3 KD2 owner）：ready 之外新增 degraded / partial 两档，让"底稿降级"
+# 与"部分文件缺失"对状态机可见——此前两者都被写成 ready 永久落库，之后永不重跑。
+OCR_DOC_STATUSES: frozenset[str] = frozenset({"ready", "degraded", "partial", "failed"})
+
+
+def _result_file_name(result: dict) -> str:
+    return Path(result.get("path", "?")).name
+
+
+def summarize_ocr_results(results: list[dict], text: str) -> OcrDocReport:
+    """把逐文件识别产物 + 渲染底稿归纳为 doc 层状态（KD2）。
+
+    优先级 failed > partial > degraded > ready：
+
+    - ``failed``：底稿无任何真实内容行（全失败/空目录）——读层绝不能拿它当底稿。
+    - ``partial``：有文件识别失败，或某文件渲染中途失败只出了部分页（KD6）。
+    - ``degraded``：底稿完整但含 Tesseract 降级段——不得以 ready 永久落库（0730 KD3 只挡了
+      文件缓存层，doc 层 DB 是漏的那一半）。
+
+    判据取自**结构化产物**而非回读渲染文本：后者只有渲染痕迹，解析会随渲染格式漂移。
+    """
+    failed = tuple(_result_file_name(r) for r in results if r.get("kind") == "error")
+    partial = tuple(_result_file_name(r) for r in results if r.get("partial") is True)
+    degraded = tuple(_result_file_name(r) for r in results if r.get("degraded") is True)
+    if not is_ocr_text_valid(text):
+        return OcrDocReport("failed", failed + partial, degraded)
+    if failed or partial:
+        return OcrDocReport("partial", failed + partial, degraded)
+    if degraded:
+        return OcrDocReport("degraded", (), degraded)
+    return OcrDocReport("ready", (), ())
+
+
+def prewarm_and_report(case_dir: str, *, purpose: str | None = None) -> tuple[str, OcrDocReport]:
+    """预热 content-sha256 缓存，返回目录 OCR 底稿文本 + doc 层明细（P2 上传即 OCR 解耦）。
 
     复用 ``extract_dir``（已有 content-sha256 缓存），对目录下每个文件跑确定性 OCR，
-    把结果组装成内联底稿（``build_extraction_block``）并返回字符串。
+    把结果组装成内联底稿（``build_extraction_block``）。用于上传端点触发的后台 OCR 预热：
+    评标时读层直接取 ocr_text，跳过串行 OCR。
 
-    用于上传端点触发的后台 OCR 预热：评标时读层直接取 ocr_text，跳过串行 OCR。
-    **同步函数**，async 调用方须经 ``asyncio.to_thread``（含云 OCR 会阻塞事件循环）。
+    **同步函数**，async 调用方须经命名 OCR 线程池（见 ``prewarm_scheduler.run_in_ocr_executor``）。
 
     Args:
         case_dir: 文件目录路径（招标或投标文件落盘目录）。
         purpose: 透传给 OCR 引擎的场景提示（如评标目的字符串）。
 
     Returns:
-        内联底稿文本字符串（``build_extraction_block`` 产物，至少 "（无识别内容）"）。
+        ``(底稿文本, OcrDocReport)``；文本至少是 "（无识别内容）" 占位。
     """
     results = extract_dir(case_dir, purpose=purpose)
-    return build_extraction_block(results)
+    text = build_extraction_block(results)
+    return text, summarize_ocr_results(results, text)
 
 
 def ocr_preprocess_block(

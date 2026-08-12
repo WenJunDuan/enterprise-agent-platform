@@ -19,6 +19,8 @@ Cases:
 
 from __future__ import annotations
 
+from server.tender import doc_layer  # noqa: E402  (H3: 读层拆出后测试改打这里)
+
 import asyncio
 
 from server.common.agent_bridge import AgentRunMeta
@@ -58,8 +60,8 @@ def test_read_layer_uses_doc_store_when_ready(monkeypatch):
 
     # Provide ready doc store data
     monkeypatch.setattr(
-        runner,
-        "_load_doc_layer_context",
+        doc_layer,
+        "load_doc_layer_context",
         lambda *_a, **_kw: "=== DOC LAYER TEXT ===",
     )
     # ocr_preprocess_block should NOT be called
@@ -94,8 +96,8 @@ def test_read_layer_fallback_when_doc_missing(monkeypatch):
 
     # Doc layer returns None (no data available)
     monkeypatch.setattr(
-        runner,
-        "_load_doc_layer_context",
+        doc_layer,
+        "load_doc_layer_context",
         lambda *_a, **_kw: None,
     )
 
@@ -129,8 +131,8 @@ def test_read_layer_disabled_always_falls_back(monkeypatch):
 
     load_called = []
     monkeypatch.setattr(
-        runner,
-        "_load_doc_layer_context",
+        doc_layer,
+        "load_doc_layer_context",
         lambda *_a, **_kw: load_called.append(True) or "doc layer",
     )
 
@@ -166,8 +168,8 @@ def test_read_layer_no_project_id_falls_back(monkeypatch):
 
     load_called = []
     monkeypatch.setattr(
-        runner,
-        "_load_doc_layer_context",
+        doc_layer,
+        "load_doc_layer_context",
         lambda *_a, **_kw: load_called.append(True) or "doc layer",
     )
 
