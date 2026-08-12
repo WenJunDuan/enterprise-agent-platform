@@ -608,7 +608,7 @@ _PAGE_ANCHOR_PATTERN = re.compile(r"^【第\s+\d+\s+页】$")
 def is_ocr_text_valid(text: str) -> bool:
     """True iff the rendered OCR block contains at least one line of real recognized content.
 
-    ``prewarm_and_text``→``build_extraction_block`` 把每个文件渲染成 ``### 文件: …`` 头 + 正文；
+    ``prewarm_and_report``→``build_extraction_block`` 把每个文件渲染成 ``### 文件: …`` 头 + 正文；
     识别失败的文件正文以 ``OCR_ERROR_PREFIX`` 打头，空目录回退 ``_EMPTY_BLOCK_MARKER``。
     **不能只看整体 startswith(prefix)**——文件头在最前，全失败时整体不以 prefix 开头会被误判有效
     （后台 OCR 会把失败件写成 ocr_status=ready）。逐行剔除文件头/失败行/空行/空占位后，只要还剩
