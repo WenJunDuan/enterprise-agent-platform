@@ -1078,7 +1078,8 @@ def test_worker_injects_stored_criteria_into_context(monkeypatch):
     # 版本计算），故 patch 点随之下移到该模块的 get_project_doc。
     import server.tender.compare_input as compare_input
 
-    monkeypatch.setattr(worker, "get_project_doc", fake_get_project_doc)
+    # H3 合并后 runner 不再直接 import get_project_doc（读层已迁 doc_layer），
+    # 注入路径唯一读点是 compare_input.get_project_doc。
     monkeypatch.setattr(compare_input, "get_project_doc", fake_get_project_doc)
     monkeypatch.setenv("TENDER_READ_DOC_LAYER", "1")
 
@@ -1156,7 +1157,7 @@ def test_worker_no_criteria_in_store_unchanged_behavior(monkeypatch):
 
     import server.tender.compare_input as compare_input
 
-    monkeypatch.setattr(worker, "get_project_doc", fake_get_project_doc_no_criteria)
+    # 同上：读点唯一在 compare_input。
     monkeypatch.setattr(compare_input, "get_project_doc", fake_get_project_doc_no_criteria)
     monkeypatch.setenv("TENDER_READ_DOC_LAYER", "1")
     monkeypatch.setattr(

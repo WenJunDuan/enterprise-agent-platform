@@ -37,7 +37,8 @@ def test_run_tender_evaluation_forwards_bid_id(monkeypatch):
         return {"verdict": "manual_review"}, _fake_meta(opts["request_id"])
 
     monkeypatch.setattr(runner, "run_command_json", fake_run_command_json)
-    monkeypatch.setattr(runner, "get_project_doc", lambda *_a, **_kw: None)
+    # H3 合并后 criteria 注入经 resolve_project_criteria（runner 不再 import get_project_doc）。
+    monkeypatch.setattr(runner, "resolve_project_criteria", lambda *_a, **_kw: (None, None))
     monkeypatch.setattr(runner, "ocr_preprocess_block", lambda *a, **kw: "fallback")
 
     asyncio.run(
@@ -63,7 +64,8 @@ def test_run_tender_evaluation_without_bid_id_degrades_safely(monkeypatch):
         return {"verdict": "manual_review"}, _fake_meta(opts["request_id"])
 
     monkeypatch.setattr(runner, "run_command_json", fake_run_command_json)
-    monkeypatch.setattr(runner, "get_project_doc", lambda *_a, **_kw: None)
+    # H3 合并后 criteria 注入经 resolve_project_criteria（runner 不再 import get_project_doc）。
+    monkeypatch.setattr(runner, "resolve_project_criteria", lambda *_a, **_kw: (None, None))
     monkeypatch.setattr(runner, "ocr_preprocess_block", lambda *a, **kw: "fallback")
 
     asyncio.run(
