@@ -194,3 +194,44 @@ def test_scoring_hit_page_correction_is_recorded_too():
     ev = out["extracted_data"]["scoring"][0]["award_hits"][0]["evidence"]
     assert ev["source"] == "投标文件.pdf 第 9 页"
     assert ev["resolution"]["page_corrected"] == {"from": 2, "to": 9}
+
+
+# ── F2（review pass1）：纠正必须限定在 source 点名的文件内 ────────────────────
+
+_TWO_FILES = (
+    "### 文件: 投标A.pdf (kind=pdf_text)\n"
+    "【第 2 页】\n投标A的封面与承诺函内容\n"
+    "### 文件: 投标B.pdf (kind=pdf_text)\n"
+    "【第 7 页】\n独有的关键业绩原文某某互通立交工程\n"
+)
+
+
+def test_cross_file_unique_hit_is_not_silently_rewritten():
+    """quote 只在**别的文件**里唯一命中 → 不得改写页号（否则造出底稿中不存在的出处）。"""
+    out = _chain_output("投标A.pdf 第 3 页", "独有的关键业绩原文某某互通立交工程")
+    resolve_audit_evidence(out, _TWO_FILES)
+
+    item = out["evidence_chain"][0]
+    assert item["source"] == "投标A.pdf 第 3 页"
+    assert item["resolution"]["page"] == "page_unverified"
+    assert "page_corrected" not in item["resolution"]
+
+
+def test_source_without_filename_is_not_corrected():
+    """source 未点名任何文件 → 无从判断该纠正到哪个文件的页，只降级不改写。"""
+    out = _chain_output("第 3 页", "独有的关键业绩原文某某互通立交工程")
+    resolve_audit_evidence(out, _TWO_FILES)
+
+    item = out["evidence_chain"][0]
+    assert item["source"] == "第 3 页"
+    assert item["resolution"]["page"] == "page_unverified"
+
+
+def test_same_file_unique_hit_is_still_corrected():
+    """回归：点名文件内唯一命中仍就地纠正（F2 修复不得削弱 AC4 主用例）。"""
+    out = _chain_output("投标B.pdf 第 3 页", "独有的关键业绩原文某某互通立交工程")
+    resolve_audit_evidence(out, _TWO_FILES)
+
+    item = out["evidence_chain"][0]
+    assert item["source"] == "投标B.pdf 第 7 页"
+    assert item["resolution"]["page_corrected"] == {"from": 3, "to": 7}

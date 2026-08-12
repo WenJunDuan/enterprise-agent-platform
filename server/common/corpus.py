@@ -371,6 +371,13 @@ class CorpusIndex:
         nsrc_full = unicodedata.normalize("NFKC", source).lower()
         return any(_source_mentions_file(nsrc_full, name) for name in self._page_unreliable)
 
+    def source_names_file(self, source: str | None, file_name: str) -> bool:
+        """出处是否点名了 ``file_name``（页号纠正必须限定在被点名的文件内，review pass1 F2）。"""
+        if not source:
+            return False
+        nsrc_full = unicodedata.normalize("NFKC", source).lower()
+        return _source_mentions_file(nsrc_full, _normalize_filename(file_name))
+
     def source_names_low_clarity_file(self, source: str | None) -> str | None:
         """source 文本是否点名了某 **low**（confirmed 低置信，不含 unknown）文件 → 返回该文件名。
 

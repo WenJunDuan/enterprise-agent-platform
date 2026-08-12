@@ -75,10 +75,21 @@ def _min_quote_chars() -> int:
 # ── 主回查逻辑 ────────────────────────────────────────────────────────────────
 
 
-def _corrected_page(index: CorpusIndex, tier: str, norm_quote: str) -> int | None:
-    """quote 在带锚页里**唯一**命中的页号；多处命中或零命中 → None（不猜）。"""
-    hits = locate_quote_pages(index, tier, norm_quote)
-    return hits[0][1] if len(hits) == 1 else None
+def _corrected_page(
+    index: CorpusIndex, tier: str, norm_quote: str, source: str | None
+) -> int | None:
+    """quote 在 **source 点名的那个文件** 里唯一命中的页号；否则 None（不猜）。
+
+    必须限定在被点名文件内（review pass1 F2）：只改页号不改文件名，若拿别的文件的页号回填，
+    产出的是"该文件该页根本不存在"的出处，还被标成 page_corrected 这种正面状态——比不纠正更坏。
+    source 未点名任何文件时同样不纠正（无从判断该用哪个文件的页坐标）。
+    """
+    named = [
+        page
+        for fname, page in locate_quote_pages(index, tier, norm_quote)
+        if index.source_names_file(source, fname)
+    ]
+    return named[0] if len(named) == 1 else None
 
 
 def _annotate_page(
@@ -109,7 +120,7 @@ def _annotate_page(
     if page is not None and index.source_names_page_unreliable_file(source):
         pstat = "page_unverified"
     elif pstat == "page_mismatch":
-        corrected = _corrected_page(index, tier, norm_quote)
+        corrected = _corrected_page(index, tier, norm_quote, source)
         if corrected is None:
             pstat = "page_unverified"
         else:
