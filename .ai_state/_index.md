@@ -49,7 +49,7 @@ counts:
   issues_count: 0
   refactors_count: 0
   systems_count: 10
-  reviews_count: 73
+  reviews_count: 75
   cleanup_count: 3
   compound:
     learning: 13
@@ -67,7 +67,7 @@ pointers:
   latest_architecture_update: "2026-08-11T01:45:11.504Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "【2026-08-12 网络阻塞暂停】H1 已合 main(待 polish F8+runtime-verify)。H2 返工完成(13 commits 已 rebase main, worktree agent-a4910ffcb97ec7942, 证据11条, 三命令绿, 主 agent 已抽查)——pass2 复审连续 3 次被本机代理(127.0.0.1:6152)掐断流式连接未能启动, 按三次失败规则停止重试。恢复链: ①修代理(api.anthropic.com 直连/关空闲超时, 见 compound/2026-06-25-trick-codex-proxy-hangs-streaming 同源问题) ②重派 H2 pass2 reviewer(审 3ae8820..HEAD 7 commits, 对照 reviews/pass1.md)→evaluator→合 main ③H3 review 三件套(worktree agent-a13794b891d0fcd1e, 7 commits, rebase H2 后合并) ④H1 polish+runtime-verify ⑤ship+push。"
+next_action: "【2026-08-12 program 三 slice 全部合入 main】H1(1ce644d)/H2(1a34942)/H3(80e46a5) 均经完整 review 链(REWORK→返工→evaluator PASS)落地; main 终态 collect 1363, 完整环境 16 条既有失败基线不变, 前端 189 pass+build 绿, 本地领先 origin 未 push。剩余收口: ①polish(三 sprint P2 残留清单见各 reviews/passN + H1-F8/H2-N2N3/H3-F6F7F10) ②runtime-verify(真评标实跑: pending_reason 重试率/双家并发单次入队/存量 self_parsed 观感/LibreOffice 容器内 convert 端到端; pass3-F7 完整环境复跑已在 main 满足) ③ship: 状态同步+push(ATHENA_ALLOW_PUSH=1)。三个 worktree 可清理(agent-a56af065140f2dc80/a4910ffcb97ec7942/a13794b891d0fcd1e)。"
 last_subagent: "codex-exec" # tender-report-dimensions D0-D5 headless (codex 0.142.1, gpt-5.5)；必须 env -u HTTP_PROXY -u HTTPS_PROXY 否则 streaming API 挂起，见 compound/2026-06-25-trick-codex-proxy-hangs-streaming.md
 last_subagent_at: "2026-06-25T00:00:00.000Z"
 active_worktrees: [] # 原条目是远端机器(/Users/mac/...)的 worktree，本机不存在，2026-08-11 清理
