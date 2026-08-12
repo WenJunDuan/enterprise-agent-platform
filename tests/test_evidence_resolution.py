@@ -671,15 +671,21 @@ LOW_CLARITY_CORPUS = (
 
 def test_parse_file_head_clarity_and_clean_name():
     # critic F1：文件名不被 (kind=)/[检出印章]/[清晰度] 污染
-    name, clarity = _parse_file_head(
+    name, clarity, page_unreliable = _parse_file_head(
         "2.08资格审查资料.pdf (kind=ocr, route=cloud) [检出印章 2 枚] [⚠清晰度低：x]"
     )
     assert name == "2.08资格审查资料.pdf"
     assert clarity == "low"
-    name2, c2 = _parse_file_head("普通.pdf (kind=pdf_text, route=native)")
+    assert page_unreliable is False
+    name2, c2, _ = _parse_file_head("普通.pdf (kind=pdf_text, route=native)")
     assert name2 == "普通.pdf" and c2 == "clear"
-    _, c3 = _parse_file_head("扫描.pdf (kind=ocr) [清晰度未知：无置信度]")
+    _, c3, _ = _parse_file_head("扫描.pdf (kind=ocr) [清晰度未知：无置信度]")
     assert c3 == "unknown"
+    # H2 KD1：云 OCR 页数守卫标注既不污染文件名，也被解析成页号不可靠信号
+    name4, _, unreliable4 = _parse_file_head(
+        "扫描.pdf (kind=ocr) [⚠页号存疑：云 OCR 返回 1 页、文档 5 页，页码仅供参考]"
+    )
+    assert name4 == "扫描.pdf" and unreliable4 is True
 
 
 def test_normalize_filename():
@@ -689,9 +695,9 @@ def test_normalize_filename():
 
 def test_parse_file_head_keeps_bracket_in_filename():
     # reviewer F2：文件名含普通 [ 不应被当标记切断（只在已知标记 [检出印章/[清晰度 处切）
-    name, clarity = _parse_file_head("file[1].pdf (kind=pdf_text, route=native)")
+    name, clarity, _ = _parse_file_head("file[1].pdf (kind=pdf_text, route=native)")
     assert name == "file[1].pdf" and clarity == "clear"
-    name2, c2 = _parse_file_head("data[v2].pdf (kind=ocr) [⚠清晰度低：x]")
+    name2, c2, _ = _parse_file_head("data[v2].pdf (kind=ocr) [⚠清晰度低：x]")
     assert name2 == "data[v2].pdf" and c2 == "low"
 
 

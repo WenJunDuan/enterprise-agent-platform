@@ -95,6 +95,11 @@
           },
           "conclusion": {
             "type": "string"
+          },
+          "page_kind": {
+            "type": "string",
+            "enum": ["original", "converted"],
+            "description": "页号所属 artifact 坐标系：original=原文档页（缺省，存量兼容）；converted=Office→PDF 转换稿页号，原文档页号不可用"
           }
         },
         "required": ["source", "finding", "conclusion"]

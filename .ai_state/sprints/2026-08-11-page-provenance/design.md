@@ -139,6 +139,27 @@ tests/test_ocr_pipeline.py, test_ocr_native_formats.py, test_tender_*  全 KD �
   （上界：净增 ≤60 行**仅限 pipeline.py / engine.py 两文件**，超出即拆新模块；corpus/evidence
   的上界以下方"基线补记与豁免"表为准，两处并存不矛盾——pass2-N1 澄清）；context_slim 改后须 ≤300。
 
+### 基线补记与豁免（review pass1 D3，2026-08-11 补测）
+
+design 初稿漏核两个被改文件的行数基线，补记如下（`wc -l`，基线 = main@4d0a54c）：
+
+| 文件 | 基线 | 本 sprint 终值 | 判定 |
+|---|---|---|---|
+| `server/common/corpus.py` | 321 | 543 | **豁免**，上界 560 |
+| `server/tender/evidence.py` | 367 | 473 | **豁免**，上界 490 |
+
+两者**基线即已越 300 线**，按 coding-standards「量化验收标准必先核基线」属"基线已越线的对象"，
+本 sprint 显式记豁免而非落笔即不可达的门槛。理由与边界：
+
+- 增量本身是本 sprint 的核心交付、且高内聚：corpus 的 +222 行全部是**页锚字符串协议单点化**
+  （协议定义/解析/渲染/按锚切分）——正是为消灭 5 处平行正则而集中到此，再散开等于回退 KD0。
+- evidence 的 +106 行是页精度标注的纠正/降级分支（`_annotate_page` / `_corrected_page` /
+  `_emit_page_warnings`），与既有回查闸同一职责链。
+- **不在本 sprint 拆**的理由：拆分（corpus → `server/common/page_anchor.py`、evidence →
+  `evidence_page.py`）会改动 8 个 import 点，属纯结构变更，与本 sprint 的行为修复混在一个
+  review 周期里会让 diff 失焦；且拆完两文件仍分别约 390 / 385 行，仍需豁免，收益不改变判定。
+- **承接**：拆分列为 polish/后续 sprint 动作；超过上述上界前必须执行。
+
 ## 风险与缓解
 
 - 底稿格式变化影响缓存：单元结构变更 → OCR cache 版本 v5→v6 随行 bump（部署后每文件重跑一次，

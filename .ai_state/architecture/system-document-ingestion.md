@@ -55,7 +55,28 @@ flowchart LR
 | `page_render_worker.py` | 子进程逐页渲染 framed PNG，分配前限制像素 |
 | `engine.py` | VLM、Tesseract、Paddle 路由及统一资源/异常边界 |
 | `pipeline.py` | native→convert→OCR 编排、底稿有效性与页级事件 |
+| `draft_render.py` | 底稿渲染：页锚 artifact 坐标系、表格挂页、按锚截断 |
 | `cache.py` | 只缓存可信的非 degraded OCR 结果 |
+
+## 页锚溯源协议（唯一单点）
+
+页锚是跨模块**字符串协议**：OCR 侧生产，tender 回查闸 / BOQ / docstructure / RAG / context 瘦身 /
+ocr-page skill 消费。协议定义与解析**只在 `server/common/corpus.py`**
+（`PAGE_ANCHOR_LINE_RE` / `parse_page_anchor` / `page_anchor_text`），其余模块一律 import；
+收拢前 5 处各写一份正则，加变体时漏一处即静默失准（漏 `pipeline.is_ocr_text_valid` 会让"只有锚
+没有正文"的空底稿被判有效假 ready）。
+
+| 坐标系 | 锚点 | 语义 |
+|---|---|---|
+| `original` | `【第 N 页】` | 用户可直接回查的原文档页 |
+| `converted` | `【转换稿第 M 页】` | Office→PDF 转换稿页（LibreOffice 分页 ≠ Word 分页），原文档页号**不可知** |
+| 区间 | `【第 3-5 页】` | RAG chunk 跨页；解析取起始页 |
+
+- 单元 / segment 携带 `artifact` + `artifact_page`，`page`（可回查原文档页）在 converted 下为 `None`。
+- 云 OCR 页号是结果顺序号（`page_artifact=cloud_seq`）；与 classify 页数不一致 →
+  `page_confidence=low`，文件头标 `[⚠页号存疑…]`，回查闸把该文件证据页号全部标 `page_unverified`。
+- **例外**：`.claude/skills/ocr-page/ocr.py` 以独立脚本分发（不 import 服务端包），复刻一份正则，
+  文件内注释指明真相源；改协议时两处必须同改。
 
 ## 安全与失败语义
 
