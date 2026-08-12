@@ -207,19 +207,6 @@ records:
       doc_rerun.py 234 行 / doc_layer.py 234 行，均在 300 硬线内（N4）。
     green_observed_at: "2026-08-12T08:22:00Z"
 
-final_verification:
-  collected: 1237   # 1162 基线 + 60（pass1）+ 10（pass2）+ 5（pass3 doc_rerun）
-  full_suite: "33 failed, 1201 passed, 3 skipped —— 与基线清单 diff 为空（NO_NEW_FAILURES）"
-  ruff: "uv run ruff check server/ tests/ → All checks passed"
-  frontend: "bun test 76 pass / bun run build 成功 / bun run lint 无输出"
-  line_budgets: >-
-    全部上界与硬线在 pass3 后均已闭合，无自授豁免：
-    engine.py 887→931 (+44 ≤60)；pipeline.py 791→851 (+60 ≤60，N5 压 docstring 后机械闭合，
-    实测 `git diff --numstat` = 68/8)；runner.py 328→327 (-1 ≤40)；
-    doc_pipeline.py 472→489（pass2 F5 从 532 收回）；
-    新文件 vlm_client.py 117、doc_layer.py 234、doc_rerun.py 234、prewarm_scheduler.py 177、
-    ocr-status.ts 92 —— 均 <300（pass3 N4 把补跑写侧从 doc_layer 361 行里拆出）。
-
   - id: pass3-review-F1-F5
     ac_refs: "pass3 review F1(取消绕过结算)/F2(partial 判等)/F3(结算读裸奔)/F4(测试空转)/F5(预算入 try)"
     test_file: tests/test_tender_doc_rerun.py
@@ -235,3 +222,18 @@ final_verification:
       改同步调用(取消安全, 无 await 点); _settle_segment 整段 try 自防护段间独立; budget 提出
       try; oracle 测试 lambda 签名改 **_k(-W error 证实无未 await 协程)。主 agent 绿区直做。
     green_observed_at: "2026-08-12T10:40:00+08:00"
+
+
+final_verification:
+  collected: 1239  # e30d32b +2 用例后实测   # 1162 基线 + 60（pass1）+ 10（pass2）+ 5（pass3 doc_rerun）
+  full_suite: "33 failed, 1201 passed, 3 skipped —— 与基线清单 diff 为空（NO_NEW_FAILURES）"
+  ruff: "uv run ruff check server/ tests/ → All checks passed"
+  frontend: "bun test 76 pass / bun run build 成功 / bun run lint 无输出"
+  line_budgets: >-
+    全部上界与硬线在 pass3 后均已闭合，无自授豁免：
+    engine.py 887→931 (+44 ≤60)；pipeline.py 791→851 (+60 ≤60，N5 压 docstring 后机械闭合，
+    实测 `git diff --numstat` = 68/8)；runner.py 328→327 (-1 ≤40)；
+    doc_pipeline.py 472→489（pass2 F5 从 532 收回）；
+    新文件 vlm_client.py 117、doc_layer.py 234、doc_rerun.py 234、prewarm_scheduler.py 177、
+    ocr-status.ts 92 —— 均 <300（pass3 N4 把补跑写侧从 doc_layer 361 行里拆出）。
+
