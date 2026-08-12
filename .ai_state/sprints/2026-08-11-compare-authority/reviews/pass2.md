@@ -32,6 +32,20 @@ sprint 相关测试 64 passed、ruff 净、前端 176 pass。
 pass1 P0×2 + P1×4 + P2×3 + M×2 + D2 全部闭合或按计划 defer（仅 F8 → polish）；
 pass2 新增 P1×2 + P2×2 全部闭合或记账。
 
+## Spec Compliance
+
+终态（pass1 spec-compliance 矩阵 + pass2 闭合）：KD1-KD5 覆盖全齐、scope creep=0；pass1 的
+M1（retryCompare 无测试）与 M2（自动入队缺落库断言）已由返工闭合（describeCompareTriggerError
+两分支测试 + 真链路端到端落库断言）；D1（ref 服务端打标，强于 design）/D2（criteria_ref 已进
+audit-result schema）/D3（两层封锁枚举，接受）全部处置完毕。禁止项复核通过（不自动换算单位、
+不走旧 hash 判据）。
+
+## Evidence Cross-Check
+
+evaluator 逐项核验（详见下方 VERDICT 段）：AC1-AC7 全 ✅；tdd-evidence 11 条八字段；collect
+1207 复跑吻合；行数全部在修订上界内（compare_worker 242/compare_input 281/compare_guard 168）；
+fb3fb0a 对 pass2 N1/N2/N3 的修复逐行核实；done_without_evidence=0。
+
 ## VERDICT (evaluator, 2026-08-11)
 
 VERDICT: PASS

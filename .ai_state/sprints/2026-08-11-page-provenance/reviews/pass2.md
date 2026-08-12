@@ -34,6 +34,20 @@ PRAGMA+ALTER 先例不适用且不需要（N2 记录约束）。
 
 pass1 全闭合、共存干净、遗留仅 P2（polish 承接）。
 
+## Spec Compliance
+
+终态（pass1 spec-compliance 矩阵 + 返工闭合）：KD1-KD5 覆盖全齐、scope creep=0；MISSING×5 全闭
+（M1 report-view 主视图接线 92a41a7 / M2 ocr-page skill / M3 audit command 5d7168e / M4 部署预告
+9ae9eb7 / M5 rebase c4689fc 且三共享契约文件双侧并存核验）；D1（file 键复用，接受）/
+D2（LibreOffice 端到端环境限制显式标注，runtime-verify 承接）/D3（corpus/evidence 豁免表补记）
+处置完毕。非目标未越界。
+
+## Evidence Cross-Check
+
+evaluator 独立复核 16 项全 ✅（详见下方 VERDICT 段）：collect 1286、豁免表行数逐项实测吻合、
+tdd-evidence 恰 11 条（2 条 backfill 合规）、14 commits 落于 c4689fc 之上、golden 逐字节；
+done_without_evidence=0、unresolved_over_engineering=0。
+
 ## VERDICT (evaluator, 2026-08-12)
 
 VERDICT: PASS

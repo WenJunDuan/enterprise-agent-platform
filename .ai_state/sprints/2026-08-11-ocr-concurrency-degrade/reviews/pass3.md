@@ -33,6 +33,21 @@ collection error）。
 
 pass2 七项全闭合 + pass3 四 P1 一 P2 全部闭合（一 P2 留 polish）。无未闭合 P0/P1。待 evaluator。
 
+## Spec Compliance
+
+终态（pass1 spec-compliance 矩阵 + 两轮返工闭合）：KD1-KD6 覆盖全齐、scope creep=0；
+M1（degraded 点名）由 pass2 F6 闭合（problem_files 合并落库 + 穿透接缝测试）；D1（重试预算）
+pass2 F1 闭合；D2（等待上限公式）pass3 N3 spent_sec 真实接线闭合；D3（design 自相矛盾）已回改
+design 文本；D4（summarize 落结构化产物侧）接受且优于原案；EXTRA×6 全合理（doc_layer/doc_rerun
+拆分与 case_path/run_info_extraction 经 evaluator 显式接受）；G2（H1 枚举对齐）在合并阶段复核
+（compare 链路对 ocr_status 零耦合）。
+
+## Evidence Cross-Check
+
+evaluator 逐项核验（详见下方 VERDICT 段）：AC1-AC7/AC6b 全 ✅；e30d32b 五项修复代码级抽验属实；
+行数账实测吻合（doc_layer 234/doc_rerun 248/pipeline 净增 60/engine +44）；collect 1239→合并后
+1363；E1（证据 YAML 结构）/E2（collect 陈旧）已修（365c994）；done_without_evidence=0。
+
 ## VERDICT (evaluator, 2026-08-12)
 
 VERDICT: PASS
