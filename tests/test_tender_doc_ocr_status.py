@@ -12,6 +12,7 @@ import uuid
 
 import pytest
 
+from server.ocr import prewarm_scheduler
 from server.ocr.pipeline import OcrDocReport
 from server.stores import tender_doc_store as store
 from server.tender import doc_pipeline
@@ -222,7 +223,7 @@ def test_prewarm_touches_updated_at_on_a_doc_level_ticker(monkeypatch):
     """
     pid, bid_id = _pid(), store.new_bid_id()
     _seed_bid(pid, bid_id)
-    monkeypatch.setattr(doc_pipeline, "_PREWARM_TOUCH_INTERVAL_SEC", 0.01)
+    monkeypatch.setattr(prewarm_scheduler, "PREWARM_TOUCH_INTERVAL_SEC", 0.01)
     touches: list[int] = []
     monkeypatch.setattr(
         doc_pipeline, "touch_bid_doc_ocr", lambda *_a, **_k: touches.append(1)
@@ -239,6 +240,72 @@ def test_prewarm_touches_updated_at_on_a_doc_level_ticker(monkeypatch):
     asyncio.run(doc_pipeline.run_bid_doc_ocr(pid, bid_id, "/case/bid", tenant="t1"))
 
     assert len(touches) >= 2, "ticker 必须在单文件识别期间反复刷新 updated_at"
+    assert store.get_bid_doc(pid, bid_id, "t1")["ocr_status"] == "ready"
+
+
+def _age_bid_row(pid: str, bid_id: str, seconds: float) -> None:
+    """把行的 updated_at 人为调旧，模拟"已经排队很久"。"""
+    from datetime import datetime, timedelta, timezone
+
+    from server.platform.paths import PLATFORM_DB_FILE
+    from server.platform.sqlite_store import connect_sqlite
+
+    stale = (datetime.now(timezone.utc) - timedelta(seconds=seconds)).isoformat()
+    with connect_sqlite(PLATFORM_DB_FILE, immediate=True) as conn:
+        conn.execute(
+            "UPDATE tender_bid_docs SET updated_at = ? WHERE project_id = ? AND bid_id = ?",
+            (stale, pid, bid_id),
+        )
+
+
+def test_heartbeat_covers_the_upload_semaphore_queue(monkeypatch):
+    """F2：心跳必须早于上传信号量排队起跑——排队 400s 的真在途预热不得被判 stale。
+
+    此前 ticker 在 `async with get_upload_ocr_semaphore()` **之内**才起，排队期间零心跳：
+    前一个大标占着名额时，后一个标的 updated_at 一路变陈旧 → 评标侧 oracle 判 stale →
+    另起 inline OCR → 双跑复活（本 sprint 要杀的病灶）。
+    """
+    from server.tender import doc_layer
+
+    pid, bid_id = _pid(), store.new_bid_id()
+    _seed_bid(pid, bid_id)
+    _age_bid_row(pid, bid_id, 400)  # 模拟已排队 400s（> 默认 300s stale 阈值）
+    monkeypatch.setattr(prewarm_scheduler, "PREWARM_TOUCH_INTERVAL_SEC", 0.01)
+    touches: list[int] = []
+    real_touch = store.touch_bid_doc_ocr
+
+    def _counting_touch(*args, **kwargs):
+        touches.append(1)
+        real_touch(*args, **kwargs)
+
+    monkeypatch.setattr(doc_pipeline, "touch_bid_doc_ocr", _counting_touch)
+    ocr_started: list[int] = []
+    _patch_report(monkeypatch, OcrDocReport("ready", (), ()))
+    original_report = doc_pipeline.prewarm_and_report
+
+    def _tracked_report(*args, **kwargs):
+        ocr_started.append(1)
+        return original_report(*args, **kwargs)
+
+    monkeypatch.setattr(doc_pipeline, "prewarm_and_report", _tracked_report)
+
+    async def _scenario() -> dict:
+        # 把上传闸压到 1 个名额，用一次 acquire 就能复现"前一个大标占满、后来者排队"。
+        monkeypatch.setattr(prewarm_scheduler, "_UPLOAD_OCR_SEMAPHORE", asyncio.Semaphore(1))
+        async with prewarm_scheduler.get_upload_ocr_semaphore():  # 名额被别人占住
+            task = asyncio.create_task(
+                doc_pipeline.run_bid_doc_ocr(pid, bid_id, "/case/bid", tenant="t1")
+            )
+            await asyncio.sleep(0.08)
+            assert ocr_started == [], "OCR 还没开始跑（仍在排队），这正是要覆盖的窗口"
+            queued_row = store.get_bid_doc(pid, bid_id, "t1")
+        await task
+        return queued_row
+
+    queued_row = asyncio.run(_scenario())
+
+    assert len(touches) >= 2, "排队期间必须持续心跳（且首次立即执行）"
+    assert doc_layer.is_prewarm_in_flight(queued_row, stale_sec=300) is True
     assert store.get_bid_doc(pid, bid_id, "t1")["ocr_status"] == "ready"
 
 

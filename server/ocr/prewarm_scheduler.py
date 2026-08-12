@@ -9,14 +9,18 @@ S3 抽离：从 ``routes/tender.py`` 下沉的**通用 OCR 编排基建**——�
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import suppress
 from functools import partial
 from typing import Any, TypeVar
 
 from server.platform.config import get_ocr_concurrency_settings
+
+logger = logging.getLogger(__name__)
 
 _T = TypeVar("_T")
 
@@ -78,6 +82,53 @@ async def run_in_ocr_executor(func: Callable[..., _T], /, *args: Any, **kwargs: 
 def get_upload_ocr_semaphore() -> asyncio.Semaphore:
     """Return the shared upload-OCR concurrency semaphore (P1-2 并发闸)."""
     return _UPLOAD_OCR_SEMAPHORE
+
+
+# 预热心跳周期（秒）。必须 ≪ OCR_PREWARM_STALE_SEC（默认 300），否则评标侧的 in-flight oracle
+# 会在两次心跳之间把真在途的预热误判成僵尸 running。
+PREWARM_TOUCH_INTERVAL_SEC = 60.0
+
+
+async def _heartbeat_loop(touch: Callable[[], None]) -> None:
+    """立即刷一次 doc 行 updated_at，此后按周期刷，直到被取消。
+
+    **首次立即执行**是关键（review F2）：心跳覆盖的窗口必须从"排队等上传 OCR 名额"就开始——
+    前一个大标占满名额时，后来者可能排队数百秒，期间没有心跳就会被判 stale → 评标另起 inline
+    OCR → 双跑复活。心跳自身失败只记 debug：它是可观测性设施，不能反过来打断 OCR。
+    """
+    while True:
+        try:
+            await asyncio.to_thread(touch)
+        except Exception:
+            logger.debug("prewarm heartbeat touch failed", exc_info=True)
+        await asyncio.sleep(PREWARM_TOUCH_INTERVAL_SEC)
+
+
+async def run_prewarm_with_heartbeat(
+    func: Callable[..., _T], case_path: str, *, purpose: str | None, touch: Callable[[], None]
+) -> _T:
+    """跑一次目录预热 OCR：全程 doc 级心跳 + 上传并发闸 + 命名 OCR 池（KD4/KD5 的调度归属地）。
+
+    时序：起心跳（立即 touch）→ 排队取上传 OCR 名额 → 在命名池跑 ``func`` → 停心跳。
+    排队与识别**都**在心跳覆盖内，评标侧据此判"预热确实在途"。
+
+    Args:
+        func: 同步预热入口（``pipeline.prewarm_and_report``）。
+        case_path: 文件目录。
+        purpose: OCR 场景提示。
+        touch: 刷新本 doc 行 updated_at 的同步函数。
+
+    Returns:
+        ``func`` 的返回值。
+    """
+    ticker = asyncio.create_task(_heartbeat_loop(touch))
+    try:
+        async with get_upload_ocr_semaphore():
+            return await run_in_ocr_executor(func, case_path, purpose=purpose)
+    finally:
+        ticker.cancel()
+        with suppress(asyncio.CancelledError):
+            await ticker
 
 
 def track_upload_ocr_task(task: asyncio.Task[None], project_id: str | None = None) -> None:
