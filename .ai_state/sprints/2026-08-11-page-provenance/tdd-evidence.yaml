@@ -142,7 +142,7 @@ records:
       cd agent-front && bun test && bun run build && bun run lint
     green_summary: >-
       pytest 33 failed / 1250 passed / 3 skipped，失败集合与基线清单 diff 为空（NO_NEW_FAILURES）；
-      collect 1275 = 1207（含 H1 的 main 基线）+ 68 本 sprint 新增。ruff `All checks passed!`。
+      collect 1286 = 1207（含 H1 的 main 基线）+ 79 本 sprint 新增（含返工 11 例；主 agent 复测更正 2026-08-12，原记 1275/+68 为返工前陈旧值，见 pass2-N4）。ruff `All checks passed!`。
       前端 179 pass / 0 fail、`vite build ✓ built`、`eslint .` 无输出。cache _CACHE_VERSION = "v6"
       且带 5 行 bump 理由注释；deploy/TROUBLESHOOTING.md 新增 D0「converted 页号行为变化 +
       OCR 缓存 v6 全量重跑」部署预告。
