@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from server.tender import doc_layer  # noqa: E402  (H3: 读层拆出后测试改打这里)
+
 import asyncio
 import json
 
@@ -32,7 +34,7 @@ def _run_evaluation(monkeypatch, runner, *, request_id: str):
         return {"verdict": "manual_review"}, _fake_meta(opts["request_id"])
 
     monkeypatch.setattr(runner, "run_command_json", fake_run_command_json)
-    monkeypatch.setattr(runner, "get_project_doc", lambda *_a, **_kw: None)
+    monkeypatch.setattr(doc_layer, "get_project_doc", lambda *_a, **_kw: None)
     monkeypatch.setattr(runner, "ocr_preprocess_block", lambda *a, **kw: "fallback")
     asyncio.run(
         runner.run_tender_evaluation(
@@ -49,12 +51,12 @@ def test_flag_off_dispatches_original_loader(monkeypatch):
     import server.tender.runner as runner
 
     monkeypatch.delenv("TENDER_SLIM_CONTEXT", raising=False)
-    monkeypatch.setattr(runner, "_load_doc_layer_context", lambda *_a, **_kw: "full sentinel")
+    monkeypatch.setattr(doc_layer, "load_doc_layer_context", lambda *_a, **_kw: "full sentinel")
 
     def fail_if_called(*_args, **_kwargs):
         raise AssertionError("slim loader must not run when the flag is off")
 
-    monkeypatch.setattr(runner, "_load_doc_layer_context_slim", fail_if_called)
+    monkeypatch.setattr(doc_layer, "load_doc_layer_context_slim", fail_if_called)
 
     context = _run_evaluation(monkeypatch, runner, request_id="rid-slim-off")
 
@@ -65,12 +67,12 @@ def test_flag_on_dispatches_slim_loader(monkeypatch):
     import server.tender.runner as runner
 
     monkeypatch.setenv("TENDER_SLIM_CONTEXT", "1")
-    monkeypatch.setattr(runner, "_load_doc_layer_context_slim", lambda *_a, **_kw: "slim sentinel")
+    monkeypatch.setattr(doc_layer, "load_doc_layer_context_slim", lambda *_a, **_kw: "slim sentinel")
 
     def fail_if_called(*_args, **_kwargs):
         raise AssertionError("full loader must not run when the flag is on")
 
-    monkeypatch.setattr(runner, "_load_doc_layer_context", fail_if_called)
+    monkeypatch.setattr(doc_layer, "load_doc_layer_context", fail_if_called)
 
     context = _run_evaluation(monkeypatch, runner, request_id="rid-slim-on")
 
@@ -93,13 +95,12 @@ def _ready_docs(*, criteria, tender_text="complete tender text"):
 
 
 def test_load_doc_layer_context_slim_falls_back_to_full_when_criteria_missing(monkeypatch):
-    import server.tender.runner as runner
 
     project_doc, bid = _ready_docs(criteria=None)
-    monkeypatch.setattr(runner, "get_project_doc", lambda *_a, **_kw: project_doc)
-    monkeypatch.setattr(runner, "get_bid_doc", lambda *_a, **_kw: bid)
+    monkeypatch.setattr(doc_layer, "get_project_doc", lambda *_a, **_kw: project_doc)
+    monkeypatch.setattr(doc_layer, "get_bid_doc", lambda *_a, **_kw: bid)
 
-    result = runner._load_doc_layer_context_slim("tp-test", "bid-1", "acme")
+    result = doc_layer.load_doc_layer_context_slim("tp-test", "bid-1", "acme")
 
     assert result is not None
     assert "=== 招标文件底稿 ===\ncomplete tender text" in result
@@ -109,14 +110,13 @@ def test_load_doc_layer_context_slim_falls_back_to_full_when_criteria_missing(mo
 def test_load_doc_layer_context_slim_falls_back_to_full_when_slim_builder_returns_none(
     monkeypatch,
 ):
-    import server.tender.runner as runner
 
     project_doc, bid = _ready_docs(criteria=json.dumps({"items": [{"item": "missing"}]}))
-    monkeypatch.setattr(runner, "get_project_doc", lambda *_a, **_kw: project_doc)
-    monkeypatch.setattr(runner, "get_bid_doc", lambda *_a, **_kw: bid)
-    monkeypatch.setattr(runner, "build_slim_tender_context", lambda *a, **kw: None)
+    monkeypatch.setattr(doc_layer, "get_project_doc", lambda *_a, **_kw: project_doc)
+    monkeypatch.setattr(doc_layer, "get_bid_doc", lambda *_a, **_kw: bid)
+    monkeypatch.setattr(doc_layer, "build_slim_tender_context", lambda *a, **kw: None)
 
-    result = runner._load_doc_layer_context_slim("tp-test", "bid-1", "acme")
+    result = doc_layer.load_doc_layer_context_slim("tp-test", "bid-1", "acme")
 
     assert result is not None
     assert "=== 招标文件底稿 ===\ncomplete tender text" in result
@@ -124,7 +124,6 @@ def test_load_doc_layer_context_slim_falls_back_to_full_when_slim_builder_return
 
 
 def test_load_doc_layer_context_slim_uses_slim_text_when_criteria_present(monkeypatch):
-    import server.tender.runner as runner
 
     tender_text = """
     ### 文件: tender.pdf (kind=pdf_text, route=native)
@@ -144,10 +143,10 @@ def test_load_doc_layer_context_slim_uses_slim_text_when_criteria_present(monkey
         ensure_ascii=False,
     )
     project_doc, bid = _ready_docs(criteria=criteria, tender_text=tender_text)
-    monkeypatch.setattr(runner, "get_project_doc", lambda *_a, **_kw: project_doc)
-    monkeypatch.setattr(runner, "get_bid_doc", lambda *_a, **_kw: bid)
+    monkeypatch.setattr(doc_layer, "get_project_doc", lambda *_a, **_kw: project_doc)
+    monkeypatch.setattr(doc_layer, "get_bid_doc", lambda *_a, **_kw: bid)
 
-    result = runner._load_doc_layer_context_slim("tp-test", "bid-1", "acme")
+    result = doc_layer.load_doc_layer_context_slim("tp-test", "bid-1", "acme")
 
     assert result is not None
     tender_block, bid_block = result.split("\n\n=== 投标文件", maxsplit=1)

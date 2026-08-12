@@ -48,7 +48,7 @@ async def upload_tender_doc(
     """上传招标文件并触发后台 OCR 预热（P2 上传即 OCR 解耦）。
 
     落盘到 tender/<project_id>/<request_id>/ 目录；写招标层 ocr_status=running；
-    后台 asyncio task 跑 prewarm_and_text → update_project_doc_ocr(ready|failed)。
+    后台 asyncio task 跑 prewarm_and_report → update_project_doc_ocr(ready|degraded|partial|failed)。
     不阻塞响应：立即返回 {project_id, ocr_status}。
 
     ClientDisconnect during multipart parsing → 400（P1 fix）。
@@ -93,6 +93,7 @@ async def upload_tender_doc(
         tenant=tenant,
         tender_files=tender_files_json,
         ocr_status="running",
+        case_path=case_path,  # H3 KD2：评标入口据此对非 ready 底稿重跑一次预热 OCR
     )
 
     _start_project_doc_ocr_task(project_id, case_path, tenant=tenant, purpose=_TENDER_OCR_PURPOSE)
@@ -109,7 +110,7 @@ async def upload_bid_doc(
     """上传投标文件并触发后台 OCR 预热（P2 上传即 OCR 解耦）。
 
     bidder_name 从 multipart form data 字段读取；落盘写投标层 ocr_status=running；
-    后台 asyncio task 跑 prewarm_and_text → update_bid_doc_ocr(ready|failed)。
+    后台 asyncio task 跑 prewarm_and_report → update_bid_doc_ocr(ready|degraded|partial|failed)。
     不阻塞响应：立即返回 {bid_id, ocr_status}。
 
     ClientDisconnect during multipart parsing → 400（P1 fix）。
@@ -157,6 +158,7 @@ async def upload_bid_doc(
         bidder_name=bidder_name,
         bid_files=bid_files_json,
         ocr_status="running",
+        case_path=case_path,  # H3 KD2：同上
     )
 
     _start_bid_doc_ocr_task(project_id, bid_id, case_path, tenant=tenant, purpose=_TENDER_OCR_PURPOSE)
