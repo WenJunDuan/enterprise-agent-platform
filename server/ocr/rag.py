@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 
+from server.common.corpus import ARTIFACT_ORIGINAL, page_anchor_text
 from server.ocr.docstructure import chapter_heading, scan_page_context
 from server.stores import rag_store
 
@@ -60,6 +61,7 @@ def _chunk_spans(structure: dict, body: str) -> list[dict]:
                 "tag": node["tag"],
                 "page_start": node["page"],
                 "page_end": max(page_candidates) if page_candidates else None,
+                "page_artifact": structure.get("page_artifact", ARTIFACT_ORIGINAL),
                 "chunk_text": node["chapter_path"] + "\n" + "\n".join(span_lines).strip(),
             }
         )
@@ -81,13 +83,19 @@ def _escape_match_query(query: str) -> str:
     return '"' + query.replace('"', '""') + '"'
 
 
-def _format_page_anchor(page_start: int | None, page_end: int | None) -> str:
-    """Format a chunk's page span without inventing a page when both are absent."""
+def _format_page_anchor(
+    page_start: int | None, page_end: int | None, artifact: str = ARTIFACT_ORIGINAL
+) -> str:
+    """Format a chunk's page span without inventing a page when both are absent.
+
+    锚点字面量走 ``corpus.page_anchor_text`` 单点（H2 pass1 F3）：转换稿 chunk 渲染
+    ``【转换稿第 M 页】``，否则 RAG-slim 链路会让转换页号继续冒充原文档页。
+    """
     if page_start is None and page_end is None:
         return "页码未知"
-    if page_end is None or page_start == page_end:
-        return f"【第 {page_start} 页】"
-    return f"【第 {page_start}-{page_end} 页】"
+    if page_start is None:
+        page_start = page_end
+    return page_anchor_text(page_start, artifact=artifact or ARTIFACT_ORIGINAL, page_end=page_end)
 
 
 def search(
@@ -104,7 +112,10 @@ def search(
             "tag": row["tag"],
             "page_start": row["page_start"],
             "page_end": row["page_end"],
-            "page_anchor": _format_page_anchor(row["page_start"], row["page_end"]),
+            "page_artifact": row["page_artifact"] or ARTIFACT_ORIGINAL,
+            "page_anchor": _format_page_anchor(
+                row["page_start"], row["page_end"], row["page_artifact"]
+            ),
             "text": row["chunk_text"],
             "score": -row["rank"],
         }
