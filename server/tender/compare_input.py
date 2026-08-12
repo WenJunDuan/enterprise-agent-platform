@@ -153,9 +153,16 @@ def collect_compare_input(
     # 池级原因优先于价格项原因：项目规则未定稿时权威 criteria 为空，价格项必然"找不到"，
     # 若让 price_reason 短路就会把「可比家数不足」误报成 no_price_item（F3，正是本 sprint
     # 要治的"封锁原因与实际不符"病症）。
-    blocked_reason = _pool_blocked_reason(bidders, warnings) or price_reason
+    pool_reason, pool_warnings = _pool_blocked_reason(bidders)
+    warnings.extend(pool_warnings)
+    blocked_reason = pool_reason or price_reason
+    # 显式循环而非列表推导：``pop`` 是对 bidders 元素的原地删字段，藏在推导式里会让"组装签名"
+    # 读起来像纯读取（review F8）。``_request_id`` 只服务签名，取完即从对外结构剔除。
+    input_result_ids: list[str] = []
+    for entry in bidders:
+        input_result_ids.append(str(entry.pop("_request_id")))
     signature = CompareSignature(
-        input_result_ids=[str(entry.pop("_request_id")) for entry in bidders],
+        input_result_ids=input_result_ids,
         # 版本变了（项目规则改版）→ 旧横比结果 stale。
         criteria_hash=criteria_version or "",
     )
@@ -230,23 +237,32 @@ def _apply_bidder_guardrails(
     return warnings
 
 
-def _pool_blocked_reason(bidders: list[dict[str, Any]], warnings: list[str]) -> str | None:
-    """整池级封锁判定：可比家数不足 / 报价数量级疑似单位不一致。"""
+def _pool_blocked_reason(bidders: list[dict[str, Any]]) -> tuple[str | None, list[str]]:
+    """整池级封锁判定：可比家数不足 / 报价数量级疑似单位不一致。
+
+    只**返回**告警而不写调用方传进来的列表（review F8：判定与改参两种职责混在一个函数里，
+    读者无法从签名看出它会追加告警）；合并由 :func:`collect_compare_input` 一处负责。
+
+    Args:
+        bidders: 已过逐家护栏（``comparable`` / ``exclusion_reason`` 已定）的参与者列表。
+
+    Returns:
+        ``(blocked_reason, warnings)``：不封锁时 ``(None, [])``。
+    """
     comparable = [entry for entry in bidders if entry["comparable"]]
     if len(comparable) < 2:
-        return "insufficient_comparable_bidders"
+        return "insufficient_comparable_bidders", []
     amounts = [
         amount
         for amount in (_bid_price_amount(entry.get("bid_price")) for entry in comparable)
         if amount is not None
     ]
     if amounts and max(amounts) / min(amounts) >= UNIT_MISMATCH_RATIO:
-        warnings.append(
+        return "bid_price_unit_mismatch", [
             "各投标人报价数量级相差 100 倍以上，疑似万元与元单位不一致；"
             "平台不做自动换算，已停止排名，请人工核对报价口径。"
-        )
-        return "bid_price_unit_mismatch"
-    return None
+        ]
+    return None, []
 
 
 def _is_valid_max(value: Any) -> bool:
