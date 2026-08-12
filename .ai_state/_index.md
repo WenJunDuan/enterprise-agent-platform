@@ -49,7 +49,7 @@ counts:
   issues_count: 0
   refactors_count: 0
   systems_count: 10
-  reviews_count: 69
+  reviews_count: 70
   cleanup_count: 3
   compound:
     learning: 13
@@ -62,9 +62,9 @@ pointers:
   latest_review: "sprints/2026-07-30-demo-full-doc-ocr/reviews/pass7.md" # Pass7 CONCERNS：HTTP 200 body I/O fallback + PPTX GroupShape 图片信号
   latest_cleanup: "sprints/2026-07-30-demo-full-doc-ocr/cleanup-pass.md"
   latest_brainstorm: ""
-  latest_decisions: ["compound/2026-07-20-decision-ocr-as-standalone-service.md", "compound/2026-07-16-decision-carve-f6-schema-split-from-d2.md", "compound/2026-07-16-decision-schema-split-tender.md", "compound/2026-07-15-decision-ocr-service-layer.md", "compound/2026-07-02-decision-ocr-routing-ladder.md"]
+  latest_decisions: ["compound/2026-07-20-decision-ocr-as-standalone-service.md", "compound/2026-07-16-decision-schema-split-tender.md", "compound/2026-07-16-decision-carve-f6-schema-split-from-d2.md", "compound/2026-07-15-decision-ocr-service-layer.md", "compound/2026-07-02-decision-ocr-routing-ladder.md"]
   latest_lessons: ["compound/2026-07-30-learning-document-ingestion-deployment-evidence.md", "compound/2026-07-18-learning-prompt-gate-contradiction-literal-model.md", "compound/2026-07-18-learning-lazy-import-behavioral-seam.md", "compound/2026-07-15-learning-slots-dataclass-hollow-getattr.md", "compound/2026-07-01-learning-flash-tender-eval-inconsistency.md"]
-  latest_architecture_update: "2026-08-11T01:45:11.504Z"
+  latest_architecture_update: "2026-08-11T13:03:11.120Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
 next_action: "【2026-08-11 额度耗尽全线暂停】H1 开发完成未 review：5 commits 全在 worktree agent-a56af065140f2dc80(分支 worktree-agent-a56af065140f2dc80, tdd-evidence 5 条, AC 全 PASS 自报, 主 agent 已抽查行数/commit/证据属实)。恢复链: ①派 reviewer+spec-compliance 审该 worktree diff main..HEAD → ②evaluator 判定 → ③合 main → ④按 design 重派 H2(page-provenance)→H3(ocr-concurrency-degrade), 合并序 H1→H2→H3。全部 design 定稿在 sprints/ 三目录, roadmap 在 2026-08-11-tender-eval-hardening。H1 遗留风险两条见其 design 同目录(pending_reason 重试率需 runtime-verify; 存量项目重评前横比显示可比家数不足, 发布说明须预告)。"
