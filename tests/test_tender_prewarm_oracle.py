@@ -8,6 +8,7 @@ updated_at 新鲜），在途就继续等（上限从 tender 总预算派生）�
 from __future__ import annotations
 
 import asyncio
+import time
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -345,6 +346,116 @@ def test_degraded_doc_reruns_once_then_warns_and_keeps_evaluating(monkeypatch):
     warnings = payload["extracted_data"]["ocr_warnings"]
     assert warnings[0]["files"] == ["chapter-3.pdf"]
     assert "chapter-3.pdf" in captured["context"], "告警也要进模型上下文，评分项才不会被静默"
+
+
+def test_loader_reraises_enum_violation_instead_of_swallowing_it(monkeypatch):
+    """F4：未知枚举的 fail-fast 不能被 loader 的 blanket catch 吞成"回落 inline"。
+
+    同一个 ValueError 在 wait 里抛、在 loader 里被吞 = 两种归宿；漏接新枚举时到底炸不炸
+    取决于走到哪条路径，这正是 fail-fast 要杜绝的不确定性。
+    """
+    monkeypatch.setattr(doc_layer, "get_project_doc", lambda *_a: _row("ready"))
+    monkeypatch.setattr(doc_layer, "get_bid_doc", lambda *_a: _row("almost-ready"))
+
+    with pytest.raises(ValueError, match="ocr_status"):
+        doc_layer.load_doc_layer_context("tp-1", "bid-1", "t1")
+    with pytest.raises(ValueError, match="ocr_status"):
+        doc_layer.load_doc_layer_context_slim("tp-1", "bid-1", "t1")
+
+
+def test_loader_still_falls_back_on_db_failure(monkeypatch):
+    """F4 反向：DB/IO 故障仍走静默回落（blanket catch 只保留给这类外部故障）。"""
+
+    def _boom(*_a, **_k):
+        raise OSError("database is locked")
+
+    monkeypatch.setattr(doc_layer, "get_project_doc", _boom)
+
+    assert doc_layer.load_doc_layer_context("tp-1", "bid-1", "t1") is None
+    assert doc_layer.load_doc_layer_context_slim("tp-1", "bid-1", "t1") is None
+
+
+def test_rerun_is_bounded_by_a_timeout_and_degrades_to_warning(monkeypatch):
+    """F3：重跑挂在评标关键路径上，必须有预算上限；超时放弃（调用方走 warning），不拖垮评标。"""
+    monkeypatch.setattr(doc_layer, "rerun_budget_sec", lambda: 0.05)
+    import server.tender.doc_pipeline as doc_pipeline
+
+    async def _never_finishes(*_a, **_k):
+        await asyncio.sleep(10)
+
+    monkeypatch.setattr(doc_pipeline, "run_bid_doc_ocr", _never_finishes)
+    monkeypatch.setattr(doc_layer, "mark_doc_rerunning", lambda *_a, **_k: None)
+    started = time.monotonic()
+
+    asyncio.run(
+        doc_layer.rerun_prewarm_for_degraded_docs(
+            "tp-1", "bid-1", "t1", (_row("ready"), _row("partial", case_path="/case/bid"))
+        )
+    )
+
+    assert time.monotonic() - started < 2, "重跑必须在预算内放弃，不能拖着评标一起等"
+
+
+def test_rerun_marks_row_running_so_concurrent_evaluations_dedupe(monkeypatch):
+    """F3：重跑前把行置回 running 并起心跳——并发评标据此判 in-flight，不会各跑一遍。"""
+    import server.tender.doc_pipeline as doc_pipeline
+
+    marked: list[tuple] = []
+    monkeypatch.setattr(
+        doc_layer, "mark_doc_rerunning", lambda *args, **kwargs: marked.append(args)
+    )
+
+    async def _fake_bid_ocr(*_a, **_k):
+        return None
+
+    monkeypatch.setattr(doc_pipeline, "run_bid_doc_ocr", _fake_bid_ocr)
+
+    asyncio.run(
+        doc_layer.rerun_prewarm_for_degraded_docs(
+            "tp-1", "bid-1", "t1", (_row("ready"), _row("degraded", case_path="/case/bid"))
+        )
+    )
+
+    assert marked, "重跑前必须把 doc 行置 running（复用 oracle 天然去重并发重跑）"
+
+
+def test_wait_cap_shrinks_with_the_already_spent_budget(monkeypatch):
+    """spec D2：等待上限要减去已耗预算，不能每次进函数都按"整份预算的一半"重新起算。"""
+    from server.platform.config import get_ocr_concurrency_settings
+
+    monkeypatch.setenv("TENDER_TIMEOUT_SEC", "600")
+    full = get_ocr_concurrency_settings().doc_layer_wait_cap_sec
+    assert full == 300.0
+
+    shrunk = get_ocr_concurrency_settings(spent_sec=400).doc_layer_wait_cap_sec
+    # 剩余 200s，扣掉评标保留量后只能更小，且不得为负。
+    assert 0 <= shrunk < 200
+    assert get_ocr_concurrency_settings(spent_sec=10_000).doc_layer_wait_cap_sec == 0
+
+
+def test_wait_cap_reached_falls_back_to_inline_once_with_warning(monkeypatch):
+    """F8：派生上限到期仍在途 → inline 回落一次 + prewarm_timeout warning（端到端）。"""
+    _fast_polling(monkeypatch)
+    monkeypatch.setenv("TENDER_TIMEOUT_SEC", "0.02")  # 上限 = 50% → 10ms
+    captured: dict = {}
+    inline_calls: list = []
+    _patch_command(monkeypatch, captured)
+    _count_inline_ocr(monkeypatch, inline_calls)
+    _patch_rows(monkeypatch, [_row("ready")], [_row("running", age_sec=1, text=None)])
+
+    payload, _meta = asyncio.run(
+        runner.run_tender_evaluation(
+            request_id="rid-cap",
+            tenant="t1",
+            directory_path="/fake/dir",
+            project_id="tp-1",
+            bid_id="bid-1",
+        )
+    )
+
+    assert inline_calls == [True], "上限到期后回落 inline 恰好一次"
+    warnings = payload["extracted_data"]["ocr_warnings"]
+    assert [w["status"] for w in warnings] == ["prewarm_timeout"]
 
 
 def test_ready_docs_produce_no_warning_and_no_rerun(monkeypatch):

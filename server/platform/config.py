@@ -27,6 +27,8 @@ _DEFAULT_OCR_EXECUTOR_WORKERS = 4
 _DEFAULT_OCR_PREWARM_STALE_SECONDS = 300.0
 # 评标最多把 tender 总预算的这个比例花在"等预热 OCR 跑完"上，其余留给评标本身。
 _DOC_LAYER_WAIT_BUDGET_RATIO = 0.5
+# 无论等待多久，必须给评标本身留下的那部分总预算（spec D2）。
+_EVAL_RESERVE_RATIO = 0.25
 _CACHE_V2_STARTUP_NOTE = (
     "OCR cache v5 active: the first rerun after deployment re-runs OCR once per file; "
     "subsequent reruns use the cached result."
@@ -587,16 +589,26 @@ class OcrConcurrencySettings:
     doc_layer_wait_cap_sec: float
 
 
-def get_ocr_concurrency_settings() -> OcrConcurrencySettings:
-    """Read OCR pool / prewarm-freshness knobs fresh from the environment."""
+def get_ocr_concurrency_settings(*, spent_sec: float = 0.0) -> OcrConcurrencySettings:
+    """Read OCR pool / prewarm-freshness knobs fresh from the environment.
+
+    Args:
+        spent_sec: 本次评标**已耗**的预算（秒）。等待上限取
+            ``min(总预算×比例, 剩余预算 − 评标保留量)``——只按"总预算的一半"起算会在评标已经
+            跑掉大半预算时仍然放行一段长等待，把整单推向 TENDER_TIMEOUT（spec D2）。
+    """
     stale = _env_float_from("OCR_PREWARM_STALE_SEC", _DEFAULT_OCR_PREWARM_STALE_SECONDS, os.environ)
-    tender_timeout = _env_float_from(
-        "TENDER_TIMEOUT_SEC", _DEFAULT_TENDER_TIMEOUT_SECONDS, os.environ
+    tender_timeout = max(
+        0.0,
+        _env_float_from("TENDER_TIMEOUT_SEC", _DEFAULT_TENDER_TIMEOUT_SECONDS, os.environ),
     )
+    remaining = tender_timeout - max(0.0, spent_sec) - tender_timeout * _EVAL_RESERVE_RATIO
     return OcrConcurrencySettings(
         executor_workers=max(1, _env_int("OCR_EXECUTOR_WORKERS", _DEFAULT_OCR_EXECUTOR_WORKERS)),
         prewarm_stale_sec=stale if stale > 0 else _DEFAULT_OCR_PREWARM_STALE_SECONDS,
-        doc_layer_wait_cap_sec=max(0.0, tender_timeout) * _DOC_LAYER_WAIT_BUDGET_RATIO,
+        doc_layer_wait_cap_sec=max(
+            0.0, min(tender_timeout * _DOC_LAYER_WAIT_BUDGET_RATIO, remaining)
+        ),
     )
 
 

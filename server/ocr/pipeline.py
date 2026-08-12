@@ -762,6 +762,17 @@ class OcrDocReport(NamedTuple):
     failed_files: tuple[str, ...]
     degraded_files: tuple[str, ...]
 
+    @property
+    def problem_files(self) -> tuple[str, ...]:
+        """失败 + 降级文件的合并清单（保序去重）。
+
+        落库与结论 warning 都用这一份：用户要知道的是"哪些材料的底稿不可靠"，
+        "彻底没读出来"和"用兜底引擎凑合读出来"对评分项的影响是同一类（证据可能不完整）。
+        """
+        merged = list(self.failed_files)
+        merged.extend(name for name in self.degraded_files if name not in merged)
+        return tuple(merged)
+
 
 # doc 层 OCR 状态枚举（H3 KD2 owner）：ready 之外新增 degraded / partial 两档，让"底稿降级"
 # 与"部分文件缺失"对状态机可见——此前两者都被写成 ready 永久落库，之后永不重跑。

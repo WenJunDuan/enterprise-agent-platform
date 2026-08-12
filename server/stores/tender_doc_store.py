@@ -38,7 +38,8 @@ def _validate_ocr_status(status: str) -> str:
 
 
 def _encode_failed_files(failed_files: Sequence[str] | None) -> str | None:
-    """把失败/降级文件清单编码为 JSON 文本列；None → 不记（与"没有失败"区分靠 status）。"""
+    """把"有问题的文件"清单（识别失败 + Tesseract 降级，见 OcrDocReport.problem_files）编码为
+    JSON 文本列；None → 不记（与"没有问题"的区分靠 status）。"""
     if failed_files is None:
         return None
     return json.dumps(list(failed_files), ensure_ascii=False)
@@ -245,6 +246,41 @@ def update_project_doc_ocr(
                 tenant,
             ),
         )
+
+
+def set_doc_ocr_status(
+    project_id: str, bid_id: str | None, *, tenant: str, status: str
+) -> None:
+    """只改 ``ocr_status``（保留既有 ocr_text / failed_files）。
+
+    用于评标入口的补底稿重跑（H3 KD2/F3）：重跑期间把行置回 ``running``，让并发评标经
+    in-flight oracle 判"已经有人在补"从而不重复触发；重跑超时则把状态放回原值，
+    读层继续用手上那份降级底稿，绝不因为一次补跑失败就把可用底稿弄丢。
+
+    Args:
+        project_id: 招标项目标识。
+        bid_id: 投标文档标识；``None`` 表示改招标层行。
+        tenant: 租户作用域。
+        status: 目标状态，须属 ``OCR_STATUSES``。
+
+    Raises:
+        ValueError: status 不在 ``OCR_STATUSES`` 内。
+    """
+    _validate_ocr_status(status)
+    now = utc_now()
+    with connect_sqlite(PLATFORM_DB_FILE, immediate=True) as conn:
+        if bid_id is None:
+            conn.execute(
+                "UPDATE tender_project_docs SET ocr_status = ?, updated_at = ? "
+                "WHERE project_id = ? AND tenant = ?",
+                (status, now, project_id, tenant),
+            )
+        else:
+            conn.execute(
+                "UPDATE tender_bid_docs SET ocr_status = ?, updated_at = ? "
+                "WHERE project_id = ? AND bid_id = ? AND tenant = ?",
+                (status, now, project_id, bid_id, tenant),
+            )
 
 
 def touch_project_doc_ocr(project_id: str, *, tenant: str) -> None:
