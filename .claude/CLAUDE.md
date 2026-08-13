@@ -38,7 +38,8 @@
 - 规则**两层**：① **通则层** `knowledge/tender/{法规简称}.rules.json`（一法一文件：`evalmethod` 评标方法暂行规定、`regulation` 招标投标法实施条例 …，国家法规、跨项目稳定，由 `/init-rules <法规源文件> tender` 生成）作**法律底座**（废标 / 资格 / 一致性 / 程序的法定依据）；② **会话项目规则**：本项目资格审查规则和评分标准**不预建**，由 `/tender-evaluate` 在 S1 **定位并直读招标文件里的资格审查/资格评审/初步评审与评标办法（评分标准）**解析为 `extracted_data.criteria`（`eligibility_rules[]` + 评分 `items[]` + 出处，对齐 `.claude/contracts/tender/criteria.schema.json`）——章节位置与标题因标书而异（不预设第三章），以实际招标文件为准；随结论持久化作本次会话规则。资格审查是与评分项并列的最高优先级招标项，先于评分运行，不计入 `total_max`；承重 `policy_refs` 只引通则层真实 `rule_id`，criteria 各项标准与命中写 `evidence_chain`。缺招标文件 / 定位不到资格审查或评标办法、或通则层缺失 → 降级 `manual_review`（`rule_gap`），不得现场编造规则。
 - **不可判定项绝不判 0**：评分项命中 `requires_live_event`（现场答辩）、`requires_external_data`（企业信用等外部数据）、`requires_cross_bid_comparison`（价格分需横向比较）时，该项 `manual_review` 且 `score: null`，并写清需要什么外部输入。把"文档里没有"当成"客观 0 分"是范畴错误。
 - 评分明细写入 `extracted_data.scoring`（`{item, max, score, status, basis}`）；最终结论仍符合 `.claude/contracts/common/audit-result.schema.json`。
-- 典型一致性风险：拟派项目负责人与所报业绩的项目经理不一致、或姓名在不同文件写法不一致 → 该业绩项不得分或 `manual_review`（`data_conflict`），证据链须同时引用两处出处。
+- 典型一致性风险（二分决断）：拟派项目负责人与所报业绩的项目经理**确认为不同人** → 该业绩项直接不得分；仅**姓名写法存疑同一人**（简繁/形近/OCR 易混）→ 才 `manual_review`（`data_conflict`）。两种情形证据链均须同时引用两处出处。
+- **单标果断评分纪律**：每袋投标是独立评审单元——报价有效性（vs 招标控制价）、资格项、客观响应项、主观档次项（按评标办法档次标准直接选档）都必须在本标内果断出分/出结论；"待人工/待核验"只留给价格横比数值、外部数据、现场答辩、读不清且重识别仍未还原四类。材料确未提供（底稿完整可读）= 扣分事实，直接判 0/最低档并写"未找到"，不是待核验理由。
 - 资格审查结果写入 `extracted_data.eligibility_checks`，先于 `extracted_data.scoring` 生成；资格失败优先决定 `verdict=rejected`，但不得把评分项一律清零。串标围标识别等复杂程序合规另行扩展。
 
 ### system
