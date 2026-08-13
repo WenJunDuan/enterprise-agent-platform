@@ -1,6 +1,6 @@
     frontmatter+引言:    591B
               页锚简版:    603B
-           执行方式+S0:    746B  cap   700  OVER by 46
+           执行方式+S0:    746B  cap   750  OK
                 S1:    896B  cap   900  OK
                 S2:   2339B  cap  2400  OK
                 S3:   2451B  cap  2800  OK
@@ -8,5 +8,5 @@
               输出契约:   2044B  cap  2600  OK
          单投标人边界+参数:   1100B  cap  1300  OK
            头部+页锚简版:   1194B  cap  1200  OK
-                合计:  12442B  cap 13700  OK
+                合计:  12442B  cap 13750  OK
                整文件:  12442B  cap 15000  OK

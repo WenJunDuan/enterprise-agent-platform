@@ -7,7 +7,7 @@
 ## 评分产出与 pending_reason 硬闸
 
 - 对照 S1 的 `criteria` 每一项，结合事实底稿（必要时按页锚点 `【第N页】` 回读原文）判定，写入 `extracted_data.scoring`，每项 `{item, max, score, status, score_mode, basis, …按 mode 的明细}`（`item`/`max`/`score_mode` 与 criteria 对应项一致）。**按该项 `score_mode` 判分**：
-  - ⚠ **凡 `score:null` 的项，必须同时给 `pending_reason`（硬性，缺失或取值不在枚举内 → 整单契约失败）**：`cross_bid`（需全部投标报价一起横比，如价格分）/ `external_data`（需外部数据，如企业信用查询结果）/ `live_event`（需现场答辩、演示、样品评审）/ `evidence_unresolved`（材料疑似已提供但底稿读不清、未还原、未定位到）/ `manual_mode`（该项评分方式本身是主观人工项，`score_mode:manual`）/ `non_responsive`（投标实质性不响应、该维度无任何可评事实）。`score` 非 null 的项**不要**写该字段。选最贴切的一个，不要用 `evidence_unresolved` 兜住一切。
+  - ⚠ **凡 `score:null` 的项，必须同时给 `pending_reason`（硬性，缺失或取值不在枚举内 → 整单契约失败）**：六个合法取值与各自语义见下方速查表。`score` 非 null 的项**不要**写该字段。选最贴切的一个，不要用 `evidence_unresolved` 兜住一切。
 
 `pending_reason` 取值速查（**权威定义 = `.claude/contracts/common/audit-result.schema.json`
 的 `extracted_data.scoring.items.pending_reason` enum + description**，服务端按该 schema 校验；
