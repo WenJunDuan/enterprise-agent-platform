@@ -11,7 +11,7 @@ current_roadmap_slug: ""
 skip_polish: false
 skip_architecture_check: false
 skip_impl_subagent_check: false # (已随 program ship 释放; 当时理由: subagent-assignments.jsonl 握手台账 hook 未落(结构性问题见 proposals.md P14); events/log 台账在, 各 sprint tdd-evidence+三轮 review 链为实质证据, 不伪造派工记录
-skip_runtime_verify: false # prompt-architecture: runtime_verify=deferred(pass1-F2 评审授权 b 分支), 4 待验项见 sprints/2026-08-12-prompt-architecture/evidence/runtime-verify-defer.md, 与 tender-eval-hardening 四项同窗部署机跑 | (tender-eval-hardening 当时理由: 真评标实跑四项待部署机窗口, 已记 roadmap 各 item note)
+skip_runtime_verify: true # prompt-architecture ship 释放(2026-08-13): runtime_verify=deferred, 评审授权链=pass1-F2→evaluator 最小解锁清单 2(b)→pass2 PASS 认定非静默假过; 4 待验项见 sprints/2026-08-12-prompt-architecture/runtime-verify.md(标准档)+evidence/runtime-verify-defer.md(实体), 与 tender-eval-hardening 四项同窗部署机跑, 窗口打开后跑完落 evidence/runtime-smoke.md 再释放本标志
 
 # === 平台与版本 ===
 platforms_enabled: ["cc"]
