@@ -16,9 +16,8 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
-
 
 from server.common.contract import (
     DEFAULT_OUTPUT_SCHEMA_NAME,
@@ -28,7 +27,6 @@ from server.common.contract import (
     register_schema_processor,
 )
 from server.platform.paths import PROJECT_ROOT
-
 
 _KNOWLEDGE_DIR = PROJECT_ROOT / "knowledge"
 
@@ -379,7 +377,7 @@ def _stamp_server_metadata(output: dict[str, Any], request_id: str | None) -> No
     """Stamp server-authoritative metadata + default the model-owned envelope (in-place)."""
     output.setdefault("claim_id", request_id or "UNKNOWN")
     output.setdefault("reviewed_by", _DEFAULT_REVIEWED_BY)
-    output.setdefault("timestamp", datetime.now(timezone.utc).isoformat())
+    output.setdefault("timestamp", datetime.now(UTC).isoformat())
     # extracted_data 是事实底稿(模型职责)；偶发漏给时回落空对象,保结论可落库(降级而非掩盖)。
     output.setdefault("extracted_data", {})
     # 信封类必填字段兜底（多模型可靠性）：模型偶尔漏给这些 schema required 字段——实测 deepseek

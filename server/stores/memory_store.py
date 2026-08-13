@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from server.platform.paths import MEMORY_INDEX_DB_FILE, PROJECT_ROOT
 from server.platform.sqlite_store import connect_sqlite, describe_sqlite_target, row_to_dict
@@ -19,7 +19,7 @@ KNOWLEDGE_MEMORY_ROOT = PROJECT_ROOT / "knowledge" / "memory"
 class SQLiteMemoryStore:
     """Indexes memory JSON assets for query surfaces while keeping files as source of truth."""
 
-    COLUMNS = [
+    COLUMNS: ClassVar[list[str]] = [
         "memory_id",
         "domain",
         "memory_type",

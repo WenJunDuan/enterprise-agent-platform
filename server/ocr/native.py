@@ -182,8 +182,7 @@ def _run_text_converter(argv: list[str]) -> str | None:
         completed = subprocess.run(
             argv,
             check=False,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             text=True,
             encoding="utf-8",
             errors="ignore",
@@ -262,7 +261,8 @@ def read_pdf_text(
             then-fire**：页文本先收集到本地 list，退出 ``with FITZ_LOCK`` 临界区后才逐条回放
             ——回调绝不在持有 ``FITZ_LOCK`` 时被调用（D9 streaming-ocr T1，防锁竞争放大）。
     """
-    fitz = _require("fitz", "pymupdf")
+    # 官方入口是 pymupdf；旧别名 fitz 自 1.28.2 起在 import 时把弃用告警打到 stdout。
+    fitz = _require("pymupdf", "pymupdf")
     blocks: list[str] = []
     tables: list[dict] = []
     page_buffer: list[tuple[int, dict]] = []

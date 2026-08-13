@@ -13,8 +13,7 @@ import time
 
 import pytest
 
-from server.ocr import OcrDependencyError
-from server.ocr import engine
+from server.ocr import OcrDependencyError, engine
 
 
 def _pdf_with_pages(tmp_path, count: int):

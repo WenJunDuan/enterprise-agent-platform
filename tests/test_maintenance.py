@@ -17,8 +17,8 @@ from server.ops.maintenance import (
 
 def _no_tasks(monkeypatch):
     """两域 task 列表置空，孤儿清理不受真实 DB 任务影响（隔离）。"""
-    monkeypatch.setattr("server.ops.maintenance.list_audit_tasks_admin", lambda: [])
-    monkeypatch.setattr("server.ops.maintenance.list_tender_tasks_admin", lambda: [])
+    monkeypatch.setattr("server.ops.maintenance.list_audit_tasks_admin", list)
+    monkeypatch.setattr("server.ops.maintenance.list_tender_tasks_admin", list)
 
 
 def test_orphan_submission_dir_removed_when_old(tmp_path, monkeypatch):
@@ -60,7 +60,7 @@ def test_orphan_cleanup_resolves_known_against_project_root(tmp_path, monkeypatc
         "server.ops.maintenance.list_audit_tasks_admin",
         lambda: [{"case_path": "acme/audit/r1", "source_mode": "upload", "status": "running"}],
     )
-    monkeypatch.setattr("server.ops.maintenance.list_tender_tasks_admin", lambda: [])
+    monkeypatch.setattr("server.ops.maintenance.list_tender_tasks_admin", list)
     workdir = tmp_path / "elsewhere"
     workdir.mkdir()
     monkeypatch.chdir(workdir)  # CWD ≠ PROJECT_ROOT
@@ -95,7 +95,7 @@ def test_cleanup_old_handles_tender_and_compare_tasks(tmp_path, monkeypatch):
     """codex P2：cleanup_old 纳入 tender 任务；compare 任务 case_path='-' 安全跳过。"""
     monkeypatch.setattr("server.ops.maintenance.SUBMISSION_ROOT_DIR", tmp_path)
     monkeypatch.setattr("server.ops.maintenance.PROJECT_ROOT", tmp_path)
-    monkeypatch.setattr("server.ops.maintenance.list_audit_tasks_admin", lambda: [])
+    monkeypatch.setattr("server.ops.maintenance.list_audit_tasks_admin", list)
     tender_case = tmp_path / "acme" / "tender" / "tp-x" / "rid"
     tender_case.mkdir(parents=True)
     monkeypatch.setattr(

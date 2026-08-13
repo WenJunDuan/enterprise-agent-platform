@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, ClassVar, Protocol
 
 from server.platform.paths import RESULT_INDEX_DB_FILE, ensure_local_layout
 from server.platform.sqlite_store import connect_sqlite, describe_sqlite_target, row_to_dict
@@ -103,7 +103,7 @@ class ResultStore(Protocol):
 class SQLiteResultStore:
     """SQLite-backed structured result index with JSON archive payloads."""
 
-    COLUMNS = [
+    COLUMNS: ClassVar[list[str]] = [
         "request_id",
         "created_at",
         "conversation_id",
@@ -372,7 +372,7 @@ def archive_result_payload(
     域留 None。``bidder_name`` 从 ``response.extracted_data.bidder_info.bidder_name``
     拍平（agent 识别的投标单位名称；识别不到则留 None，不编造）。
     """
-    created_at = created_at or datetime.now(timezone.utc).isoformat()
+    created_at = created_at or datetime.now(UTC).isoformat()
     claim_id = response.get("claim_id") if isinstance(response, dict) else None
     verdict = response.get("verdict") if isinstance(response, dict) else None
     manual_review_reason = response.get("manual_review_reason") if isinstance(response, dict) else None

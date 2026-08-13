@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -17,7 +17,7 @@ from server.tender import doc_layer, doc_rerun, runner
 
 
 def _row(status: str, *, age_sec: float = 0.0, text: str = "底稿", **extra) -> dict:
-    updated_at = (datetime.now(timezone.utc) - timedelta(seconds=age_sec)).isoformat()
+    updated_at = (datetime.now(UTC) - timedelta(seconds=age_sec)).isoformat()
     return {
         "bid_id": "bid-1",
         "bidder_name": "投标人甲",
@@ -159,7 +159,7 @@ def test_degraded_docs_are_rerun_exactly_once(monkeypatch):
         reruns.append(("project", case_path))
         assert run_info_extraction is False, "重跑只补 OCR，不该再触发一次 criteria 抽取"
 
-    import server.tender.doc_pipeline as doc_pipeline
+    from server.tender import doc_pipeline
 
     monkeypatch.setattr(doc_pipeline, "run_bid_doc_ocr", _fake_bid_ocr)
     monkeypatch.setattr(doc_pipeline, "run_project_doc_ocr", _fake_project_ocr)
@@ -179,7 +179,7 @@ def test_rerun_is_skipped_when_case_path_is_unknown(monkeypatch):
     async def _explode(*_a, **_k):
         raise AssertionError("must not rerun without a known case_path")
 
-    import server.tender.doc_pipeline as doc_pipeline
+    from server.tender import doc_pipeline
 
     monkeypatch.setattr(doc_pipeline, "run_bid_doc_ocr", _explode)
     monkeypatch.setattr(doc_pipeline, "run_project_doc_ocr", _explode)
@@ -382,7 +382,7 @@ def test_rerun_is_bounded_by_a_timeout_and_degrades_to_warning(monkeypatch):
     # pass3-F4：签名须跟生产调用 rerun_budget_sec(spent_sec=...) 一致，否则 TypeError 被
     # blanket catch 吞掉、_never_finishes 从未被 await，本测试空转无鉴别力。
     monkeypatch.setattr(doc_rerun, "rerun_budget_sec", lambda **_k: 0.05)
-    import server.tender.doc_pipeline as doc_pipeline
+    from server.tender import doc_pipeline
 
     async def _never_finishes(*_a, **_k):
         await asyncio.sleep(10)
@@ -402,7 +402,7 @@ def test_rerun_is_bounded_by_a_timeout_and_degrades_to_warning(monkeypatch):
 
 def test_rerun_marks_row_running_so_concurrent_evaluations_dedupe(monkeypatch):
     """F3：重跑前把行置回 running 并起心跳——并发评标据此判 in-flight，不会各跑一遍。"""
-    import server.tender.doc_pipeline as doc_pipeline
+    from server.tender import doc_pipeline
 
     marked: list[tuple] = []
     monkeypatch.setattr(

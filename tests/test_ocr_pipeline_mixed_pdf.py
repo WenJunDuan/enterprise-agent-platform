@@ -17,7 +17,7 @@ from server.ocr.pipeline import _blank_page_count, _should_cloud_ocr_mixed_pdf
 
 @pytest.fixture(autouse=True)
 def _disable_ocr_cache(monkeypatch):
-    import server.ocr.cache as cache
+    from server.ocr import cache
 
     monkeypatch.setattr(cache, "OCR_CACHE_ENABLED", False)
 

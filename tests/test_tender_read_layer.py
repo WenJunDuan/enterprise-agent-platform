@@ -19,11 +19,10 @@ Cases:
 
 from __future__ import annotations
 
-from server.tender import doc_layer  # noqa: E402  (H3: 读层拆出后测试改打这里)
-
 import asyncio
 
 from server.common.agent_bridge import AgentRunMeta
+from server.tender import doc_layer  # noqa: E402  (H3: 读层拆出后测试改打这里)
 
 
 def _fake_meta(request_id: str) -> AgentRunMeta:
@@ -52,7 +51,7 @@ def _make_fake_run_command(calls: dict):
 
 def test_read_layer_uses_doc_store_when_ready(monkeypatch):
     """When doc layer is enabled and docs are ready, ocr_preprocess_block is NOT called."""
-    import server.tender.runner as runner
+    from server.tender import runner
 
     calls: dict = {}
 
@@ -89,7 +88,7 @@ def test_read_layer_uses_doc_store_when_ready(monkeypatch):
 
 def test_read_layer_fallback_when_doc_missing(monkeypatch):
     """When doc layer returns None (missing/not-ready), ocr_preprocess_block is called."""
-    import server.tender.runner as runner
+    from server.tender import runner
 
     calls: dict = {}
     monkeypatch.setattr(runner, "run_command_json", _make_fake_run_command(calls))
@@ -124,7 +123,7 @@ def test_read_layer_fallback_when_doc_missing(monkeypatch):
 
 def test_read_layer_disabled_always_falls_back(monkeypatch):
     """When TENDER_READ_DOC_LAYER=0, ocr_preprocess_block is always called."""
-    import server.tender.runner as runner
+    from server.tender import runner
 
     calls: dict = {}
     monkeypatch.setattr(runner, "run_command_json", _make_fake_run_command(calls))
@@ -163,7 +162,7 @@ def test_read_layer_disabled_always_falls_back(monkeypatch):
 
 def test_read_layer_no_project_id_falls_back(monkeypatch):
     """When project_id is None, doc layer is skipped, ocr_preprocess_block is called."""
-    import server.tender.runner as runner
+    from server.tender import runner
 
     calls: dict = {}
     monkeypatch.setattr(runner, "run_command_json", _make_fake_run_command(calls))
@@ -207,7 +206,7 @@ def test_tender_ocr_purpose_relocated_and_reexported():
     server.tender.doc_pipeline 只是 re-export 同一个对象，不再自己定义，
     routes/tender.py 既有的 import 引用点因此不用改。"""
     import server.tender.doc_pipeline as pipeline
-    import server.tender.runner as runner
+    from server.tender import runner
 
     assert pipeline.TENDER_OCR_PURPOSE is runner.TENDER_OCR_PURPOSE
     assert "评分标准" in runner.TENDER_OCR_PURPOSE
@@ -218,7 +217,7 @@ def test_tender_ocr_purpose_relocated_and_reexported():
 
 def test_model_kwarg_omitted_when_unset(monkeypatch):
     """model 参数未传且 TENDER_EVAL_MODEL 未设 → 不传 model kwargs（零行为变更，生产路径）。"""
-    import server.tender.runner as runner
+    from server.tender import runner
 
     monkeypatch.delenv("TENDER_EVAL_MODEL", raising=False)
     calls: dict = {}
@@ -236,7 +235,7 @@ def test_model_kwarg_omitted_when_unset(monkeypatch):
 
 def test_explicit_model_kwarg_takes_priority_over_env(monkeypatch):
     """显式 model 参数优先于 TENDER_EVAL_MODEL env（CLI --model 场景）。"""
-    import server.tender.runner as runner
+    from server.tender import runner
 
     monkeypatch.setenv("TENDER_EVAL_MODEL", "env-model")
     calls: dict = {}
@@ -263,7 +262,7 @@ def test_explicit_model_kwarg_takes_priority_over_env(monkeypatch):
 def test_env_model_used_when_no_explicit_override(monkeypatch):
     """无显式 model 参数、TENDER_EVAL_MODEL 已设 → 落到 env 值（生产 tender_worker 从不设此
     env，故此路径只在部署机 eval 场景生效，零行为变更承诺仍成立）。"""
-    import server.tender.runner as runner
+    from server.tender import runner
 
     monkeypatch.setenv("TENDER_EVAL_MODEL", "deepseek-v4-pro")
     calls: dict = {}
@@ -297,7 +296,7 @@ def test_env_model_used_when_no_explicit_override(monkeypatch):
 
 def test_run_tender_evaluation_retry_count_zero_on_first_try_success(monkeypatch):
     """一次成功（attempt=0，未重试）→ meta.retry_count == 0。"""
-    import server.tender.runner as runner
+    from server.tender import runner
 
     async def fake_run(command_name, *arguments, schema_name, **opts):
         return {"verdict": "manual_review"}, _fake_meta(opts["request_id"])
@@ -316,7 +315,7 @@ def test_run_tender_evaluation_retry_count_zero_on_first_try_success(monkeypatch
 
 def test_run_tender_evaluation_retry_count_after_two_failures(monkeypatch):
     """前 2 次抛契约异常，第 3 次（attempt=2）成功 → meta.retry_count == 2。"""
-    import server.tender.runner as runner
+    from server.tender import runner
 
     monkeypatch.setattr(runner, "TENDER_CONTRACT_MAX_RETRY", 2)
     attempts = {"n": 0}

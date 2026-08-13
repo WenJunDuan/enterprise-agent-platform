@@ -23,6 +23,7 @@ from pydantic import BaseModel, ValidationError
 
 from server.ocr import OcrError
 from server.ocr.runner import map_extraction_to_form, run_doc_recognize
+from server.platform.paths import PROJECT_ROOT
 from server.routes.deps import verify_tenant
 from server.routes.upload_helpers import (
     collect_uploaded_files,
@@ -30,7 +31,6 @@ from server.routes.upload_helpers import (
     remove_submission_dir,
     validate_directory_case_path,
 )
-from server.platform.paths import PROJECT_ROOT
 from server.stores.request_store import new_request_id
 
 logger = logging.getLogger(__name__)
@@ -180,7 +180,7 @@ async def ocr_fill(
                 ),
                 timeout=OCR_FILL_TIMEOUT_SEC,
             )
-    except asyncio.TimeoutError as exc:
+    except TimeoutError as exc:
         # 映射超时：识别已完成、映射协程已取消，删目录安全。
         remove_submission_dir(case_path)
         logger.warning("ocr_fill_timeout", extra={"request_id": request_id})

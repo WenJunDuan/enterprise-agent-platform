@@ -28,7 +28,7 @@ from server.ocr.pipeline import _iter_files, extract_dir, extract_one
 @pytest.fixture(autouse=True)
 def _disable_ocr_cache(monkeypatch):
     """默认禁用 OCR 缓存，避免测试写 data/ocr-cache；缓存专项测试自行 monkeypatch 启用。"""
-    import server.ocr.cache as cache
+    from server.ocr import cache
 
     monkeypatch.setattr(cache, "OCR_CACHE_ENABLED", False)
 
@@ -46,7 +46,7 @@ class _LockedCollector:
 
 
 def _make_multipage_pdf(tmp_path, texts: list[str]):
-    import fitz
+    import pymupdf as fitz
 
     pdf = tmp_path / "multipage.pdf"
     doc = fitz.open()
@@ -118,8 +118,9 @@ def test_extract_one_native_pdf_emits_page_level_units_with_real_page_anchors(tm
 
 
 def test_paddle_pipeline_on_page_fires_after_paddle_lock_released(monkeypatch):
-    import server.ocr.engine as engine_mod
     from pathlib import Path as _Path
+
+    import server.ocr.engine as engine_mod
 
     class _FakeResult:
         def __init__(self, markdown: str) -> None:
@@ -186,7 +187,7 @@ def test_openai_compatible_on_page_fires_per_page_directly(monkeypatch, tmp_path
 
 
 def test_extract_one_cache_hit_emits_single_file_level_event(tmp_path, monkeypatch):
-    import server.ocr.cache as cache
+    from server.ocr import cache
 
     monkeypatch.setattr(cache, "_CACHE_DIR", tmp_path / "cache")
     monkeypatch.setattr(cache, "OCR_CACHE_ENABLED", True)

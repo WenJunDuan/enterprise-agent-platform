@@ -15,9 +15,10 @@ import os
 import re
 import sys
 import uuid
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, AsyncIterator
+from typing import Any
 
 from claude_agent_sdk import (
     ClaudeAgentOptions,
@@ -27,6 +28,8 @@ from claude_agent_sdk import (
     SystemMessage,
     query,
 )
+
+from server.common.session_logging import SessionLogger, _log_bridge_failure, _log_cli_stderr
 from server.platform.config import (
     configure_claude_runtime_env,
     get_claude_runtime_snapshot,
@@ -36,7 +39,6 @@ from server.platform.config import (
 )
 from server.platform.logging_setup import logging_context
 from server.platform.paths import PROJECT_ROOT, ensure_local_layout
-from server.common.session_logging import SessionLogger, _log_bridge_failure, _log_cli_stderr
 from server.stores.session_store import (
     SessionRecord,
     append_session_record,

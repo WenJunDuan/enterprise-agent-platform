@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import gzip
 import shutil
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -82,10 +82,10 @@ def rotate_log_file(path: Path, *, max_bytes: int, backups: int) -> bool:
 
 def archive_old_session_event_logs(days: int) -> list[str]:
     """Compress raw session event logs older than the retention threshold."""
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    cutoff = datetime.now(UTC) - timedelta(days=days)
     archived: list[str] = []
     for path in sorted(SESSION_EVENT_DIR.rglob("*.jsonl")):
-        modified_at = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+        modified_at = datetime.fromtimestamp(path.stat().st_mtime, tz=UTC)
         if modified_at >= cutoff:
             continue
         target = path.with_suffix(path.suffix + ".gz")
@@ -175,7 +175,7 @@ def cleanup_orphan_submission_directories(days: int, now: str | None = None) -> 
             continue
         if str(resolved) in known:
             continue  # 有 task 记录 → 交给 cleanup_old_submission_directories
-        modified = datetime.fromtimestamp(resolved.stat().st_mtime, tz=timezone.utc)
+        modified = datetime.fromtimestamp(resolved.stat().st_mtime, tz=UTC)
         if modified >= cutoff:
             continue  # retention 内，可能仍在处理，保留
         shutil.rmtree(resolved, ignore_errors=True)
@@ -222,4 +222,4 @@ def run_maintenance() -> dict[str, Any]:
 def _coerce_timestamp(value: str | None) -> datetime:
     if value:
         return datetime.fromisoformat(value)
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)

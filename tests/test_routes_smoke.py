@@ -8,10 +8,10 @@ renamed, or method-changed during future maintenance, this test will catch it.
 from __future__ import annotations
 
 # ── baseline captured 2026-06-12 before refactor ──────────────────────────────
-# Command: uv run python -c
-#   "from server.api import app;
-#    print(sorted((r.path, tuple(sorted(r.methods)))
-#    for r in app.routes if hasattr(r,'methods')))"
+# Command (FastAPI ≥ 0.137, 与下方断言同一套收集口径): uv run python -c
+#   "from fastapi.routing import iter_route_contexts; from server.api import app;
+#    print(sorted((c.path, tuple(sorted(c.methods)))
+#    for c in iter_route_contexts(app.routes) if c.methods))"
 _BASELINE_ROUTES: list[tuple[str, tuple[str, ...]]] = [
     ("/audit/submit", ("POST",)),
     ("/audit/tasks", ("GET",)),
@@ -61,12 +61,18 @@ _ENV_DEPENDENT_PATHS = {"/{spa_path:path}"}
 
 def test_route_table_matches_baseline():
     """(path, methods) set after routes/ split must be identical to the baseline."""
+    from fastapi.routing import iter_route_contexts  # noqa: PLC0415
+
     from server.api import app  # noqa: PLC0415
 
+    # FastAPI 0.137+ 的 include_router 不再把子路由摊平进 app.routes, 而是留
+    # `_IncludedRouter` 包装节点(前缀在匹配时才合成)。iter_route_contexts 是官方
+    # 的展平入口, 产出带完整 path/methods 的 RouteContext, 同时覆盖 app 自身的
+    # /docs、/openapi.json 等 starlette 原生路由。
     actual = sorted(
-        (r.path, tuple(sorted(r.methods)))
-        for r in app.routes
-        if hasattr(r, "methods") and r.path not in _ENV_DEPENDENT_PATHS
+        (context.path, tuple(sorted(context.methods)))
+        for context in iter_route_contexts(app.routes)
+        if context.methods and context.path not in _ENV_DEPENDENT_PATHS
     )
     assert actual == _BASELINE_ROUTES, (
         f"Route table diverged from baseline.\n"

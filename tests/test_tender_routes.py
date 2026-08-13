@@ -221,8 +221,7 @@ def test_worker_forwards_to_evaluate_bid_and_persists(monkeypatch):
     调度壳 monkeypatch 在 worker 模块，核心的 run_command_json 需 monkeypatch 在其下沉后的
     新家（server.tender.runner），否则真实网关调用会被触发（D1 T2 接缝）。
     """
-    import server.tender.worker as worker
-    import server.tender.runner as runner
+    from server.tender import runner, worker
 
     calls: dict = {}
 
@@ -631,8 +630,7 @@ def test_worker_threads_project_id(monkeypatch):
     D1 T2 接缝：run_command_json 现只在 server.tender.runner 内被调用（评标核心下沉），
     调度壳仍在 tender_worker——两个模块各 monkeypatch 各自需要的一半。
     """
-    import server.tender.worker as worker
-    import server.tender.runner as runner
+    from server.tender import runner, worker
 
     calls: dict = {}
 

@@ -82,9 +82,9 @@ def test_copy_table_ignores_unknown_src_columns(tmp_path):
 
 
 def test_reconstruct_review_delta_payload_from_old_file(tmp_path, monkeypatch):
-    from server.platform.sqlite_store import connect_sqlite
-    from server.platform.paths import PLATFORM_DB_FILE
     import server.stores.review_delta_store  # noqa: F401 — 确保 review_deltas 表已建
+    from server.platform.paths import PLATFORM_DB_FILE
+    from server.platform.sqlite_store import connect_sqlite
 
     rid = "mig-" + uuid.uuid4().hex
     # 旧 by-request 文件放在 monkeypatch 后的 LOGS_ROOT 下

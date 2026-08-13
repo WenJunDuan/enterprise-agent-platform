@@ -5,9 +5,9 @@ from __future__ import annotations
 import json
 import uuid
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, ClassVar, Protocol
 
 from server.platform.paths import SERVICE_REQUEST_DB_FILE, ensure_local_layout
 from server.platform.sqlite_store import connect_sqlite, describe_sqlite_target, row_to_dict
@@ -66,7 +66,7 @@ class RequestAuditStore(Protocol):
 class SQLiteRequestAuditStore:
     """SQLite-backed request audit index (the requests table in platform.sqlite3)."""
 
-    COLUMNS = [
+    COLUMNS: ClassVar[list[str]] = [
         "request_id",
         "route",
         "method",
@@ -254,7 +254,7 @@ def new_request_id() -> str:
 
 
 def utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def append_request_audit(record: RequestAuditRecord) -> None:

@@ -111,9 +111,7 @@ def _has_hard_disqualification(extracted: Any) -> bool:
         return False
     if _meaningful_disqualification_hits(extracted):
         return True
-    if _has_failed_eligibility(extracted):
-        return True
-    return False
+    return bool(_has_failed_eligibility(extracted))
 
 
 def _has_failed_eligibility(extracted: Any) -> bool:
@@ -667,11 +665,12 @@ def normalize_tender_result(
     `extracted_data` 内部结构（`extracted_data` 本身是白名单顶层字段，整体保留），两者互不依赖，
     与拆分前的相对位置（原函数末尾）等价。
     """
-    if isinstance(structured_output, dict):
-        if structured_output.get("verdict") != "rejected" and _has_hard_disqualification(
-            structured_output.get("extracted_data")
-        ):
-            structured_output["verdict"] = "rejected"
+    if (
+        isinstance(structured_output, dict)
+        and structured_output.get("verdict") != "rejected"
+        and _has_hard_disqualification(structured_output.get("extracted_data"))
+    ):
+        structured_output["verdict"] = "rejected"
     structured_output = normalize_audit_result(structured_output, request_id)
     if isinstance(structured_output, dict):
         structured_output["reviewed_by"] = "tender-evaluator"

@@ -34,7 +34,11 @@ from server.stores.tender_doc_store import (
 from server.stores.tender_project_store import get_project
 from server.tender.doc_pipeline import (
     TENDER_OCR_PURPOSE as _TENDER_OCR_PURPOSE,
+)
+from server.tender.doc_pipeline import (
     start_bid_doc_ocr_task as _start_bid_doc_ocr_task,
+)
+from server.tender.doc_pipeline import (
     start_project_doc_ocr_task as _start_project_doc_ocr_task,
 )
 

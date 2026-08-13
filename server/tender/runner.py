@@ -19,18 +19,19 @@ import json
 import logging
 import os
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from server.common.command_adapter import run_command_json
 from server.ocr.pipeline import ocr_preprocess_block
+from server.platform.config import get_tender_eval_settings
+from server.stores.session_store import new_conversation_id
+from server.stores.tender_doc_store import decode_failed_files
 from server.tender import doc_layer, doc_rerun
 from server.tender.compare_input import build_criteria_ref, resolve_project_criteria
 from server.tender.context_slim import bound_tender_context
 from server.tender.output import TENDER_OUTPUT_SCHEMA_NAME
-from server.platform.config import get_tender_eval_settings
-from server.stores.session_store import new_conversation_id
-from server.stores.tender_doc_store import decode_failed_files
 
 logger = logging.getLogger(__name__)
 
