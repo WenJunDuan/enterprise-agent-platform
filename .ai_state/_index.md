@@ -4,9 +4,9 @@
 version: "9.6.4"
 
 # === PACE 路由状态 ===
-path: "" # idle: tender-eval-hardening program 已 SHIP(2026-08-12, origin/main e33666c+), 按 P8 释放; 不把 stage=ship 留给下一台机器/会话(P14 教训)
-stage: ""
-current_sprint_slug: ""
+path: "Refactor" # 2026-08-12 prompt-architecture: 提示词热路径下沉+语义单源+预算门禁+skill清理(第三方审计四项), Fable 设计/opus 实施
+stage: "design"
+current_sprint_slug: "2026-08-12-prompt-architecture"
 current_roadmap_slug: ""
 skip_polish: false
 skip_architecture_check: false
@@ -49,7 +49,7 @@ tools_available:
 counts:
   features_count: 2
   issues_count: 0
-  refactors_count: 0
+  refactors_count: 1
   systems_count: 10
   reviews_count: 75
   cleanup_count: 6
@@ -69,7 +69,7 @@ pointers:
   latest_architecture_update: "2026-08-11T01:45:11.504Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "【2026-08-12 program SHIPPED→idle】tender-eval-hardening 全部落地 origin/main(57+ commits): 三 slice+polish, 7 轮 review 抓 4 P0 全闭合, worktree/分支清零。待部署机窗口: runtime-verify 四项(roadmap items note)+部署说明三条(存量项目横比观感/转换稿页号/cache v6 重跑)。下一程序级候选: OCR 独立服务迁移(compound/2026-07-20)。经验档: compound/2026-08-12-learning-review-chain-catches-fix-induced-p0.md"
+next_action: "【2026-08-12 新 sprint 已设计待实施】prompt-architecture(Refactor 红区): design 定稿于 sprints/2026-08-12-prompt-architecture/design.md(critic R1 已跑, 修订记录在档)。新会话恢复链: ①派 generator(model=opus, isolation worktree) 按 design 实施, 派工词要点=严格按 KD1-KD4+附录A对账表, 勤提交, NO_NEW_FAILURES 口径(完整环境 16 条基线), 禁碰 worker.py, tdd-evidence 搬家项用 backfill 记法 ②交付后 reviewer+spec-compliance(重点 AC2 零语义删改逐段核对)→evaluator→合 main→push(ATHENA_ALLOW_PUSH=1) ③可选 T0: 部署机跑 D1 eval golden 基线三数字(一致性极差/manual占比/重试率)供重构前后 A/B。上一 program(tender-eval-hardening)已 SHIP, runtime-verify 四项仍待部署机窗口。"
 last_subagent: "codex-exec" # tender-report-dimensions D0-D5 headless (codex 0.142.1, gpt-5.5)；必须 env -u HTTP_PROXY -u HTTPS_PROXY 否则 streaming API 挂起，见 compound/2026-06-25-trick-codex-proxy-hangs-streaming.md
 last_subagent_at: "2026-06-25T00:00:00.000Z"
 active_worktrees: [] # 原条目是远端机器(/Users/mac/...)的 worktree，本机不存在，2026-08-11 清理
