@@ -17,7 +17,7 @@
 - **N2 [INFO]** 「执行方式+S0」cap 余量仅 4B, 有意的据实收紧; 后续动该节文案须回 design 预算表走修订流程, 不得就地改 cap。
 - **N3 [INFO]** containment 白名单有 STALE_WHITELIST 反向失效检测, F3 白名单路径不构成机制放水, 记录在案。
 
-## Spec-Compliance（仅 AC1 + AC2 联动）
+## Spec Compliance（仅 AC1 + AC2 联动）
 
 - **AC1 PASS**: 整文件 12,442≤15,000; 骨架自 ceb5e19 起零改动（diff 0 字节, 修复未碰生产骨架; 唯一生产文件改动=s3 单行去重）; 逐节 8/8 无 OVER, 脚本 cap 与 design 修订版预算表逐值一致, 修订表算术自洽（=13,750）; 5 references 全部 ≤10,240B（s3 现 9,796）; 6 条 Read 指令路径逐一存在且每文件恰读一次（L12 为权威指向句非 Read）; test_prompt_budget 7 passed。
 - **AC2 联动 PASS**: containment 122 逐字命中+1 白名单、EXIT=0 复现; WHITELIST 唯一条目 key=76、类别合法; 三轮判分纪律 grep 逐条命中（报价拆层 s3:36-38/主观直接给分 s3:29+s1:19-20/一致性二分 s4:15/留余地限定 s3:29+s4:27）, 删复本未误伤。
