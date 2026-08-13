@@ -103,3 +103,33 @@
 - Agent ID: a4672573c4cc598f6
 - Last message: 完成。三个 commit 已落在 worktree 分支 `worktree-agent-a4672573c4cc598f6`，未 push，工作树干净。 ## Manifest diff（仅此，符合范围） `pyproject.toml` 两行，`agent-front/package.json` **零改动**： ``` - "pymupdf==1.27.2.3", + "pymupdf==1
 
+## 2026-08-13T09:05:44.557Z · generator
+- Event: SubagentStart
+- Agent ID: ad979e143f238aa20
+
+## 2026-08-13T09:06:02.152Z · generator
+- Event: SubagentStart
+- Agent ID: a5bb2a1492539b261
+
+## 2026-08-13T09:22:17.071Z · generator
+- Event: SubagentStart
+- Agent ID: a5bb2a1492539b261
+
+## 2026-08-13T09:24:09.932Z · generator
+- Event: SubagentStart
+- Agent ID: ad979e143f238aa20
+
+## 2026-08-13T09:29:45.271Z · generator
+- Event: SubagentStop
+- Agent ID: ad979e143f238aa20
+- Last message: 三项升级已全部落地并提交（未 push）。 ## Commits（基线 main b4d7a74） | # | commit | 内容 | |---|---|---| | 1 | `b22538d` | pymupdf 1.28.0 → 1.28.2 + 全量改用 pymupdf 官方入口 | | 2 | `e3adaad` | fastapi 0.136.1 → 0.141.1 | | 3 | 
+
+## 2026-08-13T09:33:26.539Z · generator
+- Event: SubagentStart
+- Agent ID: a5bb2a1492539b261
+
+## 2026-08-13T09:37:37.231Z · generator
+- Event: SubagentStop
+- Agent ID: a5bb2a1492539b261
+- Last message: 四项全部执行完毕，工作树干净，未 push。 ## 四项结果 **1. @types/node ^25.9.3 → ^26.2.0 — 升级成功** `tsc -b` 装 26 后直接全绿，无需改代码。运行时证据（`nodejs/Release` 的 `schedule.json`）：Node 25 线 **2026-06-01 已 EOL**，26 是 current 线、2026-10-28 
+
