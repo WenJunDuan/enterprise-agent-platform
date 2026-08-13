@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { DotsHorizontalIcon } from '@radix-ui/react-icons'
 import { type Row } from '@tanstack/react-table'
 import { KeyRound, Trash2, UserCheck, UserPen, UserX } from 'lucide-react'
+import { useAuthStore } from '@/stores/auth-store'
+import { type AppTableFeatures } from '@/lib/table-features'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -11,7 +13,6 @@ import {
   DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { useAuthStore } from '@/stores/auth-store'
 import { type User } from '../data/schema'
 import { getUserManagementAccess } from '../user-management-access'
 import { useUsers } from './users-provider'
@@ -19,7 +20,7 @@ import { UsersResetPasswordDialog } from './users-reset-password-dialog'
 import { UsersStatusDialog } from './users-status-dialog'
 
 type DataTableRowActionsProps = {
-  row: Row<User>
+  row: Row<AppTableFeatures, User>
 }
 
 function runAfterMenuCloses(callback: () => void) {
@@ -78,7 +79,7 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
               <DropdownMenuShortcut>
                 <UserPen size={16} />
               </DropdownMenuShortcut>
-              </DropdownMenuItem>
+            </DropdownMenuItem>
           )}
           {canChangeUserStatus && (
             <DropdownMenuItem
@@ -96,7 +97,7 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
                   <UserCheck size={16} />
                 )}
               </DropdownMenuShortcut>
-              </DropdownMenuItem>
+            </DropdownMenuItem>
           )}
           {canResetPasswords && (
             <DropdownMenuItem
@@ -110,7 +111,7 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
               <DropdownMenuShortcut>
                 <KeyRound size={16} />
               </DropdownMenuShortcut>
-              </DropdownMenuItem>
+            </DropdownMenuItem>
           )}
           {hasPrimaryActions && canDeleteUsers && <DropdownMenuSeparator />}
           {canDeleteUsers && (

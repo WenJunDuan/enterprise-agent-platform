@@ -1,4 +1,5 @@
 import { type ColumnDef } from '@tanstack/react-table'
+import { type AppTableFeatures } from '@/lib/table-features'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -34,7 +35,7 @@ function formatDateTimeCell(value: string | null) {
   })
 }
 
-const usersColumns: ColumnDef<User>[] = [
+const usersColumns: ColumnDef<AppTableFeatures, User>[] = [
   {
     id: 'select',
     header: ({ table }) => (
@@ -47,7 +48,7 @@ const usersColumns: ColumnDef<User>[] = [
         aria-label='全选'
         disabled={
           !table
-            .getPaginationRowModel()
+            .getPaginatedRowModel()
             .flatRows.some((row) => row.getCanSelect())
         }
         className='translate-y-[2px]'

@@ -3,6 +3,7 @@ import { DotsHorizontalIcon } from '@radix-ui/react-icons'
 import { type Row } from '@tanstack/react-table'
 import { Pencil, ShieldCheck, ShieldOff, Trash2, Database } from 'lucide-react'
 import { useAuthStore } from '@/stores/auth-store'
+import { type AppTableFeatures } from '@/lib/table-features'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -17,12 +18,12 @@ import {
   getRoleManagementAccess,
   isProtectedSystemRole,
 } from '../role-management-access'
-import { useRoles } from './roles-provider'
 import { RolesDataScopeDialog } from './roles-data-scope-dialog'
+import { useRoles } from './roles-provider'
 import { RolesStatusDialog } from './roles-status-dialog'
 
 type DataTableRowActionsProps = {
-  row: Row<Role>
+  row: Row<AppTableFeatures, Role>
 }
 
 function runAfterMenuCloses(callback: () => void) {
