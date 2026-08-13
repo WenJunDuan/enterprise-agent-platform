@@ -96,7 +96,7 @@ allowed-tools: Read, Glob, Skill, Task
 - **废标/资格独立 gate（与逐项评分解耦，关键，治"全是不通过没扣分"）**：资格审查已按最高优先级输出 `eligibility_checks`；再对照 S1 的 `rejection_rules` 逐条核查投标文件，命中写 `extracted_data.disqualification_hits:[{rule_id 回链, finding, confirmed, evidence:{source, quote}}]`。**资格失败/废标只决定最终 `verdict`，绝不把各评分项 `scoring[]` 一律归 0/rejected**——投标人确实交了业绩/方案/团队/商务，就照各项 `score_mode` 逐项给分；把"项目名不符"等记入 `disqualification_hits` + 相关项 `basis`，而非抹掉逐项评分。
   - **`confirmed` 是废标决断的闸（关键，治"把读不清的疑似信号误判废标"）**：仅当废标事实**已确认**（底稿可读、逐字可核、语义明确，如确认逾期/确认投错项目/确认资质缺失）才写 `confirmed:true` → 触发 `rejected`。**疑似 / 读不清 / 扫描截图未还原 / 自相矛盾 / 须人工登官网核验**的信号一律 `confirmed:false`——它只进 `risk_score` + `eligibility_checks.status:manual` 提示人工，**绝不触发 rejected**。典型反例：信用中国查询截图 OCR 只读到页面标题（"…失信…名单"）却读不全查询结果、且投标人把它放在"未被列入"自证章节 → 常规理解是自证清白，**`confirmed:false`**，不得据此废标合规投标人。
   - **废标/扣分相关证据读不清 → 先重识别再判**（落"读不清先重识别该页再判"）：判罚/扣分相关页若底稿读不清（扫描/印章/截图），**若评标环境提供 `ocr-page` 技能则先对该页重识别**（含 `--seal` 印章页）读清后再判；**重识别后仍不可读 → `confirmed:false` + 须人工核验**，绝不据读不清直接判废标或判 0（"读不清≠违规"，同"读不清≠没提供"）。
-- 一致性核验：若业绩的项目经理与拟派项目负责人不一致，该业绩项 `manual_review`/不得分，`manual_review_reason:"data_conflict"`，证据链**同时引用业绩页与拟派负责人页**两处出处（依据：实施条例第40/42条、业绩与拟派负责人应一致）。
+- 一致性核验（**二分决断，不给"或"**）：业绩的项目经理与拟派项目负责人比对——①两处逐字可核、**确认是不同的人**（姓名完全不同）→ 该业绩**直接不得分**（`score` 按无此业绩计，`status:"scored"`，`basis` 写「业绩项目经理 X 与拟派负责人 Y 不一致，该业绩不予认可」）；②仅**写法存疑同一人**（简繁/形近字/OCR 易混字，如 牛亚犇/生亚犇）→ 才 `manual_review`（`data_conflict`）。两种情形证据链都**同时引用业绩页与拟派负责人页**两处出处（依据：实施条例第40/42条）。确认不同人还标 manual 是把"已判定"当"没判定"。
 - **证据定位准确性（硬要求，定位项必须 = 实际找到的）**：每条 `basis` / `evidence_chain` 的出处**只能引底稿里真实存在的页锚点 `【第N页】`**，且所引页**确实包含**你描述的内容——**严禁凭印象/猜测写页码**。⚠ **页码 N 必须取底稿中该原文正上方最近的 `【第N页】` 锚点数字（OCR 顺序页），不是投标文件正文里印刷的页码**——两者常因封面/目录/分册偏移而差几页，照搬印刷页号会被回查闸判 `page_mismatch`。写每条证据前自检一遍：「该原文/字段是否就在我所引的 `【第N页】`？」对不上就改到正确页或降为"未在底稿定位到"。出处统一写**「文件名 + 第N页 + 所在章节/标题」**（如「投标文件第6页《应答函》」「招标文件第79页 报价表」；**带文件名，便于跨多文件归属**），`finding`（及 `deduction_hits/award_hits/disqualification_hits.evidence.quote`）摘所引页的**逐字原文片段**（**照抄底稿原文、勿转述/勿改写/勿缩写**），使定位可核验、带上下文。
   - ⚠ **服务端有确定性回查闸**：会把你引的每条 `quote` 拿去本案底稿逐字核对——引的是**底稿里真实存在的逐字原文**才算核实；编造/严重转述会被标 `evidence_unresolved` 并把该评分项降为人工复核。故务必逐字照抄、引真实页。
 
@@ -122,7 +122,7 @@ allowed-tools: Read, Glob, Skill, Task
 
 1. 最终结论必须符合 `.claude/contracts/common/audit-result.schema.json`。决策只用 `verdict`（`approved` / `rejected` / `manual_review`），不要输出 `result` / `conclusion`（服务端从 `verdict` 派生）。
 2. `claim_id` 为**投标人稳定标识**（优先统一社会信用代码，次投标人名称），便于 server 按投标人追加 / 去重；并把**招标项目标识**写入 `extracted_data.tender_project_id`（优先招标编号，次项目名），供 server 按招标分组、横向比较。
-3. `explanation` / `reasons` / `evidence_chain` 用中文，措辞平实、专业、克制（像评标/审计意见）：禁用夸张或口语词（硬伤、铁证、实锤等），定性留有余地（用"疑似/需人工核实"，证据不确凿不下终局结论）。
+3. `explanation` / `reasons` / `evidence_chain` 用中文，措辞平实、专业、克制（像评标/审计意见）：禁用夸张或口语词（硬伤、铁证、实锤等）。**"留有余地"只适用于废标/资格否决与读不清场景**（证据不确凿不下废标终局结论，用"疑似/需人工核实"）；**评分项给分不留余地**——分数本身就是判定，该几分写几分、依据写实，不加"或许/可能/建议"软化。
 4. `manual_review` 时，`explanation` 必须写明哪些评分项不能自动判定、缺什么材料、哪条规则无法闭合，并填 `manual_review_reason`（只能取 `missing_approval` / `rule_gap` / `data_conflict` / `insufficient_evidence` / `budget_exceeded` / `invoice_invalid` / `pre_approval_mismatch` 之一最贴切者）。
 5. `extracted_data.eligibility_checks` 为最高优先级资格审查结果，必须先于 `scoring` 产出；`extracted_data.scoring` 为逐评分项 `{item, max, score, status, score_mode, basis, pending_reason（仅 score=null 时必填）, …按 mode 的 deduction_hits/selected_band/award_hits}`。资格审查不计入合计，未判定评分项 `score:null` 不计入合计。废标/资格走 `extracted_data.disqualification_hits` / `eligibility_checks`（独立 gate，**不混入 scoring**）。并在文字中说明需要什么外部输入（现场记录/外部评价表/全部投标报价）。
 6. 只返回一个 JSON 对象，直接符合 `audit-result` 契约；不要输出 Markdown、表格、前言或任何 JSON 之外的文字。
