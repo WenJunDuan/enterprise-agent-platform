@@ -1,3 +1,12 @@
+== KD3 / KD2 tamper 的 red→green 实测记录（worktree agent-adb233b1dd1ec8a09，2026-08-13）==
+
+--- RED 1/2：tests/test_prompt_budget.py（三条断言各自造真实越界态后实测）--------------
+制造方式（三个探针同时在位）：
+  cp /tmp/tender-evaluate.before.md .claude/commands/tender-evaluate.md        # 界前 38,754B 原文件
+  .claude/CLAUDE.md 调度表内 system-rule-init 临时改成 system-rule-init-typo   # 悬空实体
+  写 .claude/skills/tender-eval/references/oversized-probe.md（10,241B）        # 超单档上界 1B
+命令：uv run pytest tests/test_prompt_budget.py -q -p no:randomly
+
 E       AssertionError: .claude/commands/tender-evaluate.md 已 38754B，超上界 15000B（超 23754B）。超界须把裁决细则下沉到对应 skill 的 references/ 并在步骤开头加确定性 Read，而不是抬高本文件常量；流程见本测试头注。
 E       assert 38754 <= 15000
 E       AssertionError: references 单文件超 10240B：{'.claude/skills/tender-eval/references/oversized-probe.md': 10241}。拆成更细的一事一档（如按步骤/按评分方式），不要抬高本文件常量。
@@ -8,3 +17,20 @@ FAILED tests/test_prompt_budget.py::test_prompt_file_within_byte_budget[.claude/
 FAILED tests/test_prompt_budget.py::test_reference_files_within_byte_budget
 FAILED tests/test_prompt_budget.py::test_claude_md_dispatch_entities_exist - ...
 3 failed, 4 passed in 0.02s
+
+（随后三个探针全部撤除：恢复瘦身后的 tender-evaluate.md 与 CLAUDE.md、删 oversized-probe.md）
+
+--- RED 2/2：tests/test_tender_pending_reason_source.py（KD2 tamper 测试，实现前）------
+命令：uv run pytest tests/test_tender_pending_reason_source.py -q -p no:randomly
+
+tests/test_tender_pending_reason_source.py:14: in <module>
+    from server.tender.output import _load_pending_reasons
+E   ImportError: cannot import name '_load_pending_reasons' from 'server.tender.output'
+ERROR tests/test_tender_pending_reason_source.py
+1 error in 0.08s
+
+--- GREEN（KD1 瘦身 + KD3 门禁 + KD2 loader 全部落地后）--------------------------------
+命令：uv run pytest tests/test_prompt_budget.py tests/test_tender_pending_reason.py tests/test_tender_pending_reason_source.py -q -p no:randomly
+
+.....................                                                    [100%]
+21 passed in 0.06s

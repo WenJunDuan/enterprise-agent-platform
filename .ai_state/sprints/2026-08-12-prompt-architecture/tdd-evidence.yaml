@@ -1,0 +1,150 @@
+sprint_slug: "2026-08-12-prompt-architecture"
+executor: "generator subagent (model=opus, isolation: worktree agent-adb233b1dd1ec8a09)"
+recorded: "2026-08-13"
+environment: |
+  worktree 自测环境（uv sync 后）：uv run pytest -q -p no:randomly 收集 1373，基线 33 条 FAILED，
+  全部为 Pillow / pymupdf / python-pptx 等 OCR extra 未安装的环境失败（pyproject 的 ocr extra 含
+  paddlepaddle，未在本 worktree 安装）。NO_NEW_FAILURES 以本清单为准（design F5 口径：以自己环境
+  实测清单为准），清单存 evidence/pytest-baseline.txt。
+
+records:
+  - id: "KD1-下沉搬家"
+    kind: "backfill"
+    scope: ".claude/commands/tender-evaluate.md（38,754B→12,442B）+ .claude/skills/tender-eval/references/ 新增 5 档"
+    red_command: "backfill 声明: 本项为纯搬家（零语义删改），既有规则内容本身正确，无独立 red 阶段；缺口证据见 red_summary"
+    red_summary: |
+      改动前实测缺口：tender-evaluate.md 38,754B / 142 行，全部裁决细则挤在单文件热路径，
+      skills/tender-eval/references/ 下仅 1 个文件（s1-locate-criteria.md，1,629B），确定性 Read
+      下沉点仅 1 处；无任何机械手段能证明"搬家未丢规则"（AC2 此前只有段落级人工对账表）。
+    red_observed_at: "2026-08-13T06:20:00+08:00  # 缺口核实时刻：wc -c 实测 38,754B 且 references 仅 1 档"
+    green_command: "uv run python .ai_state/sprints/2026-08-12-prompt-architecture/evidence/containment_check.py /tmp/tender-evaluate.before.md && uv run python .ai_state/sprints/2026-08-12-prompt-architecture/evidence/section_budget.py"
+    green_summary: |
+      containment：界前 123 条非结构行，未命中 0 条，白名单 0 条（EXIT=0，输出见
+      evidence/containment-output.txt）——即搬家后每条规则逐字仍在「新骨架 + 5 references」并集内。
+      字节：命令 12,442B ≤ 15,000；5 个新 references 分别 9,204 / 10,198 / 8,501 / 2,813 / 2,642B，
+      均 ≤ 10,240。逐节预算 8 节中 7 节达标，1 节超 46B（见 deviations）。
+    green_observed_at: "2026-08-13T07:55:00+08:00"
+    commits: ["271b6fc", "ceb5e19", "7161c04"]
+
+  - id: "KD2-pending_reason 单源接线"
+    kind: "red-green"
+    scope: "server/tender/output.py（711→716 行）+ tests/test_tender_pending_reason_source.py（新增）"
+    red_command: "uv run pytest tests/test_tender_pending_reason_source.py -q -p no:randomly"
+    red_summary: |
+      ImportError: cannot import name '_load_pending_reasons' from 'server.tender.output'
+      （1 error）。改动前 output.py L47-56 把六个取值硬编码成 frozenset 复本，与 schema 双写；
+      无任何测试能证明服务端闸取值来自契约文件——篡改 schema 副本不会改变校验行为。
+      完整输出见 evidence/kd3-red-output.txt 的 "RED 2/2" 段。
+    red_observed_at: "2026-08-13T07:30:00+08:00"
+    green_command: "uv run pytest tests/test_tender_pending_reason_source.py tests/test_tender_pending_reason.py -q -p no:randomly"
+    green_summary: |
+      14 passed。tamper 三向锁定：读真实 schema 得六值；副本 enum 加一值 → loader 跟着多；
+      副本 enum 删一值 → loader 跟着少。既有 test_tender_pending_reason.py 11 条全绿（断言未改，
+      仅 fixture 读取路径扩为「命令骨架 + S3 确定性 Read 的 s3-scoring-modes.md」两份，
+      design 影响范围节明确许可"仅限测试装置不动断言"）。output.py 716 行 = 基线 711 + 5，未越净增上限。
+    green_observed_at: "2026-08-13T07:48:00+08:00"
+    commits: ["eee7b65"]
+
+  - id: "KD2-schema/SKILL/前端 语义单源核对"
+    kind: "backfill"
+    scope: ".claude/contracts/common/audit-result.schema.json（核对齐，未改）、criteria.schema.json（核对齐，未改）、tender-eval/SKILL.md、agent-front/.../types.ts"
+    red_command: "backfill 声明: schema 侧 enum+description 已由 H1(6c766a5) 交付，本项是核对齐与消费端接线，无独立 red 阶段；缺口证据见 red_summary"
+    red_summary: |
+      改动前实测：pending_reason 语义复本 4 处（tender-evaluate.md L76 / audit-result.schema.json
+      description / output.py 硬编码枚举 + 逐值行内注释 / 前端 types.ts 手写联合类型且注释只写"同源"
+      未指向权威）；tag 语义复本 3 处（criteria.schema.json description / SKILL.md L29-31 逐条复述 /
+      prompt L47）。逐条比对 schema description 与 prompt L76：六个取值语义一致，无需改 schema
+      （派工明令禁止改成 oneOf/const）；criteria.schema.json 的 tag description 已覆盖四个取值。
+    red_observed_at: "2026-08-13T06:35:00+08:00  # 缺口核实时刻：grep 四处复本并逐条比对语义"
+    green_command: "grep -n 'pending_reason' .claude/commands/tender-evaluate.md; grep -n 'criteria.schema.json' .claude/skills/tender-eval/SKILL.md; uv run pytest tests/ -q -p no:randomly -k 'tender or prompt'"
+    green_summary: |
+      复本从 4 处收敛到 2 处（schema 权威 + 前端手写消费端并已加权威指向注释）：命令骨架只留
+      "枚举与各值语义见 audit-result.schema.json" 一句硬闸，逐值语义仅存于 schema 与 s3 速查表
+      （速查表显式标注"权威=schema，冲突以 schema 为准"）；SKILL.md tag 段改为引用
+      criteria.schema.json 并保留 G5 例外整句。tender/prompt 相关 468 passed（2 failed 均在 33 条基线内）。
+    green_observed_at: "2026-08-13T07:52:00+08:00"
+    commits: ["eee7b65", "ceb5e19"]
+
+  - id: "KD3-提示词预算门禁"
+    kind: "red-green"
+    scope: "tests/test_prompt_budget.py（新增，7 条）"
+    red_command: "uv run pytest tests/test_prompt_budget.py -q -p no:randomly  # 三个探针在位：界前 38KB 原文件 / CLAUDE.md 悬空实体 / 10,241B 超界 reference"
+    red_summary: |
+      3 failed, 4 passed：①tender-evaluate.md 38,754B > 15,000（超 23,754B）；②references 单档
+      10,241B > 10,240；③CLAUDE.md 调度表悬空实体 ['system-rule-init-typo']。三条断言各自被真实
+      越界态命中，证明门禁不是恒真断言。完整输出见 evidence/kd3-red-output.txt "RED 1/2" 段。
+    red_observed_at: "2026-08-13T07:12:00+08:00"
+    green_command: "uv run pytest tests/test_prompt_budget.py -q -p no:randomly"
+    green_summary: |
+      7 passed（探针全部撤除后）：5 个提示词文件均在上界内（tender-evaluate 12,442≤15,000、
+      tender-compare 7,132≤8,200、tender-extract-info 5,871≤6,800、audit 4,584≤5,300、
+      CLAUDE.md 8,412≤9,600——KD4 改完后重测的实测值，仍在 design 原上界内，故上界不上调）；
+      references 6 档均 ≤10,240；调度表 6 个实体全部解析到真实 command / skill / agent。
+    green_observed_at: "2026-08-13T07:20:00+08:00"
+    commits: ["5c2beac"]
+
+  - id: "KD4-占位 skill 处置"
+    kind: "backfill"
+    scope: ".claude/skills/common/SKILL.md（删）、.claude/skills/system/SKILL.md（删）、.claude/CLAUDE.md"
+    red_command: "backfill 声明: 删除零引用空壳与修订调度表措辞不改变任何运行行为，无独立 red 阶段；缺口证据见 red_summary"
+    red_summary: |
+      盘点实测（命令与全量结果见 evidence/kd4-skill-inventory.md）：common/SKILL.md(406B) 与
+      system/SKILL.md(273B) 的 frontmatter 名 common-skills / system-skills 在生产面（排除
+      .ai_state 历史档）**零外部引用**，正文只列子 skill 名，构成路由假选项。同时证伪 design 两处
+      假设：两目录下另有 7 个**有活消费者**的真实子 skill（4 个 agent 的 frontmatter skills: 正在
+      声明其中 5 个），且 system-rule-init / system-memory-distill 并非悬空名。
+    red_observed_at: "2026-08-13T06:55:00+08:00  # 缺口核实时刻：两轮 grep 盘点 + find 目录实测"
+    green_command: "grep -rn 'common-skills\\|system-skills' --exclude-dir=.ai_state --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=.venv .; uv run pytest tests/test_prompt_budget.py::test_claude_md_dispatch_entities_exist -q -p no:randomly"
+    green_summary: |
+      悬空引用 grep = 0 命中（EXIT=1）。7 个真实子 skill 一个未动。CLAUDE.md system 域两处入口改为
+      /init-rules 与 /distill-memory 两个 command（括号内保留其调用的 skill 名），调度语义不变，
+      并由 test_claude_md_dispatch_entities_exist 机械核对实体存在性（1 passed）。
+    green_observed_at: "2026-08-13T07:05:00+08:00"
+    commits: ["6135c98"]
+
+  - id: "全量回归 NO_NEW_FAILURES"
+    kind: "backfill"
+    scope: "全仓 pytest + ruff + agent-front bun test"
+    red_command: "backfill 声明: 本项为回归守恒核验而非行为变更，无独立 red 阶段；基线证据见 red_summary"
+    red_summary: |
+      开工第一步（uv sync 后、任何改动前）实测基线：33 条 FAILED，逐条清单存
+      evidence/pytest-baseline.txt，全部为 OCR extra 缺失导致的环境失败（test_ocr_* /
+      test_audit_direct*）。前端 bun test 在 bun install 前有 5 fail/5 errors（缺 node_modules），
+      装依赖后基线为 189 pass / 0 fail。
+    red_observed_at: "2026-08-13T05:58:00+08:00  # 基线核实时刻"
+    green_command: "uv run pytest -q -p no:randomly 2>&1 | grep -E '^(FAILED|ERROR)' | sort > /tmp/after.txt && diff /tmp/baseline.txt /tmp/after.txt; uv run ruff check server tests; cd agent-front && bun test"
+    green_summary: |
+      diff 为空（EXIT=0），收尾 33 条与基线 33 条逐条一致（清单存 evidence/pytest-after.txt）；
+      全量 1337 passed / 33 failed / 3 skipped。ruff check server tests → All checks passed!。
+      agent-front bun test → 189 pass / 0 fail（本 sprint 前端只改 types.ts 一行注释）。
+    green_observed_at: "2026-08-13T08:05:00+08:00"
+    commits: ["eee7b65"]
+
+deviations:
+  - id: "D1"
+    what: "逐节字节预算表 8 节中「执行方式+S0」实测 746B，超 design 上界 700B 共 46B"
+    why: |
+      该行上界 700B 由界前原文 L20-22(305B)+L24-26(233B)=538B 加余量得出，**未给 design 自己要求的
+      fail-visible 一行留预算**（KD1「Read 失败语义…此语义写进命令骨架一行」在预算表里没有对应行）。
+      该行压到 208B 已是保住两项强制语义（声明措辞 + 整单降 manual_review/rule_gap）的下限；再压就要
+      删语义。其余 7 节全部达标，合计 12,442B ≤ 13,700，整文件 12,442B ≤ 15,000（余量 2,558B）。
+  - id: "D2"
+    what: "L50-55（通则层法规 Read + 护栏）下沉 s1-criteria-structuring.md，未留在骨架"
+    why: "骨架 S1 节上界 900B 装不下这 1,054B。该 reference 由 S1 开头确定性 Read，其中的 Read 动作照常执行；骨架另留一句 rule_gap 硬门保可见性。已记入 design 附录 A。"
+  - id: "D3"
+    what: "L104-105（决断总纲）留在 S4 原位，未按预算表挪到 S3 节"
+    why: "两节实测均低于各自上界（S3 2,451≤2,800 / S4 1,672≤1,800），保持原位少一次段落搬迁、降低语义漂移面。已记入 design 附录 A。"
+  - id: "D4"
+    what: "KD4 未删 common/ 与 system/ 目录，只删两个分组级 SKILL.md 空壳"
+    why: "盘点证伪 design「两个目录是空壳」的前提：目录下有 7 个真实子 skill，其中 5 个被 4 个 agent 的 frontmatter 声明。design KD4 明写「若盘点发现实际消费者…以盘点结果为准，二选一」，故按盘点执行。删目录会误伤生产能力。"
+  - id: "D5"
+    what: "tests/test_tender_pending_reason.py 有 1 处非零修改（fixture 读取路径），11 条断言与用例数未变"
+    why: |
+      test_tender_evaluate_prompt_declares_every_pending_reason 断言「六个取值出现在 prompt 里」，
+      而枚举逐值语义已随 S3 细则下沉到 s3-scoring-modes.md（该文件由 S3 开头确定性 Read，运行时
+      模型必然看到——正是 design F3 要求的"枚举在 S3 运行时上下文必须可达"）。故把 fixture 读取范围
+      从单文件扩为「命令骨架 + s3-scoring-modes.md」两份，断言、PENDING_REASONS 常量与其余 10 条用例
+      逐字未动。design 影响范围节明确许可：「如枚举读取路径需要 fixture 调整，仅限测试装置不动断言」。
+  - id: "D6"
+    what: "T0 eval 收益基线（AC7）未跑 → defer"
+    why: "需可调模型的部署机窗口，worktree 内无该环境；design 明写 AC7 可选、不阻塞。"
