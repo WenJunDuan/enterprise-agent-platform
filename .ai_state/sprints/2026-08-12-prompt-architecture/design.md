@@ -103,7 +103,7 @@ executor: "generator subagent model=opus, isolation: worktree (红区 Refactor)"
   适用场景，内容取自现 prompt 第 76 行的定义，逐字迁移）。scoring item 定义处同补。
 - `criteria.schema.json`：`tag` enum（scored/requires_cross_bid_comparison/requires_external_data/
   requires_live_event）补 description（语义取自现 prompt/SKILL.md）。
-- `tender-evaluate.md` 骨架只写："score:null 必带 pending_reason，枚举与각值语义见
+- `tender-evaluate.md` 骨架只写："score:null 必带 pending_reason，枚举与各值语义见
   audit-result.schema.json（服务端按 schema 校验，选最贴切的一个）"；s3 reference 里可保留
   简表但标注"权威=schema"。
 - `server/tender/output.py`：硬编码枚举集合改为**惰性首用加载 + 缓存**（critic R1-F4 钉死
@@ -127,7 +127,7 @@ executor: "generator subagent model=opus, isolation: worktree (红区 Refactor)"
 - 上界表（字节，含 15% 余量原则，基线 2026-08-12 实测）：
   `tender-evaluate.md ≤ 15_000`（重构后目标）、`tender-compare.md ≤ 8_200`（现 7,132）、
   `tender-extract-info.md ≤ 6_800`（现 5,871）、`audit.md ≤ 5_300`（现 4,584）、
-  `CLAUDE.md ≤ 9_600`（现 8,323）；references/ 单文件 ≤ 8_192。
+  `CLAUDE.md ≤ 9_600`（现 8,323，KD4 改后按实测重取）；references/ 单文件 ≤ 10_240（与 KD1 上界一致）。
 - 断言超界即红，失败消息写明"超界须下沉 references/，流程见本测试头注"。
 - 上界调整须走 PR 显式改常量（棘轮机械化，不靠自觉）。
 - **实施顺序：KD4 改完 CLAUDE.md 后再取 KD3 上界数值**（critic R1-P2，防 KD4 的调度表修正
@@ -158,7 +158,7 @@ expense 域。环境不允许时显式记 defer，不阻塞。
 
 ```text
 .claude/commands/tender-evaluate.md          KD1 瘦身（38,754B → ≤15,000B）
-.claude/skills/tender-eval/references/       KD1 新建 4 文件
+.claude/skills/tender-eval/references/       KD1 新建 5 文件
 .claude/contracts/common/audit-result.schema.json   KD2 pending_reason descriptions
 .claude/contracts/tender/criteria.schema.json       KD2 tag descriptions
 .claude/skills/tender-eval/SKILL.md          KD2 tag 段引用化
