@@ -1,0 +1,9 @@
+{"event":"GateBlock","ts":"2026-08-13T08:47:34.379Z","session_id":"f72badcb-2f19-4b64-9dac-c293c0bbc195","reason_sha1":"f0b1c6821c7fcb3637a9b5ff36793447e26cb8b7","stage":"ship","path":"Refactor","consecutive":1}
+{"event":"GateBlock","ts":"2026-08-13T08:50:51.695Z","session_id":"f72badcb-2f19-4b64-9dac-c293c0bbc195","reason_sha1":"70bdfa908f61b9ae054952ae8245bbacc1ab8745","stage":"ship","path":"Refactor","consecutive":1}
+{"event":"GateBlock","ts":"2026-08-13T08:51:53.123Z","session_id":"f72badcb-2f19-4b64-9dac-c293c0bbc195","reason_sha1":"7217dd8f47936d964e29b0f7598607a1711babfb","stage":"ship","path":"Refactor","consecutive":1}
+{"event":"GateBlock","ts":"2026-08-13T08:52:25.070Z","session_id":"f72badcb-2f19-4b64-9dac-c293c0bbc195","reason_sha1":"ee17b369262488ecb1ed1f6cc02dc4430af5baf5","stage":"ship","path":"Refactor","consecutive":1}
+{"event":"GateBlock","ts":"2026-08-13T08:53:59.168Z","session_id":"f72badcb-2f19-4b64-9dac-c293c0bbc195","reason_sha1":"6aadbb139d0ca18632338d57ba61836b0309e672","stage":"ship","path":"Refactor","consecutive":1}
+{"event":"GateBlock","ts":"2026-08-13T08:54:51.603Z","session_id":"f72badcb-2f19-4b64-9dac-c293c0bbc195","reason_sha1":"380c9878e5decca07b7620065a0bfb3f662f6e30","stage":"ship","path":"Refactor","consecutive":1}
+{"event":"GateBlock","ts":"2026-08-13T08:55:12.048Z","session_id":"f72badcb-2f19-4b64-9dac-c293c0bbc195","reason_sha1":"a0fdb73f5a6df765066456d4427b7b3bb13c8684","stage":"ship","path":"Refactor","consecutive":1}
+{"event":"GateBlock","ts":"2026-08-13T08:56:11.640Z","session_id":"f72badcb-2f19-4b64-9dac-c293c0bbc195","reason_sha1":"e98bab27442eac151d7f782c3c78ec508dd96e4c","stage":"ship","path":"Refactor","consecutive":1}
+{"event":"GatePass","ts":"2026-08-13T08:59:32.078Z","session_id":"f72badcb-2f19-4b64-9dac-c293c0bbc195","reason_sha1":"e98bab27442eac151d7f782c3c78ec508dd96e4c","stage":"ship","path":"Refactor","consecutive":0}
