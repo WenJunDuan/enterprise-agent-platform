@@ -13,7 +13,9 @@ TARGET = Path(".claude/commands/tender-evaluate.md")
 SECTIONS = [
     ("frontmatter+引言", None, None),
     ("页锚简版", "### 出处页号书写规则", None),
-    ("执行方式+S0", "## 执行方式", 700),
+    # 750 = design.md KD1 预算表 2026-08-13 修订值（原 700 漏算 design 自己强制写进骨架的
+    # fail-visible 一行 208B；出处见 design 预算表下方修订块与 review pass1 F1）。
+    ("执行方式+S0", "## 执行方式", 750),
     ("S1", "### S1 ", 900),
     ("S2", "### S2 ", 2_400),
     ("S3", "### S3 ", 2_800),
@@ -22,7 +24,7 @@ SECTIONS = [
     ("单投标人边界+参数", "## 单投标人边界", 1_300),
 ]
 HEAD_CAP = 1_200  # 头部+页锚简版
-TOTAL_CAP = 13_700
+TOTAL_CAP = 13_750  # design 预算表 2026-08-13 修订：13,700 + 执行方式节 +50
 FILE_CAP = 15_000
 
 

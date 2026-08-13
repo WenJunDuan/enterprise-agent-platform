@@ -35,7 +35,16 @@ LEAD = re.compile(r"^[\s>]*(?:[-*+]\s+|\d+\.\s+|#+\s*)*")
 STRUCTURAL = {"", "---"}
 
 # 未命中白名单：{界前行号: (类别, 理由)}。类别 ∈ 页锚简版替换 / 枚举语义迁 schema / 纯衔接句。
-WHITELIST: dict[int, tuple[str, str]] = {}
+WHITELIST: dict[int, tuple[str, str]] = {
+    76: (
+        "枚举语义迁 schema",
+        "界前 L76 把 pending_reason 硬闸与六个取值的逐值语义写在同一行。搬家后硬闸句、"
+        "'score 非 null 不写该字段'、'选最贴切的一个不要用 evidence_unresolved 兜底' 三条行为"
+        "规则在 s3-scoring-modes.md 逐字保留，仅**逐值语义**改由同文件速查表承载并标注权威 = "
+        "audit-result.schema.json 的 enum + description（KD2 语义单源；review pass1 F3：原写法"
+        "使同一份语义在 s3 内重复两份）。语义零丢失，仅换承载位置，故整行不再逐字命中。",
+    ),
+}
 
 
 def normalize(line: str) -> str:

@@ -83,14 +83,20 @@ executor: "generator subagent model=opus, isolation: worktree (红区 Refactor)"
   | 骨架保留节 | 预算 B |
   |---|---|
   | 头部+页锚简版 | ≤1,200 |
-  | 执行方式+S0 | ≤700 |
+  | 执行方式+S0 | ≤750 |
   | S1 目标句+Read 行（细则下沉后） | ≤900 |
   | S2 全文保留（实测 2,200） | ≤2,400 |
   | S3 资格审查+决断总纲+Read 行 | ≤2,800 |
   | S4 骨架+Read 行 | ≤1,800 |
   | 输出契约核心 | ≤2,600 |
   | 单投标人边界 | ≤1,300 |
-  | **合计** | **≤13,700 ≤ 15,000 ✓** |
+  | **合计** | **≤13,750 ≤ 15,000 ✓** |
+
+  > **2026-08-13 修订（review pass1 F1 / evaluator 最小解锁清单第 1 条）**：「执行方式+S0」
+  > 原定 ≤700B 系由界前原文 L20-22(305B)+L24-26(233B)=538B 加余量得出，**漏算下方
+  > 「Read 失败语义」自己强制写进骨架的那一行**（实测压到 208B 已是保住"声明措辞 + 整单降
+  > manual_review/rule_gap"两项语义的下限）。上界据实改 750（实测 746），合计随之 13,700→13,750，
+  > 整文件上界 15,000 不变。此为 design 自身契约内部矛盾的更正，不是放宽交付判据。
 - **Read 失败语义**：容器内 `.claude/` 随部署同步、文件必在；若 Read 失败属部署缺陷，模型
   应在结论 explanation 声明"评分细则文件缺失，本单按骨架规则保守评定"并将整单降
   manual_review（rule_gap）——fail-visible，不静默。此语义写进命令骨架一行。
@@ -210,14 +216,25 @@ tests/test_tender_pending_reason.py 等       行为锁定回归（预期零修�
   一致性二分/留余地限定）逐条在新位置 grep 可命中。
 - [ ] AC3 单源：两个 schema 的枚举带 description；output.py 枚举来自 schema（单测：篡改临时
   schema 副本枚举 → 校验行为随之变化）；prompt/SKILL.md 不再复述完整枚举语义；
-  test_tender_pending_reason.py 11 条零修改全绿。
+  test_tender_pending_reason.py 11 条**断言零修改**全绿（**2026-08-13 修订**：与上方
+  「影响范围」节"如枚举读取路径需要 fixture 调整，仅限测试装置不动断言"统一到后者口径——
+  枚举随 S3 细则下沉后，fixture 读取范围需从单文件扩为「命令骨架 + s3-scoring-modes.md」
+  两份，属测试装置调整；断言、用例数与 PENDING_REASONS 常量不得动。原表述"零修改"与
+  影响范围节自相矛盾，review pass1 D5 裁定为 design 表述瑕疵）。
 - [ ] AC4 预算门禁：test_prompt_budget.py 按上界表断言全绿；红证据 = 用临时超界文件（或
   对界前的 38KB 原文件路径）实测会红。
 - [ ] AC5 skill 处置：盘点记录（引用清单）落 evidence；处置后 grep 悬空引用 = 0（含
   frontmatter 名变体）；CLAUDE.md 调度语义不变（system 域两个入口仍可路由）；**机械核对：
   CLAUDE.md 调度表提及的每个实体名都存在于 `.claude/commands/` 或 `.claude/skills/`**
-  （critic R1-P2——现状 system-rule-init/system-memory-distill 即悬空名，此检查防复发，
-  建议并入 test_prompt_budget.py 同文件）。
+  （critic R1-P2，建议并入 test_prompt_budget.py 同文件）。
+  > **2026-08-13 更正（实施期盘点证伪，见 evidence/kd4-skill-inventory.md）**：本行原写
+  > "现状 system-rule-init/system-memory-distill 即悬空名"——**该断言不成立**。两者是
+  > `.claude/skills/system/{rule-init,memory-distill}/SKILL.md` 的 frontmatter `name`，是真实
+  > skill，且被 CLAUDE.md、`/init-rules`、`/distill-memory`、tender-eval/expense-audit SKILL.md
+  > 多方消费。真正零外部引用的只有两个**分组级空壳** `common/SKILL.md`(`common-skills`) 与
+  > `system/SKILL.md`(`system-skills`)。按原断言"删目录"会连带删掉 7 个有活消费者的子 skill
+  > （其中 5 个写在 4 个 agent 的 frontmatter `skills:` 里）。实施按 KD4 明文的"以盘点结果为准"
+  > 分支执行：只删两个空壳，子 skill 全留。此处更正以防后人按错误前提再删。
 - [ ] AC6 质量门：完整环境 NO_NEW_FAILURES（16 条基线逐条 diff 为空）；ruff 净；前端仅
   types.ts 注释行、bun test 全绿；tdd-evidence 八字段（本 sprint 多为 backfill 形态——搬家
   无独立 red，按 doc-style backfill 记法写真实缺口证据；KD3 预算测试有真红绿）。
