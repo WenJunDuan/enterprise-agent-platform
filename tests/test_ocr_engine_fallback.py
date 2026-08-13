@@ -350,7 +350,7 @@ def test_tesseract_cli_uses_stdin_and_language_pack(monkeypatch):
 
 
 def _make_pdf(path, page_count: int):
-    import fitz
+    import pymupdf as fitz
 
     document = fitz.open()
     for _ in range(page_count):
@@ -360,7 +360,7 @@ def _make_pdf(path, page_count: int):
 
 
 def _write_test_image(path) -> None:
-    import fitz
+    import pymupdf as fitz
 
     pixmap = fitz.Pixmap(fitz.csRGB, (0, 0, 10, 10), False)
     pixmap.clear_with(255)
@@ -375,7 +375,7 @@ def test_pdf_iterator_rejects_page_count_limit_and_closes_document(tmp_path, mon
     with pytest.raises(OcrDependencyError, match="page count"):
         list(engine._render_pdf_pages(pdf))
 
-    import fitz
+    import pymupdf as fitz
 
     with fitz.open(pdf) as reopened:
         assert reopened.page_count == 2
@@ -425,7 +425,7 @@ def test_pdf_iterator_is_lazy_and_closes_on_cancel(monkeypatch):
 
 
 def test_valid_image_pixel_limit_is_checked_before_network(tmp_path, monkeypatch):
-    import fitz
+    import pymupdf as fitz
 
     pdf = fitz.open()
     pdf.new_page(width=100, height=100)
@@ -633,7 +633,7 @@ def test_render_worker_preflights_page_rect_before_pixmap(
             "Matrix": staticmethod(lambda *_args: object()),
         },
     )
-    monkeypatch.setitem(sys.modules, "fitz", fake_fitz)
+    monkeypatch.setitem(sys.modules, "pymupdf", fake_fitz)
     monkeypatch.setattr(page_render_worker, "_write_header", lambda payload: None)
 
     with pytest.raises(RuntimeError, match=message):
@@ -757,7 +757,7 @@ def test_image_parser_exception_is_structured_and_never_networks(tmp_path, monke
 
 
 def test_legal_image_passes_byte_and_pixel_gates(tmp_path, monkeypatch):
-    import fitz
+    import pymupdf as fitz
 
     pixmap = fitz.Pixmap(fitz.csRGB, (0, 0, 10, 10), False)
     pixmap.clear_with(255)

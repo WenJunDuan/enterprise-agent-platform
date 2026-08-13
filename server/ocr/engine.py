@@ -851,7 +851,7 @@ def extract_pdf_subset(path: Path, page_indices: list[int]) -> Path | None:
     if not page_indices:
         return None
     try:
-        import fitz  # PyMuPDF
+        import pymupdf as fitz
     except ImportError:
         return None
     tmp_path: Path | None = None

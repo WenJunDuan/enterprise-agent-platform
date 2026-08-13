@@ -591,7 +591,7 @@ def test_render_body_pdf_text_renders_both_blocks_and_tables():
 
 
 def test_read_pdf_text_uses_pymupdf(tmp_path):
-    import fitz  # pymupdf
+    import pymupdf as fitz
 
     from server.ocr.native import read_pdf_text
 
@@ -610,7 +610,7 @@ def test_read_pdf_text_uses_pymupdf(tmp_path):
 def test_read_pdf_text_skips_find_tables_for_large_pdf(tmp_path, monkeypatch):
     # R3-perf：超大 PDF（页数 > 上限）跳过逐页 find_tables（治 8417 页 BOQ 324s 瓶颈），
     # 仍保留 blocks 文本。用 page.find_tables 被 patch 计数验证"未调用"。
-    import fitz
+    import pymupdf as fitz
 
     import server.ocr.native as native_mod
     from server.ocr.native import read_pdf_text
@@ -639,7 +639,7 @@ def test_read_pdf_text_skips_find_tables_for_large_pdf(tmp_path, monkeypatch):
 
 def test_read_pdf_text_runs_find_tables_for_small_pdf(tmp_path, monkeypatch):
     # 普通小 PDF（≤ 上限）照常 find_tables（不退化）。
-    import fitz
+    import pymupdf as fitz
 
     import server.ocr.native as native_mod
     from server.ocr.native import read_pdf_text
