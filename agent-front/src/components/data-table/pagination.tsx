@@ -4,7 +4,8 @@ import {
   DoubleArrowLeftIcon,
   DoubleArrowRightIcon,
 } from '@radix-ui/react-icons'
-import { type Table } from '@tanstack/react-table'
+import { type ReactTable, type RowData } from '@tanstack/react-table'
+import { type AppTableFeatures } from '@/lib/table-features'
 import { cn, getPageNumbers } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import {
@@ -15,19 +16,19 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 
-type DataTablePaginationProps<TData> = {
-  table: Table<TData>
+type DataTablePaginationProps<TData extends RowData> = {
+  table: ReactTable<AppTableFeatures, TData>
   className?: string
 }
 
-export function DataTablePagination<TData>({
+export function DataTablePagination<TData extends RowData>({
   table,
   className,
 }: DataTablePaginationProps<TData>) {
-  const currentPage = table.getState().pagination.pageIndex + 1
+  const currentPage = table.state.pagination.pageIndex + 1
   const totalPages = table.getPageCount()
   const totalRows = table.getRowCount()
-  const currentPageSize = table.getState().pagination.pageSize
+  const currentPageSize = table.state.pagination.pageSize
   const pageNumbers = getPageNumbers(currentPage, totalPages)
 
   return (
@@ -55,11 +56,13 @@ export function DataTablePagination<TData>({
               <SelectValue placeholder={`${currentPageSize} 条`} />
             </SelectTrigger>
             <SelectContent side='top'>
-              {[10, 20, 30, 40, 50, 100, 200, 500, 1000, 2000].map((pageSize) => (
-                <SelectItem key={pageSize} value={`${pageSize}`}>
-                  {pageSize} 条
-                </SelectItem>
-              ))}
+              {[10, 20, 30, 40, 50, 100, 200, 500, 1000, 2000].map(
+                (pageSize) => (
+                  <SelectItem key={pageSize} value={`${pageSize}`}>
+                    {pageSize} 条
+                  </SelectItem>
+                )
+              )}
             </SelectContent>
           </Select>
           <span className='text-foreground'>共 {totalRows} 条</span>

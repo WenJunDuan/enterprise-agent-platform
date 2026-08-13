@@ -1,14 +1,12 @@
 import { useEffect, useState } from 'react'
 import {
-  type VisibilityState,
+  type ColumnVisibilityState,
   type ColumnDef,
   flexRender,
-  getCoreRowModel,
-  getFacetedRowModel,
-  getFacetedUniqueValues,
-  useReactTable,
+  useTable,
 } from '@tanstack/react-table'
 import { useAuthStore } from '@/stores/auth-store'
+import { appTableFeatures, type AppTableFeatures } from '@/lib/table-features'
 import { cn } from '@/lib/utils'
 import { type NavigateFn, useTableUrlState } from '@/hooks/use-table-url-state'
 import {
@@ -53,10 +51,11 @@ export function RolesTable({
   const columns = getRolesColumns({
     enableBulkActions: canBulkDeleteRoles,
     enableRowActions: hasRowActions,
-  }) as ColumnDef<Role>[]
+  }) as ColumnDef<AppTableFeatures, Role>[]
 
   const [rowSelection, setRowSelection] = useState({})
-  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({})
+  const [columnVisibility, setColumnVisibility] =
+    useState<ColumnVisibilityState>({})
 
   const {
     columnFilters,
@@ -76,8 +75,8 @@ export function RolesTable({
     ],
   })
 
-  // eslint-disable-next-line react-hooks/incompatible-library
-  const table = useReactTable({
+  const table = useTable({
+    features: appTableFeatures,
     data,
     columns,
     state: {
@@ -96,9 +95,6 @@ export function RolesTable({
     onColumnFiltersChange,
     onRowSelectionChange: setRowSelection,
     onColumnVisibilityChange: setColumnVisibility,
-    getCoreRowModel: getCoreRowModel(),
-    getFacetedRowModel: getFacetedRowModel(),
-    getFacetedUniqueValues: getFacetedUniqueValues(),
   })
 
   useEffect(() => {

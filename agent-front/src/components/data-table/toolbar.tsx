@@ -1,12 +1,13 @@
 import { Cross2Icon } from '@radix-ui/react-icons'
-import { type Table } from '@tanstack/react-table'
+import { type ReactTable, type RowData } from '@tanstack/react-table'
+import { type AppTableFeatures } from '@/lib/table-features'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { DataTableFacetedFilter } from './faceted-filter'
 import { DataTableViewOptions } from './view-options'
 
-type DataTableToolbarProps<TData> = {
-  table: Table<TData>
+type DataTableToolbarProps<TData extends RowData> = {
+  table: ReactTable<AppTableFeatures, TData>
   searchPlaceholder?: string
   searchKey?: string
   searches?: {
@@ -25,7 +26,7 @@ type DataTableToolbarProps<TData> = {
   }[]
 }
 
-export function DataTableToolbar<TData>({
+export function DataTableToolbar<TData extends RowData>({
   table,
   searchPlaceholder = '筛选...',
   searchKey,
@@ -33,7 +34,7 @@ export function DataTableToolbar<TData>({
   filters = [],
 }: DataTableToolbarProps<TData>) {
   const isFiltered =
-    table.getState().columnFilters.length > 0 || table.getState().globalFilter
+    table.state.columnFilters.length > 0 || table.state.globalFilter
   const searchFields =
     searches.length > 0
       ? searches
@@ -65,7 +66,7 @@ export function DataTableToolbar<TData>({
         ) : (
           <Input
             placeholder={searchPlaceholder}
-            value={table.getState().globalFilter ?? ''}
+            value={table.state.globalFilter ?? ''}
             onChange={(event) => table.setGlobalFilter(event.target.value)}
             className='h-8 w-[150px] lg:w-[250px]'
           />

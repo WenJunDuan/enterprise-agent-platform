@@ -5,18 +5,15 @@ import {
   type ColumnDef,
   type ColumnFiltersState,
   flexRender,
-  getCoreRowModel,
-  getFacetedRowModel,
-  getFacetedUniqueValues,
-  getFilteredRowModel,
   type OnChangeFn,
   type PaginationState,
   type Row,
-  useReactTable,
-  type VisibilityState,
+  useTable,
+  type ColumnVisibilityState,
 } from '@tanstack/react-table'
 import { FileText, Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
+import { appTableFeatures, type AppTableFeatures } from '@/lib/table-features'
 import { cn } from '@/lib/utils'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -114,9 +111,10 @@ function TaskStats({ tasks }: { tasks: AuditTask[] }) {
 
 export function AuditTasksPage() {
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
-  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({
-    searchText: false,
-  })
+  const [columnVisibility, setColumnVisibility] =
+    useState<ColumnVisibilityState>({
+      searchText: false,
+    })
   const [pagination, setPagination] = useState<PaginationState>({
     pageIndex: 0,
     pageSize: DEFAULT_PAGE_SIZE,
@@ -203,7 +201,7 @@ export function AuditTasksPage() {
     [refetchTasks]
   )
 
-  const columns = useMemo<ColumnDef<AuditTaskRow>[]>(
+  const columns = useMemo<ColumnDef<AppTableFeatures, AuditTaskRow>[]>(
     () => [
       {
         id: 'searchText',
@@ -322,8 +320,8 @@ export function AuditTasksPage() {
     setPagination((current) => ({ ...current, pageIndex: 0 }))
   }
 
-  // eslint-disable-next-line react-hooks/incompatible-library
-  const table = useReactTable({
+  const table = useTable({
+    features: appTableFeatures,
     data: rows,
     columns,
     state: {
@@ -337,10 +335,6 @@ export function AuditTasksPage() {
     onColumnFiltersChange: handleColumnFiltersChange,
     onColumnVisibilityChange: setColumnVisibility,
     onPaginationChange: setPagination,
-    getCoreRowModel: getCoreRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-    getFacetedRowModel: getFacetedRowModel(),
-    getFacetedUniqueValues: getFacetedUniqueValues(),
   })
 
   return (
@@ -484,8 +478,8 @@ function isTaskStatus(value: unknown): value is TaskStatus {
   )
 }
 
-function matchesSelectedValues<TData>(
-  row: Row<TData>,
+function matchesSelectedValues<TData extends Record<string, unknown>>(
+  row: Row<AppTableFeatures, TData>,
   columnId: string,
   filterValue: unknown
 ) {
