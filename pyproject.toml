@@ -102,6 +102,9 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 # 测试里的假对象（Fake Workbook 等）类属性不需要 ClassVar 标注。
 "tests/*" = ["RUF012"]
+# 本文件在本次依赖升级中约定不改动（并行改动面）；asyncio.TimeoutError 在 3.11+
+# 本就是内建 TimeoutError 的别名，改与不改等价，故就地豁免而非改文件。
+"server/tender/worker.py" = ["UP041"]
 
 [tool.ruff.lint.flake8-bugbear]
 # FastAPI 的依赖注入约定就是在默认值里调用 Query/Depends/Path/Body，官方推荐豁免。
