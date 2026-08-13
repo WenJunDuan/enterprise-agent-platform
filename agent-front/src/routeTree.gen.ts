@@ -10,90 +10,40 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
-import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
-import { Route as AuthenticatedOcrRouteImport } from './routes/_authenticated/ocr'
-import { Route as AuthenticatedEiaRouteImport } from './routes/_authenticated/eia'
-import { Route as AuthenticatedContractsRouteImport } from './routes/_authenticated/contracts'
-import { Route as AuthenticatedAuditRouteImport } from './routes/_authenticated/audit'
-import { Route as errors503RouteImport } from './routes/(errors)/503'
-import { Route as errors500RouteImport } from './routes/(errors)/500'
-import { Route as errors404RouteImport } from './routes/(errors)/404'
-import { Route as errors403RouteImport } from './routes/(errors)/403'
-import { Route as errors401RouteImport } from './routes/(errors)/401'
 import { Route as authOtpRouteImport } from './routes/(auth)/otp'
+import { Route as errors401RouteImport } from './routes/(errors)/401'
+import { Route as errors403RouteImport } from './routes/(errors)/403'
+import { Route as errors404RouteImport } from './routes/(errors)/404'
+import { Route as errors500RouteImport } from './routes/(errors)/500'
+import { Route as errors503RouteImport } from './routes/(errors)/503'
+import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
+import { Route as AuthenticatedAuditRouteImport } from './routes/_authenticated/audit'
+import { Route as AuthenticatedContractsRouteImport } from './routes/_authenticated/contracts'
+import { Route as AuthenticatedEiaRouteImport } from './routes/_authenticated/eia'
+import { Route as AuthenticatedOcrRouteImport } from './routes/_authenticated/ocr'
 import { Route as AuthenticatedSettingsRouteRouteImport } from './routes/_authenticated/settings/route'
-import { Route as AuthenticatedSettingsIndexRouteImport } from './routes/_authenticated/settings/index'
-import { Route as AuthenticatedEiaIndexRouteImport } from './routes/_authenticated/eia/index'
-import { Route as AuthenticatedContractsIndexRouteImport } from './routes/_authenticated/contracts/index'
-import { Route as AuthenticatedAuditIndexRouteImport } from './routes/_authenticated/audit/index'
-import { Route as AuthenticatedSettingsNotificationsRouteImport } from './routes/_authenticated/settings/notifications'
-import { Route as AuthenticatedSettingsDisplayRouteImport } from './routes/_authenticated/settings/display'
-import { Route as AuthenticatedSettingsAppearanceRouteImport } from './routes/_authenticated/settings/appearance'
-import { Route as AuthenticatedSettingsAccountRouteImport } from './routes/_authenticated/settings/account'
-import { Route as AuthenticatedErrorsErrorRouteImport } from './routes/_authenticated/errors/$error'
-import { Route as AuthenticatedEiaDeskRouteImport } from './routes/_authenticated/eia/desk'
-import { Route as AuthenticatedContractsTenderRouteImport } from './routes/_authenticated/contracts/tender'
-import { Route as AuthenticatedAuditSubmitRouteImport } from './routes/_authenticated/audit/submit'
 import { Route as AuthenticatedSectionPageRouteImport } from './routes/_authenticated/$section/$page'
-import { Route as AuthenticatedContractsTenderSelfCheckRouteImport } from './routes/_authenticated/contracts/tender/self-check'
-import { Route as AuthenticatedContractsTenderPostEvalRouteImport } from './routes/_authenticated/contracts/tender/post-eval'
-import { Route as AuthenticatedContractsTenderListRouteImport } from './routes/_authenticated/contracts/tender/list'
-import { Route as AuthenticatedContractsTenderHistoryRouteImport } from './routes/_authenticated/contracts/tender/history'
-import { Route as AuthenticatedContractsTenderDetailRouteImport } from './routes/_authenticated/contracts/tender/detail'
+import { Route as AuthenticatedAuditIndexRouteImport } from './routes/_authenticated/audit/index'
+import { Route as AuthenticatedAuditSubmitRouteImport } from './routes/_authenticated/audit/submit'
+import { Route as AuthenticatedContractsIndexRouteImport } from './routes/_authenticated/contracts/index'
+import { Route as AuthenticatedContractsTenderRouteImport } from './routes/_authenticated/contracts/tender'
+import { Route as AuthenticatedEiaIndexRouteImport } from './routes/_authenticated/eia/index'
+import { Route as AuthenticatedEiaDeskRouteImport } from './routes/_authenticated/eia/desk'
+import { Route as AuthenticatedErrorsErrorRouteImport } from './routes/_authenticated/errors/$error'
+import { Route as AuthenticatedSettingsIndexRouteImport } from './routes/_authenticated/settings/index'
+import { Route as AuthenticatedSettingsAccountRouteImport } from './routes/_authenticated/settings/account'
+import { Route as AuthenticatedSettingsAppearanceRouteImport } from './routes/_authenticated/settings/appearance'
+import { Route as AuthenticatedSettingsDisplayRouteImport } from './routes/_authenticated/settings/display'
+import { Route as AuthenticatedSettingsNotificationsRouteImport } from './routes/_authenticated/settings/notifications'
 import { Route as AuthenticatedAuditTasksTaskIdRouteImport } from './routes/_authenticated/audit/tasks/$taskId'
+import { Route as AuthenticatedContractsTenderDetailRouteImport } from './routes/_authenticated/contracts/tender/detail'
+import { Route as AuthenticatedContractsTenderHistoryRouteImport } from './routes/_authenticated/contracts/tender/history'
+import { Route as AuthenticatedContractsTenderListRouteImport } from './routes/_authenticated/contracts/tender/list'
+import { Route as AuthenticatedContractsTenderPostEvalRouteImport } from './routes/_authenticated/contracts/tender/post-eval'
+import { Route as AuthenticatedContractsTenderSelfCheckRouteImport } from './routes/_authenticated/contracts/tender/self-check'
 
 const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
   id: '/_authenticated',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AuthenticatedIndexRoute = AuthenticatedIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const AuthenticatedOcrRoute = AuthenticatedOcrRouteImport.update({
-  id: '/ocr',
-  path: '/ocr',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const AuthenticatedEiaRoute = AuthenticatedEiaRouteImport.update({
-  id: '/eia',
-  path: '/eia',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const AuthenticatedContractsRoute = AuthenticatedContractsRouteImport.update({
-  id: '/contracts',
-  path: '/contracts',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const AuthenticatedAuditRoute = AuthenticatedAuditRouteImport.update({
-  id: '/audit',
-  path: '/audit',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const errors503Route = errors503RouteImport.update({
-  id: '/(errors)/503',
-  path: '/503',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const errors500Route = errors500RouteImport.update({
-  id: '/(errors)/500',
-  path: '/500',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const errors404Route = errors404RouteImport.update({
-  id: '/(errors)/404',
-  path: '/404',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const errors403Route = errors403RouteImport.update({
-  id: '/(errors)/403',
-  path: '/403',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const errors401Route = errors401RouteImport.update({
-  id: '/(errors)/401',
-  path: '/401',
   getParentRoute: () => rootRouteImport,
 } as any)
 const authOtpRoute = authOtpRouteImport.update({
@@ -101,10 +51,105 @@ const authOtpRoute = authOtpRouteImport.update({
   path: '/otp',
   getParentRoute: () => rootRouteImport,
 } as any)
+const errors401Route = errors401RouteImport.update({
+  id: '/(errors)/401',
+  path: '/401',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const errors403Route = errors403RouteImport.update({
+  id: '/(errors)/403',
+  path: '/403',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const errors404Route = errors404RouteImport.update({
+  id: '/(errors)/404',
+  path: '/404',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const errors500Route = errors500RouteImport.update({
+  id: '/(errors)/500',
+  path: '/500',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const errors503Route = errors503RouteImport.update({
+  id: '/(errors)/503',
+  path: '/503',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedIndexRoute = AuthenticatedIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedAuditRoute = AuthenticatedAuditRouteImport.update({
+  id: '/audit',
+  path: '/audit',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedContractsRoute = AuthenticatedContractsRouteImport.update({
+  id: '/contracts',
+  path: '/contracts',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedEiaRoute = AuthenticatedEiaRouteImport.update({
+  id: '/eia',
+  path: '/eia',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedOcrRoute = AuthenticatedOcrRouteImport.update({
+  id: '/ocr',
+  path: '/ocr',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedSettingsRouteRoute =
   AuthenticatedSettingsRouteRouteImport.update({
     id: '/settings',
     path: '/settings',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedSectionPageRoute =
+  AuthenticatedSectionPageRouteImport.update({
+    id: '/$section/$page',
+    path: '/$section/$page',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedAuditIndexRoute = AuthenticatedAuditIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AuthenticatedAuditRoute,
+} as any)
+const AuthenticatedAuditSubmitRoute =
+  AuthenticatedAuditSubmitRouteImport.update({
+    id: '/submit',
+    path: '/submit',
+    getParentRoute: () => AuthenticatedAuditRoute,
+  } as any)
+const AuthenticatedContractsIndexRoute =
+  AuthenticatedContractsIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => AuthenticatedContractsRoute,
+  } as any)
+const AuthenticatedContractsTenderRoute =
+  AuthenticatedContractsTenderRouteImport.update({
+    id: '/tender',
+    path: '/tender',
+    getParentRoute: () => AuthenticatedContractsRoute,
+  } as any)
+const AuthenticatedEiaIndexRoute = AuthenticatedEiaIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AuthenticatedEiaRoute,
+} as any)
+const AuthenticatedEiaDeskRoute = AuthenticatedEiaDeskRouteImport.update({
+  id: '/desk',
+  path: '/desk',
+  getParentRoute: () => AuthenticatedEiaRoute,
+} as any)
+const AuthenticatedErrorsErrorRoute =
+  AuthenticatedErrorsErrorRouteImport.update({
+    id: '/errors/$error',
+    path: '/errors/$error',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
 const AuthenticatedSettingsIndexRoute =
@@ -113,32 +158,10 @@ const AuthenticatedSettingsIndexRoute =
     path: '/',
     getParentRoute: () => AuthenticatedSettingsRouteRoute,
   } as any)
-const AuthenticatedEiaIndexRoute = AuthenticatedEiaIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => AuthenticatedEiaRoute,
-} as any)
-const AuthenticatedContractsIndexRoute =
-  AuthenticatedContractsIndexRouteImport.update({
-    id: '/',
-    path: '/',
-    getParentRoute: () => AuthenticatedContractsRoute,
-  } as any)
-const AuthenticatedAuditIndexRoute = AuthenticatedAuditIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => AuthenticatedAuditRoute,
-} as any)
-const AuthenticatedSettingsNotificationsRoute =
-  AuthenticatedSettingsNotificationsRouteImport.update({
-    id: '/notifications',
-    path: '/notifications',
-    getParentRoute: () => AuthenticatedSettingsRouteRoute,
-  } as any)
-const AuthenticatedSettingsDisplayRoute =
-  AuthenticatedSettingsDisplayRouteImport.update({
-    id: '/display',
-    path: '/display',
+const AuthenticatedSettingsAccountRoute =
+  AuthenticatedSettingsAccountRouteImport.update({
+    id: '/account',
+    path: '/account',
     getParentRoute: () => AuthenticatedSettingsRouteRoute,
   } as any)
 const AuthenticatedSettingsAppearanceRoute =
@@ -147,57 +170,28 @@ const AuthenticatedSettingsAppearanceRoute =
     path: '/appearance',
     getParentRoute: () => AuthenticatedSettingsRouteRoute,
   } as any)
-const AuthenticatedSettingsAccountRoute =
-  AuthenticatedSettingsAccountRouteImport.update({
-    id: '/account',
-    path: '/account',
+const AuthenticatedSettingsDisplayRoute =
+  AuthenticatedSettingsDisplayRouteImport.update({
+    id: '/display',
+    path: '/display',
     getParentRoute: () => AuthenticatedSettingsRouteRoute,
   } as any)
-const AuthenticatedErrorsErrorRoute =
-  AuthenticatedErrorsErrorRouteImport.update({
-    id: '/errors/$error',
-    path: '/errors/$error',
-    getParentRoute: () => AuthenticatedRouteRoute,
+const AuthenticatedSettingsNotificationsRoute =
+  AuthenticatedSettingsNotificationsRouteImport.update({
+    id: '/notifications',
+    path: '/notifications',
+    getParentRoute: () => AuthenticatedSettingsRouteRoute,
   } as any)
-const AuthenticatedEiaDeskRoute = AuthenticatedEiaDeskRouteImport.update({
-  id: '/desk',
-  path: '/desk',
-  getParentRoute: () => AuthenticatedEiaRoute,
-} as any)
-const AuthenticatedContractsTenderRoute =
-  AuthenticatedContractsTenderRouteImport.update({
-    id: '/tender',
-    path: '/tender',
-    getParentRoute: () => AuthenticatedContractsRoute,
-  } as any)
-const AuthenticatedAuditSubmitRoute =
-  AuthenticatedAuditSubmitRouteImport.update({
-    id: '/submit',
-    path: '/submit',
+const AuthenticatedAuditTasksTaskIdRoute =
+  AuthenticatedAuditTasksTaskIdRouteImport.update({
+    id: '/tasks/$taskId',
+    path: '/tasks/$taskId',
     getParentRoute: () => AuthenticatedAuditRoute,
   } as any)
-const AuthenticatedSectionPageRoute =
-  AuthenticatedSectionPageRouteImport.update({
-    id: '/$section/$page',
-    path: '/$section/$page',
-    getParentRoute: () => AuthenticatedRouteRoute,
-  } as any)
-const AuthenticatedContractsTenderSelfCheckRoute =
-  AuthenticatedContractsTenderSelfCheckRouteImport.update({
-    id: '/self-check',
-    path: '/self-check',
-    getParentRoute: () => AuthenticatedContractsTenderRoute,
-  } as any)
-const AuthenticatedContractsTenderPostEvalRoute =
-  AuthenticatedContractsTenderPostEvalRouteImport.update({
-    id: '/post-eval',
-    path: '/post-eval',
-    getParentRoute: () => AuthenticatedContractsTenderRoute,
-  } as any)
-const AuthenticatedContractsTenderListRoute =
-  AuthenticatedContractsTenderListRouteImport.update({
-    id: '/list',
-    path: '/list',
+const AuthenticatedContractsTenderDetailRoute =
+  AuthenticatedContractsTenderDetailRouteImport.update({
+    id: '/detail',
+    path: '/detail',
     getParentRoute: () => AuthenticatedContractsTenderRoute,
   } as any)
 const AuthenticatedContractsTenderHistoryRoute =
@@ -206,17 +200,23 @@ const AuthenticatedContractsTenderHistoryRoute =
     path: '/history',
     getParentRoute: () => AuthenticatedContractsTenderRoute,
   } as any)
-const AuthenticatedContractsTenderDetailRoute =
-  AuthenticatedContractsTenderDetailRouteImport.update({
-    id: '/detail',
-    path: '/detail',
+const AuthenticatedContractsTenderListRoute =
+  AuthenticatedContractsTenderListRouteImport.update({
+    id: '/list',
+    path: '/list',
     getParentRoute: () => AuthenticatedContractsTenderRoute,
   } as any)
-const AuthenticatedAuditTasksTaskIdRoute =
-  AuthenticatedAuditTasksTaskIdRouteImport.update({
-    id: '/tasks/$taskId',
-    path: '/tasks/$taskId',
-    getParentRoute: () => AuthenticatedAuditRoute,
+const AuthenticatedContractsTenderPostEvalRoute =
+  AuthenticatedContractsTenderPostEvalRouteImport.update({
+    id: '/post-eval',
+    path: '/post-eval',
+    getParentRoute: () => AuthenticatedContractsTenderRoute,
+  } as any)
+const AuthenticatedContractsTenderSelfCheckRoute =
+  AuthenticatedContractsTenderSelfCheckRouteImport.update({
+    id: '/self-check',
+    path: '/self-check',
+    getParentRoute: () => AuthenticatedContractsTenderRoute,
   } as any)
 
 export interface FileRoutesByFullPath {
@@ -434,67 +434,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_authenticated/': {
-      id: '/_authenticated/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof AuthenticatedIndexRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/ocr': {
-      id: '/_authenticated/ocr'
-      path: '/ocr'
-      fullPath: '/ocr'
-      preLoaderRoute: typeof AuthenticatedOcrRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/eia': {
-      id: '/_authenticated/eia'
-      path: '/eia'
-      fullPath: '/eia'
-      preLoaderRoute: typeof AuthenticatedEiaRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/contracts': {
-      id: '/_authenticated/contracts'
-      path: '/contracts'
-      fullPath: '/contracts'
-      preLoaderRoute: typeof AuthenticatedContractsRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/audit': {
-      id: '/_authenticated/audit'
-      path: '/audit'
-      fullPath: '/audit'
-      preLoaderRoute: typeof AuthenticatedAuditRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/(errors)/503': {
-      id: '/(errors)/503'
-      path: '/503'
-      fullPath: '/503'
-      preLoaderRoute: typeof errors503RouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/(errors)/500': {
-      id: '/(errors)/500'
-      path: '/500'
-      fullPath: '/500'
-      preLoaderRoute: typeof errors500RouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/(errors)/404': {
-      id: '/(errors)/404'
-      path: '/404'
-      fullPath: '/404'
-      preLoaderRoute: typeof errors404RouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/(errors)/403': {
-      id: '/(errors)/403'
-      path: '/403'
-      fullPath: '/403'
-      preLoaderRoute: typeof errors403RouteImport
+    '/(auth)/otp': {
+      id: '/(auth)/otp'
+      path: '/otp'
+      fullPath: '/otp'
+      preLoaderRoute: typeof authOtpRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/(errors)/401': {
@@ -504,18 +448,130 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof errors401RouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/(auth)/otp': {
-      id: '/(auth)/otp'
-      path: '/otp'
-      fullPath: '/otp'
-      preLoaderRoute: typeof authOtpRouteImport
+    '/(errors)/403': {
+      id: '/(errors)/403'
+      path: '/403'
+      fullPath: '/403'
+      preLoaderRoute: typeof errors403RouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/(errors)/404': {
+      id: '/(errors)/404'
+      path: '/404'
+      fullPath: '/404'
+      preLoaderRoute: typeof errors404RouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/(errors)/500': {
+      id: '/(errors)/500'
+      path: '/500'
+      fullPath: '/500'
+      preLoaderRoute: typeof errors500RouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/(errors)/503': {
+      id: '/(errors)/503'
+      path: '/503'
+      fullPath: '/503'
+      preLoaderRoute: typeof errors503RouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated/': {
+      id: '/_authenticated/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof AuthenticatedIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/audit': {
+      id: '/_authenticated/audit'
+      path: '/audit'
+      fullPath: '/audit'
+      preLoaderRoute: typeof AuthenticatedAuditRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/contracts': {
+      id: '/_authenticated/contracts'
+      path: '/contracts'
+      fullPath: '/contracts'
+      preLoaderRoute: typeof AuthenticatedContractsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/eia': {
+      id: '/_authenticated/eia'
+      path: '/eia'
+      fullPath: '/eia'
+      preLoaderRoute: typeof AuthenticatedEiaRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/ocr': {
+      id: '/_authenticated/ocr'
+      path: '/ocr'
+      fullPath: '/ocr'
+      preLoaderRoute: typeof AuthenticatedOcrRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/settings': {
       id: '/_authenticated/settings'
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof AuthenticatedSettingsRouteRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/$section/$page': {
+      id: '/_authenticated/$section/$page'
+      path: '/$section/$page'
+      fullPath: '/$section/$page'
+      preLoaderRoute: typeof AuthenticatedSectionPageRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/audit/': {
+      id: '/_authenticated/audit/'
+      path: '/'
+      fullPath: '/audit/'
+      preLoaderRoute: typeof AuthenticatedAuditIndexRouteImport
+      parentRoute: typeof AuthenticatedAuditRoute
+    }
+    '/_authenticated/audit/submit': {
+      id: '/_authenticated/audit/submit'
+      path: '/submit'
+      fullPath: '/audit/submit'
+      preLoaderRoute: typeof AuthenticatedAuditSubmitRouteImport
+      parentRoute: typeof AuthenticatedAuditRoute
+    }
+    '/_authenticated/contracts/': {
+      id: '/_authenticated/contracts/'
+      path: '/'
+      fullPath: '/contracts/'
+      preLoaderRoute: typeof AuthenticatedContractsIndexRouteImport
+      parentRoute: typeof AuthenticatedContractsRoute
+    }
+    '/_authenticated/contracts/tender': {
+      id: '/_authenticated/contracts/tender'
+      path: '/tender'
+      fullPath: '/contracts/tender'
+      preLoaderRoute: typeof AuthenticatedContractsTenderRouteImport
+      parentRoute: typeof AuthenticatedContractsRoute
+    }
+    '/_authenticated/eia/': {
+      id: '/_authenticated/eia/'
+      path: '/'
+      fullPath: '/eia/'
+      preLoaderRoute: typeof AuthenticatedEiaIndexRouteImport
+      parentRoute: typeof AuthenticatedEiaRoute
+    }
+    '/_authenticated/eia/desk': {
+      id: '/_authenticated/eia/desk'
+      path: '/desk'
+      fullPath: '/eia/desk'
+      preLoaderRoute: typeof AuthenticatedEiaDeskRouteImport
+      parentRoute: typeof AuthenticatedEiaRoute
+    }
+    '/_authenticated/errors/$error': {
+      id: '/_authenticated/errors/$error'
+      path: '/errors/$error'
+      fullPath: '/errors/$error'
+      preLoaderRoute: typeof AuthenticatedErrorsErrorRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/settings/': {
@@ -525,39 +581,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSettingsIndexRouteImport
       parentRoute: typeof AuthenticatedSettingsRouteRoute
     }
-    '/_authenticated/eia/': {
-      id: '/_authenticated/eia/'
-      path: '/'
-      fullPath: '/eia/'
-      preLoaderRoute: typeof AuthenticatedEiaIndexRouteImport
-      parentRoute: typeof AuthenticatedEiaRoute
-    }
-    '/_authenticated/contracts/': {
-      id: '/_authenticated/contracts/'
-      path: '/'
-      fullPath: '/contracts/'
-      preLoaderRoute: typeof AuthenticatedContractsIndexRouteImport
-      parentRoute: typeof AuthenticatedContractsRoute
-    }
-    '/_authenticated/audit/': {
-      id: '/_authenticated/audit/'
-      path: '/'
-      fullPath: '/audit/'
-      preLoaderRoute: typeof AuthenticatedAuditIndexRouteImport
-      parentRoute: typeof AuthenticatedAuditRoute
-    }
-    '/_authenticated/settings/notifications': {
-      id: '/_authenticated/settings/notifications'
-      path: '/notifications'
-      fullPath: '/settings/notifications'
-      preLoaderRoute: typeof AuthenticatedSettingsNotificationsRouteImport
-      parentRoute: typeof AuthenticatedSettingsRouteRoute
-    }
-    '/_authenticated/settings/display': {
-      id: '/_authenticated/settings/display'
-      path: '/display'
-      fullPath: '/settings/display'
-      preLoaderRoute: typeof AuthenticatedSettingsDisplayRouteImport
+    '/_authenticated/settings/account': {
+      id: '/_authenticated/settings/account'
+      path: '/account'
+      fullPath: '/settings/account'
+      preLoaderRoute: typeof AuthenticatedSettingsAccountRouteImport
       parentRoute: typeof AuthenticatedSettingsRouteRoute
     }
     '/_authenticated/settings/appearance': {
@@ -567,67 +595,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSettingsAppearanceRouteImport
       parentRoute: typeof AuthenticatedSettingsRouteRoute
     }
-    '/_authenticated/settings/account': {
-      id: '/_authenticated/settings/account'
-      path: '/account'
-      fullPath: '/settings/account'
-      preLoaderRoute: typeof AuthenticatedSettingsAccountRouteImport
+    '/_authenticated/settings/display': {
+      id: '/_authenticated/settings/display'
+      path: '/display'
+      fullPath: '/settings/display'
+      preLoaderRoute: typeof AuthenticatedSettingsDisplayRouteImport
       parentRoute: typeof AuthenticatedSettingsRouteRoute
     }
-    '/_authenticated/errors/$error': {
-      id: '/_authenticated/errors/$error'
-      path: '/errors/$error'
-      fullPath: '/errors/$error'
-      preLoaderRoute: typeof AuthenticatedErrorsErrorRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
+    '/_authenticated/settings/notifications': {
+      id: '/_authenticated/settings/notifications'
+      path: '/notifications'
+      fullPath: '/settings/notifications'
+      preLoaderRoute: typeof AuthenticatedSettingsNotificationsRouteImport
+      parentRoute: typeof AuthenticatedSettingsRouteRoute
     }
-    '/_authenticated/eia/desk': {
-      id: '/_authenticated/eia/desk'
-      path: '/desk'
-      fullPath: '/eia/desk'
-      preLoaderRoute: typeof AuthenticatedEiaDeskRouteImport
-      parentRoute: typeof AuthenticatedEiaRoute
-    }
-    '/_authenticated/contracts/tender': {
-      id: '/_authenticated/contracts/tender'
-      path: '/tender'
-      fullPath: '/contracts/tender'
-      preLoaderRoute: typeof AuthenticatedContractsTenderRouteImport
-      parentRoute: typeof AuthenticatedContractsRoute
-    }
-    '/_authenticated/audit/submit': {
-      id: '/_authenticated/audit/submit'
-      path: '/submit'
-      fullPath: '/audit/submit'
-      preLoaderRoute: typeof AuthenticatedAuditSubmitRouteImport
+    '/_authenticated/audit/tasks/$taskId': {
+      id: '/_authenticated/audit/tasks/$taskId'
+      path: '/tasks/$taskId'
+      fullPath: '/audit/tasks/$taskId'
+      preLoaderRoute: typeof AuthenticatedAuditTasksTaskIdRouteImport
       parentRoute: typeof AuthenticatedAuditRoute
     }
-    '/_authenticated/$section/$page': {
-      id: '/_authenticated/$section/$page'
-      path: '/$section/$page'
-      fullPath: '/$section/$page'
-      preLoaderRoute: typeof AuthenticatedSectionPageRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/contracts/tender/self-check': {
-      id: '/_authenticated/contracts/tender/self-check'
-      path: '/self-check'
-      fullPath: '/contracts/tender/self-check'
-      preLoaderRoute: typeof AuthenticatedContractsTenderSelfCheckRouteImport
-      parentRoute: typeof AuthenticatedContractsTenderRoute
-    }
-    '/_authenticated/contracts/tender/post-eval': {
-      id: '/_authenticated/contracts/tender/post-eval'
-      path: '/post-eval'
-      fullPath: '/contracts/tender/post-eval'
-      preLoaderRoute: typeof AuthenticatedContractsTenderPostEvalRouteImport
-      parentRoute: typeof AuthenticatedContractsTenderRoute
-    }
-    '/_authenticated/contracts/tender/list': {
-      id: '/_authenticated/contracts/tender/list'
-      path: '/list'
-      fullPath: '/contracts/tender/list'
-      preLoaderRoute: typeof AuthenticatedContractsTenderListRouteImport
+    '/_authenticated/contracts/tender/detail': {
+      id: '/_authenticated/contracts/tender/detail'
+      path: '/detail'
+      fullPath: '/contracts/tender/detail'
+      preLoaderRoute: typeof AuthenticatedContractsTenderDetailRouteImport
       parentRoute: typeof AuthenticatedContractsTenderRoute
     }
     '/_authenticated/contracts/tender/history': {
@@ -637,19 +630,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedContractsTenderHistoryRouteImport
       parentRoute: typeof AuthenticatedContractsTenderRoute
     }
-    '/_authenticated/contracts/tender/detail': {
-      id: '/_authenticated/contracts/tender/detail'
-      path: '/detail'
-      fullPath: '/contracts/tender/detail'
-      preLoaderRoute: typeof AuthenticatedContractsTenderDetailRouteImport
+    '/_authenticated/contracts/tender/list': {
+      id: '/_authenticated/contracts/tender/list'
+      path: '/list'
+      fullPath: '/contracts/tender/list'
+      preLoaderRoute: typeof AuthenticatedContractsTenderListRouteImport
       parentRoute: typeof AuthenticatedContractsTenderRoute
     }
-    '/_authenticated/audit/tasks/$taskId': {
-      id: '/_authenticated/audit/tasks/$taskId'
-      path: '/tasks/$taskId'
-      fullPath: '/audit/tasks/$taskId'
-      preLoaderRoute: typeof AuthenticatedAuditTasksTaskIdRouteImport
-      parentRoute: typeof AuthenticatedAuditRoute
+    '/_authenticated/contracts/tender/post-eval': {
+      id: '/_authenticated/contracts/tender/post-eval'
+      path: '/post-eval'
+      fullPath: '/contracts/tender/post-eval'
+      preLoaderRoute: typeof AuthenticatedContractsTenderPostEvalRouteImport
+      parentRoute: typeof AuthenticatedContractsTenderRoute
+    }
+    '/_authenticated/contracts/tender/self-check': {
+      id: '/_authenticated/contracts/tender/self-check'
+      path: '/self-check'
+      fullPath: '/contracts/tender/self-check'
+      preLoaderRoute: typeof AuthenticatedContractsTenderSelfCheckRouteImport
+      parentRoute: typeof AuthenticatedContractsTenderRoute
     }
   }
 }
