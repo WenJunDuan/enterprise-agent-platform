@@ -1,28 +1,32 @@
 import { useEffect, useMemo, useState } from 'react'
+import type { AxiosError } from 'axios'
 import {
   keepPreviousData,
   useMutation,
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query'
-import { getCoreRowModel, type ColumnDef, useReactTable } from '@tanstack/react-table'
-import type { AxiosError } from 'axios'
+import { type ColumnDef, useTable } from '@tanstack/react-table'
+import { useAccess } from '@/app/auth/access'
 import { RefreshCw, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
-import { useAccess } from '@/app/auth/access'
+import { appTableFeatures, type AppTableFeatures } from '@/lib/table-features'
 import { type NavigateFn, useTableUrlState } from '@/hooks/use-table-url-state'
-import { ConfirmDialog } from '@/components/confirm-dialog'
-import { DataTablePagination, SelectionBulkActions } from '@/components/data-table'
-import { Header } from '@/components/layout/header'
-import { Main } from '@/components/layout/main'
-import { ProfileDropdown } from '@/components/profile-dropdown'
-import { Search } from '@/components/search'
 import { Button } from '@/components/ui/button'
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import {
+  DataTablePagination,
+  SelectionBulkActions,
+} from '@/components/data-table'
+import { Header } from '@/components/layout/header'
+import { Main } from '@/components/layout/main'
+import { ProfileDropdown } from '@/components/profile-dropdown'
+import { Search } from '@/components/search'
 import { cleanLoginLog, deleteLoginLogs, fetchLoginLogPage } from './api'
 import {
   LoginLogSearchForm,
@@ -30,17 +34,14 @@ import {
 } from './components/login-log-search-form'
 import { LoginLogTable } from './components/login-log-table'
 import { type LoginLog } from './model'
-import {
-  loginLogSearchSchema,
-  type LoginLogSearchState,
-} from './search-schema'
+import { loginLogSearchSchema, type LoginLogSearchState } from './search-schema'
 
 type Props = {
   search: Record<string, unknown>
   navigate: NavigateFn
 }
 
-const paginationColumns: ColumnDef<LoginLog>[] = []
+const paginationColumns: ColumnDef<AppTableFeatures, LoginLog>[] = []
 
 export function LoginLogPage({ search, navigate }: Props) {
   const parsed = loginLogSearchSchema.parse(search)
@@ -60,6 +61,9 @@ export function LoginLogPage({ search, navigate }: Props) {
   })
 
   useEffect(() => {
+    // 既有的 URL search -> 本地表单同步。TanStack Table v9 的 useTable 兼容 React Compiler 后,
+    // react-hooks 规则才开始完整分析本组件并报出该告警; 与本次依赖升级无关, 留待单独重构。
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLocalFilters({
       username: parsed.username ?? '',
       ipaddr: parsed.ipaddr ?? '',
@@ -67,14 +71,21 @@ export function LoginLogPage({ search, navigate }: Props) {
       beginTime: parsed.beginTime ?? '',
       endTime: parsed.endTime ?? '',
     })
-  }, [parsed.beginTime, parsed.endTime, parsed.ipaddr, parsed.status, parsed.username])
+  }, [
+    parsed.beginTime,
+    parsed.endTime,
+    parsed.ipaddr,
+    parsed.status,
+    parsed.username,
+  ])
 
-  const { pagination, onPaginationChange, ensurePageInRange } = useTableUrlState({
-    search: parsed,
-    navigate,
-    pagination: { defaultPage: 1, defaultPageSize: 10 },
-    globalFilter: { enabled: false },
-  })
+  const { pagination, onPaginationChange, ensurePageInRange } =
+    useTableUrlState({
+      search: parsed,
+      navigate,
+      pagination: { defaultPage: 1, defaultPageSize: 10 },
+      globalFilter: { enabled: false },
+    })
 
   const query = useMemo(
     () => ({
@@ -131,8 +142,8 @@ export function LoginLogPage({ search, navigate }: Props) {
     records: [] as LoginLog[],
   }
 
-  // eslint-disable-next-line react-hooks/incompatible-library
-  const paginationTable = useReactTable({
+  const paginationTable = useTable({
+    features: appTableFeatures,
     data: page.records,
     columns: paginationColumns,
     state: { pagination },
@@ -140,7 +151,6 @@ export function LoginLogPage({ search, navigate }: Props) {
     pageCount: Math.max(page.pages, 1),
     rowCount: page.total,
     onPaginationChange,
-    getCoreRowModel: getCoreRowModel(),
   })
 
   useEffect(() => {

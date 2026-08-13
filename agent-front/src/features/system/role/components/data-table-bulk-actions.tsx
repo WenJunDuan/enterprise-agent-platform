@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { type Table } from '@tanstack/react-table'
-import { Trash2 } from 'lucide-react'
+import { type Table, type RowData } from '@tanstack/react-table'
 import { useAccess } from '@/app/auth/access'
+import { Trash2 } from 'lucide-react'
+import { type AppTableFeatures } from '@/lib/table-features'
 import { Button } from '@/components/ui/button'
 import {
   Tooltip,
@@ -11,11 +12,11 @@ import {
 import { DataTableBulkActions as BulkActionsToolbar } from '@/components/data-table'
 import { RolesMultiDeleteDialog } from './roles-multi-delete-dialog'
 
-type DataTableBulkActionsProps<TData> = {
-  table: Table<TData>
+type DataTableBulkActionsProps<TData extends RowData> = {
+  table: Table<AppTableFeatures, TData>
 }
 
-export function DataTableBulkActions<TData>({
+export function DataTableBulkActions<TData extends RowData>({
   table,
 }: DataTableBulkActionsProps<TData>) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)

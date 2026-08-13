@@ -3,17 +3,12 @@ import {
   type ColumnDef,
   type ColumnFiltersState,
   flexRender,
-  getCoreRowModel,
-  getFacetedRowModel,
-  getFacetedUniqueValues,
-  getFilteredRowModel,
-  getPaginationRowModel,
   type OnChangeFn,
   type PaginationState,
   type Row,
   type RowSelectionState,
-  useReactTable,
-  type VisibilityState,
+  useTable,
+  type ColumnVisibilityState,
 } from '@tanstack/react-table'
 import {
   CircleAlert,
@@ -25,6 +20,7 @@ import {
   UploadCloud,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { appTableFeatures, type AppTableFeatures } from '@/lib/table-features'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -180,7 +176,7 @@ function ProjectTable({
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
   const [isBatchAction, setIsBatchAction] = useState(false)
 
-  const columns = useMemo<ColumnDef<TenderProject>[]>(
+  const columns = useMemo<ColumnDef<AppTableFeatures, TenderProject>[]>(
     () => [
       // B①: checkbox column for multi-selection
       {
@@ -318,9 +314,10 @@ function ProjectTable({
     [onOpenProject]
   )
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
-  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({
-    searchText: false,
-  })
+  const [columnVisibility, setColumnVisibility] =
+    useState<ColumnVisibilityState>({
+      searchText: false,
+    })
   const [pagination, setPagination] = useState<PaginationState>({
     pageIndex: 0,
     pageSize: 10,
@@ -334,8 +331,8 @@ function ProjectTable({
     setPagination((current) => ({ ...current, pageIndex: 0 }))
   }
 
-  // eslint-disable-next-line react-hooks/incompatible-library
-  const table = useReactTable({
+  const table = useTable({
+    features: appTableFeatures,
     data: projects,
     columns,
     state: {
@@ -348,11 +345,6 @@ function ProjectTable({
     onColumnVisibilityChange: setColumnVisibility,
     onPaginationChange: setPagination,
     onRowSelectionChange: setRowSelection,
-    getCoreRowModel: getCoreRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
-    getFacetedRowModel: getFacetedRowModel(),
-    getFacetedUniqueValues: getFacetedUniqueValues(),
   })
 
   const selectedProjects = table
@@ -728,8 +720,8 @@ function ProjectIcon({ status }: { status: TenderProject['status'] }) {
   )
 }
 
-function matchesSelectedValues<TData>(
-  row: Row<TData>,
+function matchesSelectedValues<TData extends Record<string, unknown>>(
+  row: Row<AppTableFeatures, TData>,
   columnId: string,
   filterValue: unknown
 ) {
