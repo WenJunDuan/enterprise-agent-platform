@@ -430,16 +430,18 @@ def _verify_pending_reason(structured_output: dict[str, Any]) -> None:
     降级时自行补枚举，先跑本闸会漏检这些服务端新造的 null。
     """
     from server.common.contract import JSONContractError, resolve_output_schema_path
-    global _PENDING_REASONS
-    if _PENDING_REASONS is None:  # 首用加载 + 缓存；路径解析复用 contract 的唯一实现
-        schema_path = resolve_output_schema_path(DEFAULT_OUTPUT_SCHEMA_NAME)
-        _PENDING_REASONS = _load_pending_reasons(schema_path)
+
     extracted = structured_output.get("extracted_data")
     if not isinstance(extracted, dict):
         return
     scoring = extracted.get("scoring")
     if not isinstance(scoring, list):
         return
+    # 加载放在无 scoring 早退之后：expense 等无评分路径不触发无谓的 schema 文件读
+    global _PENDING_REASONS
+    if _PENDING_REASONS is None:  # 首用加载 + 缓存；路径解析复用 contract 的唯一实现
+        schema_path = resolve_output_schema_path(DEFAULT_OUTPUT_SCHEMA_NAME)
+        _PENDING_REASONS = _load_pending_reasons(schema_path)
     for item in scoring:
         if not isinstance(item, dict) or _is_real_number(item.get("score")):
             continue
