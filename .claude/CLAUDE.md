@@ -8,7 +8,7 @@
 | ------- | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
 | expense | 报销、费用、发票、差旅、招待、借款                       | `/audit` 内联一次性审核（提取+判断同会话）；`expense-reviewer` 暂时关闭                                  |
 | tender  | 招投标、评标、投标文件评分、资格审查、业绩核验、废标判定 | `/tender-evaluate` 内联五步评标（立案→取项目规则→资格优先抽取→先资格审查再评分→汇总，OCR 底稿优先、同会话）；`tender-reviewer` 默认关闭 |
-| system  | 制度导入、规则初始化、政策更新、记忆沉淀                 | `system-rule-init` / `system-memory-distill`（skill，非 agent）                                          |
+| system  | 制度导入、规则初始化、政策更新、记忆沉淀                 | `/init-rules`（调 `system-rule-init` skill）/ `/distill-memory`（调 `system-memory-distill` skill），非 agent |
 
 ## 路由原则
 
@@ -44,8 +44,8 @@
 
 ### system
 
-- 制度文件导入、规则初始化、政策更新走 `system-rule-init`。
-- 审核结果沉淀、案例记忆更新走 `system-memory-distill`。
+- 制度文件导入、规则初始化、政策更新走 `/init-rules`（其内部调 `system-rule-init` skill）。
+- 审核结果沉淀、案例记忆更新走 `/distill-memory`（其内部调 `system-memory-distill` skill）。
 - 该域只负责把制度转成结构化规则，不做实际业务审批结论。
 - 制度源材料默认来自 `knowledge/external/`，初始化产物写回 `knowledge/{domain}/`。
 - 业务记忆沉淀产物写回 `knowledge/memory/{domain}/`，并保留 `request_id` / `result_file` 回链。
