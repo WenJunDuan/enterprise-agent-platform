@@ -5,13 +5,13 @@ version: "9.6.4"
 
 # === PACE 路由状态 ===
 path: "Refactor" # 2026-08-12 prompt-architecture: 提示词热路径下沉+语义单源+预算门禁+skill清理(第三方审计四项), Fable 设计/opus 实施
-stage: "design"
+stage: "ship"
 current_sprint_slug: "2026-08-12-prompt-architecture"
 current_roadmap_slug: ""
 skip_polish: false
 skip_architecture_check: false
 skip_impl_subagent_check: false # (已随 program ship 释放; 当时理由: subagent-assignments.jsonl 握手台账 hook 未落(结构性问题见 proposals.md P14); events/log 台账在, 各 sprint tdd-evidence+三轮 review 链为实质证据, 不伪造派工记录
-skip_runtime_verify: false # (已随 program ship 释放; 当时理由: 用户 2026-08-12 拍板"弄完了后...推送"; 真评标实跑四项(pending_reason 重试率/双家并发/存量 self_parsed 观感/容器内 convert 端到端)待部署机窗口, 已记 roadmap 各 item note; pass3-F7 完整环境复跑已在 main 满足(16 条基线)
+skip_runtime_verify: false # prompt-architecture: runtime_verify=deferred(pass1-F2 评审授权 b 分支), 4 待验项见 sprints/2026-08-12-prompt-architecture/evidence/runtime-verify-defer.md, 与 tender-eval-hardening 四项同窗部署机跑 | (tender-eval-hardening 当时理由: 真评标实跑四项待部署机窗口, 已记 roadmap 各 item note)
 
 # === 平台与版本 ===
 platforms_enabled: ["cc"]
@@ -51,30 +51,30 @@ counts:
   issues_count: 0
   refactors_count: 1
   systems_count: 10
-  reviews_count: 75
-  cleanup_count: 6
+  reviews_count: 77
+  cleanup_count: 7
   compound:
-    learning: 14
+    learning: 15
     trick: 2
     decision: 8
     explore: 2
 # === Pointers (指向最新相关文件) ===
 pointers:
-  latest_design: "sprints/2026-08-11-compare-authority/design.md" # H1；同批 H2 page-provenance / H3 ocr-concurrency-degrade 设计已就绪
-  latest_review: "sprints/2026-07-30-demo-full-doc-ocr/reviews/pass7.md" # Pass7 CONCERNS：HTTP 200 body I/O fallback + PPTX GroupShape 图片信号
-  latest_cleanup: "sprints/2026-07-30-demo-full-doc-ocr/cleanup-pass.md"
+  latest_design: "sprints/2026-08-12-prompt-architecture/design.md" # 含实施期修订块(预算表 700→750/L219 悬空名更正/AC3 表述统一, pass2 增量重核覆盖)
+  latest_review: "sprints/2026-08-12-prompt-architecture/reviews/pass2.md" # pass1 CONCERNS(F1 evidence/F2 runtime)→修复→pass2 增量重核→PASS
+  latest_cleanup: "sprints/2026-08-12-prompt-architecture/cleanup-pass.md"
   latest_brainstorm: ""
   latest_decisions: ["compound/2026-07-20-decision-ocr-as-standalone-service.md", "compound/2026-07-16-decision-carve-f6-schema-split-from-d2.md", "compound/2026-07-16-decision-schema-split-tender.md", "compound/2026-07-15-decision-ocr-service-layer.md", "compound/2026-07-02-decision-ocr-routing-ladder.md"]
-  latest_lessons: ["compound/2026-08-12-learning-review-chain-catches-fix-induced-p0.md", "compound/2026-07-30-learning-document-ingestion-deployment-evidence.md", "compound/2026-07-18-learning-prompt-gate-contradiction-literal-model.md", "compound/2026-07-18-learning-lazy-import-behavioral-seam.md", "compound/2026-07-15-learning-slots-dataclass-hollow-getattr.md"]
-  latest_architecture_update: "2026-08-11T01:45:11.504Z"
+  latest_lessons: ["compound/2026-08-13-learning-design-budget-must-account-own-mandates.md", "compound/2026-08-12-learning-review-chain-catches-fix-induced-p0.md", "compound/2026-07-30-learning-document-ingestion-deployment-evidence.md", "compound/2026-07-18-learning-prompt-gate-contradiction-literal-model.md", "compound/2026-07-18-learning-lazy-import-behavioral-seam.md"]
+  latest_architecture_update: "2026-08-13T08:44:06.388Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "【2026-08-12 新 sprint 已设计待实施】prompt-architecture(Refactor 红区): design 定稿于 sprints/2026-08-12-prompt-architecture/design.md(critic R1 已跑, 修订记录在档)。新会话恢复链: ①派 generator(model=opus, isolation worktree) 按 design 实施, 派工词要点=严格按 KD1-KD4+附录A对账表, 勤提交, NO_NEW_FAILURES 口径(完整环境 16 条基线), 禁碰 worker.py, tdd-evidence 搬家项用 backfill 记法 ②交付后 reviewer+spec-compliance(重点 AC2 零语义删改逐段核对)→evaluator→合 main→push(ATHENA_ALLOW_PUSH=1) ③可选 T0: 部署机跑 D1 eval golden 基线三数字(一致性极差/manual占比/重试率)供重构前后 A/B。上一 program(tender-eval-hardening)已 SHIP, runtime-verify 四项仍待部署机窗口。"
+next_action: "【2026-08-13 prompt-architecture 已 SHIP】15 commits FF 合入 main(ec062ce): KD1 骨架 38,754B→12,442B+5 references / KD2 pending_reason 单源(output.py 惰性 loader) / KD3 test_prompt_budget 预算门禁 / KD4 空壳处置(D4 拒删 7 个真实子 skill)。review 链: pass1 CONCERNS→修复(beb1ce3)→pass2 增量→PASS; polish 清 F4/F5/N1+架构档 system-prompt-architecture.md。遗留→部署机窗口: ①runtime-verify 4 待验项(evidence/runtime-verify-defer.md, 与 tender-eval-hardening 四项同窗) ②AC7 eval 基线三数字 A/B(决定是否推广 expense 域)。依赖: 安全批(lockfile 刷新+pymupdf/pypdf)已批准执行中(opus worktree); MAJOR 四项(ts7/react-table9/framer-motion13/@types/node26)待用户决策; paddle 系禁动(部署机配套)。改 tender-evaluate 规则前先读 architecture/system-prompt-architecture.md(骨架 vs references 判据+预算棘轮流程)。"
 last_subagent: "codex-exec" # tender-report-dimensions D0-D5 headless (codex 0.142.1, gpt-5.5)；必须 env -u HTTP_PROXY -u HTTPS_PROXY 否则 streaming API 挂起，见 compound/2026-06-25-trick-codex-proxy-hangs-streaming.md
 last_subagent_at: "2026-06-25T00:00:00.000Z"
 active_worktrees: [] # 原条目是远端机器(/Users/mac/...)的 worktree，本机不存在，2026-08-11 清理
 last_critic_round: 4 # demo-full-doc-ocr: R1-R3 修订，R4 PASS
-design_changed_after_impl: true
+design_changed_after_impl: false # prompt-architecture 实施期 design 修订(beb1ce3)已由 pass2 增量重核覆盖(evaluator 授权范围), 2026-08-13 释放
 
 # === 用户偏好 ===
 plan_critique_max_rounds: 4
