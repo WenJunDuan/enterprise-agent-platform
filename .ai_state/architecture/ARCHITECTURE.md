@@ -9,6 +9,7 @@
 | `system-tender-data-model.md` | tender 招标数据模型 | 招标项目实体 owns N 家投标评标 + 多投标人追加 + 回看 + 价格横比（Phase 1+2，2026-06-20） |
 | `system-tender-evidence-resolution.md` | tender 评标证据可验证性 | evidence-resolution 闸（出处回查）+ 底稿→校验透传管道 + BOQ 感知抽取 + confidence 消费（2026-06-22） |
 | `system-document-ingestion.md` | 文档摄取与 OCR | 24 格式 native→Office→VLM→Tesseract 路由、资源门禁、缓存与双镜像配置边界（2026-07-30） |
+| `system-prompt-architecture.md` | 提示词架构 | tender-evaluate 骨架+5 references 下沉、提示词字节预算门禁（棘轮）、pending_reason 语义单源链路（2026-08-13） |
 | （已删） | contract/legal | 2026-06-20 agent-capability-redesign G0 删除（死域，无 knowledge/legal 规则） |
 
 ## 真实业务域（round4 校准）
