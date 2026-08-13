@@ -44,9 +44,8 @@ def verify_tenant(authorization: str | None) -> str:
         "yes",
         "on",
     }
-    if tenant_keys_are_default():
-        if not allow_default:
-            raise HTTPException(
+    if tenant_keys_are_default() and not allow_default:
+        raise HTTPException(
                 status_code=503,
                 detail=(
                     "Server is not configured with tenant keys. "

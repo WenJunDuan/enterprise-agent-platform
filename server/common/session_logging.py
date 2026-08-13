@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any
+from datetime import UTC, datetime
+from typing import Any
 
 from claude_agent_sdk import (
     AssistantMessage,
@@ -20,11 +20,9 @@ from claude_agent_sdk import (
     ToolResultBlock,
     ToolUseBlock,
 )
+
 from server.platform.paths import build_session_event_log_path
 from server.platform.storage import append_jsonl_record
-
-if TYPE_CHECKING:
-    pass
 
 logger = logging.getLogger(__name__)
 
@@ -192,7 +190,7 @@ class SessionLogger:
 
     @staticmethod
     def _now() -> str:
-        return datetime.now(timezone.utc).isoformat()
+        return datetime.now(UTC).isoformat()
 
 
 def _log_bridge_failure(

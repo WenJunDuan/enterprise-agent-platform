@@ -16,8 +16,8 @@ import base64
 import json
 import os
 import selectors
-import signal
 import shutil
+import signal
 import ssl
 import subprocess
 import sys
@@ -31,8 +31,7 @@ from collections.abc import Callable
 from io import BytesIO
 from pathlib import Path
 
-from server.ocr import OcrDependencyError, OcrError
-from server.ocr import vlm_client
+from server.ocr import OcrDependencyError, OcrError, vlm_client
 from server.ocr.locks import FITZ_LOCK, PADDLE_LOCK
 
 # PaddleOCR-VL 完整 pipeline 可选启用；默认由 LiteLLM/OpenAI-compatible 端点做整页识别。
@@ -403,8 +402,7 @@ def _recognize_tesseract_page(
         completed = subprocess.run(
             argv,
             input=content,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             check=False,
             timeout=OCR_PAGE_TIMEOUT_SEC,
         )

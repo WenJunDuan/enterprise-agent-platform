@@ -60,3 +60,54 @@ asyncio_mode = "auto"
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+
+# ruff 0.16 起默认规则集大幅扩张（同一份配置下 0.15.22 报 0 条、0.16.2 报 276 条）。
+# 下列规则的整改会触碰运行时行为或产生大面积争议性改写，显式 ignore 而非硬改。
+[tool.ruff.lint]
+ignore = [
+    # 本仓 noqa 承载的是审查结论（S608「表名走固定白名单」、E402「避免循环导入」、
+    # PLC0415「延迟导入」）。这三条规则不在 0.16 默认集内但 --select 时仍各报 19/16/535
+    # 条，RUF100 的 fix 会把抑制连同理由一起删掉，等于丢失审查记录。
+    "RUF100",
+    # 边界处「捕获 + 记日志 + 降级」的 except Exception 是本仓既定错误处理形态，
+    # 收窄捕获面 = 改运行时行为（原本降级的路径会变成向上抛）。
+    "BLE001",
+    # 与上一条同批的 try/except/continue（OCR 逐页、迁移逐表容错），同理由。
+    "S112",
+    # 要求把校验失败的异常类型换成 TypeError = 改对外错误契约（调用方与测试按现类型断言）。
+    "TRY004",
+    # 合并嵌套 with 会改变上下文管理器的进入/退出顺序，涉及 FITZ_LOCK 等锁临界区，
+    # 收益是纯风格，风险是锁与异常传播时序，不在依赖升级里动。
+    "SIM117",
+    # 循环内定义的闭包在本轮迭代内即被调用（server/ocr/docstructure.py extract_entities），
+    # 晚绑定不构成缺陷；加默认参数绑定属于无收益的行为改写。
+    "B023",
+    # 根 logger 调用改成模块 logger 会改变日志路由与 handler 归属，属日志体系改造。
+    "LOG015",
+    # sqlite3.Row.keys() 不是 dict.keys()：直接 `in row` 迭代的是值不是列名，
+    # 按此规则改写会引入真实缺陷（server/stores/migrate.py 列名过滤）。
+    "SIM118",
+    # `import X as X` 是显式 re-export 约定（server/tender/doc_pipeline.py 有注释说明），
+    # 去掉别名会让 re-export 意图对类型检查器不可见。
+    "PLC0414",
+    # 静态 join 改 f-string 会把多行可读的行列表压成一条长字符串，可读性净损失。
+    "FLY002",
+    # PEP 695 泛型语法改写与最低 Python 版本策略耦合，与本次依赖升级无关。
+    "UP047",
+    # 本仓 __all__ 按语义分组并带分组注释（constants / exceptions / private helpers …），
+    # 字母序重排会打散分组并让注释错位。
+    "RUF022",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# 测试里的假对象（Fake Workbook 等）类属性不需要 ClassVar 标注。
+"tests/*" = ["RUF012"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI 的依赖注入约定就是在默认值里调用 Query/Depends/Path/Body，官方推荐豁免。
+extend-immutable-calls = [
+    "fastapi.Body",
+    "fastapi.Depends",
+    "fastapi.Path",
+    "fastapi.Query",
+]

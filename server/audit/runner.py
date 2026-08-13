@@ -18,8 +18,14 @@ from server.audit.output import EXPENSE_OUTPUT_SCHEMA_NAME
 from server.common.domain_profile import (
     DomainProfile,
     assemble_domain_prompt,
+)
+from server.common.domain_profile import (
     load_case_block as _assemble_case_block,
+)
+from server.common.domain_profile import (
     load_rules as _assemble_rules,
+)
+from server.common.domain_profile import (
     resolve_case_dir as _assemble_resolve_case_dir,
 )
 from server.core import (

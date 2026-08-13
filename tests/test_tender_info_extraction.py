@@ -14,8 +14,6 @@ Coverage:
 
 from __future__ import annotations
 
-from server.tender import doc_layer  # noqa: E402  (H3: 读层拆出后测试改打这里)
-
 import asyncio
 import json
 import math
@@ -24,6 +22,8 @@ import uuid
 import jsonschema
 import pytest
 from fastapi.testclient import TestClient
+
+from server.tender import doc_layer  # noqa: E402  (H3: 读层拆出后测试改打这里)
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Shared helpers
@@ -164,9 +164,9 @@ def test_criteria_schema_allows_null_max_for_service_semantic_gate():
 
 def test_schema_migration_adds_new_columns():
     """tender_project_docs gains criteria_status and tender_info after _initialize_schema."""
-    from server.stores.tender_doc_store import _initialize_schema
     from server.platform.paths import PLATFORM_DB_FILE
     from server.platform.sqlite_store import connect_sqlite
+    from server.stores.tender_doc_store import _initialize_schema
 
     # Re-run _initialize_schema (idempotent; DB already exists with migrations applied)
     _initialize_schema()
@@ -194,9 +194,9 @@ def test_schema_migration_new_rows_have_default_criteria_status():
 
 def test_schema_migration_is_idempotent():
     """Calling _initialize_schema twice does not raise or duplicate columns."""
-    from server.stores.tender_doc_store import _initialize_schema
     from server.platform.paths import PLATFORM_DB_FILE
     from server.platform.sqlite_store import connect_sqlite
+    from server.stores.tender_doc_store import _initialize_schema
 
     _initialize_schema()
     _initialize_schema()
@@ -579,9 +579,9 @@ def test_extract_project_doc_info_failure_sets_criteria_failed(monkeypatch):
 def test_extract_project_doc_info_bad_payload_sets_criteria_failed(monkeypatch):
     """When run_command_json returns payload without criteria key, criteria_status=failed."""
     import server.tender.doc_pipeline as tender_module
+    from server.common.agent_bridge import AgentRunMeta
     from server.stores.tender_doc_store import get_project_doc, upsert_project_doc
     from server.stores.tender_project_store import get_or_create_project
-    from server.common.agent_bridge import AgentRunMeta
 
     tenant = "t-extract-badpayload"
     pid = get_or_create_project(
@@ -870,7 +870,11 @@ def test_get_tender_doc_infers_failed_when_ocr_failed_and_criteria_stuck(client,
     """reviewer R1 F3: ocr_status=failed 但 criteria_status 悬在 pending（崩溃/中断）→ GET 端把
     criteria_status 推断为 failed（终态），让前端停轮询；DB 原值不改。"""
     import server.routes.tender.docs as tender_module
-    from server.stores.tender_doc_store import get_project_doc, update_project_doc_ocr, upsert_project_doc
+    from server.stores.tender_doc_store import (
+        get_project_doc,
+        update_project_doc_ocr,
+        upsert_project_doc,
+    )
 
     monkeypatch.setattr(tender_module, "_start_project_doc_ocr_task", lambda *a, **kw: None)
     pid = _make_project_api(client)
@@ -913,8 +917,8 @@ def test_get_tender_doc_returns_decoded_criteria_when_ready(client, monkeypatch)
     """GET /tender/projects/{id}/tender-doc returns decoded criteria object when extracted."""
     import server.routes.tender.docs as tender_module
     from server.stores.tender_doc_store import (
-        upsert_project_doc,
         update_project_doc_criteria_extracted,
+        upsert_project_doc,
     )
 
     monkeypatch.setattr(tender_module, "_start_project_doc_ocr_task", lambda *a, **kw: None)
@@ -1001,8 +1005,8 @@ def test_docs_status_criteria_status_ready(client, monkeypatch):
     """docs-status returns criteria_status=ready after successful extraction."""
     import server.routes.tender.docs as tender_module
     from server.stores.tender_doc_store import (
-        upsert_project_doc,
         update_project_doc_criteria_extracted,
+        upsert_project_doc,
     )
 
     monkeypatch.setattr(tender_module, "_start_project_doc_ocr_task", lambda *a, **kw: None)
@@ -1076,7 +1080,7 @@ def test_worker_injects_stored_criteria_into_context(monkeypatch):
 
     # KD1：criteria 注入改经 compare_input.resolve_project_criteria（与横比判据共用同一
     # 版本计算），故 patch 点随之下移到该模块的 get_project_doc。
-    import server.tender.compare_input as compare_input
+    from server.tender import compare_input
 
     # H3 合并后 runner 不再直接 import get_project_doc（读层已迁 doc_layer），
     # 注入路径唯一读点是 compare_input.get_project_doc。
@@ -1155,7 +1159,7 @@ def test_worker_no_criteria_in_store_unchanged_behavior(monkeypatch):
             "criteria_status": "pending",
         }
 
-    import server.tender.compare_input as compare_input
+    from server.tender import compare_input
 
     # 同上：读点唯一在 compare_input。
     monkeypatch.setattr(compare_input, "get_project_doc", fake_get_project_doc_no_criteria)

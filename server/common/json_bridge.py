@@ -8,8 +8,9 @@ from __future__ import annotations
 
 import logging
 import uuid
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from claude_agent_sdk import (
     AssistantMessage,
@@ -19,6 +20,7 @@ from claude_agent_sdk import (
     TextBlock,
     query,
 )
+
 from server.common.agent_bridge import (
     AgentRunMeta,
     _extract_system_session_id,
@@ -34,8 +36,8 @@ from server.common.contract import (
     apply_schema_semantics,
     build_output_format,
 )
-from server.platform.logging_setup import logging_context
 from server.common.session_logging import SessionLogger, _log_bridge_failure
+from server.platform.logging_setup import logging_context
 from server.stores.result_store import archive_result_payload
 from server.stores.session_store import (
     SessionRecord,

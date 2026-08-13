@@ -10,7 +10,7 @@ import json
 import pytest
 from typer.testing import CliRunner
 
-import server.cli as cli
+from server import cli
 from server.common.agent_bridge import AgentRunMeta
 from server.tender.output import TENDER_OUTPUT_SCHEMA_NAME as EVAL_SCHEMA
 

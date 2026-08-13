@@ -23,7 +23,7 @@ _EXTRACT_RESULT_SCHEMA = json.loads(
 @pytest.fixture(autouse=True)
 def _disable_ocr_cache(monkeypatch):
     """默认禁用 OCR 缓存，避免测试写 data/ocr-cache；缓存专项测试自行 monkeypatch 启用。"""
-    import server.ocr.cache as cache
+    from server.ocr import cache
 
     monkeypatch.setattr(cache, "OCR_CACHE_ENABLED", False)
 
@@ -372,7 +372,7 @@ def test_audit_ocr_path_has_no_tender_purpose(monkeypatch, tmp_path):
 
 def test_ocr_cache_roundtrip(tmp_path, monkeypatch):
     """put 后同文件+同 purpose get 命中；不同 purpose / 内容变 → 不命中。"""
-    import server.ocr.cache as cache
+    from server.ocr import cache
 
     monkeypatch.setattr(cache, "_CACHE_DIR", tmp_path / "ocr-cache")
     monkeypatch.setattr(cache, "OCR_CACHE_ENABLED", True)
@@ -391,7 +391,7 @@ def test_ocr_cache_roundtrip(tmp_path, monkeypatch):
 
 def test_ocr_cache_version_bump_invalidates_stale_manual_result(tmp_path, monkeypatch):
     """缓存版本升级后，旧版本的 manual 结果不能继续遮蔽当前直读/OCR。"""
-    import server.ocr.cache as cache
+    from server.ocr import cache
 
     # H2 page-provenance：底稿结构变更（转换稿锚 / 表格挂页 / page_confidence）随行 bump v5→v6
     assert cache._CACHE_VERSION == "v6"
@@ -410,8 +410,8 @@ def test_ocr_cache_version_bump_invalidates_stale_manual_result(tmp_path, monkey
 
 def test_extract_one_hits_cache_second_time(tmp_path, monkeypatch):
     """extract_one 第二次同文件走缓存，不再调底层识别。"""
-    import server.ocr.cache as cache
     import server.ocr.pipeline as pipeline_mod
+    from server.ocr import cache
 
     monkeypatch.setattr(cache, "_CACHE_DIR", tmp_path / "c")
     monkeypatch.setattr(cache, "OCR_CACHE_ENABLED", True)
@@ -433,8 +433,8 @@ def test_extract_one_hits_cache_second_time(tmp_path, monkeypatch):
 
 def test_ocr_cache_write_failure_does_not_abort(tmp_path, monkeypatch):
     """缓存写失败（如 Paddle layout 非 JSON 对象）不向上抛，extract_one 仍返回识别结果（codex P1-3）。"""
-    import server.ocr.cache as cache
     import server.ocr.pipeline as pipeline_mod
+    from server.ocr import cache
 
     monkeypatch.setattr(cache, "_CACHE_DIR", tmp_path / "c")
     monkeypatch.setattr(cache, "OCR_CACHE_ENABLED", True)
@@ -451,7 +451,7 @@ def test_ocr_cache_write_failure_does_not_abort(tmp_path, monkeypatch):
 
 def test_ocr_cache_run_seal_key_separation(tmp_path, monkeypatch):
     """run_seal 不同 → 缓存键不同，不复用（codex P2-10）。"""
-    import server.ocr.cache as cache
+    from server.ocr import cache
 
     monkeypatch.setattr(cache, "_CACHE_DIR", tmp_path / "c")
     monkeypatch.setattr(cache, "OCR_CACHE_ENABLED", True)

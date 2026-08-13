@@ -8,19 +8,19 @@ from __future__ import annotations
 
 import pytest
 
+import server.common.output_contracts as _oc
 from server.audit.output import EXPENSE_OUTPUT_SCHEMA_NAME
 from server.common.contract import (
+    _SCHEMA_PROCESSORS,
     DEFAULT_OUTPUT_SCHEMA_NAME,
     JSONContractError,
     SchemaProcessor,
-    _SCHEMA_PROCESSORS,
     apply_schema_semantics,
     build_output_format,
     load_output_schema,
     register_schema_processor,
 )
 from server.tender.output import TENDER_OUTPUT_SCHEMA_NAME
-import server.common.output_contracts as _oc
 
 
 @pytest.fixture(autouse=True)

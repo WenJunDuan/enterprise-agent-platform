@@ -10,7 +10,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from server.platform.paths import PLATFORM_DB_FILE, ensure_local_layout
@@ -48,7 +48,7 @@ def record_override(
     reason: str | None = None,
 ) -> None:
     """记录一次人工否决/改判（同 request_id 再记则覆盖，distilled 重置为 0 以便重新提炼）。"""
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     with connect_sqlite(PLATFORM_DB_FILE, immediate=True) as connection:
         connection.execute(
             "INSERT OR REPLACE INTO human_overrides "

@@ -44,7 +44,7 @@ def _fail_if_called(*_args, **_kwargs):
 
 def test_flag_off_never_touches_direct_entry(monkeypatch, tmp_path):
     """flag off (unset) → dispatcher must go straight to the CLI path (D8-style wiring assertion)."""
-    import server.audit.runner as runner
+    from server.audit import runner
 
     monkeypatch.delenv("AUDIT_DIRECT_CONNECT", raising=False)
     monkeypatch.setattr(runner, "run_direct_audit", _fail_if_called)
@@ -75,7 +75,7 @@ def test_flag_off_never_touches_direct_entry(monkeypatch, tmp_path):
 
 def test_flag_on_dispatches_direct_entry_and_skips_cli(monkeypatch, tmp_path):
     """flag on → direct path used; CLI path (run_agent_json) must never run."""
-    import server.audit.runner as runner
+    from server.audit import runner
 
     monkeypatch.setenv("AUDIT_DIRECT_CONNECT", "1")
     monkeypatch.setattr(runner, "run_agent_json", _fail_if_called)
@@ -101,7 +101,7 @@ def test_flag_on_dispatches_direct_entry_and_skips_cli(monkeypatch, tmp_path):
 
 def test_transport_failure_falls_back_to_cli_once(monkeypatch, tmp_path):
     """critic F2: transport-class failure (connection/auth/gateway/timeout) → single fallback."""
-    import server.audit.runner as runner
+    from server.audit import runner
 
     monkeypatch.setenv("AUDIT_DIRECT_CONNECT", "1")
     monkeypatch.setattr(runner, "PROJECT_ROOT", tmp_path)
@@ -135,7 +135,7 @@ def test_transport_failure_falls_back_to_cli_once(monkeypatch, tmp_path):
 
 def test_contract_failure_does_not_fall_back(monkeypatch, tmp_path):
     """critic F2: contract-class failure (retries exhausted) → raise, never fall back to CLI."""
-    import server.audit.runner as runner
+    from server.audit import runner
 
     monkeypatch.setenv("AUDIT_DIRECT_CONNECT", "1")
     monkeypatch.setattr(runner, "PROJECT_ROOT", tmp_path)
@@ -159,7 +159,7 @@ def test_contract_failure_does_not_fall_back(monkeypatch, tmp_path):
 
 def test_flag_on_forwards_archive_to_results_opt(monkeypatch, tmp_path):
     """review F3: flag-on 分支显式转发 archive_to_results 给直连路径（不静默丢弃）。"""
-    import server.audit.runner as runner
+    from server.audit import runner
 
     monkeypatch.setenv("AUDIT_DIRECT_CONNECT", "1")
     monkeypatch.setattr(runner, "run_agent_json", _fail_if_called)
@@ -192,7 +192,7 @@ def test_flag_on_forwards_archive_to_results_opt(monkeypatch, tmp_path):
 
 def test_flag_on_rejects_unsupported_opt(monkeypatch, tmp_path):
     """review F3: 直连路径遇未声明 opt（如 evidence_source）→ fail-fast，不静默漂移。"""
-    import server.audit.runner as runner
+    from server.audit import runner
 
     monkeypatch.setenv("AUDIT_DIRECT_CONNECT", "1")
     monkeypatch.setattr(runner, "run_direct_audit", _fail_if_called)

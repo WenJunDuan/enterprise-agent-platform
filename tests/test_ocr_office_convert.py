@@ -8,8 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from server.ocr import OcrDependencyError
-from server.ocr import office_convert
+from server.ocr import OcrDependencyError, office_convert
 
 
 class _FakeProcess:

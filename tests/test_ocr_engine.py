@@ -6,8 +6,7 @@ import urllib.error
 
 import pytest
 
-from server.ocr import OcrDependencyError
-from server.ocr import engine
+from server.ocr import OcrDependencyError, engine
 
 
 class _FakeResponse:

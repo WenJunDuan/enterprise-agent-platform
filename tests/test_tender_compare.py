@@ -413,11 +413,11 @@ def test_eval_worker_auto_compare_runs_end_to_end(monkeypatch):
     """
     import asyncio as _asyncio
 
-    import server.tender.compare_worker as compare_worker
     import server.tender.worker as tender_worker
     from server.common.agent_bridge import AgentRunMeta
     from server.stores.tender_compare_store import get_compare_result
     from server.stores.tender_compare_task_store import list_compare_tasks
+    from server.tender import compare_worker
 
     project_id = get_or_create_project(
         tenant="acme", tender_no=f"R-{uuid.uuid4().hex[:8]}"

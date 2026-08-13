@@ -14,7 +14,6 @@ from server.common.output_contracts import (
     normalize_audit_result,
 )
 
-
 EXPENSE_OUTPUT_SCHEMA_NAME = "expense/audit-result.schema.json"
 
 

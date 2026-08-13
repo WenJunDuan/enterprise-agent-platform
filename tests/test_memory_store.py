@@ -6,6 +6,7 @@ import json
 import logging
 from pathlib import Path
 
+
 def _make_store(tmp_path: Path):
     """Return a SQLiteMemoryStore backed by tmp_path (isolated DB + memory root)."""
     from server.stores.memory_store import SQLiteMemoryStore

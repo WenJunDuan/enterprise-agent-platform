@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -169,4 +169,4 @@ def latest_app_server_log_path(stderr: bool = False) -> Path:
 def _coerce_timestamp(timestamp: str | None) -> datetime:
     if timestamp:
         return datetime.fromisoformat(timestamp)
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)

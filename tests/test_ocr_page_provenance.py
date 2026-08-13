@@ -39,7 +39,7 @@ GOLDEN_RESULTS = [
 
 @pytest.fixture(autouse=True)
 def _disable_ocr_cache(monkeypatch):
-    import server.ocr.cache as cache
+    from server.ocr import cache
 
     monkeypatch.setattr(cache, "OCR_CACHE_ENABLED", False)
 

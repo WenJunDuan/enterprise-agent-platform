@@ -21,7 +21,7 @@ router = APIRouter(tags=["tender"])
 # 依赖顺序：tasks 无内部依赖；compare 用到 tasks.TenderSubmitAcceptedResponse；
 # projects 用到 tasks._submit_bid_evaluation 与 compare._current_compare_signature；
 # docs 无内部依赖。装饰器在各模块 import 时执行，把路由挂到上面的 router 对象上。
-from server.routes.tender import tasks as _tasks  # noqa: E402,F401
 from server.routes.tender import compare as _compare  # noqa: E402,F401
-from server.routes.tender import projects as _projects  # noqa: E402,F401
 from server.routes.tender import docs as _docs  # noqa: E402,F401
+from server.routes.tender import projects as _projects  # noqa: E402,F401
+from server.routes.tender import tasks as _tasks  # noqa: E402,F401

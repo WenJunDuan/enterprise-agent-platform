@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import asdict, dataclass, fields
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from server.platform.paths import PLATFORM_DB_FILE, ensure_local_layout
@@ -70,7 +70,7 @@ def _record_values(record: TaskRecord) -> tuple[Any, ...]:
 def _coerce_timestamp(value: str | None) -> datetime:
     if value:
         return datetime.fromisoformat(value)
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class TaskStore:

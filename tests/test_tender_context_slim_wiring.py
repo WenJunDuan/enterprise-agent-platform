@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from server.tender import doc_layer  # noqa: E402  (H3: 读层拆出后测试改打这里)
-
 import asyncio
 import json
 
 from server.common.agent_bridge import AgentRunMeta
+from server.tender import doc_layer  # noqa: E402  (H3: 读层拆出后测试改打这里)
 
 
 def _fake_meta(request_id: str) -> AgentRunMeta:
@@ -48,7 +47,7 @@ def _run_evaluation(monkeypatch, runner, *, request_id: str):
 
 
 def test_flag_off_dispatches_original_loader(monkeypatch):
-    import server.tender.runner as runner
+    from server.tender import runner
 
     monkeypatch.delenv("TENDER_SLIM_CONTEXT", raising=False)
     monkeypatch.setattr(doc_layer, "load_doc_layer_context", lambda *_a, **_kw: "full sentinel")
@@ -64,7 +63,7 @@ def test_flag_off_dispatches_original_loader(monkeypatch):
 
 
 def test_flag_on_dispatches_slim_loader(monkeypatch):
-    import server.tender.runner as runner
+    from server.tender import runner
 
     monkeypatch.setenv("TENDER_SLIM_CONTEXT", "1")
     monkeypatch.setattr(doc_layer, "load_doc_layer_context_slim", lambda *_a, **_kw: "slim sentinel")
