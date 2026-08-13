@@ -46,7 +46,7 @@ class _LockedCollector:
 
 
 def _make_multipage_pdf(tmp_path, texts: list[str]):
-    import fitz
+    import pymupdf as fitz
 
     pdf = tmp_path / "multipage.pdf"
     doc = fitz.open()
