@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from server.platform.paths import REVIEW_DELTA_INDEX_DB_FILE, ensure_local_layout
 from server.platform.sqlite_store import connect_sqlite, describe_sqlite_target, row_to_dict
@@ -34,7 +34,7 @@ class ReviewDeltaRecord:
 class SQLiteReviewDeltaStore:
     """SQLite-backed review delta index with JSON archive payloads."""
 
-    COLUMNS = [
+    COLUMNS: ClassVar[list[str]] = [
         "request_id",
         "created_at",
         "conversation_id",
@@ -214,7 +214,7 @@ def archive_review_delta_payload(
     created_at: str | None = None,
     store: SQLiteReviewDeltaStore | None = None,
 ) -> ReviewDeltaRecord:
-    created_at = created_at or datetime.now(timezone.utc).isoformat()
+    created_at = created_at or datetime.now(UTC).isoformat()
     record = ReviewDeltaRecord(
         request_id=request_id,
         created_at=created_at,

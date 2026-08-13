@@ -14,6 +14,15 @@ Import paths through server.core remain stable — do not change callers.
 
 from __future__ import annotations
 
+# ── SDK bridge ────────────────────────────────────────────────────────────────
+from server.common.agent_bridge import (
+    AgentRunMeta,
+    ClaudeRuntimeError,
+    build_options,
+    run_agent,
+    run_agent_full,
+)
+
 # ── contract mechanism（registry / schema 加载 / JSON 抽取）───────────────────
 from server.common.contract import (
     CONTRACTS_DIR,
@@ -27,6 +36,7 @@ from server.common.contract import (
     resolve_output_schema_path,
     validate_structured_output_semantics,
 )
+from server.common.json_bridge import run_agent_json
 
 # ── built-in 输出契约策略（audit-result / init-rules，import 触发注册）──────────
 from server.common.output_contracts import (
@@ -43,16 +53,6 @@ from server.common.session_logging import (
     _log_bridge_failure,
     _log_cli_stderr,
 )
-
-# ── SDK bridge ────────────────────────────────────────────────────────────────
-from server.common.agent_bridge import (
-    AgentRunMeta,
-    ClaudeRuntimeError,
-    build_options,
-    run_agent,
-    run_agent_full,
-)
-from server.common.json_bridge import run_agent_json
 
 __all__ = [
     # constants & types

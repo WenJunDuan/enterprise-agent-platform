@@ -15,7 +15,7 @@ import json
 import logging
 import os
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from server.platform.config import get_ocr_concurrency_settings
 from server.stores.tender_doc_store import OCR_STATUSES, get_bid_doc, get_project_doc
@@ -68,8 +68,8 @@ def is_prewarm_in_flight(row: dict | None, *, stale_sec: float) -> bool:
     except ValueError:
         return False
     if updated_at.tzinfo is None:
-        updated_at = updated_at.replace(tzinfo=timezone.utc)
-    return (datetime.now(timezone.utc) - updated_at).total_seconds() < stale_sec
+        updated_at = updated_at.replace(tzinfo=UTC)
+    return (datetime.now(UTC) - updated_at).total_seconds() < stale_sec
 
 
 def _build_doc_context(

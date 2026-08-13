@@ -6,9 +6,8 @@ import re
 from collections.abc import Sequence
 from typing import Any
 
-from server.common.corpus import ARTIFACT_ORIGINAL
+from server.common.corpus import ARTIFACT_ORIGINAL, parse_page_anchor
 from server.common.corpus import PAGE_ANCHOR_LINE_RE as _PAGE_RE
-from server.common.corpus import parse_page_anchor
 from server.ocr.boq import _AMOUNT_STRICT, _PAGE_CARRY_LINES
 
 _FILE_HEADER_RE = re.compile(r"^\s*###\s*文件:\s*(.*?)\s+\(kind=")

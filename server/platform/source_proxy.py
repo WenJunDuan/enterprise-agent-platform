@@ -15,7 +15,7 @@ def prepare_text_proxy(source: str, proxy_root: Path) -> tuple[str, str | None]:
     proxy_root.mkdir(parents=True, exist_ok=True)
     proxy_path = proxy_root / f"{source_path.stem}.txt"
     command = ["pdftotext", str(source_path), str(proxy_path)]
-    completed = subprocess.run(command, capture_output=True, text=True)
+    completed = subprocess.run(command, capture_output=True, text=True, check=False)
     if completed.returncode != 0:
         message = (completed.stderr or completed.stdout or "pdftotext failed").strip()
         raise ValueError(f"Failed to prepare readable text proxy for {source}: {message}")

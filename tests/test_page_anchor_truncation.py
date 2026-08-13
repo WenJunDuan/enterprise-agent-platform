@@ -46,7 +46,7 @@ def test_tail_replays_owning_page_anchor_when_cut_lands_mid_page():
     page_body = "\n".join(f"正文行{i}" * 6 for i in range(10))
     text = f"【第 1 页】\n{page_body}\n【第 2 页】\n{page_body}"
     tail_n = len(page_body) // 2
-    head, tail, replay = split_head_tail_on_anchors(text, 40, tail_n)
+    _head, tail, replay = split_head_tail_on_anchors(text, 40, tail_n)
     assert replay == "【第 2 页】"
     assert "【第 1 页】" not in tail
 

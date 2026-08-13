@@ -6,8 +6,7 @@ import urllib.error
 
 import pytest
 
-from server.ocr import OcrDependencyError
-from server.ocr import engine
+from server.ocr import OcrDependencyError, engine
 
 
 class _FakeResponse:
@@ -30,7 +29,7 @@ def _enable_openai_compatible(monkeypatch):
 
 
 def _write_test_image(path) -> None:
-    import fitz
+    import pymupdf as fitz
 
     pixmap = fitz.Pixmap(fitz.csRGB, (0, 0, 10, 10), False)
     pixmap.clear_with(255)
@@ -130,7 +129,7 @@ def test_parse_cloud_jsonl_injects_continuous_page_number():
 
 def test_extract_pdf_subset_selects_only_requested_pages(tmp_path):
     """混合 PDF 子集 OCR：抽指定页成临时 PDF（只送扫描页，不送整份）。"""
-    import fitz
+    import pymupdf as fitz
 
     src_path = tmp_path / "src.pdf"
     doc = fitz.open()
@@ -149,7 +148,7 @@ def test_extract_pdf_subset_selects_only_requested_pages(tmp_path):
 
 
 def test_extract_pdf_subset_empty_indices_returns_none(tmp_path):
-    import fitz
+    import pymupdf as fitz
 
     src_path = tmp_path / "src.pdf"
     doc = fitz.open()

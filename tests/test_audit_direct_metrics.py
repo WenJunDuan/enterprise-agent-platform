@@ -13,24 +13,23 @@ from __future__ import annotations
 from server.audit.direct import run_direct_audit
 from server.common.agent_bridge import AgentRunMeta
 from server.core import DEFAULT_OUTPUT_SCHEMA_NAME
-
-from tests.test_audit_direct import _FakeClient, _FakeResponse, _VALID_PAYLOAD
+from tests.test_audit_direct import _VALID_PAYLOAD, _FakeClient, _FakeResponse
 
 
 def _required_meta_kwargs() -> dict:
-    return dict(
-        request_id="rid",
-        conversation_id="conv",
-        claude_session_id=None,
-        resume_session_id=None,
-        fork_from_session_id=None,
-        schema_name=None,
-        log_file="",
-        result_file=None,
-        result_subtype=None,
-        cost_usd=0.0,
-        finished_at=None,
-    )
+    return {
+        "request_id": "rid",
+        "conversation_id": "conv",
+        "claude_session_id": None,
+        "resume_session_id": None,
+        "fork_from_session_id": None,
+        "schema_name": None,
+        "log_file": "",
+        "result_file": None,
+        "result_subtype": None,
+        "cost_usd": 0.0,
+        "finished_at": None,
+    }
 
 
 def test_agent_run_meta_declares_metrics_fields_with_zero_defaults():

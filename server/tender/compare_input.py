@@ -259,8 +259,10 @@ def _pool_blocked_reason(bidders: list[dict[str, Any]]) -> tuple[str | None, lis
     ]
     if amounts and max(amounts) / min(amounts) >= UNIT_MISMATCH_RATIO:
         return "bid_price_unit_mismatch", [
-            "各投标人报价数量级相差 100 倍以上，疑似万元与元单位不一致；"
-            "平台不做自动换算，已停止排名，请人工核对报价口径。"
+            (
+                "各投标人报价数量级相差 100 倍以上，疑似万元与元单位不一致；"
+                "平台不做自动换算，已停止排名，请人工核对报价口径。"
+            )
         ]
     return None, []
 

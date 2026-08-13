@@ -14,11 +14,11 @@ import uvicorn
 
 from server.common.command_adapter import run_command_full, run_command_json
 from server.core import (
+    DEFAULT_OUTPUT_SCHEMA_NAME,
+    INIT_RULES_REPORT_SCHEMA_NAME,
     AgentRunMeta,
     ClaudeRuntimeError,
-    INIT_RULES_REPORT_SCHEMA_NAME,
     JSONContractError,
-    DEFAULT_OUTPUT_SCHEMA_NAME,
     run_agent_full,
 )
 from server.ops.maintenance import run_maintenance
@@ -26,7 +26,6 @@ from server.platform import config as config_module
 from server.platform.asset_validation import validate_knowledge_assets
 from server.platform.config import get_claude_runtime_report
 from server.platform.source_proxy import prepare_text_proxy
-from server.tender.output import TENDER_OUTPUT_SCHEMA_NAME
 from server.stores.memory_store import get_memory_record_by_id, list_memory_records
 from server.stores.request_store import (
     get_request_audit_by_request_id_admin,
@@ -48,6 +47,7 @@ from server.stores.session_store import (
     list_logged_sessions_admin,
     new_conversation_id,
 )
+from server.tender.output import TENDER_OUTPUT_SCHEMA_NAME
 
 app = typer.Typer(help="Enterprise agent platform CLI.")
 logger = logging.getLogger(__name__)

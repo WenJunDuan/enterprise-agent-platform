@@ -184,7 +184,7 @@ async def _execute_inner(*, request_id: str, tenant: str, run_seal: bool) -> Non
                 request_id=request_id, case_dir=case_dir, run_seal=run_seal, total=total
             )
             await asyncio.to_thread(_mark_completed, request_id, tenant, case_dir)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning(
                 "ocr_job_timeout",
                 extra={

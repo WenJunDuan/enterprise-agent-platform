@@ -26,7 +26,11 @@ from pydantic import BaseModel
 from server.ocr.pipeline import OCR_JOB_UNITS_FILENAME
 from server.routes.deps import verify_tenant
 from server.routes.ocr_job_worker import admission_available, schedule_ocr_job
-from server.routes.upload_helpers import build_case_dir, collect_uploaded_files, materialize_ocr_upload
+from server.routes.upload_helpers import (
+    build_case_dir,
+    collect_uploaded_files,
+    materialize_ocr_upload,
+)
 from server.stores.ocr_job_store import get_ocr_job, upsert_ocr_job
 from server.stores.request_store import new_request_id, utc_now
 

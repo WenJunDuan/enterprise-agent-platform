@@ -83,12 +83,12 @@ async def _run_query(
         if not calls:
             pytest.skip(f"Claude CLI/gateway unavailable: {type(exc).__name__}")
         raise
-    except TimeoutError as exc:
+    except TimeoutError:
         if marker.exists():
             pytest.fail("P0: denied Bash query created the marker", pytrace=True)
         if not calls:
             pytest.skip("Claude CLI/gateway timed out before a Bash hook call")
-        raise exc
+        raise
 
 
 def _assert_denied_call(calls: list[dict[str, Any]], command: str, marker: Path) -> None:

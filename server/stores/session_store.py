@@ -17,17 +17,6 @@ from server.platform.paths import ensure_local_layout
 ensure_local_layout()
 
 # ── dataclass, protocol, primitives ──────────────────────────────────────────
-from server.stores.session_records import (  # noqa: E402
-    SessionRecord,
-    SessionStore,
-    new_conversation_id,
-    new_request_id,
-    utc_now,
-)
-
-# ── store implementation ──────────────────────────────────────────────────────
-from server.stores.session_sqlite_store import SQLiteSessionStore  # noqa: E402
-
 # ── singleton + delegating query functions ────────────────────────────────────
 from server.stores.session_queries import (  # noqa: E402
     SESSION_STORE,
@@ -47,12 +36,22 @@ from server.stores.session_queries import (  # noqa: E402
     resolve_latest_session_id,
     resolve_latest_session_id_admin,
 )
+from server.stores.session_records import (  # noqa: E402
+    SessionRecord,
+    SessionStore,
+    new_conversation_id,
+    new_request_id,
+    utc_now,
+)
 
 # ── SDK helpers ───────────────────────────────────────────────────────────────
 from server.stores.session_sdk import (  # noqa: E402
     get_sdk_session_transcript,
     list_sdk_session_summaries,
 )
+
+# ── store implementation ──────────────────────────────────────────────────────
+from server.stores.session_sqlite_store import SQLiteSessionStore  # noqa: E402
 
 __all__ = [
     # records / protocol

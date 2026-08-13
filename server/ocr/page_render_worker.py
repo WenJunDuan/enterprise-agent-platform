@@ -38,7 +38,7 @@ def _preflight_page_pixels(page, scale: float, max_pixels: int, page_number: int
 
 def render(path: Path, scale: float, max_pixels: int) -> None:
     """Stream bounded PNG page frames to the parent process over stdout."""
-    import fitz
+    import pymupdf as fitz
 
     with fitz.open(path) as document:
         _write_header({"type": "meta", "page_count": document.page_count})

@@ -29,6 +29,7 @@ from server.stores.tender_doc_store import (
 )
 from server.stores.tender_project_store import update_project_fields_if_empty
 from server.tender.context_slim import build_preextract_tender_context
+
 # re-export：server.routes.tender 从本模块 import TENDER_OCR_PURPOSE（既有引用点不变）。
 from server.tender.runner import TENDER_OCR_PURPOSE as TENDER_OCR_PURPOSE
 

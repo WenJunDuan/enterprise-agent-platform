@@ -11,9 +11,7 @@ import pytest
 from fastapi import HTTPException
 
 # Env-var offline-guard bypass is now centralised in tests/conftest.py.
-
 from server.api import verify_tenant
-
 
 # ═════════════════════════════════════════════════════════════════════════════
 # verify_tenant

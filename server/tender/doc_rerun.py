@@ -216,7 +216,7 @@ async def rerun_prewarm_for_degraded_docs(
     )
     try:
         await asyncio.wait_for(_rerun(), timeout=budget)
-    except (TimeoutError, asyncio.TimeoutError):
+    except TimeoutError:
         logger.warning(
             "tender_doc_layer_rerun_timeout", extra={"project_id": project_id, "bid_id": bid_id}
         )

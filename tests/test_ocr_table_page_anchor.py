@@ -3,7 +3,7 @@
 旧行为：``read_pdf_text`` 收集 tables 时丢掉页号，``draft_render.render_body`` 把表格文本无锚拼在底稿**末尾**
 → 模型按"最近锚点"把任意页的表格引成最后一页，且回查闸判 confirmed（错页畅通进结论）。
 
-本机无 pymupdf（OCR extra 未装）→ 用**假 fitz 模块**驱动 ``read_pdf_text`` 的真实循环逻辑，
+本机无 pymupdf（OCR extra 未装）→ 用**假 pymupdf 模块**驱动 ``read_pdf_text`` 的真实循环逻辑，
 被测对象是"页号有没有被保留并挂到所属页锚下"，不是 pymupdf 本身。
 """
 
@@ -60,13 +60,13 @@ class _FakeDocument:
 
 @pytest.fixture
 def fake_fitz(monkeypatch):
-    """注入假 fitz 模块；页文本与页内表格由测试指定。"""
+    """注入假 pymupdf 模块；页文本与页内表格由测试指定。"""
 
     def _install(pages: list[tuple[str, list]]):
         document = _FakeDocument([_FakePage(text, tables) for text, tables in pages])
-        module = types.ModuleType("fitz")
-        module.open = lambda _path: document  # noqa: A003 - 对齐 fitz 真实 API 名
-        monkeypatch.setitem(sys.modules, "fitz", module)
+        module = types.ModuleType("pymupdf")
+        module.open = lambda _path: document  # noqa: A003 - 对齐 pymupdf 真实 API 名
+        monkeypatch.setitem(sys.modules, "pymupdf", module)
         return document
 
     return _install

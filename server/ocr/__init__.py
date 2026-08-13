@@ -23,4 +23,4 @@ class OcrDependencyError(OcrError):
     """缺少第三方依赖（按需安装）。"""
 
 
-__all__ = ["OcrError", "OcrDependencyError"]
+__all__ = ["OcrDependencyError", "OcrError"]

@@ -222,7 +222,12 @@ def test_delete_project_cascade_counts_include_new_tables():
 
 def test_delete_project_cascade_no_orphans_after_delete():
     """删项目后, 另一项目的 project_docs / bid_docs 不受影响 (无跨项目孤儿清理)。"""
-    from server.stores.tender_doc_store import get_project_doc, list_bid_docs, upsert_bid_doc, upsert_project_doc
+    from server.stores.tender_doc_store import (
+        get_project_doc,
+        list_bid_docs,
+        upsert_bid_doc,
+        upsert_project_doc,
+    )
     from server.stores.tender_project_store import (
         delete_project_cascade,
         get_or_create_project,

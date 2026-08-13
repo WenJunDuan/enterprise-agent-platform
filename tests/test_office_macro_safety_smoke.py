@@ -10,7 +10,6 @@ from pathlib import Path
 
 import pytest
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = PROJECT_ROOT / "scripts" / "document_format_fixtures" / "macro-on-open.odt"
 VERIFY_SCRIPT = PROJECT_ROOT / "scripts" / "verify_office_macro_safety.py"

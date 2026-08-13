@@ -115,7 +115,7 @@ def test_dedupes_chunk_shared_by_multiple_criteria_queries(monkeypatch):
         "text": "共享章节内容",
     }
 
-    import server.tender.context_slim as context_slim
+    from server.tender import context_slim
 
     monkeypatch.setattr(context_slim, "search", lambda *args, **kwargs: [hit])
 
