@@ -51,10 +51,14 @@ def test_prompt_file_within_byte_budget(rel_path: str, cap: int) -> None:
 
 
 def test_reference_files_within_byte_budget() -> None:
-    """下沉产物本身也受限——单档过大等于把热路径的问题搬了个家。"""
+    """下沉产物本身也受限——单档过大等于把热路径的问题搬了个家。
+
+    用 ``skills/**`` 递归匹配：子 skill（如 ``skills/multi-ocr/recognize/``）下沉的 references
+    同样受限，否则往深一层挪目录就能绕过本闸。
+    """
     oversized = {
         str(path.relative_to(PROJECT_ROOT)): _byte_size(path)
-        for path in sorted(CLAUDE_DIR.glob("skills/*/references/*.md"))
+        for path in sorted(CLAUDE_DIR.glob("skills/**/references/*.md"))
         if _byte_size(path) > REFERENCE_FILE_CAP
     }
     assert not oversized, (
@@ -70,11 +74,26 @@ def _dispatch_table_rows() -> list[str]:
     return rows[2:]
 
 
+def _frontmatter_lines(path: Path) -> list[str]:
+    """取 YAML frontmatter 区（首个 ``---`` 到下一个 ``---`` 之间）。
+
+    按边界取而不是取固定前 N 行：frontmatter 变长（多加几个 tools/model 字段）时
+    ``name:`` 会被挤出固定窗口，实体表随之静默漏项。无 frontmatter 的文件返回空。
+    """
+    lines = path.read_text(encoding="utf-8").splitlines()
+    if not lines or lines[0].strip() != "---":
+        return []
+    for idx, line in enumerate(lines[1:], start=1):
+        if line.strip() == "---":
+            return lines[1:idx]
+    return []
+
+
 def _known_entities() -> set[str]:
     """可被调度的实体全集：command 文件名 + skill/agent frontmatter 的 name。"""
     entities = {f"/{path.stem}" for path in (CLAUDE_DIR / "commands").glob("*.md")}
     for path in [*CLAUDE_DIR.glob("skills/**/SKILL.md"), *CLAUDE_DIR.glob("agents/**/*.md")]:
-        for line in path.read_text(encoding="utf-8").splitlines()[:6]:
+        for line in _frontmatter_lines(path):
             if line.startswith("name:"):
                 entities.add(line.removeprefix("name:").strip())
                 break
