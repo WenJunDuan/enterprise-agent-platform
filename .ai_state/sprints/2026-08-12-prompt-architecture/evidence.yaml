@@ -1,0 +1,17 @@
+sprint_slug: "2026-08-12-prompt-architecture"
+collected_evidence:
+  - tool_use_id: "toolu_01R7wMs4hEVykZnLoe7CBqaF"
+    tool: "Bash"
+    result: pass
+    command: "cd agent-front && bun test 2>&1 | tail -6"
+    timestamp: "2026-08-13T07:39:21.171Z"
+  - tool_use_id: "toolu_017CW9YvMFekt2p6Ev66A8d8"
+    tool: "Bash"
+    result: pass
+    command: "cd agent-front && bun test 2>&1 | grep -E \"^(\\(fail\\)|error:)\" | head -12"
+    timestamp: "2026-08-13T07:39:25.267Z"
+  - tool_use_id: "toolu_01SDV5k5fP4HSiQ6bKyMmVHk"
+    tool: "Bash"
+    result: pass
+    command: "cd agent-front && bun install 2>&1 | tail -3 && bun test 2>&1 | tail -5"
+    timestamp: "2026-08-13T07:39:30.091Z"
