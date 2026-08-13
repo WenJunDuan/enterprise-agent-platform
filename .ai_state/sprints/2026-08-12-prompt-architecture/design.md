@@ -333,7 +333,7 @@ VERDICT: NEEDS_REVISION
 ## Round 2 (revised by Fable 5)
 
 - F1 CLOSED：增第 5 个 reference s1-criteria-structuring.md；单文件上界放宽 ≤10,240B；
-  新增逐节字节预算表（合计 ≤13,700，实测数支撑）。
+  新增逐节字节预算表（合计 ≤13,700，实测数支撑）（2026-08-13 修订为 13,750，见预算表修订块）。
 - F2 CLOSED：AC2 换 containment 脚本机械核对 + 显式白名单，附录 A 降辅助。
 - F3 CLOSED：s3 必须含枚举简表（权威=schema）；manual_review_reason 全文入 output-json.md。
 - F4 CLOSED：钉死惰性首用+缓存、独立 loader 函数供 tamper 直测、路径走
