@@ -70,3 +70,10 @@ fast-forward 合并(dd664a8→4d0a54c)后, 每次 Stop 都对该 sprint 重跑 s
 本就在 gate 的 allowedExact 白名单); ② delivery-gate 识别「合入态」— reviewed commit 已是
 origin/main 祖先且非本机产出时, 降为只读校验; ③ ship 完成后由 hook 自动把 _index 置 idle,
 不把 stage=ship 留给下一台机器。倾向①+③组合: ①让证据可迁移, ③消除跨机残留态。
+
+**复发 (2026-08-13, prompt-architecture ship)**: 变体确认——本机完整走完全链(events/log 台账
+hook 都在写), 但 `subagent-assignments.jsonl` 仍无 hook 产出路径, ship Stop 被同一检查 block。
+本次处置: 主 agent 从 events 台账 + 各 agent 实际返回**照实**手工生成 11 条派工记录入库
+(cca3a83, 非补造——数据全部可与 events 时间戳对账)。结论: 写 assignments 的 hook 至今不存在,
+P14 候选解①应升级为「由 subagent-tracker hook 直接落 assignments 行」而非仅"ship 时提交";
+在 hook 落地前, 每个 sprint ship 都需要主 agent 手工生成一次, 这是重复劳动且依赖主 agent 自觉。
