@@ -206,7 +206,7 @@ async def _execute_inner(
                     "updated_at": finished_at,
                 },
             )
-        except TimeoutError:
+        except asyncio.TimeoutError:
             logger.warning(
                 "tender_evaluation_timeout",
                 extra={
