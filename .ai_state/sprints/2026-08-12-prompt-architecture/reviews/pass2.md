@@ -30,7 +30,7 @@ pass1 触发 CONCERNS 的 F1/F2 均以可复跑证据闭合, F3 顺手收口且�
 
 ## VERDICT (evaluator, pass2)
 
-**PASS**
+VERDICT: PASS
 
 - Evidence Cross-Check（增量）: pass1 最小解锁清单 5 条逐一 ✅（F1 双脚本 evaluator 现场复跑 EXIT=0; F2 defer 记录双处一致; F3 白名单唯一且 STALE_WHITELIST 在位; F4/F5 defer 边界未被越过—两文件不在 fix commits 变更面; pass2 增量授权记录在档）。done_without_evidence=0, over-engineering=0。
 - CONCERNS 触发条件全部消除; 未解决项仅 F4/F5/N1（P2, 显式 defer 至 polish）+ N2/N3（INFO）。
