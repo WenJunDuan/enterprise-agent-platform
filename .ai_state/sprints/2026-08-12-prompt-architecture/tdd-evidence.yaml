@@ -26,7 +26,7 @@ records:
       均 ≤ 10,240。逐节预算 **8/8 全部达标**（含「执行方式+S0」746B ≤ 750B——design 预算表
       2026-08-13 已据实修订，见 deviations D1）。
     green_observed_at: "2026-08-13T09:05:00+08:00  # F1/F3 修复后复跑"
-    commits: ["271b6fc", "ceb5e19", "7161c04", "72a2f57"]
+    commits: ["271b6fc", "ceb5e19", "7161c04", "beb1ce3"]
 
   - id: "KD2-pending_reason 单源接线"
     kind: "red-green"
