@@ -1,0 +1,10 @@
+E       AssertionError: .claude/commands/tender-evaluate.md 已 38754B，超上界 15000B（超 23754B）。超界须把裁决细则下沉到对应 skill 的 references/ 并在步骤开头加确定性 Read，而不是抬高本文件常量；流程见本测试头注。
+E       assert 38754 <= 15000
+E       AssertionError: references 单文件超 10240B：{'.claude/skills/tender-eval/references/oversized-probe.md': 10241}。拆成更细的一事一档（如按步骤/按评分方式），不要抬高本文件常量。
+E       assert not {'.claude/skills/tender-eval/references/oversized-probe.md': 10241}
+E       AssertionError: CLAUDE.md 调度表引用了不存在的实体：['system-rule-init-typo']。改成真实的 command（.claude/commands/*.md）/ skill / agent 名，或补建该实体。
+E       assert not {'system-rule-init-typo'}
+FAILED tests/test_prompt_budget.py::test_prompt_file_within_byte_budget[.claude/commands/tender-evaluate.md-15000]
+FAILED tests/test_prompt_budget.py::test_reference_files_within_byte_budget
+FAILED tests/test_prompt_budget.py::test_claude_md_dispatch_entities_exist - ...
+3 failed, 4 passed in 0.02s
