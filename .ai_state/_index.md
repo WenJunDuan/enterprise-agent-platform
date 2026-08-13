@@ -4,14 +4,14 @@
 version: "9.6.4"
 
 # === PACE 路由状态 ===
-path: "System" # 2026-08-11 tender 评审加固 program：四路评审定根因(页锚/横比/并发)后立项，Fable 设计 / opus 实施
-stage: "ship" # 2026-08-12 program 三 slice+polish 全合 main, review 链完整(各 sprint evaluator PASS), 用户拍板推送
-current_sprint_slug: "2026-08-11-compare-authority"
-current_roadmap_slug: "2026-08-11-tender-eval-hardening"
+path: "" # idle: tender-eval-hardening program 已 SHIP(2026-08-12, origin/main e33666c+), 按 P8 释放; 不把 stage=ship 留给下一台机器/会话(P14 教训)
+stage: ""
+current_sprint_slug: ""
+current_roadmap_slug: ""
 skip_polish: false
 skip_architecture_check: false
-skip_impl_subagent_check: true # subagent-assignments.jsonl 握手台账 hook 未落(结构性问题见 proposals.md P14); events/log 台账在, 各 sprint tdd-evidence+三轮 review 链为实质证据, 不伪造派工记录
-skip_runtime_verify: true # 用户 2026-08-12 拍板"弄完了后...推送"; 真评标实跑四项(pending_reason 重试率/双家并发/存量 self_parsed 观感/容器内 convert 端到端)待部署机窗口, 已记 roadmap 各 item note; pass3-F7 完整环境复跑已在 main 满足(16 条基线)
+skip_impl_subagent_check: false # (已随 program ship 释放; 当时理由: subagent-assignments.jsonl 握手台账 hook 未落(结构性问题见 proposals.md P14); events/log 台账在, 各 sprint tdd-evidence+三轮 review 链为实质证据, 不伪造派工记录
+skip_runtime_verify: false # (已随 program ship 释放; 当时理由: 用户 2026-08-12 拍板"弄完了后...推送"; 真评标实跑四项(pending_reason 重试率/双家并发/存量 self_parsed 观感/容器内 convert 端到端)待部署机窗口, 已记 roadmap 各 item note; pass3-F7 完整环境复跑已在 main 满足(16 条基线)
 
 # === 平台与版本 ===
 platforms_enabled: ["cc"]
@@ -54,7 +54,7 @@ counts:
   reviews_count: 75
   cleanup_count: 6
   compound:
-    learning: 13
+    learning: 14
     trick: 2
     decision: 8
     explore: 2
@@ -64,12 +64,12 @@ pointers:
   latest_review: "sprints/2026-07-30-demo-full-doc-ocr/reviews/pass7.md" # Pass7 CONCERNS：HTTP 200 body I/O fallback + PPTX GroupShape 图片信号
   latest_cleanup: "sprints/2026-07-30-demo-full-doc-ocr/cleanup-pass.md"
   latest_brainstorm: ""
-  latest_decisions: ["compound/2026-07-20-decision-ocr-as-standalone-service.md", "compound/2026-07-16-decision-schema-split-tender.md", "compound/2026-07-16-decision-carve-f6-schema-split-from-d2.md", "compound/2026-07-15-decision-ocr-service-layer.md", "compound/2026-07-02-decision-ocr-routing-ladder.md"]
-  latest_lessons: ["compound/2026-07-30-learning-document-ingestion-deployment-evidence.md", "compound/2026-07-18-learning-prompt-gate-contradiction-literal-model.md", "compound/2026-07-18-learning-lazy-import-behavioral-seam.md", "compound/2026-07-15-learning-slots-dataclass-hollow-getattr.md", "compound/2026-07-01-learning-flash-tender-eval-inconsistency.md"]
-  latest_architecture_update: "2026-08-12T11:07:44.818Z"
+  latest_decisions: ["compound/2026-07-20-decision-ocr-as-standalone-service.md", "compound/2026-07-16-decision-carve-f6-schema-split-from-d2.md", "compound/2026-07-16-decision-schema-split-tender.md", "compound/2026-07-15-decision-ocr-service-layer.md", "compound/2026-07-02-decision-ocr-routing-ladder.md"]
+  latest_lessons: ["compound/2026-08-12-learning-review-chain-catches-fix-induced-p0.md", "compound/2026-07-30-learning-document-ingestion-deployment-evidence.md", "compound/2026-07-18-learning-prompt-gate-contradiction-literal-model.md", "compound/2026-07-18-learning-lazy-import-behavioral-seam.md", "compound/2026-07-15-learning-slots-dataclass-hollow-getattr.md"]
+  latest_architecture_update: "2026-08-11T01:45:11.504Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "【2026-08-12 SHIP】tender-eval-hardening program 收口: H1/H2/H3+polish 全合 main 并 push。runtime-verify 四项待部署机窗口(见 roadmap items note, 用户拍板先推)。部署说明三件必写: 存量项目重评前横比显示可比家数不足 / 转换稿页号显示变化 / cache v6 全量重跑一次。下一程序级事项: OCR 独立服务迁移(compound/2026-07-20 决策, FITZ/LO per-task 隔离与 engine 拆分在彼处)。"
+next_action: "【2026-08-12 program SHIPPED→idle】tender-eval-hardening 全部落地 origin/main(57+ commits): 三 slice+polish, 7 轮 review 抓 4 P0 全闭合, worktree/分支清零。待部署机窗口: runtime-verify 四项(roadmap items note)+部署说明三条(存量项目横比观感/转换稿页号/cache v6 重跑)。下一程序级候选: OCR 独立服务迁移(compound/2026-07-20)。经验档: compound/2026-08-12-learning-review-chain-catches-fix-induced-p0.md"
 last_subagent: "codex-exec" # tender-report-dimensions D0-D5 headless (codex 0.142.1, gpt-5.5)；必须 env -u HTTP_PROXY -u HTTPS_PROXY 否则 streaming API 挂起，见 compound/2026-06-25-trick-codex-proxy-hangs-streaming.md
 last_subagent_at: "2026-06-25T00:00:00.000Z"
 active_worktrees: [] # 原条目是远端机器(/Users/mac/...)的 worktree，本机不存在，2026-08-11 清理
