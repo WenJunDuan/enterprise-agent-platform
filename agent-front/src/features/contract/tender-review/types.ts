@@ -124,7 +124,7 @@ export type ReviewCategoryData = {
   items: ReviewItem[]
 }
 
-/** score=null 的待定原因（KD5，与 audit-result.schema.json 的枚举同源）。 */
+/** score=null 的待定原因（KD5）。权威定义: .claude/contracts/common/audit-result.schema.json（改枚举先改 schema，本处手写消费端随之同步）。 */
 export type TenderPendingReason =
   | 'cross_bid'
   | 'external_data'

@@ -16,7 +16,9 @@ expense 解释"的跨域污染温床，也让 ``server/common/**`` 不再反向�
 
 from __future__ import annotations
 
+import json
 import re
+from pathlib import Path
 from typing import Any
 
 import jsonschema
@@ -42,18 +44,18 @@ from server.common.output_contracts import (
 
 PLAN_SCHEMA_NAME = "common/plan.schema.json"
 
-# KD5：``score=null`` 的合法待定原因枚举。与 audit-result.schema.json 的
-# extracted_data.scoring.items.pending_reason 同源（schema 管形、本闸管"null 必须给原因"的语义）。
-PENDING_REASONS = frozenset(
-    {
-        "cross_bid",  # 需全部投标报价横比
-        "external_data",  # 需外部数据（信用等）
-        "live_event",  # 需现场答辩 / 演示
-        "evidence_unresolved",  # 出处未核实 / 底稿读不清
-        "manual_mode",  # 评分方式本身为人工主观项
-        "non_responsive",  # 实质性不响应，无可评事实
-    }
-)
+# KD5：``score=null`` 的合法待定原因枚举。**唯一权威 = audit-result.schema.json 的
+# extracted_data.scoring.items.pending_reason `enum`**；从 schema 读而非复写，杜绝双写漂移。
+# 首用加载并缓存进 `_PENDING_REASONS`，**不在模块加载期读**（见上方 L35-42 的成环纪律）。
+_PENDING_REASONS: frozenset[str] | None = None
+
+
+def _load_pending_reasons(schema_path: Path) -> frozenset[str]:
+    """读 schema 的 pending_reason ``enum``（tamper 测试直传篡改副本路径调本函数）。"""
+    props = json.loads(schema_path.read_text(encoding="utf-8"))["properties"]
+    item_props = props["extracted_data"]["properties"]["scoring"]["items"]["properties"]
+    return frozenset(item_props["pending_reason"]["enum"])
+
 
 TENDER_OUTPUT_SCHEMA_NAME = "tender/audit-result.schema.json"
 # 仅注册表 key；物理 schema 复用 common/audit-result.json（见下方 register_schema_processor 的
@@ -427,8 +429,11 @@ def _verify_pending_reason(structured_output: dict[str, Any]) -> None:
     **必须在 ``_verify_score_mode_consistency`` 之后调用**：后者会把无依据的 0 分降级为 null，
     降级时自行补枚举，先跑本闸会漏检这些服务端新造的 null。
     """
-    from server.common.contract import JSONContractError  # 惰性 import，断模块加载期环
-
+    from server.common.contract import JSONContractError, resolve_output_schema_path
+    global _PENDING_REASONS
+    if _PENDING_REASONS is None:  # 首用加载 + 缓存；路径解析复用 contract 的唯一实现
+        schema_path = resolve_output_schema_path(DEFAULT_OUTPUT_SCHEMA_NAME)
+        _PENDING_REASONS = _load_pending_reasons(schema_path)
     extracted = structured_output.get("extracted_data")
     if not isinstance(extracted, dict):
         return
@@ -439,9 +444,9 @@ def _verify_pending_reason(structured_output: dict[str, Any]) -> None:
         if not isinstance(item, dict) or _is_real_number(item.get("score")):
             continue
         reason = item.get("pending_reason")
-        if reason not in PENDING_REASONS:
+        if reason not in _PENDING_REASONS:
             raise JSONContractError(
-                f"评分项 score=null 必须带合法 pending_reason（取值 {sorted(PENDING_REASONS)}），"
+                f"评分项 score=null 必须带合法 pending_reason（取值 {sorted(_PENDING_REASONS)}），"
                 f"当前为 {reason!r}（item={item.get('item')!r}）"
             )
 
