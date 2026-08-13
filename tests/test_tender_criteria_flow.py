@@ -15,13 +15,13 @@ from __future__ import annotations
 import jsonschema
 import pytest
 
+import server.common.output_contracts as oc
 from server.common.contract import (
     JSONContractError,
     apply_schema_semantics,
     load_output_schema,
 )
 from server.tender.output import TENDER_OUTPUT_SCHEMA_NAME
-import server.common.output_contracts as oc
 
 CRITERIA_SCHEMA = "tender/criteria.schema.json"
 

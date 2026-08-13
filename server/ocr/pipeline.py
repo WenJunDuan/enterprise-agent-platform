@@ -26,8 +26,8 @@ from server.ocr.draft_render import (
     truncate_body,
 )
 from server.ocr.engine import extract_pdf_subset, recognize, recognize_seal
-from server.ocr.office_convert import convert_office_to_pdf
 from server.ocr.native import native_read
+from server.ocr.office_convert import convert_office_to_pdf
 
 logger = logging.getLogger(__name__)
 
@@ -686,8 +686,7 @@ def is_ocr_text_valid(text: str) -> bool:
         s = line.strip()
         if (
             not s
-            or s.startswith(_FILE_HEADER_PREFIX)
-            or s.startswith(OCR_ERROR_PREFIX)
+            or s.startswith((_FILE_HEADER_PREFIX, OCR_ERROR_PREFIX))
             # 页锚点行（含【转换稿第M页】变体）不算内容——只有锚没有正文 = 假 ready（0730 教训）。
             # 走 corpus 单点 pattern，锚变体扩展时不会漏这一处（H2 Round1-F4）。
             or parse_page_anchor(s) is not None

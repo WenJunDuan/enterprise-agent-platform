@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
+from datetime import UTC
 
 import pytest
 
@@ -307,12 +308,12 @@ def test_degraded_only_doc_still_names_the_degraded_file(monkeypatch):
 
 def _age_bid_row(pid: str, bid_id: str, seconds: float) -> None:
     """把行的 updated_at 人为调旧，模拟"已经排队很久"。"""
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
     from server.platform.paths import PLATFORM_DB_FILE
     from server.platform.sqlite_store import connect_sqlite
 
-    stale = (datetime.now(timezone.utc) - timedelta(seconds=seconds)).isoformat()
+    stale = (datetime.now(UTC) - timedelta(seconds=seconds)).isoformat()
     with connect_sqlite(PLATFORM_DB_FILE, immediate=True) as conn:
         conn.execute(
             "UPDATE tender_bid_docs SET updated_at = ? WHERE project_id = ? AND bid_id = ?",

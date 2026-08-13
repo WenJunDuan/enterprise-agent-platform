@@ -128,7 +128,7 @@ def test_resolve_project_criteria_version_is_stable_across_reads():
 
 
 def test_runner_injects_criteria_version_and_stamps_project_ref(monkeypatch):
-    import server.tender.runner as runner
+    from server.tender import runner
 
     criteria = _criteria()
     project_id = _new_project_with_criteria(criteria)
@@ -163,7 +163,7 @@ def test_runner_injects_criteria_version_and_stamps_project_ref(monkeypatch):
 
 
 def test_runner_marks_self_parsed_when_no_project_criteria(monkeypatch):
-    import server.tender.runner as runner
+    from server.tender import runner
 
     criteria = _criteria()
     project_id = _new_project_with_criteria(None)
@@ -195,7 +195,7 @@ def test_runner_marks_self_parsed_when_no_project_criteria(monkeypatch):
 
 
 def _run_worker(project_id: str, request_id: str, payload: dict) -> None:
-    import server.tender.worker as worker
+    from server.tender import worker
 
     async def fake_eval(**kwargs):
         from server.stores.result_store import archive_result_payload

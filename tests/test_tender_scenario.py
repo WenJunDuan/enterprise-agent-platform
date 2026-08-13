@@ -4,7 +4,6 @@ import uuid
 
 from fastapi.testclient import TestClient
 
-
 _TOKEN = "test-fake-token-acme-tender-scenario"
 _AUTH = {"Authorization": f"Bearer {_TOKEN}"}
 

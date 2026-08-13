@@ -9,7 +9,6 @@ from scripts import smoke_document_formats as smoke
 from server.ocr.formats import ALL_SUPPORTED_SUFFIXES
 from server.routes.upload_helpers import validate_document_upload
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 REAL_FIXTURES = PROJECT_ROOT / "scripts" / "document_format_fixtures"
 

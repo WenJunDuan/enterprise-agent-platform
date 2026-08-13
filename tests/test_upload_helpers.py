@@ -14,10 +14,9 @@ from server.routes.upload_helpers import (
     build_case_dir,
     materialize_upload_submission,
     tenant_submission_root,
-    validate_document_upload,
     validate_directory_case_path,
+    validate_document_upload,
 )
-
 
 # ── build_case_dir 路径构造 ────────────────────────────────────────────────────
 

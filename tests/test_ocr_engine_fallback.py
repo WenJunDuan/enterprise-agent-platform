@@ -10,9 +10,7 @@ from contextlib import contextmanager
 
 import pytest
 
-from server.ocr import OcrDependencyError
-from server.ocr import cache, engine
-from server.ocr import page_render_worker
+from server.ocr import OcrDependencyError, cache, engine, page_render_worker
 
 
 class _VlmResponse:

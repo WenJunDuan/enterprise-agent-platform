@@ -11,10 +11,11 @@ from typing import Any
 
 import pytest
 
+import server.common.output_contracts as _oc
+
 # ── 防止 server.core 模块级 offline_guard_error 在 build_options 时炸测试 ─────
 # configure_claude_runtime_env() 只写 env vars，ensure_local_layout() 只建目录，均安全。
 # offline_guard_error 在 build_options() 内调用，纯函数测试不会触达，无需 mock。
-
 from server.core import (
     DEFAULT_OUTPUT_SCHEMA_NAME,
     INIT_RULES_REPORT_SCHEMA_NAME,
@@ -27,7 +28,6 @@ from server.core import (
     resolve_output_schema_path,
     validate_structured_output_semantics,
 )
-import server.common.output_contracts as _oc
 
 
 @pytest.fixture(autouse=True)

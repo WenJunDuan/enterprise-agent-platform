@@ -6,9 +6,10 @@ import json
 import logging
 import os
 import urllib.parse
+from collections.abc import Mapping, MutableMapping
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Any, Mapping, MutableMapping
+from typing import Any
 
 from dotenv import load_dotenv
 

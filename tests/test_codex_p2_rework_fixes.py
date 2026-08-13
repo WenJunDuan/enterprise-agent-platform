@@ -14,8 +14,6 @@ Findings:
 
 from __future__ import annotations
 
-from server.tender import doc_layer  # noqa: E402  (H3: 读层拆出后测试改打这里)
-
 import asyncio
 import io
 import os
@@ -24,6 +22,8 @@ import uuid
 
 import pytest
 from fastapi.testclient import TestClient
+
+from server.tender import doc_layer  # noqa: E402  (H3: 读层拆出后测试改打这里)
 
 _TOKEN = "test-fake-token-p2-rework"
 _AUTH = {"Authorization": f"Bearer {_TOKEN}"}
@@ -267,10 +267,10 @@ def test_p11_multiple_bids_only_current_bid_in_context(monkeypatch):
 
 def test_p11_bid_id_passed_through_schedule_to_worker(monkeypatch):
     """schedule_tender_evaluation_task accepts and passes bid_id."""
-    import server.tender.worker as worker
-
     # The schedule function must accept bid_id and pass it to execute_tender_evaluation_task
     import inspect
+
+    from server.tender import worker
 
     sig = inspect.signature(worker.schedule_tender_evaluation_task)
     assert "bid_id" in sig.parameters, (
@@ -290,7 +290,7 @@ def test_p12_upload_ocr_tasks_strong_ref_set_exists():
     assert hasattr(sched, "_UPLOAD_OCR_TASKS"), (
         "_UPLOAD_OCR_TASKS strong-ref set must exist in server/ocr/prewarm_scheduler.py"
     )
-    assert isinstance(getattr(sched, "_UPLOAD_OCR_TASKS"), set)
+    assert isinstance(sched._UPLOAD_OCR_TASKS, set)
 
 
 def test_p12_upload_ocr_semaphore_exists():

@@ -6,14 +6,14 @@ import os
 import signal
 import time
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from server.platform.paths import (
     APP_SERVER_PID_FILE,
     APP_SERVER_STATUS_FILE,
-    latest_app_server_log_path,
     ensure_local_layout,
+    latest_app_server_log_path,
 )
 from server.platform.storage import append_json_file, load_json_file
 
@@ -39,7 +39,7 @@ class RuntimeProcessRecord:
 
 
 def utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def write_runtime_record(record: RuntimeProcessRecord) -> None:
@@ -116,8 +116,8 @@ def stop_process(pid: int, timeout_seconds: float = 10.0) -> bool:
     except ProcessLookupError:
         return True
 
-    deadline = datetime.now(timezone.utc).timestamp() + timeout_seconds
-    while datetime.now(timezone.utc).timestamp() < deadline:
+    deadline = datetime.now(UTC).timestamp() + timeout_seconds
+    while datetime.now(UTC).timestamp() < deadline:
         if not process_is_running(pid):
             return True
         time.sleep(0.2)

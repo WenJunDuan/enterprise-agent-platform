@@ -221,8 +221,10 @@ def extract_boq_summary(
         # 注意：不以 ``###`` 开头（build_extraction_block 已加 ``### 文件:`` 头，本块是 body，
         # 避免与 R1 _FILE_RE 文件头解析混淆）。
         out: list[str] = [
-            f"[本块为 BOQ 结构化摘要] {name} 原文过大（{len(full_body)} 字符），"
-            "已按结构抽取关键金额，未全文注入。"
+            (
+                f"[本块为 BOQ 结构化摘要] {name} 原文过大（{len(full_body)} 字符），"
+                "已按结构抽取关键金额，未全文注入。"
+            )
         ]
 
         chosen_value: float | None = None

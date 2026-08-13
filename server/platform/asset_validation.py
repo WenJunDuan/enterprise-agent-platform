@@ -10,7 +10,6 @@ from jsonschema import ValidationError, validate
 
 from server.platform.paths import PROJECT_ROOT
 
-
 RULE_SCHEMA_PATH = PROJECT_ROOT / "knowledge" / "_schema" / "rule.schema.json"
 MEMORY_SCHEMA_PATH = PROJECT_ROOT / "knowledge" / "_schema" / "case-memory.schema.json"
 KNOWLEDGE_ROOT = PROJECT_ROOT / "knowledge"

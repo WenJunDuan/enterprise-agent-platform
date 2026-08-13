@@ -26,6 +26,7 @@ def test_tender_output_independently_importable():
         [sys.executable, "-c", "import server.tender.output"],
         capture_output=True,
         text=True,
+        check=False,
     )
     assert result.returncode == 0, result.stderr
 
@@ -353,7 +354,9 @@ def test_package_import_registers_tender_schema():
         "assert TENDER_OUTPUT_SCHEMA_NAME in _SCHEMA_PROCESSORS, "
         "'server.tender import did not self-register the tender schema processor'\n"
     )
-    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    result = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, check=False
+    )
     assert result.returncode == 0, result.stderr
 
 
@@ -368,5 +371,7 @@ def test_cli_import_registers_tender_schema():
         "assert TENDER_OUTPUT_SCHEMA_NAME in _SCHEMA_PROCESSORS, "
         "'importing server.cli did not self-register the tender schema processor'\n"
     )
-    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    result = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, check=False
+    )
     assert result.returncode == 0, result.stderr

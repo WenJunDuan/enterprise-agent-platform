@@ -9,7 +9,6 @@ import pytest
 
 from server.common.agent_bridge import build_options
 
-
 _OCR_PREFIX = "uv run python .claude/skills/ocr-page/ocr.py"
 
 
@@ -176,7 +175,7 @@ def test_case_root_is_explicitly_forwarded_through_command_adapter(monkeypatch, 
 def test_tender_runner_binds_directory_as_case_root(monkeypatch, tmp_path):
     from types import SimpleNamespace
 
-    import server.tender.runner as runner
+    from server.tender import runner
 
     captured: dict[str, object] = {}
 

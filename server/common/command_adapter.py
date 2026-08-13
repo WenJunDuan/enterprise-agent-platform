@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from server.common.agent_bridge import run_agent_full
 from server.common.json_bridge import run_agent_json
@@ -15,7 +16,7 @@ def _serialize_command_argument(argument: str) -> str:
     if not normalized:
         return ""
     if any(char.isspace() for char in normalized) or any(
-        char in normalized for char in {'"', "\\"}
+        char in normalized for char in ('"', "\\")
     ):
         return json.dumps(normalized, ensure_ascii=False)
     return normalized

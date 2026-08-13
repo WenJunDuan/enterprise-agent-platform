@@ -28,7 +28,7 @@ def _fake_meta(request_id: str) -> AgentRunMeta:
 
 
 def test_run_tender_evaluation_forwards_bid_id(monkeypatch):
-    import server.tender.runner as runner
+    from server.tender import runner
 
     calls: dict = {}
 
@@ -55,7 +55,7 @@ def test_run_tender_evaluation_forwards_bid_id(monkeypatch):
 
 def test_run_tender_evaluation_without_bid_id_degrades_safely(monkeypatch):
     """散单 / 非 prewarm 场景 bid_id=None：不崩，透传 None。"""
-    import server.tender.runner as runner
+    from server.tender import runner
 
     calls: dict = {}
 

@@ -9,14 +9,14 @@ import os
 import re
 import shutil
 import sys
+from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
-from datetime import datetime
-from pathlib import Path as _Path
-from datetime import timezone
+from datetime import UTC, datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import Any, Iterator, Literal
+from pathlib import Path as _Path
+from typing import Any, Literal
 
 from server.platform.config import _env_int
 from server.platform.paths import APP_LOG_DIR, dated_log_path
@@ -124,7 +124,7 @@ def install_access_log_filter() -> None:
 class _JSONFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         payload = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),
@@ -143,7 +143,7 @@ class _JSONFormatter(logging.Formatter):
 class _KVFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         parts = [
-            f"timestamp={datetime.now(timezone.utc).isoformat()}",
+            f"timestamp={datetime.now(UTC).isoformat()}",
             f"level={record.levelname}",
             f"logger={record.name}",
             f"message={json.dumps(record.getMessage(), ensure_ascii=False)}",

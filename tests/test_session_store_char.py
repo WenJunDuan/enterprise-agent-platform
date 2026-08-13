@@ -117,7 +117,6 @@ class TestAppendAndResolveSessionRecord:
         the delegating functions look up SESSION_STORE in session_queries's namespace.
         """
         import server.stores.session_queries as sq
-
         from server.stores.session_store import SQLiteSessionStore
 
         db_path = tmp_path / "sessions.db"

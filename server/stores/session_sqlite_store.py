@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from server.platform.sqlite_store import connect_sqlite, describe_sqlite_target, row_to_dict
 from server.stores.session_records import SessionRecord
@@ -13,7 +13,7 @@ from server.stores.session_records import SessionRecord
 class SQLiteSessionStore:
     """SQLite-backed session repository (the session index in platform.sqlite3)."""
 
-    COLUMNS = [
+    COLUMNS: ClassVar[list[str]] = [
         "request_id",
         "conversation_id",
         "claude_session_id",

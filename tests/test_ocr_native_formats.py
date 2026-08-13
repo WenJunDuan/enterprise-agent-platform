@@ -6,9 +6,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from server.ocr import formats, native
+from server.ocr import draft_render, formats, native, pipeline
 from server.ocr.classify import classify
-from server.ocr import draft_render, pipeline
 from server.routes.upload_helpers import validate_document_upload
 
 
