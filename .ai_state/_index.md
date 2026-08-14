@@ -55,7 +55,7 @@ counts:
   cleanup_count: 7
   compound:
     learning: 16
-    trick: 2
+    trick: 3
     decision: 8
     explore: 2
 # === Pointers (指向最新相关文件) ===
@@ -66,7 +66,7 @@ pointers:
   latest_brainstorm: ""
   latest_decisions: ["compound/2026-07-20-decision-ocr-as-standalone-service.md", "compound/2026-07-16-decision-carve-f6-schema-split-from-d2.md", "compound/2026-07-16-decision-schema-split-tender.md", "compound/2026-07-15-decision-ocr-service-layer.md", "compound/2026-07-02-decision-ocr-routing-ladder.md"]
   latest_lessons: ["compound/2026-08-14-learning-prompt-budget-must-be-per-session.md", "compound/2026-08-13-learning-design-budget-must-account-own-mandates.md", "compound/2026-08-12-learning-review-chain-catches-fix-induced-p0.md", "compound/2026-07-30-learning-document-ingestion-deployment-evidence.md", "compound/2026-07-18-learning-prompt-gate-contradiction-literal-model.md"]
-  latest_architecture_update: "2026-08-14T08:46:55.396Z"
+  latest_architecture_update: "2026-08-14T09:26:47.542Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
 next_action: "【2026-08-14 D4a design 送审】sprint=2026-08-14-l2-model-routing path=Feature stage=design。用户拍板：L2 路由先扩建本仓 server/ocr，调用方继续进程内调本工程 OCR；独立服务降为 D4c。设计档 sprints/2026-08-14-l2-model-routing/design.md。下一步：Fable 5 review 该 design（写入 ## Round 1 · Critic Findings）。PASS 后再派 impl。勿在 review 前改 server/ocr。"

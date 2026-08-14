@@ -38,6 +38,12 @@ app (api/cli) → routes → ops → features(audit|tender) → ocr(服务层) �
   `server/common/corpus.py`（通用语料原语）+ `server/tender/evidence.py`（tender resolve + scoring 助手）；
   共享 audit-result 三函数 generic/tender 分家，expense/audit 不再跑 tender 校验。**tender 逻辑至此全部归位
   `server/tender/`，`common/` 零 tender 依赖。** 见 `compound/2026-07-16-decision-carve-f6-schema-split-from-d2.md`。
+- **2026-08-14 爆窗事故后收口**：`runner.py`(419) 纯移动拆出 `doc_context.py`(122，底稿获取/OCR 完整性
+  告警/`_index` 状态读取) 与 `criteria_context.py`(45，criteria 注入块拼装)；预算闸 `_bound_ocr_block`
+  与重试环留 runner.py（拆分边界=测试打桩面 + logger 名保持，见
+  `compound/2026-08-14-trick-runner-split-pure-move.md`）。确定性失败判定 `is_non_retryable`
+  上提 `server/common/contract.py`，tender/audit-runner/audit-direct 三条契约重试环共用
+  （`Prompt is too long` 命中即抛不重试，issue 档 `issues/2026-08-14-tender-context-overflow/`）。
 - **D8 底稿瘦身（transcript-slimming，merge be85ec0）**：新增 `server/tender/context_slim.py`——按项目 criteria
   检索招标文件相关章节（内存 FTS5，复用 D6 `docstructure` + D7 `rag`），替代全量 32 万 token 灌注；`runner.py`
   loader 由 `TENDER_SLIM_CONTEXT`（默认关）门控，flag off = 同一 `_load_doc_layer_context` 函数对象、行为逐字节不变。
