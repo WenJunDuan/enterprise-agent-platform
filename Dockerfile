@@ -17,11 +17,17 @@ ARG APP_GID=1000
 # 文档识别(multi-ocr)依赖开关。默认 0=不装，保持 audit-only 镜像精简；
 # 构建带 OCR 的镜像用 --build-arg WITH_OCR=1（镜像 +~GB）。
 ARG WITH_OCR=0
+# pip 索引源。内网部署机实测：直连 pypi.org 被重置（`Recv failure: 连接被对方重置`），
+# 经代理同样不通，清华镜像直连 200 —— 故默认走镜像，能直连 pypi 的环境用
+# `--build-arg PIP_INDEX_URL=https://pypi.org/simple` 覆盖即可。
+ARG PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_INDEX_URL=${PIP_INDEX_URL} \
+    PIP_DEFAULT_TIMEOUT=120 \
     HOME=/home/app
 
 WORKDIR /app
