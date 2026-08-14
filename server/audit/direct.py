@@ -30,7 +30,7 @@ from anthropic import (
     RateLimitError,
 )
 
-from server.common.contract import apply_schema_semantics
+from server.common.contract import apply_schema_semantics, is_non_retryable
 from server.core import AgentRunMeta, StructuredJSON, _extract_json_object
 from server.platform.config import configure_claude_runtime_env, resolve_model_max_output_tokens
 from server.stores.result_store import archive_result_payload
@@ -228,7 +228,10 @@ async def _run_contract_retry_loop(
             structured = apply_schema_semantics(schema_name, parsed, request_id=request_id)
         except Exception as exc:  # noqa: BLE001 — 契约类失败集合（半截 JSON/schema/语义闸），非传输故障
             last_error = exc
-            if attempt >= contract_max_retry:
+            # 确定性失败立即收口（2026-08-14 事故同型）：重发同一 prompt 结果必然相同。
+            # 仍包成 DirectContractError——调用方据此**不回落** CLI 路径（同一超长 prompt
+            # 换路径同样超长），与既有"契约类不回落"语义一致。判定与 tender 共用。
+            if is_non_retryable(exc) or attempt >= contract_max_retry:
                 raise DirectContractError(str(exc)) from exc
             logger.warning(
                 "audit direct-connect attempt failed (%s, %d/%d), retrying: %s",

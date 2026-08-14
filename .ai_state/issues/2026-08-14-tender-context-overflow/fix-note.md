@@ -104,6 +104,67 @@ FAILED tests/test_tender_retry_non_retryable.py::test_non_retryable_marker_short
 两处同样会把 `Prompt is too long` 当可重试错误。修法可直接复用 `_is_non_retryable`，
 但 `NON_RETRYABLE_MARKERS` 届时应上提到 `server/common/`（出现第二个消费者才抽象，铁律[反过度工程]）。
 
+## audit 侧同型修复（2026-08-14 后续）
+
+上面那条待办的兑现：第二个消费者出现 → 判定按既定方案上提，audit 两处同型循环接入。
+
+**上提位置**：`server/common/contract.py`（`JSONContractError` 定义处，紧随其后）——
+`NON_RETRYABLE_MARKERS` + **`is_non_retryable(exc)`**（去下划线转公开 API，含 docstring）。
+不新建文件的理由：被判定的正是本模块定义的契约失败，三个消费者全是契约重试环；
+`contract.py` 274 → 295 行，仍在 300 行内，新建文件只会多一次跳转。
+`server/tender/runner.py` 删掉本地常量与 `_is_non_retryable`，改引用，调用点语义逐字不变。
+
+**接入点**：
+- `server/audit/runner.py`（CLI 路径重试环）：命中即 `raise`，与 tender 同款两段式（先判确定性、再判次数用尽）。
+- `server/audit/direct.py`（直连路径契约重试环）：命中即 `raise DirectContractError(...)`——
+  仍走"契约类不回落 CLI"的既有语义（同一超长 prompt 换路径同样超长），不新增异常类型。
+
+### 红 → 绿
+
+新测试 `tests/test_audit_retry_non_retryable.py`（5 条）。
+
+红一（判定还没上提，整文件 collect 失败）：
+
+```
+ImportError: cannot import name 'is_non_retryable' from 'server.common.contract'
+ERROR tests/test_audit_retry_non_retryable.py
+1 error in 0.07s
+```
+
+红二（`common` 已加判定、两处循环**未**接入 → 循环行为暴露）：
+
+```
+>       assert len(attempts) == 1
+E       AssertionError: assert 3 == 1
+E        +  where 3 = len(['rid-audit-cli', 'rid-audit-cli', 'rid-audit-cli'])
+WARNING  server.audit.runner:runner.py:238 audit attempt failed (JSONContractError, 1/3), retrying: ...
+>       assert len(attempts) == 1
+E       AssertionError: assert 3 == 1
+E        +  where 3 = len(['model-test', 'model-test', 'model-test'])
+WARNING  server.audit.direct:direct.py:233 audit direct-connect attempt failed (JSONContractError, 1/3), retrying: ...
+FAILED tests/test_audit_retry_non_retryable.py::test_cli_path_raises_prompt_too_long_on_first_attempt
+FAILED tests/test_audit_retry_non_retryable.py::test_direct_path_raises_prompt_too_long_on_first_attempt
+2 failed, 3 passed in 0.56s
+```
+
+（3 条通过的是对照：判定本身大小写不敏感；两条路径的**其余**契约失败仍重试满
+`contract_max_retry + 1` 次。）
+
+绿：`35 passed`（新文件 5 + tender 同型 4 + `test_audit_direct_connect` + `test_audit_runner` 合跑）。
+tender 既有 4 条**零修改**通过，即"行为逐字不变"的证据。
+
+### 行数（改前 → 改后）
+
+| 文件 | 改前 | 改后 |
+|---|---|---|
+| `server/common/contract.py` | 274 | 295（+21，判定新家） |
+| `server/audit/runner.py` | 247 | 252（+5：import 1 + 判定 2 + 注释 2） |
+| `server/audit/direct.py` | 296 | 299（+3：判定并进既有 if + 注释 3，import 复用同一行） |
+| `server/tender/runner.py` | 419 | 408（−11，删本地重复） |
+
+audit 两文件无本地重复逻辑可删，故是近零增而非净减；`direct.py` 299 行已贴 300 线，
+后续任何新增须先拆分。
+
 ## 验证与影响面
 
 - 全量：`uv run pytest -q -p no:randomly` → `34 failed, 1347 passed, 3 skipped`；

@@ -30,6 +30,27 @@ class JSONContractError(ValueError):
     """Raised when a Claude response does not satisfy the JSON contract."""
 
 
+# 确定性失败标记（2026-08-14 生产事故）：这类错误把同一个 prompt 原样重发必然同样失败，
+# 重试纯浪费，还把真因（上下文爆窗）埋在几条一模一样的重试日志后面。JSONContractError 不带
+# subtype——它在 server/common/json_bridge.py 里用 ResultMessage.result 的原文构造，故只能按
+# 消息子串识别；子串取自事故日志的网关错误原文 "Prompt is too long"。
+# 定义在 common：tender/audit 三处契约重试环共用同一判定（2026-08-14 后续，第二个消费者出现）。
+NON_RETRYABLE_MARKERS = ("Prompt is too long",)
+
+
+def is_non_retryable(exc: Exception) -> bool:
+    """Return True when re-sending the identical prompt cannot possibly succeed.
+
+    Args:
+        exc: 契约重试环里捕获的异常（消息可能是网关透出的原文）。
+
+    Returns:
+        命中 ``NON_RETRYABLE_MARKERS`` 任一标记（大小写不敏感）为 True。
+    """
+    message = str(exc).lower()
+    return any(marker.lower() in message for marker in NON_RETRYABLE_MARKERS)
+
+
 def resolve_output_schema_path(schema_name: str) -> Path:
     """Resolve a schema path under `.claude/contracts` without allowing path escape."""
     schema_path = (CONTRACTS_DIR / schema_name).resolve()
