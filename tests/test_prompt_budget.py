@@ -6,7 +6,17 @@
 `.claude/skills/tender-eval/references/`。上界确需调整时，走 PR 显式改本文件常量并说明理由
 （棘轮机械化：只有改常量这一个入口，防"每出一次事故加一段"把命令重新撑回 38KB）。
 
-上界取值 = 2026-08-12/13 实测字节 + 约 15% 余量；`tender-evaluate.md` 取重构后目标值 15,000。
+上界取值 = 2026-08-12/13 实测字节 + 约 15% 余量。
+
+**2026-08-14 生产事故后的重要修正**：本门禁只约束**单文件字节**，不约束**一次会话累计注入
+上下文的总量**——两者可以反向。prompt-architecture 重构把本文件从 38,754B 降到 12,442B（门禁
+显示"瘦身 68%"全绿），但真实落进上下文的脚手架总量 = 命令正文 + 6 条强制 Read 的 references
+(34,585B) + CLAUDE.md，从 48,706B **涨到** 55,439B（+13.8%），且峰值时刻从会话开头挪到了产出
+JSON 之前。在窗口远小于 Claude 的内网模型（DeepSeek Flash 等）上直接 `Prompt is too long`，
+四次评标全部无结论。故 `tender-evaluate.md` 已回滚到 38,754B 单文件形态，上界随之复原。
+
+下一版重设结构前必须先解决：预算判据要改成「单会话累计注入字节 vs **部署的最小窗口模型**」，
+而不是单文件字节。详见 .ai_state/compound/2026-08-14-learning-prompt-budget-must-be-per-session.md。
 """
 
 from __future__ import annotations
@@ -21,7 +31,9 @@ CLAUDE_DIR = PROJECT_ROOT / ".claude"
 
 # 文件 → 字节上界。实测值见 .ai_state/sprints/2026-08-12-prompt-architecture/design.md「已验证基线」。
 PROMPT_BUDGETS: dict[str, int] = {
-    ".claude/commands/tender-evaluate.md": 15_000,  # 重构后 12,442（界前 38,754）
+    # 2026-08-14 回滚至单文件形态：实测 38,754（重构版 12,442 因会话累计上下文反而更大而回退，
+    # 见模块 docstring）。此上界是"守住不再变长"，不是"允许长"——重设结构时按新判据重取。
+    ".claude/commands/tender-evaluate.md": 40_000,
     ".claude/commands/tender-compare.md": 8_200,  # 实测 7,132
     ".claude/commands/tender-extract-info.md": 6_800,  # 实测 5,871
     ".claude/commands/audit.md": 5_300,  # 实测 4,584

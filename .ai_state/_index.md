@@ -4,14 +4,14 @@
 version: "9.6.4"
 
 # === PACE 路由状态 ===
-path: "Refactor" # 2026-08-12 prompt-architecture: 提示词热路径下沉+语义单源+预算门禁+skill清理(第三方审计四项), Fable 设计/opus 实施
-stage: "ship"
-current_sprint_slug: "2026-08-12-prompt-architecture"
-current_roadmap_slug: ""
+path: "Feature" # 2026-08-14 D4a: 进程内 L2 EngineRegistry（用户拍板先扩建 server/ocr，不先拆服务）
+stage: "design"
+current_sprint_slug: "2026-08-14-l2-model-routing"
+current_roadmap_slug: "2026-07-doc-intelligence"
 skip_polish: false
 skip_architecture_check: false
 skip_impl_subagent_check: false # (已随 program ship 释放; 当时理由: subagent-assignments.jsonl 握手台账 hook 未落(结构性问题见 proposals.md P14); events/log 台账在, 各 sprint tdd-evidence+三轮 review 链为实质证据, 不伪造派工记录
-skip_runtime_verify: true # prompt-architecture ship 释放(2026-08-13): runtime_verify=deferred, 评审授权链=pass1-F2→evaluator 最小解锁清单 2(b)→pass2 PASS 认定非静默假过; 4 待验项见 sprints/2026-08-12-prompt-architecture/runtime-verify.md(标准档)+evidence/runtime-verify-defer.md(实体), 与 tender-eval-hardening 四项同窗部署机跑, 窗口打开后跑完落 evidence/runtime-smoke.md 再释放本标志
+skip_runtime_verify: false # Feature 可选; 本 sprint 无真模型窗口，runtime-verify 不列入 Done Contract（AC 全是单测）
 
 # === 平台与版本 ===
 platforms_enabled: ["cc"]
@@ -47,29 +47,29 @@ tools_available:
 
 # === 进度计数 (index-updater hook 自动维护, 不手填) ===
 counts:
-  features_count: 2
+  features_count: 3
   issues_count: 0
   refactors_count: 1
   systems_count: 10
   reviews_count: 77
   cleanup_count: 7
   compound:
-    learning: 15
+    learning: 16
     trick: 2
     decision: 8
     explore: 2
 # === Pointers (指向最新相关文件) ===
 pointers:
-  latest_design: "sprints/2026-08-12-prompt-architecture/design.md" # 含实施期修订块(预算表 700→750/L219 悬空名更正/AC3 表述统一, pass2 增量重核覆盖)
+  latest_design: "sprints/2026-08-14-l2-model-routing/design.md" # D4a 送审稿，待 Fable 5 review
   latest_review: "sprints/2026-08-12-prompt-architecture/reviews/pass2.md" # pass1 CONCERNS(F1 evidence/F2 runtime)→修复→pass2 增量重核→PASS
   latest_cleanup: "sprints/2026-08-12-prompt-architecture/cleanup-pass.md"
   latest_brainstorm: ""
   latest_decisions: ["compound/2026-07-20-decision-ocr-as-standalone-service.md", "compound/2026-07-16-decision-carve-f6-schema-split-from-d2.md", "compound/2026-07-16-decision-schema-split-tender.md", "compound/2026-07-15-decision-ocr-service-layer.md", "compound/2026-07-02-decision-ocr-routing-ladder.md"]
-  latest_lessons: ["compound/2026-08-13-learning-design-budget-must-account-own-mandates.md", "compound/2026-08-12-learning-review-chain-catches-fix-induced-p0.md", "compound/2026-07-30-learning-document-ingestion-deployment-evidence.md", "compound/2026-07-18-learning-prompt-gate-contradiction-literal-model.md", "compound/2026-07-18-learning-lazy-import-behavioral-seam.md"]
+  latest_lessons: ["compound/2026-08-14-learning-prompt-budget-must-be-per-session.md", "compound/2026-08-13-learning-design-budget-must-account-own-mandates.md", "compound/2026-08-12-learning-review-chain-catches-fix-induced-p0.md", "compound/2026-07-30-learning-document-ingestion-deployment-evidence.md", "compound/2026-07-18-learning-prompt-gate-contradiction-literal-model.md"]
   latest_architecture_update: "2026-08-13T08:44:06.388Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "【2026-08-13 prompt-architecture 已 SHIP】15 commits FF 合入 main(ec062ce): KD1 骨架 38,754B→12,442B+5 references / KD2 pending_reason 单源(output.py 惰性 loader) / KD3 test_prompt_budget 预算门禁 / KD4 空壳处置(D4 拒删 7 个真实子 skill)。review 链: pass1 CONCERNS→修复(beb1ce3)→pass2 增量→PASS; polish 清 F4/F5/N1+架构档 system-prompt-architecture.md。遗留→部署机窗口: ①runtime-verify 4 待验项(evidence/runtime-verify-defer.md, 与 tender-eval-hardening 四项同窗) ②AC7 eval 基线三数字 A/B(决定是否推广 expense 域)。依赖: 安全批(lockfile 刷新+pymupdf/pypdf)已批准执行中(opus worktree); MAJOR 四项(ts7/react-table9/framer-motion13/@types/node26)待用户决策; paddle 系禁动(部署机配套)。改 tender-evaluate 规则前先读 architecture/system-prompt-architecture.md(骨架 vs references 判据+预算棘轮流程)。"
+next_action: "【2026-08-14 D4a design 送审】sprint=2026-08-14-l2-model-routing path=Feature stage=design。用户拍板：L2 路由先扩建本仓 server/ocr，调用方继续进程内调本工程 OCR；独立服务降为 D4c。设计档 sprints/2026-08-14-l2-model-routing/design.md。下一步：Fable 5 review 该 design（写入 ## Round 1 · Critic Findings）。PASS 后再派 impl。勿在 review 前改 server/ocr。"
 last_subagent: "codex-exec" # tender-report-dimensions D0-D5 headless (codex 0.142.1, gpt-5.5)；必须 env -u HTTP_PROXY -u HTTPS_PROXY 否则 streaming API 挂起，见 compound/2026-06-25-trick-codex-proxy-hangs-streaming.md
 last_subagent_at: "2026-06-25T00:00:00.000Z"
 active_worktrees: [] # 原条目是远端机器(/Users/mac/...)的 worktree，本机不存在，2026-08-11 清理
