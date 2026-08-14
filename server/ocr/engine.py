@@ -31,7 +31,7 @@ from collections.abc import Callable
 from io import BytesIO
 from pathlib import Path
 
-from server.ocr import OcrDependencyError, OcrError, vlm_client
+from server.ocr import OcrDependencyError, OcrError, cloud_chunk, vlm_client
 from server.ocr.locks import FITZ_LOCK, PADDLE_LOCK
 
 # PaddleOCR-VL 完整 pipeline 可选启用；默认由 LiteLLM/OpenAI-compatible 端点做整页识别。
@@ -76,6 +76,11 @@ _VLM_SEMAPHORE = threading.BoundedSemaphore(_VLM_MAX_CONCURRENCY)
 _VLM_RETRY_BACKOFF_SEC = 2.0
 
 OCR_MAX_PDF_PAGES = _positive_int_env("OCR_MAX_PDF_PAGES", 500)
+# 云 job API 单次上传的页数上限，超过则按页分片（2026-08-14 P0：43.2 MB / 400 页整包上传被
+# 服务端拒绝，投标文件完全读不出）。默认值的实测出处见 ``cloud_chunk.DEFAULT_CHUNK_PAGES``。
+OCR_CLOUD_CHUNK_PAGES = _positive_int_env(
+    "OCR_CLOUD_CHUNK_PAGES", cloud_chunk.DEFAULT_CHUNK_PAGES
+)
 OCR_MAX_PAGE_PIXELS = _positive_int_env("OCR_MAX_PAGE_PIXELS", 25_000_000)
 OCR_MAX_TEMP_BYTES = _positive_int_env("OCR_MAX_TEMP_BYTES", 536_870_912)
 OCR_MAX_IMAGE_BYTES = _positive_int_env("OCR_MAX_IMAGE_BYTES", 32 * 1024 * 1024)
@@ -801,20 +806,8 @@ def _parse_cloud_jsonl(jsonl_text: str) -> list[dict]:
     return pages
 
 
-def _recognize_via_paddle_cloud(
-    path: Path, *, purpose: str | None = None, content: bytes | None = None
-) -> dict:
-    """线上 PaddleOCR-VL 云服务（aistudio job API）：建 job → 轮询 → 取 jsonl。
-
-    协议与 OpenAI 兼容路径完全不同（异步 job-poll）。服务端切页+版面，**无需本地渲染/本地 paddleocr**。
-    失败/超时抛异常由 pipeline per-file 隔离（→ kind=error / file_clarity=failed），绝不静默。
-
-    注：purpose 对云 job API 暂不生效——服务端固定版面+OCR，不接受自定义 prompt；
-    保留参数统一调用链，待云服务支持识别提示再启用。
-    """
-    _ = purpose  # 云路径暂无 prompt 注入点（见 docstring），显式忽略避免误导。
-    if not OCR_VL_SERVER_URL or not OCR_VL_API_KEY:
-        raise OcrDependencyError("OCR_CLOUD=1 但 OCR_VL_SERVER_URL / OCR_VL_API_KEY 未配置")
+def _cloud_fetch_pages(path: Path, *, content: bytes | None = None) -> list[dict]:
+    """一次上传单元：建 job → 轮询 → 取 jsonl → 解析成页列表（页号为本次上传的顺序号）。"""
     try:
         job_id = _cloud_submit_job(path, content=content)
         jsonl_url = _cloud_poll_until_done(job_id)
@@ -824,17 +817,57 @@ def _recognize_via_paddle_cloud(
         ) as response:
             jsonl_text = response.read().decode("utf-8")
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+        # from exc 保留 HTTPError.code——cloud_chunk 据此区分"限流可重试"与"确定性失败"。
         raise OcrError(f"PaddleOCR 云调用失败：{exc}") from exc
-    return {
+    return _parse_cloud_jsonl(jsonl_text)
+
+
+def _cloud_result(pages: list[dict], *, partial: bool = False) -> dict:
+    result = {
         "kind": "ocr",
         "pipeline_version": OCR_VL_PIPELINE_VERSION,
         "engine": "paddleocr-cloud",
-        # 页号是**云返回结果的顺序号**（_parse_cloud_jsonl 跨行累加），不是文档页号——云端跳页/
-        # 合并即全局平移。标出坐标系，pipeline._guard_cloud_page_count 据此比对 classify 页数，
-        # 不一致则整份 page_confidence=low（H2 KD1 cloud_seq）。
+        # 页号是**云返回结果的顺序号**（_parse_cloud_jsonl 跨行累加；分片路径再叠加本片起始页
+        # 偏移），不是文档页号——云端跳页/合并即平移。标出坐标系，pipeline._guard_cloud_page_count
+        # 据此比对 classify 页数，不一致则整份 page_confidence=low（H2 KD1 cloud_seq）。
         "page_artifact": "cloud_seq",
-        "pages": _parse_cloud_jsonl(jsonl_text),
+        "pages": pages,
     }
+    if partial:
+        # 有片失败已折成 [识别失败] 标记页 → 对下游状态机可见（doc 层落 partial，不冒充 ready）。
+        result["partial"] = True
+    return result
+
+
+def _recognize_via_paddle_cloud(
+    path: Path, *, purpose: str | None = None, content: bytes | None = None
+) -> dict:
+    """线上 PaddleOCR-VL 云服务（aistudio job API）：建 job → 轮询 → 取 jsonl。
+
+    协议与 OpenAI 兼容路径完全不同（异步 job-poll）。服务端切页+版面，**无需本地渲染/本地 paddleocr**。
+    失败/超时抛异常由 pipeline per-file 隔离（→ kind=error / file_clarity=failed），绝不静默。
+
+    超过 ``OCR_CLOUD_CHUNK_PAGES`` 页的 PDF 改走分片上传（2026-08-14 P0：43.2 MB / 400 页整包
+    被服务端拒绝）；阈值以下逐字节走原路径——分片只为绕开服务端大包上限，不改小文件行为。
+
+    注：purpose 对云 job API 暂不生效——服务端固定版面+OCR，不接受自定义 prompt；
+    保留参数统一调用链，待云服务支持识别提示再启用。
+    """
+    _ = purpose  # 云路径暂无 prompt 注入点（见 docstring），显式忽略避免误导。
+    if not OCR_VL_SERVER_URL or not OCR_VL_API_KEY:
+        raise OcrDependencyError("OCR_CLOUD=1 但 OCR_VL_SERVER_URL / OCR_VL_API_KEY 未配置")
+    if content is None and path.suffix.lower() == ".pdf":
+        page_count = cloud_chunk.pdf_page_count(path)
+        if page_count is not None and page_count > OCR_CLOUD_CHUNK_PAGES:
+            pages, partial = cloud_chunk.recognize_pdf_in_chunks(
+                path,
+                page_count=page_count,
+                chunk_pages=OCR_CLOUD_CHUNK_PAGES,
+                extract_subset=extract_pdf_subset,
+                fetch_pages=_cloud_fetch_pages,
+            )
+            return _cloud_result(pages, partial=partial)
+    return _cloud_result(_cloud_fetch_pages(path, content=content))
 
 
 def extract_pdf_subset(path: Path, page_indices: list[int]) -> Path | None:
@@ -845,6 +878,10 @@ def extract_pdf_subset(path: Path, page_indices: list[int]) -> Path | None:
     fitz 缺失 / 渲染失败 → None（调用方据此回退整份云 OCR）；不抛异常以保留回退路径。
 
     fitz 非线程安全，经共享 ``FITZ_LOCK`` 串行化（与 native 直读 / 整页渲染共用同一把锁）。
+
+    存盘必须带 ``garbage=4, deflate=True, clean=True``（2026-08-14 P0）：``insert_pdf`` 会把
+    共享资源（字体/图片）逐页复制进子集，裸存实测 **100 页子集 43.6 MB > 400 页原文件 43.2 MB**；
+    带上三参后 50 页子集 20.3 MB → 3.24 MB。混合 PDF 补扫描页那条既有路径同样受益。
     """
     if not page_indices:
         return None
@@ -865,7 +902,7 @@ def extract_pdf_subset(path: Path, page_indices: list[int]) -> Path | None:
                 fd, name = tempfile.mkstemp(suffix=".pdf")
                 os.close(fd)
                 tmp_path = Path(name)
-                subset.save(str(tmp_path))
+                subset.save(str(tmp_path), garbage=4, deflate=True, clean=True)
             finally:
                 subset.close()
         return tmp_path
