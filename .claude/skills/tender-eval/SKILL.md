@@ -24,9 +24,11 @@ description: Use when 评标、招投标评分、投标文件合规审查，需�
 
 ## 不可判定项 → manual_review（绝不判 0）
 
-评分项命中 `scored` 以外的任一 `tag` 时，该项 `status: "manual_review"`、`score: null`，并使整体 `verdict` 至少为 `manual_review`。**各 `tag` 取值与语义以 `.claude/contracts/tender/criteria.schema.json` 的 `items[].tag` enum + description 为唯一权威**（此处不复述，改语义先改 schema）。
+评分项命中以下任一标签时，该项 `status: "manual_review"`、`score: null`，并使整体 `verdict` 至少为 `manual_review`：
 
-- **例外（G5 固定限价类）**：依招标文件**已载明固定限价**算的价格分（公式变量全为招标常量 + 本家报价，如「每低于最高限价 1% 得 1 分」）是可单家算的 `tag:scored` / `score_mode:formula`，**不走 `requires_cross_bid_comparison` 的 manual**——以 `/tender-evaluate` S3 + `formula_spec` 为准。
+- `requires_live_event`：现场环节，如项目负责人答辩、现场演示——投标文件里没有，不代表得 0。
+- `requires_external_data`：外部数据，如企业信用评价（来自政府 / 行业公示表），不在投标文件内。
+- `requires_cross_bid_comparison`：需横向比较，如**依基准价 / 评标均价 / 最低价的价格分**（须对所有有效投标报价统一计算）。**例外（G5 固定限价类）**：依招标文件**已载明固定限价**算的价格分（公式变量全为招标常量 + 本家报价，如「每低于最高限价 1% 得 1 分」）是可单家算的 `tag:scored` / `score_mode:formula`，**不走本横比 manual**——以 `/tender-evaluate` S3 + `formula_spec` 为准。
 
 ## 资格审查最高优先级
 
