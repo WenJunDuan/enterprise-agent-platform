@@ -68,6 +68,60 @@ TENDER_CONTRACT_MAX_RETRY = int(os.getenv("TENDER_CONTRACT_MAX_RETRY", "2"))
 # 不走全局 build_options 默认 → 不拖慢 audit，codex r4 P1）；env 可调或设非法值走端点默认。
 _TENDER_EFFORT = os.getenv("TENDER_REASONING_EFFORT", "xhigh")
 
+# 底稿注入的**无条件**字节上限（2026-08-14 生产事故）：云 OCR 写超时 → 降级 inline_ocr 把整个
+# case 目录的 OCR 全文注入，无任何长度上限 → 内网 DeepSeek Flash "Prompt is too long"，整单无
+# 结论。已有的 context_slim.bound_tender_context 是**配置态**闸（部署未声明模型窗口/输出预算时
+# 整体不生效，事故当天正是这个状态），故这里再加一道与配置无关的兜底。
+# 默认值推导（按部署矩阵里窗口最小的模型算，不按开发机的 Claude 算）：
+#   窗口下限            64,000 token（DeepSeek / qwen 系内网部署保守估）
+#   - 输出 + 扩展思考     16,000 token（评标默认 effort=xhigh，思考 token 计入输出预算）
+#   - 单次评标脚手架     ~18,500 token（实测提示词 55,439 B，中文按 3 B/字 ≈ 1 token/字，
+#                                      见 compound/2026-08-14-learning-prompt-budget-must-be-per-session.md）
+#   - criteria 注入 + 底稿告警 + 估算误差余量  8,000 token
+#   = 21,500 token ≈ 21,500 汉字 ≈ 64,500 B → 取整 64,000 B
+_DEFAULT_CONTEXT_MAX_BYTES = 64_000
+
+# 截断标记：让模型**看见**底稿被截，从而对被截材料走证据缺失规则，而不是当成"材料未提供"判 0。
+# 标记本身（~120 B）附加在上限之外，故意保证"被截了"这件事一定进上下文。
+_TRUNCATION_NOTICE = (
+    "\n【底稿超出上下文预算，已截断：保留前 {kept} 字节 / 原始 {total} 字节；"
+    "后续内容未注入，涉及被截材料的评分项按证据缺失处理】\n"
+)
+
+
+def _context_max_bytes() -> int:
+    """Return the OCR draft byte budget (reads ``TENDER_CONTEXT_MAX_BYTES`` live)."""
+    return int(os.getenv("TENDER_CONTEXT_MAX_BYTES", str(_DEFAULT_CONTEXT_MAX_BYTES)))
+
+
+def _bound_ocr_block(ocr_block: str, *, request_id: str) -> str:
+    """Cap the OCR draft at the byte budget, cutting on a UTF-8 boundary.
+
+    Args:
+        ocr_block: 待注入的 OCR/直读底稿全文（doc 层复用或 inline OCR 均经此）。
+        request_id: 本次评标请求 id，写进截断告警日志供回溯。
+
+    Returns:
+        未超限时原样返回；超限时返回 ``前 N 字节 + 截断标记``。
+    """
+    limit = _context_max_bytes()
+    raw = ocr_block.encode("utf-8")
+    if len(raw) <= limit:
+        return ocr_block
+    # errors="ignore" 丢掉上限处被切开的半个多字节字符 —— 截断产物严格 UTF-8 可解码。
+    kept = raw[:limit].decode("utf-8", errors="ignore")
+    kept_bytes = len(kept.encode("utf-8"))
+    logger.warning(
+        "tender_context_truncated",
+        extra={
+            "request_id": request_id,
+            "original_bytes": len(raw),
+            "kept_bytes": kept_bytes,
+            "limit_bytes": limit,
+        },
+    )
+    return kept + _TRUNCATION_NOTICE.format(kept=kept_bytes, total=len(raw))
+
 def _ocr_integrity_warnings(
     project_doc: dict | None, bid_doc: dict | None
 ) -> list[dict[str, object]]:
@@ -246,6 +300,11 @@ async def run_tender_evaluation(
         ocr_block = await asyncio.to_thread(
             ocr_preprocess_block, directory_path, purpose=TENDER_OCR_PURPOSE
         )
+
+    # 预算闸：两条来源（doc_layer_reuse / inline_ocr 降级）都过闸——预热底稿理论上同样可能超大。
+    # 闸放在 tender 调用侧而非 server/ocr/：OCR 产物本身该完整，只有"注入给模型"这一步有预算。
+    if ocr_block:
+        ocr_block = _bound_ocr_block(ocr_block, request_id=request_id)
 
     context = (
         f"=== OCR/直读底稿（确定性预处理，优先用此文本，无需再 Read 文件）===\n{ocr_block}"
