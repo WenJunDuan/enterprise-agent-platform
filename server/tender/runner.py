@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from server.common.command_adapter import run_command_json
+from server.common.contract import is_non_retryable
 from server.ocr.pipeline import ocr_preprocess_block
 from server.platform.config import get_tender_eval_settings
 from server.stores.session_store import new_conversation_id
@@ -64,12 +65,6 @@ def _stream_partial_enabled() -> bool:
 # 默认 2（共 3 次尝试，比 audit 的 1 更宽，因 tender 输出更易 flaky）；OCR 预处理只做一次不重跑。
 TENDER_CONTRACT_MAX_RETRY = int(os.getenv("TENDER_CONTRACT_MAX_RETRY", "2"))
 
-# 确定性失败标记（2026-08-14 生产事故）：这类错误把同一个 prompt 原样重发必然同样失败，
-# 重试纯浪费，还把真因（上下文爆窗）埋在三条一模一样的重试日志后面。JSONContractError 不带
-# subtype——它在 server/common/json_bridge.py 里用 ResultMessage.result 的原文构造，故只能按
-# 消息子串识别；子串取自事故日志的网关错误原文 "Prompt is too long"。
-NON_RETRYABLE_MARKERS = ("Prompt is too long",)
-
 # 评标推理强度（extended thinking）：评标是高难合规判断，默认 xhigh 压 deepseek 随机性（per-call，
 # 不走全局 build_options 默认 → 不拖慢 audit，codex r4 P1）；env 可调或设非法值走端点默认。
 _TENDER_EFFORT = os.getenv("TENDER_REASONING_EFFORT", "xhigh")
@@ -93,12 +88,6 @@ _TRUNCATION_NOTICE = (
     "\n【底稿超出上下文预算，已截断：保留前 {kept} 字节 / 原始 {total} 字节；"
     "后续内容未注入，涉及被截材料的评分项按证据缺失处理】\n"
 )
-
-
-def _is_non_retryable(exc: Exception) -> bool:
-    """Return True when re-sending the identical prompt cannot possibly succeed."""
-    message = str(exc).lower()
-    return any(marker.lower() in message for marker in NON_RETRYABLE_MARKERS)
 
 
 def _context_max_bytes() -> int:
@@ -401,9 +390,9 @@ async def run_tender_evaluation(
             return payload, meta
         except Exception as exc:
             last_error = exc
-            # 确定性失败立即上抛：重发同一 prompt 结果必然相同（2026-08-14 事故）。同型重试环在
-            # audit runner 也存在，本次只修 tender（audit 侧同型待办见 fix-note）。
-            if _is_non_retryable(exc):
+            # 确定性失败立即上抛：重发同一 prompt 结果必然相同（2026-08-14 事故）。判定上提到
+            # server.common.contract，与 audit 的两处同型重试环共用（2026-08-14 后续）。
+            if is_non_retryable(exc):
                 raise
             if attempt >= TENDER_CONTRACT_MAX_RETRY:
                 raise

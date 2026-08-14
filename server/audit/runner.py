@@ -15,6 +15,7 @@ from typing import Any
 
 from server.audit.direct import DirectTransportError, run_direct_audit
 from server.audit.output import EXPENSE_OUTPUT_SCHEMA_NAME
+from server.common.contract import is_non_retryable
 from server.common.domain_profile import (
     DomainProfile,
     assemble_domain_prompt,
@@ -233,6 +234,10 @@ async def _run_cli_directory_audit(
                 **opts,
             )
         except Exception as exc:
+            # 确定性失败立即上抛（2026-08-14 事故同型）：重发同一 prompt 结果必然相同，
+            # 重试只会把真因埋在几条一模一样的 retrying 日志后面。判定与 tender 共用。
+            if is_non_retryable(exc):
+                raise
             if attempt >= settings.contract_max_retry:
                 raise
             logger.warning(
