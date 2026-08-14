@@ -18,32 +18,20 @@ from server.common.corpus import (
     split_head_tail_on_anchors,
     text_has_page_anchor,
 )
-from server.ocr.docstructure import build_doc_structure, chapter_heading
+from server.ocr.docstructure import build_doc_structure
 from server.ocr.rag import index_document, search
 from server.platform.config import resolve_model_context_window, resolve_model_max_output_tokens
+from server.tender.context_budget import first_heading_index, select_review_spans
 
 _ELIGIBILITY_TAG = "qualification_review"
 _EVALUATION_TAG = "evaluation_method"
 # 每条 criteria 项检索几个 chunk：给到"整章+相邻子节"的量级，过大会让去重后仍逼近全量。
 _CHUNKS_PER_QUERY = 3
 
-# 首次 criteria 抽取尚无 criteria 可供检索，因此按 docstructure 的标题识别结果保留
-# 招标前置信息和评标相关章节。额外的"废标/否决"关键词不能只依赖现有语义 tag：它们
-# 常出现在资格/符合性章节的标题或条款标题中，但属于首次抽取的关键证据。
-_PREEXTRACT_KEYWORDS = (
-    "评标办法",
-    "评分标准",
-    "评分细则",
-    "评审办法",
-    "资格审查",
-    "资格评审",
-    "资格要求",
-    "初步评审",
-    "符合性审查",
-    "响应性审查",
-    "废标",
-    "否决",
-)
+# 首次 criteria 抽取尚无 criteria 可供检索，因此按 docstructure 的标题识别结果保留招标前置信息和
+# 评标相关章节。关键词表与"命中标题→整章"的选区逻辑与注入预算闸共用单点
+# （``server.tender.context_budget``，2026-08-14 Bug A 消重）：两处漏同一个关键词
+# （事故里的「评审方法和程序」）就会同时丢掉评分标准。
 # 页锚点解析统一走 server.common.corpus 单点（含【转换稿第M页】变体，H2 KD0）
 _PAGE_ANCHOR_RE = PAGE_ANCHOR_LINE_RE
 # OCR 文本以中文为主，按 1 字符≈1 token 估算，宁可少送也不让网关再次超窗。
@@ -114,23 +102,6 @@ def _trim_context_block(block: str, limit: int) -> str:
     return head + marker + (f"{replay}\n" if replay else "") + tail
 
 
-def _keyword_windows(lines: list[str]) -> list[tuple[int, int]]:
-    """Return small line windows around review-related OCR hits."""
-    hits = [
-        index
-        for index, line in enumerate(lines)
-        if any(keyword in line for keyword in _PREEXTRACT_KEYWORDS)
-    ]
-    windows: list[list[int]] = []
-    for index in hits:
-        start, end = max(0, index - 40), min(len(lines), index + 81)
-        if windows and start <= windows[-1][1]:
-            windows[-1][1] = max(windows[-1][1], end)
-        else:
-            windows.append([start, end])
-    return [(start, end) for start, end in windows]
-
-
 def build_preextract_tender_context(
     tender_text: str, *, file_name: str | None = None, model: str | None = None
 ) -> str | None:
@@ -146,44 +117,17 @@ def build_preextract_tender_context(
         return None
 
     lines = (tender_text or "").splitlines()
-    headings: list[tuple[int, str, int]] = []
-    for index, raw in enumerate(lines):
-        if raw.strip().startswith("### 文件:"):
-            continue
-        heading = chapter_heading(raw)
-        if heading is not None:
-            title, level = heading
-            headings.append((index, title, level))
-
-    selected: list[tuple[int, int]] = []
-    for heading_index, title, level in headings:
-        if any(keyword in title for keyword in _PREEXTRACT_KEYWORDS):
-            end = len(lines)
-            for next_index, _next_title, next_level in headings:
-                if next_index > heading_index and next_level <= level:
-                    end = next_index
-                    break
-            start = heading_index
-            if start > 0 and _PAGE_ANCHOR_RE.match(lines[start - 1]):
-                start -= 1
-            selected.append((start, end))
-
-    # OCR often loses heading markers while retaining the actual review terms. Keep local
-    # windows around those hits so a huge unstructured document still gets bounded instead
-    # of falling through to the original over-sized prompt.
-    if not selected:
-        selected = _keyword_windows(lines)
+    selected = select_review_spans(lines)
     if not selected:
         return _trim_context_block(tender_text, budget)
+    # 章首若紧跟在页锚行之后，把页锚一并带上——否则该章的证据全部挂到更早的页。
+    merged = [
+        (start - 1 if start > 0 and _PAGE_ANCHOR_RE.match(lines[start - 1]) else start, end)
+        for start, end in selected
+    ]
 
-    merged: list[list[int]] = []
-    for start, end in sorted(selected):
-        if merged and start <= merged[-1][1]:
-            merged[-1][1] = max(merged[-1][1], end)
-        else:
-            merged.append([start, end])
-
-    preface_end = headings[0][0] if headings else min(selected[0][0], 120)
+    heading_index = first_heading_index(lines)
+    preface_end = heading_index if heading_index is not None else min(merged[0][0], 120)
     prefix = "\n".join(lines[:preface_end])
     sections = ["\n".join(lines[start:end]) for start, end in merged]
     parts = [prefix, *sections]
