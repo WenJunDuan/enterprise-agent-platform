@@ -1,7 +1,20 @@
 # 提示词架构 · 热路径下沉 / 预算门禁 / 语义单源
 
-> 现状档（2026-08-13，sprint `2026-08-12-prompt-architecture` merge 后）。
-> **改 `/tender-evaluate` 规则前先读本档，决定放骨架还是放 references**——判据见「放哪儿」一节。
+> ⚠️ **已回滚（2026-08-14）**：本档描述的「骨架 + 5 references」结构因生产事故整体回滚——
+> 内网小窗口模型（DeepSeek Flash）上 `Prompt is too long` 四次评标无结论。文件瘦身 68% 的同时
+> 单会话累计注入反增 13.8%（26KB 搬进 references 后在会话中原样读回 + 多 5 个文件），本档下方
+> 「预算门禁」的单文件字节判据被证明**方向性错误**。真因与教训见
+> `compound/2026-08-14-learning-prompt-budget-must-be-per-session.md`。
+>
+> **当前现状**：`tender-evaluate.md` = 38,754B 单文件形态（回滚至 eac2a16 版）+ SKILL.md tag
+> 语义内联恢复；5 个 references 成孤儿文件留作重设素材；KD2 schema 单源（output.py 惰性 loader）
+> 与 KD4 调度表修正仍有效。**改 `/tender-evaluate` 规则直接改命令文件本体**，不要按下文的
+> 骨架/references 判据放置。下文保留作历史设计参考——重设结构时判据必须先改为
+> 「单会话累计注入字节 vs 部署最小窗口模型」再动手。
+
+<details><summary>以下为 2026-08-13 原档（已回滚，仅作历史参考）</summary>
+
+> 原现状档（2026-08-13，sprint `2026-08-12-prompt-architecture` merge 后）。
 
 ## 1. tender-evaluate 热路径结构（骨架 + 5 references）
 
@@ -91,3 +104,4 @@ web 前端 tender-review/types.ts
 runtime-verify 4 项待验（6 条 Read 各恰一次 / `validate_tender_result` 无重试 / turn 数 vs
 `AUDIT_MAX_TURNS=30` / 撤 reference 须降 `manual_review(rule_gap)`）+ AC7 eval 基线 A/B。
 明细见 `sprints/2026-08-12-prompt-architecture/evidence/runtime-verify-defer.md`。
+</details>
