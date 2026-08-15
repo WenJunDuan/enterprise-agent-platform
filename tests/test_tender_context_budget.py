@@ -272,8 +272,13 @@ def test_production_incident_draft_fits_the_deployed_million_token_window(monkey
     assert TRUNCATION_NOTICE_PREFIX not in context
 
 
-def test_default_budget_scales_with_the_configured_context_window(monkeypatch):
-    """默认值是**推导**出来的，不是硬编码常量：小窗口模型拿到明显更小的预算。"""
+def test_default_budget_no_longer_scales_with_the_model_context_window(monkeypatch):
+    """AC6（2026-08-15 改写）：预算脱钩 ``MODEL_CONTEXT_WINDOW``。
+
+    本测试原先断言 ``wide > 2_000_000``——那正是 08-14 第二次事故的成因：部署声明 1M 窗口
+    → 推出 2.1MB 预算 → 闸形同虚设，而 bundled CLI 约 200K token 就一次性硬拒。模型能力
+    不描述 CLI 行为，故预算改由实测标定的 TENDER_EFFECTIVE_CONTEXT_TOKENS 单点决定。
+    """
     from server.tender import context_budget
 
     monkeypatch.setenv("MODEL_CONTEXT_WINDOW", "1048576")
@@ -284,9 +289,16 @@ def test_default_budget_scales_with_the_configured_context_window(monkeypatch):
     monkeypatch.setenv("CLAUDE_CODE_MAX_OUTPUT_TOKENS", "8000")
     narrow = context_budget.derive_default_max_bytes()
 
-    assert wide > 2_000_000
-    assert narrow < 200_000
-    assert narrow < wide
+    assert wide == narrow, "预算不得再随模型窗口漂移"
+    assert wide < 2_000_000, "2.1MB 那档预算等于没有闸"
+
+
+def test_default_budget_follows_the_calibrated_token_ceiling(monkeypatch):
+    """标定值变了预算才变——这是唯一允许的调节旋钮。"""
+    from server.tender import context_budget
+
+    monkeypatch.setenv("TENDER_EFFECTIVE_CONTEXT_TOKENS", "50000")
+    assert context_budget.derive_default_max_bytes() == 150_000
 
 
 def test_default_budget_falls_back_to_a_conservative_constant(monkeypatch):

@@ -9,7 +9,6 @@ evaluation_method）——两者都是 D6 docstructure._TAG_KEYWORDS 现成的�
 
 from __future__ import annotations
 
-import os
 import sqlite3
 from typing import Any
 
@@ -20,13 +19,11 @@ from server.common.corpus import (
 )
 from server.ocr.docstructure import build_doc_structure
 from server.ocr.rag import index_document, search
-from server.platform.config import resolve_model_context_window, resolve_model_max_output_tokens
 from server.tender.context_budget import first_heading_index, select_review_spans
+from server.tender.injection_budget import chunks_per_query_budget, effective_context_tokens
 
 _ELIGIBILITY_TAG = "qualification_review"
 _EVALUATION_TAG = "evaluation_method"
-# 每条 criteria 项检索几个 chunk：给到"整章+相邻子节"的量级，过大会让去重后仍逼近全量。
-_CHUNKS_PER_QUERY = 3
 
 # 首次 criteria 抽取尚无 criteria 可供检索，因此按 docstructure 的标题识别结果保留招标前置信息和
 # 评标相关章节。关键词表与"命中标题→整章"的选区逻辑与注入预算闸共用单点
@@ -34,47 +31,25 @@ _CHUNKS_PER_QUERY = 3
 # （事故里的「评审方法和程序」）就会同时丢掉评分标准。
 # 页锚点解析统一走 server.common.corpus 单点（含【转换稿第M页】变体，H2 KD0）
 _PAGE_ANCHOR_RE = PAGE_ANCHOR_LINE_RE
-# OCR 文本以中文为主，按 1 字符≈1 token 估算，宁可少送也不让网关再次超窗。
-_DEFAULT_CHARS_PER_TOKEN = 1.0
-_DEFAULT_CONTEXT_MARGIN_TOKENS = 4096
-
-
-def _positive_float_env(name: str, default: float) -> float:
-    raw = (os.getenv(name) or "").strip()
-    try:
-        value = float(raw) if raw else default
-    except ValueError:
-        return default
-    return value if value > 0 else default
-
-
-def _non_negative_int_env(name: str, default: int) -> int:
-    raw = (os.getenv(name) or "").strip()
-    try:
-        value = int(raw) if raw else default
-    except ValueError:
-        return default
-    return value if value >= 0 else default
 
 
 def _preextract_char_budget(model: str | None = None) -> int | None:
-    """Return a conservative OCR character budget, or None when the guard is disabled."""
-    window = resolve_model_context_window(model=model)
-    if window <= 0:
-        return None
-    reserved_output = resolve_model_max_output_tokens(model=model)
-    if reserved_output is None:
-        return None
-    # 留出命令/系统提示和估算误差空间；窗口越大，至少保留 2% 的 token 余量。
-    configured_margin = _non_negative_int_env(
-        "TENDER_CONTEXT_MARGIN_TOKENS", _DEFAULT_CONTEXT_MARGIN_TOKENS
-    )
-    margin = max(configured_margin, window // 50)
-    available_tokens = window - reserved_output - margin
-    chars_per_token = _positive_float_env(
-        "TENDER_CONTEXT_CHARS_PER_TOKEN", _DEFAULT_CHARS_PER_TOKEN
-    )
-    return max(0, int(available_tokens * chars_per_token))
+    """本模块可注入的字符预算（KD3 收编后转发单点）。
+
+    旧实现自持 ``_DEFAULT_CHARS_PER_TOKEN=1.0`` 与 ``_DEFAULT_CONTEXT_MARGIN_TOKENS=4096``
+    两个常量，并按 ``MODEL_CONTEXT_WINDOW`` 推导——与 ``context_budget`` 的 3 字节/token 假设
+    直接冲突（一个模块按 1 算、另一个按 3 算），正是 64,000B 单位错的同型缺陷。现全部口径
+    收敛到 ``server.tender.injection_budget``，且与模型窗口解耦。
+
+    Args:
+        model: 保留参数以维持既有调用形态；预算不再随模型窗口变化。
+
+    Returns:
+        字符上限。恒非 None——旧实现在部署未声明窗口时返回 None（等于闸整体失效），
+        而事故当天正是这个状态。
+    """
+    del model  # 预算口径已与模型窗口解耦（AC6）
+    return effective_context_tokens()
 
 
 def _trim_context_block(block: str, limit: int) -> str:
@@ -227,12 +202,16 @@ def build_slim_tender_context(
     if not structure["chapters"]:
         return None
 
+    # KD3：每项取几个 chunk 不再是写死的 3，而是由闭式账目派生——项数越多每项额度越小，
+    # 总注入量恒受标定上限约束（旧常量的问题是项数一多，去重后仍逼近全量）。
+    chunks_per_query = chunks_per_query_budget(criteria=criteria, query_count=len(queries))
+
     conn = sqlite3.connect(":memory:")
     index_document(structure, tender_text, conn=conn)
 
     collected: dict[str, dict[str, Any]] = {}
     for query_text, tag, _label in queries:
-        hits = search(query_text, conn=conn, tag=tag, limit=_CHUNKS_PER_QUERY)
+        hits = search(query_text, conn=conn, tag=tag, limit=chunks_per_query)
         if not hits:
             conn.close()
             return None

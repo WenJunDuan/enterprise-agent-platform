@@ -169,34 +169,36 @@ def test_preextract_context_returns_none_for_small_or_unstructured_text(monkeypa
     assert build_preextract_tender_context("### 文件: 招标文件.pdf\n普通 OCR 正文") is None
 
 
-def test_preextract_context_without_window_keeps_original_behavior(monkeypatch):
+def test_preextract_context_still_bounded_when_model_window_is_undeclared(monkeypatch):
+    """AC6 改写：部署未声明模型窗口时，闸**不再整体失效**。
+
+    旧行为在这种配置下返回 None（=注入全文），而 2026-08-14 事故当天正是这个状态。
+    预算现在只由标定常量决定，与 MODEL_CONTEXT_WINDOW 无关。
+    """
     monkeypatch.delenv("MODEL_CONTEXT_WINDOW", raising=False)
-    monkeypatch.setenv("CLAUDE_CODE_MAX_OUTPUT_TOKENS", "2000")
+    monkeypatch.setenv("TENDER_EFFECTIVE_CONTEXT_TOKENS", "5000")
     body = _body("\n".join(["# 第一章 评标办法", "评分标准内容。"] + ["大段正文"] * 5000))
 
-    assert build_preextract_tender_context(body) is None
+    result = build_preextract_tender_context(body)
+    assert result is not None
+    assert len(result) <= 5000
 
 
 def test_preextract_context_caps_large_unstructured_ocr(monkeypatch):
-    monkeypatch.setenv("MODEL_CONTEXT_WINDOW", "100000")
-    monkeypatch.setenv("CLAUDE_CODE_MAX_OUTPUT_TOKENS", "2000")
+    monkeypatch.setenv("TENDER_EFFECTIVE_CONTEXT_TOKENS", "94000")
     body = "项目名称：超大文件\n" + ("无结构 OCR 正文\n" * 50000)
 
     result = build_preextract_tender_context(body)
 
     assert result is not None
-    assert len(result) <= 100000 - 2000 - max(4096, 100000 // 50)
+    assert len(result) <= 94000
     assert result.startswith("项目名称：超大文件")
     assert "章节中间内容省略" in result
 
 
-def test_bound_tender_context_uses_selected_model_profile(monkeypatch):
-    monkeypatch.setenv(
-        "MODEL_PROFILES_JSON",
-        '{"small-model":{"context_window":100,"max_output_tokens":10}}',
-    )
-    monkeypatch.setenv("TENDER_CONTEXT_MARGIN_TOKENS", "0")
-    monkeypatch.setenv("TENDER_CONTEXT_CHARS_PER_TOKEN", "1")
+def test_bound_tender_context_follows_the_calibrated_ceiling(monkeypatch):
+    """AC6 改写：上限来自标定常量单点，不再从 MODEL_PROFILES_JSON 的窗口推导。"""
+    monkeypatch.setenv("TENDER_EFFECTIVE_CONTEXT_TOKENS", "98")
 
     result = bound_tender_context("x" * 150, model="small-model")
 
@@ -206,12 +208,7 @@ def test_bound_tender_context_uses_selected_model_profile(monkeypatch):
 
 
 def test_bound_tender_context_preserves_tender_and_criteria_before_bid_trim(monkeypatch):
-    monkeypatch.setenv(
-        "MODEL_PROFILES_JSON",
-        '{"small-model":{"context_window":120,"max_output_tokens":10}}',
-    )
-    monkeypatch.setenv("TENDER_CONTEXT_MARGIN_TOKENS", "0")
-    monkeypatch.setenv("TENDER_CONTEXT_CHARS_PER_TOKEN", "1")
+    monkeypatch.setenv("TENDER_EFFECTIVE_CONTEXT_TOKENS", "118")
     context = (
         "=== OCR/直读底稿 ===\n"
         "=== 招标文件底稿 ===\n评分标准核心条款\n"

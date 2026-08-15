@@ -46,6 +46,7 @@ from server.tender.doc_context import (
 # 拆分后仍从本模块 re-export（tests/test_tender_doc_ocr_status.py 与
 # tests/test_tender_prewarm_oracle.py 按 ``runner._ocr_integrity_warnings`` 调用）。
 from server.tender.doc_context import _ocr_integrity_warnings as _ocr_integrity_warnings
+from server.tender.injection_budget import describe_context_rejection, estimate_tokens
 from server.tender.output import TENDER_OUTPUT_SCHEMA_NAME
 
 logger = logging.getLogger(__name__)
@@ -278,6 +279,18 @@ async def run_tender_evaluation(
             # 确定性失败立即上抛：重发同一 prompt 结果必然相同（2026-08-14 事故）。判定上提到
             # server.common.contract，与 audit 的两处同型重试环共用（2026-08-14 后续）。
             if is_non_retryable(exc):
+                # AC6：爆窗是一次性硬失败（contract.py 已列不可重试），这条日志就是运维唯一
+                # 线索——必须带上"去哪复标定"，否则 TENDER_EFFECTIVE_CONTEXT_TOKENS 会变成
+                # 第五个被凭猜调的错数字。
+                logger.error(
+                    "tender_context_rejected",
+                    extra={
+                        "request_id": request_id,
+                        "recalibration_hint": describe_context_rejection(
+                            observed_tokens=estimate_tokens(context or "")
+                        ),
+                    },
+                )
                 raise
             if attempt >= TENDER_CONTRACT_MAX_RETRY:
                 raise
