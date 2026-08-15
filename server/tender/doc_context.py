@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from dataclasses import dataclass, field
 
 from server.stores.tender_doc_store import decode_failed_files
 from server.tender import doc_layer, doc_rerun
@@ -68,16 +69,31 @@ def _inject_ocr_warnings(payload: object, warnings: list[dict[str, object]]) -> 
     extracted["ocr_warnings"] = (existing if isinstance(existing, list) else []) + warnings
 
 
+@dataclass
+class DocLayerOutcome:
+    """读层对本次评标的完整决策结果。
+
+    三个信号必须一起返回：pass1 的 REWORK 正是因为只回传了 ``text``，
+    ``warnings`` 与 ``force_manual_review`` 落地即丢，降级归宿形同虚设。
+    """
+
+    text: str | None = None
+    warnings: list[dict[str, object]] = field(default_factory=list)
+    force_manual_review: bool = False
+
+
 async def _resolve_doc_layer(
     project_id: str, bid_id: str | None, tenant: str
-) -> tuple[str | None, list[dict[str, object]]]:
-    """评标入口对预热底稿的完整决策（H3 KD2 + KD5）。
+) -> DocLayerOutcome:
+    """评标入口对预热底稿的完整决策（H3 KD2 + KD5 + S3 证据层）。
 
     顺序：等预热到终态（in-flight 才等，不再无条件超时回落 inline）→ 对 degraded/partial 自动
-    重跑一次预热 → 复用底稿并按最终状态生成结论 warning。
+    重跑一次预热 → **先试证据层按项检索**（带出 warnings / force_manual_review）→ 不适用才
+    回落既有拼接底稿 → 按最终状态生成结论 warning。
 
     Returns:
-        ``(doc 层底稿文本 | None, warnings)``；文本为 None 时调用方回落 inline OCR。
+        :class:`DocLayerOutcome`。``force_manual_review`` 为真时调用方**不得**回落 inline，
+        必须直接产出 manual_review 结论（F7：错评分比失败危险）。
     """
     warnings: list[dict[str, object]] = []
     waited_from = time.monotonic()
@@ -103,6 +119,17 @@ async def _resolve_doc_layer(
                 await doc_rerun.rerun_prewarm_for_degraded_docs(
                     project_id, bid_id, tenant, rows, spent_sec=time.monotonic() - waited_from
                 )
+    if doc_layer.slim_context_enabled():
+        evidence = await asyncio.to_thread(load_evidence_context, project_id, bid_id, tenant)
+        if evidence is not None:
+            # 证据层的四类信号无论走哪个分支都必须落结论（AC2 无静默路径）。
+            warnings.extend(evidence.warnings)
+            if evidence.context is not None:
+                warnings.extend(await _integrity_warnings_now(project_id, bid_id, tenant))
+                return DocLayerOutcome(text=evidence.context, warnings=warnings)
+            if evidence.force_manual_review:
+                return DocLayerOutcome(warnings=warnings, force_manual_review=True)
+
     loader = (
         doc_layer.load_doc_layer_context_slim
         if doc_layer.slim_context_enabled()
@@ -112,11 +139,19 @@ async def _resolve_doc_layer(
     if doc_layer_text is None:
         # KD4：掉落 inline 此前只在日志里留一行 INFO——三次事故的共同放大器就是这种静默。
         warnings.append(await _doc_layer_fallback_warning(project_id, bid_id, tenant))
-    elif bid_id:
-        # 重跑后重新读一次：warning 必须反映**最终**状态，重跑成功就不该再报警。
-        project_doc, bid_doc = await doc_layer.read_doc_rows(project_id, bid_id, tenant)
-        warnings.extend(_ocr_integrity_warnings(project_doc, bid_doc))
-    return doc_layer_text, warnings
+    else:
+        warnings.extend(await _integrity_warnings_now(project_id, bid_id, tenant))
+    return DocLayerOutcome(text=doc_layer_text, warnings=warnings)
+
+
+async def _integrity_warnings_now(
+    project_id: str, bid_id: str | None, tenant: str
+) -> list[dict[str, object]]:
+    """重读 doc 行生成完整性 warning——必须反映**最终**状态，重跑成功就不该再报警。"""
+    if not bid_id:
+        return []
+    project_doc, bid_doc = await doc_layer.read_doc_rows(project_id, bid_id, tenant)
+    return _ocr_integrity_warnings(project_doc, bid_doc)
 
 
 # 掉落原因的用户可读说明。键与 :func:`describe_doc_layer_gap` 的机器码一一对应；

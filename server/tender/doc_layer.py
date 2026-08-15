@@ -111,20 +111,9 @@ def _build_doc_context(
         tender_text = project_doc["ocr_text"]
         if slim:
             criteria = _parse_stored_criteria(project_doc.get("criteria"))
-            # S3（2026-08-15）：有可检索的 criteria 时改走**证据层按项检索**——注入量因此与
-            # 投标体量脱钩（实测投标底稿 370,529 字，拼整份必爆窗）。证据层不适用时才落回
-            # 既有的"招标瘦身 + 投标全文"拼接。
-            evidence = build_evidence_context(
-                tender_text=tender_text,
-                bid_text=bid["ocr_text"],
-                criteria=criteria,
-                project_id=project_id,
-            )
-            if evidence.context is not None:
-                return evidence.context
-            if evidence.force_manual_review:
-                # 证据层不可用（底稿建不出索引 / 预算不可达）→ 绝不"凑合评一个"。
-                return None
+            # 本函数是**证据层不适用时**的回落路径（招标瘦身 + 投标全文拼接）。证据层本身由
+            # ``doc_context.load_evidence_context`` 单独驱动——它要带出 warnings 与
+            # force_manual_review 两个必须落结论的信号，塞在这里只会像 pass1 那样落地即丢。
             slim_text = (
                 build_slim_tender_context(tender_text, criteria, file_name=project_id)
                 if criteria is not None
