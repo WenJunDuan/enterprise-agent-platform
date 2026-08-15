@@ -32,6 +32,16 @@ def _flatten_heading_lines(lines: list[str]) -> list[tuple[int, str, int]]:
     return out
 
 
+class StructureBodyMismatchError(ValueError):
+    """``structure`` 与 ``body`` 不是同一份原文（章节数与标题行数对不上）。
+
+    单独立一个类型是为了让调用方**只捕这一种**（返工 F6）：此前调用方用
+    ``except ValueError`` 罩住 ``index_document`` 整段，于是任何别的 ValueError 都会被
+    当成"结构不匹配"静默退化成整份单 chunk，章节级切分形同虚设且只在日志留一行。
+    继承 ``ValueError`` 以保持既有 ``except ValueError`` 调用方的行为不变。
+    """
+
+
 def _chunk_spans(structure: dict, body: str) -> list[dict]:
     """Build deterministic chapter-subtree chunks with real page provenance."""
     lines = body.splitlines()
@@ -39,7 +49,7 @@ def _chunk_spans(structure: dict, body: str) -> list[dict]:
     flat_nodes = _flatten_tree(structure["chapters"])
     flat_headings = _flatten_heading_lines(lines)
     if len(flat_nodes) != len(flat_headings):
-        raise ValueError(
+        raise StructureBodyMismatchError(
             "structure/body 不匹配：章节数与 body 中标题行数不一致——"
             "index_document 要求 body 必须是构建 structure 时用的同一份原文"
         )

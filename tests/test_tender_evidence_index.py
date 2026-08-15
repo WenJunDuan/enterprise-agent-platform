@@ -299,3 +299,51 @@ def test_跨项去重命中的项不算被饿死(indexed_conn):
     result = ev.retrieve_evidence(criteria, conn=indexed_conn)
 
     assert result.truncated == []
+
+
+# ── F6：structure/body 不匹配要有专用异常，归因面不得罩住整段 ────────────────
+
+
+def test_structure_body_不匹配抛专用异常类型():
+    """F6：mismatch 有自己的类型，调用方才能只捕它而不误伤别的 ValueError。"""
+    from server.ocr import rag
+    from server.ocr.docstructure import build_doc_structure
+
+    structure = build_doc_structure("# 第一章 甲\n甲正文。\n# 第二章 乙\n乙正文。", file_name="x")
+
+    with pytest.raises(rag.StructureBodyMismatchError):
+        rag._chunk_spans(structure, "换了一份没有任何标题行的正文。")
+
+
+def test_专用异常仍是ValueError子类():
+    """向后兼容：既有 ``except ValueError`` 的调用方行为不变。"""
+    from server.ocr import rag
+
+    assert issubclass(rag.StructureBodyMismatchError, ValueError)
+
+
+def test_真mismatch仍退回整份切分(monkeypatch):
+    """行为保持：确属 structure/body 不匹配时退回整份切分，不让整层索引失灭。"""
+    from server.ocr import rag
+
+    def boom(*_a, **_kw):
+        raise rag.StructureBodyMismatchError("structure/body 不匹配")
+
+    monkeypatch.setattr(ch, "index_document", boom)
+
+    chunks = ch.build_chunks("# 第一章 甲\n正文。", file_name="__bid__", tag="bid")
+
+    assert len(chunks) == 1, "退回整份单 chunk"
+
+
+def test_其它ValueError不再被误当成mismatch静默吞掉(monkeypatch):
+    """F6 核心：``except ValueError`` 罩住 index_document + dict(row) 全段时，任何别的
+    ValueError 都会被当成"结构不匹配"静默退化——章节级切分形同虚设，只在日志留一行。
+    """
+    def boom(*_a, **_kw):
+        raise ValueError("完全无关的解析失败")
+
+    monkeypatch.setattr(ch, "index_document", boom)
+
+    with pytest.raises(ValueError, match="完全无关"):
+        ch.build_chunks("# 第一章 甲\n正文。", file_name="__bid__", tag="bid")

@@ -17,7 +17,7 @@ from typing import Any
 
 from server.common.corpus import ARTIFACT_ORIGINAL, parse_page_anchor
 from server.ocr.docstructure import build_doc_structure
-from server.ocr.rag import index_document
+from server.ocr.rag import StructureBodyMismatchError, index_document
 from server.stores import rag_store
 
 logger = logging.getLogger(__name__)
@@ -114,9 +114,11 @@ def build_chunks(text: str, *, file_name: str, tag: str | None) -> list[dict[str
             chunks = [
                 dict(row) for row in conn.execute(f"SELECT * FROM {rag_store.SCAN_TABLE_NAME}")
             ]
-        except ValueError:
-            # structure/body 不匹配（docstructure 与正文标题行对不上）——退回整份切分，
-            # 而不是让整层索引失败：没有索引等于该层证据全灭。
+        except StructureBodyMismatchError:
+            # 只捕这一种（F6）：docstructure 与正文标题行对不上时退回整份切分，而不是让整层
+            # 索引失败（没有索引等于该层证据全灭）。**其余 ValueError 一律上抛**——旧的
+            # `except ValueError` 罩住 index_document + dict(row) 全段，`dict(tuple)` 那次
+            # 就被误当成"结构不匹配"，害得每一份文档都静默退化成整份单 chunk。
             logger.warning("tender_evidence_structure_mismatch", extra={"file": file_name})
             chunks = []
         finally:
