@@ -7,8 +7,11 @@
 truth（"原文里到底有没有"），检索层能否把它捞出来即为命中。命中率 = 有 ground truth 的
 查询中被检索层捞到的比例；ground truth 本身为空的查询不计入分母（那是"真没有"，不是漏检）。
 
-不传参数时用**等效构造**底稿（本机无部署机真实底稿）：查询词表取自 S0-B 用过的真实
-criteria 项名与常见评分项名，2 字/≥3 字混合，覆盖该方案要防的失败形态。
+不传底稿时跑**冒烟自检**（等效构造语料），**永远不给 PASS**（返工 F3）：该语料把 20 个查询
+词逐字埋进正文，≥3 字通道 verbatim 必中，而 ground truth 用子串匹配又把"措辞不同"这类漏检
+排除出分母——**它结构上抓不住 S0-B 真实数据暴露的那类失败**（真实项「价格-最后报价」verbatim
+缺失 → 裸用召回 38%）。判据一旦能由构造保证，它就不再是判据。冒烟自检只用来验证双通道接线
+与两表同源，AC0b 的达标证据只能来自部署机真实底稿。
 """
 
 from __future__ import annotations
@@ -89,7 +92,8 @@ def main(argv: list[str]) -> int:
 
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
-    if len(argv) > 1:
+    real_draft = len(argv) > 1
+    if real_draft:
         # 走**生产路径**（章节切分 + 超长二次切分 + 页锚），不是另写一份简化流程——
         # 否则量的是脚本自己的实现，不是要交付的那条链路。
         body = pathlib.Path(argv[1]).read_text(encoding="utf-8", errors="replace")
@@ -106,7 +110,7 @@ def main(argv: list[str]) -> int:
     else:
         _body, chunks = _build_corpus()
         rag_store.insert_rows(conn, chunks)
-        print(f"索引 {len(chunks)} chunk（等效构造底稿；本机无部署机真实底稿）")
+        print(f"索引 {len(chunks)} chunk（冒烟自检语料；**不是**召回度量，见模块 docstring）")
 
     scored = 0
     hit = 0
@@ -146,6 +150,17 @@ def main(argv: list[str]) -> int:
     fts_ids = {r[0] for r in conn.execute("SELECT chunk_id FROM rag_chunks")}
     scan_ids = {r[0] for r in conn.execute(f"SELECT chunk_id FROM {rag_store.SCAN_TABLE_NAME}")}
     print(f"两表 chunk_id 一致: {fts_ids == scan_ids} (fts={len(fts_ids)} scan={len(scan_ids)})")
+
+    if not real_draft:
+        # F3：构造语料上的 100% 是**构造保证**的，不构成达标证据。这里硬性拒绝出 PASS，
+        # 免得下一个人（或 CI）把冒烟自检的绿当成 AC0b 已验收。
+        print(
+            "AC0b: BLOCKED —— 上面是冒烟自检，不是召回度量。"
+            "解锁：拿部署机真实底稿跑 "
+            "`uv run python scripts/measure_tender_recall.py <真实底稿.txt>`，"
+            "命中率 ≥88%（S0-B 实测基线）方可计 PASS。"
+        )
+        return 2
 
     # AC0b 门槛 88%，取自 S0-B 实测；跌破即按 design「已调研方案」表升级 map-reduce。
     ok = rate >= 88.0 and fts_ids == scan_ids

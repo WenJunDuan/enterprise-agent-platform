@@ -150,3 +150,49 @@ def test_no_hardcoded_phrase_expansion_table(conn):
     source = inspect.getsource(rag)
     for banned in ("报价一览", "投标报价\"", "_PHRASE_EXPANSIONS", "_QUERY_SYNONYMS"):
         assert banned not in source, f"检索层不得出现硬编码词缀扩展：{banned}"
+
+
+# ── KD2 多词拆 OR（返工 F3：设计要求但 pass1 未实现） ────────────────────────
+
+
+def test_multi_word_query_is_split_into_or_phrases_not_one_phrase(conn):
+    """KD2/S0 实测：``施工组织设计 技术标`` 单 phrase 命中 0，拆 OR 才命中 1。
+
+    根因是 ``rag.py`` 把整串包成单一 phrase，而跨空格的 trigram 序列在索引里根本不存在
+    （S0 表第 3 行）。pass1 保留了单 phrase 形态，这是真实底稿复测的最大风险点：criteria
+    的项名与 basis 常是多词短语，它们会整批零命中。
+    """
+    rag_store.insert_rows(
+        conn, [_row("c1", "投标报价：壹佰贰拾万元整。施工组织设计详见技术标第三章。")]
+    )
+
+    assert rag.search("施工组织设计 技术标", conn=conn, limit=5), "多词查询必须拆 OR 后命中"
+
+
+def test_multi_word_or_requires_only_one_term_to_hit(conn):
+    """OR 语义：任一词命中即返回——评分项名与 basis 常只有一半措辞出现在投标里。"""
+    rag_store.insert_rows(conn, [_row("c1", "本项目拟派项目负责人张三，具备一级建造师资格。")])
+
+    assert rag.search("项目负责人 一级建造师 安全生产许可证", conn=conn, limit=5)
+
+
+def test_single_word_query_keeps_the_exact_phrase_semantics(conn):
+    """反回归：单词查询仍是精确短语，不得因拆 OR 改造而放宽成任意子串匹配。"""
+    rag_store.insert_rows(conn, [_row("c1", "投标报价一览表如下。")])
+
+    assert rag.search("投标报价", conn=conn, limit=5)
+    assert rag.search("投标业绩", conn=conn, limit=5) == []
+
+
+def test_short_terms_are_dropped_from_the_fts_query_not_left_to_zero_it(conn):
+    """<3 字的词在 trigram 上恒零命中，混进 OR 只会拖累；应被剔除而不是让整条查询失效。"""
+    rag_store.insert_rows(conn, [_row("c1", "施工组织设计方案详见附件。")])
+
+    assert rag.search("报价 施工组织设计", conn=conn, limit=5)
+
+
+def test_all_terms_too_short_still_yields_no_crash(conn):
+    """全是 2 字词时没有可用的 FTS 词——必须安全返回，不得抛 sqlite3 语法错。"""
+    rag_store.insert_rows(conn, [_row("c1", "投标报价一览表。")])
+
+    rag.search("报价 业绩", conn=conn, limit=5)

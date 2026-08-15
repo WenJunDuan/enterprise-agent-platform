@@ -78,9 +78,26 @@ def index_document(structure: dict, body: str, *, conn: sqlite3.Connection) -> i
     return len(chunks)
 
 
+def _phrase(term: str) -> str:
+    """Wrap one term as an FTS5 phrase, escaping embedded quotes (查询串来自 criteria，属外部输入)。"""
+    return '"' + term.replace('"', '""') + '"'
+
+
 def _escape_match_query(query: str) -> str:
-    """Wrap an untrusted FTS5 query in a phrase and escape embedded quotes."""
-    return '"' + query.replace('"', '""') + '"'
+    """把查询串转成 FTS5 MATCH 表达式：**多词拆 OR**，单词仍是精确短语（KD2）。
+
+    2026-08-15 S0 实测：``施工组织设计 技术标`` 按整串包成单一 phrase 时命中 **0**，
+    因为跨空格的 trigram 序列在索引里根本不存在；拆成 ``"施工组织设计" OR "技术标"``
+    命中 1。criteria 的项名与 ``basis`` 常是多词短语，不拆会让它们整批零命中。
+
+    短于 trigram 最小长度的词被剔除：它们在 trigram 上恒零命中，留在 OR 里只会让整条
+    表达式白跑一趟（2 字词由 :func:`search` 的子串通道负责）。全部词都过短时回落原样
+    包成一个 phrase——行为与改造前一致（同样是零命中），但不会产出空表达式让 SQLite 报语法错。
+    """
+    terms = [term for term in query.split() if len(term) >= _TRIGRAM_MIN_LENGTH]
+    if not terms:
+        return _phrase(query)
+    return " OR ".join(_phrase(term) for term in terms)
 
 
 def _format_page_anchor(
