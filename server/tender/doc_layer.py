@@ -20,7 +20,6 @@ from datetime import UTC, datetime
 from server.platform.config import get_ocr_concurrency_settings
 from server.stores.tender_doc_store import OCR_STATUSES, get_bid_doc, get_project_doc
 from server.tender.context_slim import build_slim_tender_context
-from server.tender.evidence_context import build_evidence_context
 
 logger = logging.getLogger(__name__)
 

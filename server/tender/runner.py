@@ -46,6 +46,7 @@ from server.tender.doc_context import (
 # 拆分后仍从本模块 re-export（tests/test_tender_doc_ocr_status.py 与
 # tests/test_tender_prewarm_oracle.py 按 ``runner._ocr_integrity_warnings`` 调用）。
 from server.tender.doc_context import _ocr_integrity_warnings as _ocr_integrity_warnings
+from server.tender.evidence_context import build_manual_review_result
 from server.tender.injection_budget import describe_context_rejection, estimate_tokens
 from server.tender.output import TENDER_OUTPUT_SCHEMA_NAME
 
@@ -162,7 +163,19 @@ async def run_tender_evaluation(
     doc_layer_text: str | None = None
     ocr_warnings: list[dict[str, object]] = []
     if _tender_read_doc_layer_enabled() and project_id:
-        doc_layer_text, ocr_warnings = await _resolve_doc_layer(project_id, bid_id, tenant)
+        outcome = await _resolve_doc_layer(project_id, bid_id, tenant)
+        doc_layer_text, ocr_warnings = outcome.text, outcome.warnings
+        if outcome.force_manual_review:
+            # F7 降级归宿：证据层不可用时**不回落 inline**（那条路径对 400 页投标产出的是
+            # 带 warning 的错误评分），也不把注定无证据的 prompt 发出去，直接出人工复核结论。
+            return await asyncio.to_thread(
+                build_manual_review_result,
+                request_id=request_id,
+                tenant=tenant,
+                project_id=project_id,
+                bid_id=bid_id,
+                warnings=ocr_warnings,
+            )
 
     if doc_layer_text is not None:
         ocr_block: str | None = doc_layer_text

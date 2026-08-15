@@ -212,7 +212,8 @@ def test_doc_layer_fallback_emits_user_visible_warning(monkeypatch):
 
     monkeypatch.setattr(doc_layer, "wait_doc_layer_ready", fake_wait)
 
-    text, warnings = asyncio.run(doc_context._resolve_doc_layer("tp-1", "bid-a", "acme"))
+    outcome = asyncio.run(doc_context._resolve_doc_layer("tp-1", "bid-a", "acme"))
+    text, warnings = outcome.text, outcome.warnings
     assert text is None
     fallback = [w for w in warnings if w["status"] == "doc_layer_fallback"]
     assert len(fallback) == 1, "掉落 inline 必须留下用户可见痕迹"
@@ -240,7 +241,8 @@ def test_doc_layer_hit_emits_no_fallback_warning(monkeypatch):
 
     monkeypatch.setattr(doc_layer, "wait_doc_layer_ready", fake_wait)
 
-    text, warnings = asyncio.run(doc_context._resolve_doc_layer("tp-1", "bid-a", "acme"))
+    outcome = asyncio.run(doc_context._resolve_doc_layer("tp-1", "bid-a", "acme"))
+    text, warnings = outcome.text, outcome.warnings
     assert text == "底稿"
     assert [w for w in warnings if w["status"] == "doc_layer_fallback"] == []
 

@@ -13,8 +13,13 @@ import sqlite3
 from dataclasses import dataclass, field
 from typing import Any
 
+from server.common.agent_bridge import AgentRunMeta
+from server.platform.sqlite_store import utc_now
+from server.stores.result_store import archive_result_payload
+from server.stores.session_store import new_conversation_id
 from server.tender.evidence_index import build_evidence_index, retrieve_evidence
 from server.tender.injection_budget import CALIBRATION_DOC_PATH, InjectionBudgetExhausted
+from server.tender.output import TENDER_OUTPUT_SCHEMA_NAME
 
 logger = logging.getLogger(__name__)
 
@@ -177,3 +182,82 @@ def enforce_manual_review(payload: Any, *, reason: str) -> None:
     if isinstance(extracted, dict):
         extracted["scoring"] = []
     logger.warning("tender_evidence_forced_manual_review", extra={"reason": reason})
+
+
+# 服务端直出结论的 reviewed_by：让人一眼看出这条 manual_review 不是模型判的，而是链路在证据
+# 不可用时主动停下来的。两者的后续处置不同（前者复核证据，后者查底稿/索引），不可混为一谈。
+_SERVER_REVIEWER = "server.tender.evidence_context"
+
+
+def build_manual_review_result(
+    *,
+    request_id: str,
+    tenant: str,
+    project_id: str | None,
+    bid_id: str | None,
+    warnings: list[dict[str, Any]],
+) -> tuple[dict[str, Any], AgentRunMeta]:
+    """证据层不可用时**不发 prompt** 直接产出并归档 manual_review 结论（F7 降级归宿）。
+
+    为什么要走 ``archive_result_payload``：前端拿结论走的是
+    ``get_result_payload_by_request_id``（``server/routes/tender/tasks.py:250``）——不归档就等于
+    任务显示 completed 却没有任何结论可看，那是又一条静默路径，与本 sprint 要治的病同型。
+
+    Args:
+        request_id: 本次评标请求 id。
+        tenant: 租户作用域。
+        project_id: 招标项目 ID（归档分组键）。
+        bid_id: 当前被评标的投标文件 ID（results↔bids join key）。
+        warnings: 读层与证据层产出的全部可见信号，随结论落盘。
+
+    Returns:
+        ``(payload, meta)``，与 :func:`run_tender_evaluation` 正常返回同形。
+    """
+    reasons = [str(warning.get("message") or warning.get("status") or "") for warning in warnings]
+    payload: dict[str, Any] = {
+        "claim_id": bid_id or request_id,
+        "verdict": "manual_review",
+        "explanation": (
+            "证据层不可用，服务端已在发起模型评标前停止本次自动评分并转人工复核："
+            "带着残缺证据出分比不出分危险得多（2026-08-15 事故的直接教训）。"
+        ),
+        "reasons": reasons or ["证据层不可用"],
+        "policy_refs": [],
+        "risk_score": 0,
+        "extracted_data": {"scoring": [], "ocr_warnings": list(warnings)},
+        "evidence_chain": [],
+        "reviewed_by": _SERVER_REVIEWER,
+        "timestamp": utc_now(),
+    }
+    enforce_manual_review(payload, reason="evidence_layer_unavailable")
+    conversation_id = new_conversation_id()
+    record = archive_result_payload(
+        request_id=request_id,
+        tenant=tenant,
+        project_id=project_id,
+        bid_id=bid_id,
+        conversation_id=conversation_id,
+        claude_session_id=None,
+        resume_session_id=None,
+        fork_from_session_id=None,
+        schema_name=TENDER_OUTPUT_SCHEMA_NAME,
+        request_mode="server_short_circuit",
+        result_subtype="evidence_layer_unavailable",
+        cost_usd=0.0,
+        prompt_preview=None,
+        response=payload,
+    )
+    meta = AgentRunMeta(
+        request_id=request_id,
+        conversation_id=conversation_id,
+        claude_session_id=None,
+        resume_session_id=None,
+        fork_from_session_id=None,
+        schema_name=TENDER_OUTPUT_SCHEMA_NAME,
+        log_file="",
+        result_file=record.result_file,
+        result_subtype="evidence_layer_unavailable",
+        cost_usd=0.0,
+        finished_at=utc_now(),
+    )
+    return payload, meta

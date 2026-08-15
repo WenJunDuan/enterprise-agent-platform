@@ -161,19 +161,26 @@ def _patch_docs(monkeypatch, *, criteria_json: str | None, bid_text: str = _BID)
 
 
 def test_读层在有criteria时改走证据层(monkeypatch):
-    """AC4 接线：主链路真的用上按项检索，而不是继续拼整份投标底稿。"""
+    """AC4 接线：证据层入口按项检索，且**把三个信号一起带出**。
+
+    返工 F1：本测试原先断言 ``load_doc_layer_context_slim`` 内联做检索——那条形态只能返回
+    ``str | None``，``warnings`` 与 ``force_manual_review`` 落地即丢，正是 pass1 REWORK 的成因。
+    证据层现由 ``doc_context.load_evidence_context`` 单独驱动，返回结构化结果。
+    """
     import json
 
-    doc_layer = _patch_docs(monkeypatch, criteria_json=json.dumps(_CRITERIA))
+    from server.tender import doc_context
+
+    _patch_docs(monkeypatch, criteria_json=json.dumps(_CRITERIA))
     big_bid_marker = "本段是投标底稿里与任何评分项都无关的大量附件正文"
-    doc_layer = _patch_docs(
+    _patch_docs(
         monkeypatch, criteria_json=json.dumps(_CRITERIA), bid_text=_BID + "\n" + big_bid_marker * 200
     )
 
-    text = doc_layer.load_doc_layer_context_slim("tp-1", "bid-1", "acme")
-    assert text is not None
-    assert "投标报价" in text, "检索到的证据必须在场"
-    assert big_bid_marker not in text, "无关正文不该整份注入"
+    evidence = doc_context.load_evidence_context("tp-1", "bid-1", "acme")
+    assert evidence is not None and evidence.context is not None
+    assert "投标报价" in evidence.context, "检索到的证据必须在场"
+    assert big_bid_marker not in evidence.context, "无关正文不该整份注入"
 
 
 def test_读层无criteria时保持既有行为(monkeypatch):
