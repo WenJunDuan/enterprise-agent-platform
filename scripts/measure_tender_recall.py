@@ -84,17 +84,25 @@ def _build_corpus() -> tuple[str, list[dict]]:
 def main(argv: list[str]) -> int:
     sys.path.insert(0, str(REPO_ROOT))
     from server.ocr import rag
-    from server.ocr.docstructure import build_doc_structure
     from server.stores import rag_store
+    from server.tender.evidence_chunks import build_chunks
 
     conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
     if len(argv) > 1:
+        # 走**生产路径**（章节切分 + 超长二次切分 + 页锚），不是另写一份简化流程——
+        # 否则量的是脚本自己的实现，不是要交付的那条链路。
         body = pathlib.Path(argv[1]).read_text(encoding="utf-8", errors="replace")
-        structure = build_doc_structure(body, file_name=argv[1])
         started = time.perf_counter()
-        count = rag.index_document(structure, body, conn=conn)
-        print(f"索引 {count} chunk / {time.perf_counter() - started:.2f}s（真实底稿 {argv[1]}）")
-        chunks = [dict(r) for r in conn.execute(f"SELECT * FROM {rag_store.SCAN_TABLE_NAME}")]
+        chunks = build_chunks(body, file_name="__bid__", tag="bid")
+        rag_store.insert_rows(conn, chunks)
+        conn.commit()
+        elapsed = time.perf_counter() - started
+        sizes = sorted(len(c["chunk_text"]) for c in chunks)
+        print(
+            f"索引 {len(chunks)} chunk / {elapsed:.2f}s（底稿 {argv[1]}，{len(body)} 字）；"
+            f"chunk 字数 min {sizes[0]} / 中位 {sizes[len(sizes) // 2]} / max {sizes[-1]}"
+        )
     else:
         _body, chunks = _build_corpus()
         rag_store.insert_rows(conn, chunks)
@@ -102,7 +110,9 @@ def main(argv: list[str]) -> int:
 
     scored = 0
     hit = 0
+    control_hit = 0
     misses: list[str] = []
+    control_misses: list[str] = []
     started = time.perf_counter()
     for query in QUERIES:
         truth = {c["chunk_id"] for c in chunks if query in c["chunk_text"]}
@@ -114,12 +124,24 @@ def main(argv: list[str]) -> int:
             hit += 1
         else:
             misses.append(query)
+        # 对照组 = 改造前行为（裸走 FTS5）。没有它就无法判断本度量是真的在测东西，
+        # 还是随便怎么实现都 100%。
+        control_rows = rag_store.query_rows(
+            conn, rag._escape_match_query(query), tag=None, limit=10
+        )
+        if {r["chunk_id"] for r in control_rows} & truth:
+            control_hit += 1
+        else:
+            control_misses.append(query)
     elapsed_ms = (time.perf_counter() - started) * 1000
 
     rate = 100.0 * hit / scored if scored else 0.0
     print(f"召回 {hit}/{scored} = {rate:.0f}%  ({elapsed_ms:.1f}ms)")
     if misses:
         print(f"漏检: {', '.join(misses)}")
+    print(f"对照组(仅 FTS5，改造前): {control_hit}/{scored} = {100.0 * control_hit / scored:.0f}%")
+    if control_misses:
+        print(f"对照组漏检: {', '.join(control_misses)}")
 
     fts_ids = {r[0] for r in conn.execute("SELECT chunk_id FROM rag_chunks")}
     scan_ids = {r[0] for r in conn.execute(f"SELECT chunk_id FROM {rag_store.SCAN_TABLE_NAME}")}
