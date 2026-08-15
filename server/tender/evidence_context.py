@@ -156,6 +156,19 @@ def build_evidence_context(
         )
         for item in result.unresolved
     ]
+    if result.truncated:
+        # F5：这些项**检索到了证据**，只是额度被排序靠前的项吃光而没装进注入块。此前它们
+        # 既不出块也不进 unresolved，整条路径静默——用户拿到的是一份看似证据齐全的结论。
+        warnings.append(
+            _warning(
+                "evidence_truncated",
+                f"{len(result.truncated)} 个项检索到证据但注入额度已用尽，未能进入本次上下文"
+                f"（{'、'.join(result.truncated)}）。这些项按证据缺失处理：**不得判 0**，"
+                f"需人工调阅原件；若反复出现，说明项数与额度不匹配，按标定档 "
+                f"{CALIBRATION_DOC_PATH} 复核 TENDER_EFFECTIVE_CONTEXT_TOKENS。",
+                items=list(result.truncated),
+            )
+        )
     logger.info(
         "tender_evidence_context_built",
         extra={

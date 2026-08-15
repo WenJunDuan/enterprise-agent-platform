@@ -191,3 +191,40 @@ def test_读层无criteria时保持既有行为(monkeypatch):
     text = doc_layer.load_doc_layer_context_slim("tp-1", "bid-1", "acme")
     assert text is not None
     assert _BID.splitlines()[1] in text
+
+
+# ── F5：额度饿死的项必须出 warning ──────────────────────────────────────────
+
+
+def test_额度饿死的项产出evidence_truncated警告(monkeypatch):
+    """F5/AC2：有命中却没装下的项要出声——否则用户看到的是"证据齐全"的假象。"""
+    from server.tender import injection_budget as budget
+
+    criteria = {
+        "items": [
+            {"item": "投标报价", "max": 40},
+            {"item": "施工组织设计", "max": 30},
+            {"item": "营业执照", "max": 10},
+        ]
+    }
+    bid = (
+        "# 商务标\n投标报价：壹佰贰拾万元整。\n"
+        "# 技术标\n施工组织设计详见本章。\n"
+        "# 资格证明\n营业执照副本附后。"
+    )
+    total = 200_000
+    margin = total // 4
+    # 只留 30 token 给证据：装得下第一块，装不下三块。
+    scaffold = total - margin - budget.criteria_tokens(criteria) - 30
+    monkeypatch.setenv("TENDER_EFFECTIVE_CONTEXT_TOKENS", str(total))
+    monkeypatch.setenv("TENDER_SCAFFOLD_RESERVE_TOKENS", str(scaffold))
+
+    result = ec.build_evidence_context(
+        tender_text=_TENDER, bid_text=bid, criteria=criteria, project_id="tp-1"
+    )
+
+    statuses = [w["status"] for w in result.warnings]
+    assert "evidence_truncated" in statuses, f"额度饿死的项必须出声：{statuses}"
+    warning = next(w for w in result.warnings if w["status"] == "evidence_truncated")
+    assert warning["items"], "必须点名是哪几项被饿死"
+    assert "不得判 0" in str(warning["message"])

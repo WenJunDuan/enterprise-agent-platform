@@ -250,3 +250,52 @@ def test_注入量与投标体量脱钩(monkeypatch):
     assert max(sizes) <= min(sizes) * 1.2, f"注入量随投标体量漂移：{sizes}"
     # 400 页那份的原文是 40 页那份的 100 倍量级——注入量却不随之增长，这才是 KD1 的目标。
     assert max(sizes) < len(large) / 10
+
+
+# ── F5：预算耗尽不得逐项静默饿死 ────────────────────────────────────────────
+
+
+def test_额度耗尽的项被记为truncated而不是静默消失(indexed_conn, monkeypatch):
+    """F5：额度用尽后有命中的项其块被丢，此前既不进 unresolved 也无 warning。
+
+    排序靠前的项有证据、靠后的既无证据也无痕迹——用户看到的是一份"证据齐全"的注入块，
+    实际上后半截项全是空的。这违反 AC2「无静默路径」。
+    """
+    from server.tender import injection_budget as budget
+
+    # 把证据额度压到只装得下最大的那一个 chunk：排序靠后的项必然拿不到块。
+    # 用构造而不是拍一个魔数——魔数会随 fixture 底稿变动而失效。
+    criteria = _criteria()
+    total = 200_000
+    largest = max(
+        len(row[0]) for row in indexed_conn.execute("SELECT chunk_text FROM rag_chunk_scan")
+    )
+    margin = total // 4
+    scaffold = total - margin - budget.criteria_tokens(criteria) - (largest + 1)
+    monkeypatch.setenv("TENDER_EFFECTIVE_CONTEXT_TOKENS", str(total))
+    monkeypatch.setenv("TENDER_SCAFFOLD_RESERVE_TOKENS", str(scaffold))
+
+    result = ev.retrieve_evidence(criteria, conn=indexed_conn)
+
+    all_items = {name for name, _ in ev._item_queries(criteria)}
+    starved = set(result.truncated)
+    assert result.blocks, "至少排序靠前的项要拿到证据"
+    assert starved, "被额度饿死的项必须留痕，不能既不出块也不出声"
+    assert starved <= all_items
+    assert all_items - starved, "不该整批都被饿死（那是预算不可达，由 InjectionBudgetExhausted 管）"
+
+
+def test_额度充足时没有任何项被记为truncated(indexed_conn):
+    """反向守卫：正常路径不得凭空报 truncated，否则这条信号会被无视。"""
+    result = ev.retrieve_evidence(_criteria(), conn=indexed_conn)
+
+    assert result.truncated == []
+
+
+def test_跨项去重命中的项不算被饿死(indexed_conn):
+    """去重把本项的块归给了前一项——证据仍在注入块里，不构成"这项没证据"。"""
+    criteria = {"items": [{"item": "投标报价", "max": 40}, {"item": "投标报价", "max": 10}]}
+
+    result = ev.retrieve_evidence(criteria, conn=indexed_conn)
+
+    assert result.truncated == []

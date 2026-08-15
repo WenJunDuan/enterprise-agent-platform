@@ -120,6 +120,9 @@ class EvidenceResult:
 
     blocks: list[EvidenceBlock] = field(default_factory=list)
     unresolved: list[UnresolvedItem] = field(default_factory=list)
+    # 有命中、却因证据额度先被前面的项吃光而一个块都没进注入的项（F5）。与 ``unresolved``
+    # 是两回事：那是"底稿里真没有"，这是"有但没装下"，处置动作也不同（补预算 vs 人工调阅）。
+    truncated: list[str] = field(default_factory=list)
     plan: InjectionPlan | None = None
     total_tokens: int = 0
 
@@ -205,6 +208,7 @@ def retrieve_evidence(
 
     blocks: list[EvidenceBlock] = []
     unresolved: list[UnresolvedItem] = []
+    truncated: list[str] = []
     seen: set[str] = set()
     used_tokens = 0
     for name, queries in items:
@@ -212,18 +216,23 @@ def retrieve_evidence(
         if not hits:
             unresolved.append(UnresolvedItem(item=name, queries=tried))
             continue
+        has_evidence_in_context = False
         for hit in hits:
             # 跨项去重：多个评分项常命中同一 chunk（如同一张报价表），
-            # 组装期按 chunk_id 去重后再计账（KD3）。
+            # 组装期按 chunk_id 去重后再计账（KD3）。被去重掉的块仍在注入块里，
+            # 对本项而言证据是在场的，故不算被饿死。
             if hit["chunk_id"] in seen:
+                has_evidence_in_context = True
                 continue
             cost = estimate_tokens(hit["text"])
             if used_tokens + cost > plan.evidence_tokens:
-                # 额度用尽即停：宁可后面的项走 evidence_unresolved（可见、可人工补），
-                # 也不越预算——越预算的代价是整单一次性硬失败。
+                # 额度用尽即停：不越预算——越预算的代价是整单一次性硬失败。但**必须留痕**
+                # （F5）：此前这里直接 break，后面每一项都会立刻 break，于是排序靠后的项
+                # 有证据却既不出块也不进 unresolved，用户看到的是一份"证据齐全"的注入块。
                 break
             seen.add(hit["chunk_id"])
             used_tokens += cost
+            has_evidence_in_context = True
             blocks.append(
                 EvidenceBlock(
                     chunk_id=hit["chunk_id"],
@@ -233,6 +242,12 @@ def retrieve_evidence(
                     text=hit["text"],
                 )
             )
+        if not has_evidence_in_context:
+            truncated.append(name)
     return EvidenceResult(
-        blocks=blocks, unresolved=unresolved, plan=plan, total_tokens=used_tokens
+        blocks=blocks,
+        unresolved=unresolved,
+        truncated=truncated,
+        plan=plan,
+        total_tokens=used_tokens,
     )
