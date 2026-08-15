@@ -272,8 +272,13 @@ def test_production_incident_draft_fits_the_deployed_million_token_window(monkey
     assert TRUNCATION_NOTICE_PREFIX not in context
 
 
-def test_default_budget_scales_with_the_configured_context_window(monkeypatch):
-    """默认值是**推导**出来的，不是硬编码常量：小窗口模型拿到明显更小的预算。"""
+def test_default_budget_no_longer_scales_with_the_model_context_window(monkeypatch):
+    """AC6（2026-08-15 改写）：预算脱钩 ``MODEL_CONTEXT_WINDOW``。
+
+    本测试原先断言 ``wide > 2_000_000``——那正是 08-14 第二次事故的成因：部署声明 1M 窗口
+    → 推出 2.1MB 预算 → 闸形同虚设，而 bundled CLI 约 200K token 就一次性硬拒。模型能力
+    不描述 CLI 行为，故预算改由实测标定的 TENDER_EFFECTIVE_CONTEXT_TOKENS 单点决定。
+    """
     from server.tender import context_budget
 
     monkeypatch.setenv("MODEL_CONTEXT_WINDOW", "1048576")
@@ -284,19 +289,36 @@ def test_default_budget_scales_with_the_configured_context_window(monkeypatch):
     monkeypatch.setenv("CLAUDE_CODE_MAX_OUTPUT_TOKENS", "8000")
     narrow = context_budget.derive_default_max_bytes()
 
-    assert wide > 2_000_000
-    assert narrow < 200_000
-    assert narrow < wide
+    assert wide == narrow, "预算不得再随模型窗口漂移"
+    assert wide < 2_000_000, "2.1MB 那档预算等于没有闸"
 
 
-def test_default_budget_falls_back_to_a_conservative_constant(monkeypatch):
-    """两 env 都缺失（未声明窗口的部署）→ 回落保守常量，不小于 256_000 B。"""
+def test_default_budget_follows_the_calibrated_token_ceiling(monkeypatch):
+    """标定值变了预算才变——这是唯一允许的调节旋钮。
+
+    F2：预算是**扣掉脚手架与循环余量之后**的余额（400000-90000-100000=210000 token
+    → 630,000 B），不是整个窗口。整窗口那种算法加上 90K 脚手架必然爆窗。
+    """
     from server.tender import context_budget
 
-    monkeypatch.delenv("MODEL_CONTEXT_WINDOW", raising=False)
-    monkeypatch.delenv("CLAUDE_CODE_MAX_OUTPUT_TOKENS", raising=False)
+    monkeypatch.setenv("TENDER_EFFECTIVE_CONTEXT_TOKENS", "400000")
+    monkeypatch.setenv("TENDER_SCAFFOLD_RESERVE_TOKENS", "90000")
+    assert context_budget.derive_default_max_bytes() == 630_000
 
-    assert context_budget.derive_default_max_bytes() >= 256_000
+
+def test_default_budget_never_loosens_past_the_pre_refactor_gate(monkeypatch):
+    """F2 回归闸：口径单点化**不得把闸放松**。
+
+    本测试原先断言 ``>= 256_000``——那是收编前的硬编码默认值，把它当下界等于允许闸越收越
+    松；pass1 正是在这条掩护下把回落上限做成了 600,000 B（比收编前松 2.3 倍），大单回落
+    必撞 CLI 硬拒。默认标定下回落额度只能比它更紧。
+    """
+    from server.tender import context_budget
+
+    monkeypatch.delenv("TENDER_EFFECTIVE_CONTEXT_TOKENS", raising=False)
+    monkeypatch.delenv("TENDER_SCAFFOLD_RESERVE_TOKENS", raising=False)
+
+    assert context_budget.derive_default_max_bytes() < 256_000
 
 
 def test_explicit_env_override_still_wins_over_the_derived_default(monkeypatch):

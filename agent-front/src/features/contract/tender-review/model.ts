@@ -894,6 +894,11 @@ function getScoringItems(result?: AuditResult | null): UnknownRecord[] {
   return Array.isArray(scoring) ? scoring.filter(isRecord) : []
 }
 
+function getOcrWarningRecords(result?: AuditResult | null): UnknownRecord[] {
+  const warnings = result?.extracted_data?.ocr_warnings
+  return Array.isArray(warnings) ? warnings.filter(isRecord) : []
+}
+
 function getEligibilityCheckRecords(
   result?: AuditResult | null
 ): UnknownRecord[] {
@@ -942,6 +947,21 @@ export function buildIssueList(result?: AuditResult | null): IssueItem[] {
       id: `issue-${issues.length}`,
     })
   }
+
+  // AC2：底稿/链路降级排在最前——它决定后面所有条目的可信度（材料有洞时，"未找到"既可能是
+  // 投标人真没提供，也可能是这次根本没读到），用户必须先看到这一条。
+  getOcrWarningRecords(result).forEach((warning, index) => {
+    const scope = toText(warning.scope) || `底稿告警 ${index + 1}`
+    const reason = toText(warning.reason)
+    const message = toText(warning.message) || toText(warning.status)
+    pushIssue({
+      category: 'pipeline_degraded',
+      status: 'warning',
+      title: '底稿链路降级',
+      itemName: scope,
+      basis: reason && !message.includes(reason) ? `${message}（${reason}）` : message,
+    })
+  })
 
   getDisqualificationHitRecords(result).forEach((hit, index) => {
     const evidence = getIssueEvidence(hit)
@@ -1274,6 +1294,7 @@ function classifyIssueCategory(text: string): IssueCategory {
 
 function getIssueTitle(category: IssueCategory) {
   const titles: Record<IssueCategory, string> = {
+    pipeline_degraded: '底稿链路降级',
     disqualification_risk: '废标风险',
     eligibility_mismatch: '资格不符',
     score_deduction: '扣分点',

@@ -1,22 +1,15 @@
 """Tender evaluation core: preload OCR/read-layer context, then run ``/tender-evaluate``.
 
-下沉自 ``server/routes/tender_worker.py``（D1 T2，design round1 F1 + round2 F5 方案 i）：
-评标核心 ``_run_evaluation``（含 doc-layer 助手）与 ``routes/audit_worker.py → server/audit/runner.py``
-同构下沉，公开名 ``run_tender_evaluation``；``routes/tender_worker.py`` 留调度壳（准入闸/信号量/
-超时/任务状态机），import 本模块。
+与 ``server/audit/runner.py`` 同构：评标核心在此，``routes/tender_worker.py`` 只留调度壳
+（准入闸 / 信号量 / 超时 / 任务状态机）并 import 本模块。
 
-**OCR 依赖处置（方案 i，2026-07-15 拍板）**：ocr 从 tender/audit 的平级 sibling 降为 feature 域
-之下的服务层（audit_worker / tender_worker / tender_doc_pipeline 三处已按服务消费）。本模块内嵌
-``ocr_preprocess_block`` 调用因此合法（tender→ocr），``TENDER_OCR_PURPOSE`` 常量挪家至此（原定义在
-``routes/tender_doc_pipeline.py``，该模块现改为从本模块 import）。``test_layering.py`` 守卫改
-**单向**：允许 tender/audit→ocr，禁止 ocr→tender/audit。
+**OCR 依赖处置**：ocr 是 feature 域之下的服务层，故本模块内嵌 ``ocr_preprocess_block``
+合法（tender→ocr）；``test_layering.py`` 守卫是**单向**的，禁止 ocr→tender/audit。
 
-**419 行拆分（2026-08-14，纯移动）**：本模块只留主流程——底稿获取（doc 层复用 / inline OCR 回落）、
-注入前的字节预算闸、模型调用与契约重试。搬走的两块：底稿层决策与完整性告警 →
-``server/tender/doc_context.py``；criteria 注入块与结论 ``criteria_ref`` 回执 →
-``server/tender/criteria_context.py``。整函数搬家 + import 接线，函数体/命名/日志文案/注释语义
-逐字未改。预算闸**未**搬：``tender_context_truncated`` 是按 logger 名 ``server.tender.runner``
-可检索的运维日志，挪家会改记录里的 logger 名（那不是纯移动）。
+**边界**：本模块只留主流程——底稿获取（doc 层复用 / inline OCR 回落）、注入前的字节预算闸、
+模型调用与契约重试。底稿层决策与完整性告警在 ``doc_context``，criteria 注入块与结论
+``criteria_ref`` 回执在 ``criteria_context``。预算闸刻意留在此处：``tender_context_truncated``
+是按 logger 名 ``server.tender.runner`` 可检索的运维日志，挪家会改记录里的 logger 名。
 """
 
 from __future__ import annotations
@@ -43,16 +36,16 @@ from server.tender.doc_context import (
     _resolve_doc_layer,
 )
 
-# 拆分后仍从本模块 re-export（tests/test_tender_doc_ocr_status.py 与
-# tests/test_tender_prewarm_oracle.py 按 ``runner._ocr_integrity_warnings`` 调用）。
+# re-export：两处测试按 ``runner._ocr_integrity_warnings`` 调用（拆分前的公开位置）。
 from server.tender.doc_context import _ocr_integrity_warnings as _ocr_integrity_warnings
+from server.tender.evidence_context import build_manual_review_result
+from server.tender.injection_budget import describe_context_rejection, estimate_tokens
 from server.tender.output import TENDER_OUTPUT_SCHEMA_NAME
 
 logger = logging.getLogger(__name__)
 
-# 评标场景 OCR 目的（治"OCR 无目的性"）：让 OCR 引擎在通用文本提取之外，重点完整、结构化地还原
-# 评分标准/评标办法/扣分细则/废标条款等【表格】——评分表是评标命脉。tender_doc_pipeline.py（上传
-# 预热）与本模块（评标 OCR）均从此处 import，消除原先两处重复（S3 消重，D1 T2 挪家至此）。
+# 评标场景 OCR 目的：让引擎在通用文本提取之外，重点完整、结构化地还原评分标准/评标办法/扣分
+# 细则/废标条款等【表格】——评分表是评标命脉。上传预热（tender_doc_pipeline）与本模块共用此常量。
 TENDER_OCR_PURPOSE = (
     "本批为招投标评标材料。请在完整提取文本之外，特别完整、结构化地还原"
     "【评分标准/评标办法/评分细则/扣分细则/加分项/废标与资格条款】等表格："
@@ -60,9 +53,8 @@ TENDER_OCR_PURPOSE = (
 )
 
 
-# P2 评标读层开关：TENDER_READ_DOC_LAYER=1 (默认) 先读 tender_doc_store;
-# =0 回落原串行 ocr_preprocess_block（兜底，不破现有路径）。
-# 注意：每次调用时动态读 env，支持运行时灰度切换 + 测试 monkeypatch。
+# 评标读层开关：=1(默认) 先读 tender_doc_store，=0 回落原串行 ocr_preprocess_block。
+# 每次调用动态读 env，支持运行时灰度切换 + 测试 monkeypatch。
 def _tender_read_doc_layer_enabled() -> bool:
     """Return True when the P2 doc layer is active (reads TENDER_READ_DOC_LAYER env live)."""
     return os.getenv("TENDER_READ_DOC_LAYER", "1").lower() in {"1", "true", "yes"}
@@ -74,25 +66,17 @@ def _stream_partial_enabled() -> bool:
     return os.getenv("TENDER_STREAM_PARTIAL", "1").lower() in {"1", "true", "yes"}
 
 
-# 契约失败重试次数。tender 输出大而复杂（14+项 scoring），deepseek 文本模式偶发不出 JSON /
-# 写坏 JSON（间歇性，同标重跑可成功）。audit 早有重试环，tender 此前缺失 → 单次 flaky 即失败。
-# 默认 2（共 3 次尝试，比 audit 的 1 更宽，因 tender 输出更易 flaky）；OCR 预处理只做一次不重跑。
+# 契约失败重试次数。tender 输出大而复杂（14+项 scoring），deepseek 文本模式偶发写坏 JSON
+# （间歇性，同标重跑可成功）→ 默认 2（比 audit 的 1 更宽）；OCR 预处理只做一次不重跑。
 TENDER_CONTRACT_MAX_RETRY = int(os.getenv("TENDER_CONTRACT_MAX_RETRY", "2"))
 
 # 评标推理强度（extended thinking）：评标是高难合规判断，默认 xhigh 压 deepseek 随机性（per-call，
 # 不走全局 build_options 默认 → 不拖慢 audit，codex r4 P1）；env 可调或设非法值走端点默认。
 _TENDER_EFFORT = os.getenv("TENDER_REASONING_EFFORT", "xhigh")
 
-# 底稿注入的**无条件**字节上限（2026-08-14 生产事故）：云 OCR 写超时 → 降级 inline_ocr 把整个
-# case 目录的 OCR 全文注入，无任何长度上限 → 内网 DeepSeek Flash "Prompt is too long"，整单无
-# 结论。已有的 context_slim.bound_tender_context 是**配置态**闸（部署未声明模型窗口/输出预算时
-# 整体不生效，事故当天正是这个状态），故这里再加一道兜底。
-#
-# 默认值不再硬编码常量（2026-08-14 第二次事故 Bug A）：旧默认 64,000 B 是按"最小窗口模型
-# 64K token"的错误前提反推的，而实际部署 MODEL_CONTEXT_WINDOW=1048576，64 KB 只占窗口 2%，
-# 把 103 KB 的底稿截成 64 KB、砍掉评标办法整章。现改为从模型窗口推导，见
-# ``context_budget.derive_default_max_bytes``；显式设 ``TENDER_CONTEXT_MAX_BYTES`` 仍以其为准。
-
+# 底稿注入的**无条件**字节上限（2026-08-14 生产事故）：inline_ocr 回落把整个 case 目录的 OCR
+# 全文无上限注入 → "Prompt is too long"，整单无结论。默认值由 ``injection_budget`` 单点标定
+# （KD3）；显式设 ``TENDER_CONTEXT_MAX_BYTES`` 仍以其为准。
 # 截断标记：让模型**看见**底稿被截，从而对被截材料走证据缺失规则，而不是当成"材料未提供"判 0。
 # 标记本身（~160 B）附加在上限之外，故意保证"被截了"这件事一定进上下文。
 _TRUNCATION_NOTICE = (
@@ -166,7 +150,19 @@ async def run_tender_evaluation(
     doc_layer_text: str | None = None
     ocr_warnings: list[dict[str, object]] = []
     if _tender_read_doc_layer_enabled() and project_id:
-        doc_layer_text, ocr_warnings = await _resolve_doc_layer(project_id, bid_id, tenant)
+        outcome = await _resolve_doc_layer(project_id, bid_id, tenant)
+        doc_layer_text, ocr_warnings = outcome.text, outcome.warnings
+        if outcome.force_manual_review:
+            # F7 降级归宿：证据层不可用时**不回落 inline**（那条路径对 400 页投标产出的是
+            # 带 warning 的错误评分），也不把注定无证据的 prompt 发出去，直接出人工复核结论。
+            return await asyncio.to_thread(
+                build_manual_review_result,
+                request_id=request_id,
+                tenant=tenant,
+                project_id=project_id,
+                bid_id=bid_id,
+                warnings=ocr_warnings,
+            )
 
     if doc_layer_text is not None:
         ocr_block: str | None = doc_layer_text
@@ -278,6 +274,17 @@ async def run_tender_evaluation(
             # 确定性失败立即上抛：重发同一 prompt 结果必然相同（2026-08-14 事故）。判定上提到
             # server.common.contract，与 audit 的两处同型重试环共用（2026-08-14 后续）。
             if is_non_retryable(exc):
+                # AC6：爆窗是一次性硬失败（contract.py 已列不可重试），这条日志就是运维唯一
+                # 线索——必须带上"去哪复标定"，否则标定常量会变成第五个被凭猜调的错数字。
+                logger.error(
+                    "tender_context_rejected",
+                    extra={
+                        "request_id": request_id,
+                        "recalibration_hint": describe_context_rejection(
+                            observed_tokens=estimate_tokens(context or "")
+                        ),
+                    },
+                )
                 raise
             if attempt >= TENDER_CONTRACT_MAX_RETRY:
                 raise

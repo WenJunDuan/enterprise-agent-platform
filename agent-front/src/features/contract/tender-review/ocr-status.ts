@@ -85,5 +85,23 @@ export function ocrImpairedNotice(docs: DocsStatusResponse | null | undefined): 
   return `以下材料底稿降级或部分缺失：${impaired.join('、')}。分析仍可开始，结论会标注受影响的评分项。`
 }
 
+/**
+ * criteria 抽取失败时的提示（AC3）；正常或未抽取则返回 null。
+ *
+ * 后端把**具体缺陷**（中文说明 + 机器码，如「评分标准的 items 评分项为空（items_empty）」）
+ * 放在 `criteria_error`。旧后端不返回该字段时回落通用文案——宁可笼统也不静默，因为
+ * criteria 失败意味着评标要自行解析规则，用户有权在开始分析前知道。
+ *
+ * @param docs - docs-status 轮询结果。
+ * @returns 提示文案，或 null。
+ */
+export function criteriaProblemNotice(
+  docs: DocsStatusResponse | null | undefined
+): string | null {
+  if (docs?.tender_doc?.criteria_status !== 'failed') return null
+  const detail = docs.tender_doc.criteria_error?.trim()
+  return `招标文件的评分标准未能自动解析${detail ? `：${detail}` : ''}。分析仍可开始，评标会自行解析招标文件；若结论缺评分项，请核对招标文件是否包含完整评标办法。`
+}
+
 /** 供类型收窄使用：断言字符串是已知 OcrStatus（未知值按非终态处理，不冒充 ready）。 */
 export type { OcrStatus }

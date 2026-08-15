@@ -221,6 +221,8 @@ function IssueSummaryCard({
 }
 
 const issueCategoryOrder: IssueCategory[] = [
+  // 底稿降级排最前：它决定其余条目的可信度（材料有洞时"未找到"未必是投标人真没提供）。
+  'pipeline_degraded',
   'disqualification_risk',
   'eligibility_mismatch',
   'score_deduction',
@@ -231,6 +233,7 @@ const issueCategoryOrder: IssueCategory[] = [
 ]
 
 const issueCategoryLabels: Record<IssueCategory, string> = {
+  pipeline_degraded: '底稿链路降级',
   disqualification_risk: '废标风险',
   eligibility_mismatch: '资格不符',
   score_deduction: '扣分点',

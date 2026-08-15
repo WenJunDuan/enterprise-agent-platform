@@ -253,6 +253,8 @@ async def get_docs_status(
         tender_doc_status = {
             "ocr_status": project_doc["ocr_status"],
             "criteria_status": project_doc.get("criteria_status", "pending"),
+            # AC3：failed 时告诉用户**具体缺什么**，而不是只显示"识别失败"。
+            "criteria_error": project_doc.get("criteria_error"),
         }
 
     bids_status = [

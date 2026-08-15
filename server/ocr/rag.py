@@ -32,6 +32,16 @@ def _flatten_heading_lines(lines: list[str]) -> list[tuple[int, str, int]]:
     return out
 
 
+class StructureBodyMismatchError(ValueError):
+    """``structure`` 与 ``body`` 不是同一份原文（章节数与标题行数对不上）。
+
+    单独立一个类型是为了让调用方**只捕这一种**（返工 F6）：此前调用方用
+    ``except ValueError`` 罩住 ``index_document`` 整段，于是任何别的 ValueError 都会被
+    当成"结构不匹配"静默退化成整份单 chunk，章节级切分形同虚设且只在日志留一行。
+    继承 ``ValueError`` 以保持既有 ``except ValueError`` 调用方的行为不变。
+    """
+
+
 def _chunk_spans(structure: dict, body: str) -> list[dict]:
     """Build deterministic chapter-subtree chunks with real page provenance."""
     lines = body.splitlines()
@@ -39,7 +49,7 @@ def _chunk_spans(structure: dict, body: str) -> list[dict]:
     flat_nodes = _flatten_tree(structure["chapters"])
     flat_headings = _flatten_heading_lines(lines)
     if len(flat_nodes) != len(flat_headings):
-        raise ValueError(
+        raise StructureBodyMismatchError(
             "structure/body 不匹配：章节数与 body 中标题行数不一致——"
             "index_document 要求 body 必须是构建 structure 时用的同一份原文"
         )
@@ -78,9 +88,26 @@ def index_document(structure: dict, body: str, *, conn: sqlite3.Connection) -> i
     return len(chunks)
 
 
+def _phrase(term: str) -> str:
+    """Wrap one term as an FTS5 phrase, escaping embedded quotes (查询串来自 criteria，属外部输入)。"""
+    return '"' + term.replace('"', '""') + '"'
+
+
 def _escape_match_query(query: str) -> str:
-    """Wrap an untrusted FTS5 query in a phrase and escape embedded quotes."""
-    return '"' + query.replace('"', '""') + '"'
+    """把查询串转成 FTS5 MATCH 表达式：**多词拆 OR**，单词仍是精确短语（KD2）。
+
+    2026-08-15 S0 实测：``施工组织设计 技术标`` 按整串包成单一 phrase 时命中 **0**，
+    因为跨空格的 trigram 序列在索引里根本不存在；拆成 ``"施工组织设计" OR "技术标"``
+    命中 1。criteria 的项名与 ``basis`` 常是多词短语，不拆会让它们整批零命中。
+
+    短于 trigram 最小长度的词被剔除：它们在 trigram 上恒零命中，留在 OR 里只会让整条
+    表达式白跑一趟（2 字词由 :func:`search` 的子串通道负责）。全部词都过短时回落原样
+    包成一个 phrase——行为与改造前一致（同样是零命中），但不会产出空表达式让 SQLite 报语法错。
+    """
+    terms = [term for term in query.split() if len(term) >= _TRIGRAM_MIN_LENGTH]
+    if not terms:
+        return _phrase(query)
+    return " OR ".join(_phrase(term) for term in terms)
 
 
 def _format_page_anchor(
@@ -98,11 +125,35 @@ def _format_page_anchor(
     return page_anchor_text(page_start, artifact=artifact or ARTIFACT_ORIGINAL, page_end=page_end)
 
 
+# trigram tokenizer 的最小 gram 长度。查询短于它时 FTS5 恒零命中——这是 tokenizer 的定义，
+# 不是可调参数，故写死并注明出处：https://sqlite.org/fts5.html#the_trigram_tokenizer
+_TRIGRAM_MIN_LENGTH = 3
+
+
 def search(
     query: str, *, conn: sqlite3.Connection, tag: str | None = None, limit: int = 10
 ) -> list[dict]:
-    """Search indexed chunks by escaped FTS5 phrase and return BM25 hits."""
-    rows = rag_store.query_rows(conn, _escape_match_query(query), tag=tag, limit=limit)
+    """Search indexed chunks and return hits with page anchors.
+
+    **双通道**（2026-08-15 S0-B 实测定案）：查询短于 3 字符时走普通表子串扫描，否则走
+    FTS5 BM25。原因是 ``rag_chunks`` 用 trigram tokenizer，2 字中文词在其上 ``MATCH`` 与
+    ``LIKE`` 双双为 0（SQLite 把 FTS5 表上的 LIKE 也优化成走 trigram 索引）；而
+    「报价」「业绩」「工期」「资质」这类 2 字评分项名在评标里极常见，裸用 FTS5 时实测召回
+    仅 38%。子串旁路实测 88% / 4ms，且**文档无关**——不猜任何具体标书的措辞。
+
+    Args:
+        query: 检索词（通常是 criteria 的评分项名或资格检查项）。
+        conn: 索引连接。
+        tag: 章节语义标签过滤。
+        limit: 返回上限。
+
+    Returns:
+        命中 chunk（含 ``page_anchor``），两个通道形状一致。
+    """
+    if len(query.strip()) < _TRIGRAM_MIN_LENGTH:
+        rows = rag_store.scan_rows(conn, query.strip(), tag=tag, limit=limit)
+    else:
+        rows = rag_store.query_rows(conn, _escape_match_query(query), tag=tag, limit=limit)
     return [
         {
             "chunk_id": row["chunk_id"],

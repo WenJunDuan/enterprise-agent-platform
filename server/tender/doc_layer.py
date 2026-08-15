@@ -110,6 +110,9 @@ def _build_doc_context(
         tender_text = project_doc["ocr_text"]
         if slim:
             criteria = _parse_stored_criteria(project_doc.get("criteria"))
+            # 本函数是**证据层不适用时**的回落路径（招标瘦身 + 投标全文拼接）。证据层本身由
+            # ``doc_context.load_evidence_context`` 单独驱动——它要带出 warnings 与
+            # force_manual_review 两个必须落结论的信号，塞在这里只会像 pass1 那样落地即丢。
             slim_text = (
                 build_slim_tender_context(tender_text, criteria, file_name=project_id)
                 if criteria is not None
@@ -163,6 +166,7 @@ def load_doc_layer_context_slim(project_id: str, bid_id: str | None, tenant: str
     语义见 :func:`_build_doc_context`；投标底稿永远原样透传，不参与瘦身。
     """
     return _build_doc_context(project_id, bid_id, tenant, slim=True)
+
 
 
 async def wait_doc_layer_ready(project_id: str, bid_id: str, tenant: str) -> str:
