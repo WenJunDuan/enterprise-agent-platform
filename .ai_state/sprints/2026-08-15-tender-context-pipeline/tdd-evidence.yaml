@@ -1,0 +1,119 @@
+sprint_slug: "2026-08-15-tender-context-pipeline"
+baseline_commit: "f55cdf34"
+executor: "generator subagent (worktree agent-a40c8e9dd8b94062a)"
+recorded_at: "2026-08-15"
+
+# 基线：开工时全量回归的既有失败清单（34 条，全部集中在 ocr/audit-direct，
+# 成因是本机 CPython 3.14 装不上 paddlepaddle（无 cp314 wheel），与本 sprint 无关。
+# 收尾复跑同为 34 条，diff 为空。
+baseline_failures: 34
+final_failures: 34
+baseline_diff: "empty"
+
+records:
+  - task: "S1 · KD5 主链路掉落根因修复（bid_id 丢失）"
+    commit: "be329ee"
+    red_command: "uv run pytest tests/test_tender_pipeline_s1_visibility.py -q -p no:randomly"
+    red_summary: >-
+      collection error: ImportError: cannot import name 'bid_resolve' from 'server.tender'。
+      随后 7 条 resolve_prewarm_bid_id 断言与路由接线断言 test_submit_recovers_bid_id_from_bidder_name
+      全红（AttributeError: module has no attribute 'list_bid_docs'）。
+    red_observed_at: "2026-08-15"
+    green_command: "uv run pytest tests/test_tender_pipeline_s1_visibility.py -q -p no:randomly"
+    green_summary: "31 passed"
+    green_observed_at: "2026-08-15"
+
+  - task: "S1 · KD4 降级可见（掉落原因 / criteria 失败原因）"
+    commit: "be329ee, 098ae01"
+    red_command: "uv run pytest tests/test_tender_pipeline_s1_visibility.py -q -p no:randomly; cd agent-front && bun test src/features/contract/tender-review/pipeline-degradation.test.ts"
+    red_summary: >-
+      后端：describe_doc_layer_gap 六条掉落分支断言 + criteria_usability_problem 十二条
+      具名原因断言全红（函数不存在）。前端：SyntaxError: Export named 'criteriaProblemNotice'
+      not found；buildIssueList 的 pipeline_degraded 断言 0 pass / 1 fail。
+    red_observed_at: "2026-08-15"
+    green_command: "uv run pytest tests/test_tender_pipeline_s1_visibility.py -q; cd agent-front && bun test"
+    green_summary: "后端 31 passed；前端 6 passed（新增），全量 203 passed / 0 fail"
+    green_observed_at: "2026-08-15"
+
+  - task: "S2 · KD3 预算口径单点化 + 闭式账目"
+    commit: "20863db"
+    red_command: "uv run pytest tests/test_tender_injection_budget.py -q -p no:randomly"
+    red_summary: >-
+      collection error（server.tender.injection_budget 不存在）。实现单一来源后，
+      收编守卫 test_legacy_budget_constants_are_gone_from_their_old_homes 仍红：
+      server.tender.context_budget._BYTES_PER_TOKEN 等 7 个旧常量仍在原位。
+    red_observed_at: "2026-08-15"
+    green_command: "uv run pytest tests/test_tender_injection_budget.py -q -p no:randomly"
+    green_summary: "19 passed（含 AC6 端到端：CLI 拒绝日志带复标定指引）"
+    green_observed_at: "2026-08-15"
+
+  - task: "S3a · KD2 双通道检索（<3 字子串扫描 / ≥3 字 FTS5）"
+    commit: "f86344e"
+    red_command: "uv run pytest tests/test_rag_dual_channel.py -q -p no:randomly"
+    red_summary: >-
+      8 failed / 4 passed。红的正是方案要防的那类失败：2 字中文词
+      （报价 / 业绩 / 工期 / 资质）经 rag.search 全部零命中，
+      以及 rag_chunk_scan 副本表不存在导致的同源断言失败。
+    red_observed_at: "2026-08-15"
+    green_command: "uv run pytest tests/test_rag_dual_channel.py -q -p no:randomly"
+    green_summary: "12 passed"
+    green_observed_at: "2026-08-15"
+
+  - task: "S3b · KD1 证据层（投标入索引 + 二次切分 + 按项检索组装）"
+    commit: "aa08c4e"
+    red_command: "uv run pytest tests/test_tender_evidence_index.py -q -p no:randomly"
+    red_summary: >-
+      collection error（server.tender.evidence_index 不存在）。因 RED 仅为 import 错误，
+      另做变异检验确认断言真的会咬：关掉 split_oversized_chunks → 脱钩断言
+      sizes=[36, 0] 判否；不索引投标 → 「报价」进 unresolved。两处变异都使对应断言翻红。
+    red_observed_at: "2026-08-15"
+    green_command: "uv run pytest tests/test_tender_evidence_index.py -q -p no:randomly"
+    green_summary: "14 passed（含章节切分回归守卫）"
+    green_observed_at: "2026-08-15"
+
+  - task: "S3c · 证据层接入主链路 + 降级归宿改为不出分"
+    commit: "accd634"
+    red_command: "uv run pytest tests/test_tender_evidence_context.py -q -p no:randomly"
+    red_summary: >-
+      collection error（server.tender.evidence_context 不存在）；接线断言
+      test_读层在有criteria时改走证据层 红于 AssertionError: 无关正文不该整份注入
+      （读层仍在拼整份投标底稿）。
+    red_observed_at: "2026-08-15"
+    green_command: "uv run pytest tests/test_tender_evidence_context.py -q -p no:randomly"
+    green_summary: "12 passed"
+    green_observed_at: "2026-08-15"
+
+  - task: "S3c 附带 · 修复 dict(tuple) 导致的章节切分静默退化"
+    commit: "accd634"
+    red_command: "uv run pytest tests/test_tender_evidence_index.py::test_章节结构必须真的被用上 -q"
+    red_summary: >-
+      实测缺陷：build_chunks 里 conn.execute 默认返回 tuple，dict(tuple) 抛的 ValueError
+      被 except ValueError 当成「structure/body 不匹配」吞掉，导致**每一份文档都退化成
+      整份单 chunk**（实测三章文档得 1 chunk 而非 3），章节级切分全程形同虚设，
+      只在日志留一行 warning。由 test_load_doc_layer_context_slim_uses_slim_text_when_criteria_present
+      的「商务条款章节独有内容不得注入」断言暴露。
+    red_observed_at: "2026-08-15"
+    green_command: "uv run pytest tests/test_tender_evidence_index.py -q -p no:randomly"
+    green_summary: "14 passed；三章文档得 3 chunk，chapter_title 逐章正确"
+    green_observed_at: "2026-08-15"
+
+measurements:
+  - name: "AC0b 双通道召回率（等效构造底稿，本机无部署机真实底稿）"
+    command: "uv run python scripts/measure_tender_recall.py /tmp/fake_bid_draft.txt"
+    result: >-
+      28,210 字 / 67 页底稿，走生产链路 build_chunks 得 12 chunk
+      （min 1,382 / 中位 2,569 / max 3,830，均 ≤ MAX_CHUNK_CHARS=4,000）。
+      双通道召回 20/20 = 100% / 1.2ms；对照组（仅 FTS5 = 改造前）14/20 = 70%，
+      漏检恰好是 报价 业绩 工期 资质 质量 工艺 六个 2 字词。
+      rag_chunks 与 rag_chunk_scan chunk_id 一致 12/12。门槛 88% → PASS。
+    caveat: >-
+      本机无部署机真实底稿，语料为等效构造（章节结构与中文措辞贴近真实标书，
+      查询词表取自 S0-B 用过的真实 criteria 项名）。对照组数字证明该度量能抓住
+      它要防的失败，不是随便怎么实现都 100%。
+
+  - name: "脚手架 token 实测（AC6 标定方法可复跑）"
+    command: "uv run python scripts/measure_tender_scaffold.py"
+    result: >-
+      57,988 字（命令 20,260 + tender-eval skill references 21,331 + 两份 schema 16,398）。
+      **旧常量 _SCAFFOLD_RESERVE_TOKENS=30,000 被本实测证伪**——仅提示词资产就装不下。
+      新值 90,000 含 CLI 侧 system prompt/工具定义余量；脚本对「预留 < 实测下界」fail-closed。
