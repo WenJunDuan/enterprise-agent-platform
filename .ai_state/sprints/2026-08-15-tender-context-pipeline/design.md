@@ -44,6 +44,22 @@ bundled CLI 实测上限        ≈ 200K token
 - `server/tender/context_slim.py`：按 criteria 检索招标章节（D8 已建成）
 - **缺口**：`context_slim.py:231` 只 `index_document(structure, tender_text)`——**投标文件从未入索引**
 
+## S0 Spike 实测（critic F1 要求，2026-08-15 本机实测，可复跑）
+
+复跑命令见文末附录 B。结论直接推翻了初稿"复用 `rag.search` 即可"的假设：
+
+| 查询 | 命中 | 判定 |
+|---|---|---|
+| `报价` | **0** | trigram tokenizer 对 <3 字查询恒零命中 |
+| `业绩` | **0** | 同上 |
+| `施工组织设计 技术标` | **0** | `rag.py:83` 把整串包成单一 phrase，跨空格 trigram 不存在 |
+| `报价*`（前缀） | **0** | 前缀符对 trigram 无效 |
+| `投标报价` / `施工组织设计` / `项目负责人` | 1 | ≥3 字**单**短语才命中 |
+| `"投标报价" OR "报价一览"` | **1** | ✅ 2 字词扩展成 ≥3 字短语再 OR 可命中 |
+| `"施工组织设计" OR "技术标"` | **1** | ✅ 多词必须拆 OR，不能单 phrase |
+
+**「报价」「业绩」「工期」「资质」这类 2 字评分项名在评标里极常见**——按初稿直接调 `rag.search`，这些项会全部 `evidence_unresolved`，整单变成"可见但不可用"的第四次失败。
+
 ## 目标
 
 1. 单次评标会话的注入量**与投标材料体量脱钩**，稳定在可控区间（目标 ≤60K token，含脚手架）。
@@ -58,6 +74,16 @@ bundled CLI 实测上限        ≈ 200K token
 - 不重构 `server/ocr/` 的识别引擎（L2 路由是另一 sprint）。
 - 不做前端大改（仅补"链路降级/证据不足"的可见提示）。
 
+## 已调研的现成方案（critic F4；coding-standards P1 硬要求）
+
+| 候选 | 判定 | 理由 |
+|---|---|---|
+| **按评分项 map-reduce 多次小会话**（每项一次会话，带该项全章证据，最后汇总） | **部分采用**（作为 S3 未达标时的升级路径，本轮不做） | 召回天然更稳（不依赖 BM25，可整章给）；但 20+ 项 × 每次会话开销，10 分钟目标下延迟风险高（现单会话已 20 分钟超时），且跨项一致性（同一证据两项引用冲突）需额外机制。**先做单会话+检索，若 S4 实测达不到 10 分钟或召回不足，再升级到本方案**——届时本节即为决策依据 |
+| **预热期对投标做结构化压缩 pass**（按项摘要 + 索引，再注入摘要） | **否决（本轮）** | 摘要环节引入第二次模型判断，误差叠加且不可追溯（摘要丢掉的证据在评标时无从发现）；与"证据必须逐字可回查"的既有纪律冲突 |
+| **外部向量库 / embedding 语义检索** | 否决 | 内网隔离部署，多一个服务多一份运维；且 S0 证明 FTS5 经查询构造修正后可用，尚未到需要语义检索的地步。触发条件：S4 实测 BM25 召回率不达标且短语扩展无法补救 |
+| **复用现成 `rag.py` search 不改** | **否决（S0 证伪）** | trigram + 单 phrase 包裹导致 2 字项名恒零命中，必须扩展查询构造 |
+| **既有 `context_slim` 直接扩到投标** | **采用为基座** | D8 已建成招标侧按 criteria 检索，本设计是把同一机制扩到投标侧 + 修查询构造，不另起炉灶 |
+
 ## 关键决策
 
 ### KD1 · 规则层常驻，证据层按项检索
@@ -66,26 +92,64 @@ bundled CLI 实测上限        ≈ 200K token
 规则层（常驻全量）  招标 criteria 结构化后 ≈20KB 量级
                     ├ eligibility_rules[]   资格规则
                     └ items[]               评分项（名称/满分/score_mode/tag）
-                    ※ criteria 抽取成功时**不再注入招标原文**，只注入结构化 criteria
 
 证据层（按需检索）  投标全文入 FTS5 索引（当前完全缺失）
-                    S3 评第 k 项时：以该项 item 名称 + 关键词检索 top-N chunk
-                    每项证据预算独立（如 ≤8KB），N 项合计有硬上界
+                    ＋招标索引（D8 已建）也参与检索 ← critic F5
+                    每项证据预算独立，合计受 KD3 闭式账目约束
 ```
 
-单会话注入 = 脚手架(≈18K token) + criteria(≈7K) + 当次检索到的证据片段。**与投标是 40 页还是 400 页无关。**
+单会话注入 = 脚手架 + criteria + 当次检索到的证据片段，**与投标是 40 页还是 400 页无关**。
 
-### KD2 · 检索粒度与页锚保真
+**招标原文不是全撤（critic F5 更正）**：criteria 只有"评分项名 + 满分 + 档次描述"，装不下几十页技术参数表。凡 `basis` 指向招标某章节的评分项（典型："技术偏差：逐条响应第 X 章技术参数"），检索时**同时从招标索引取出对应 chunk**，与投标证据并列注入——否则该类项手里只有一行 criteria，无从比对，必然判错或全部 unresolved。
 
-- 复用 `rag.search`，`tag` 过滤 + BM25。chunk 携带 `page_anchor`，证据链的 `【第N页】` 由检索结果直接带出，不靠模型推算——**这是比现状更强的保证**（现状模型从大段底稿里自己数页码）。
-- 每项检索 query 由 criteria item 名称 + 该项 `basis`/关键词构造；检索不到时该项标 `evidence_unresolved`，**不判 0**（沿用既有纪律）。
-- 索引写入时机：投标层预热 OCR 完成后立即建索引（与 `ocr_status=ready` 同事务或紧随其后），评标时直接查。
+### KD2 · 检索粒度与页锚保真（按 S0 实测改写）
 
-### KD3 · 预算口径单点化，按实测上限标定
+**查询构造必须适配 trigram tokenizer**（S0 证明"拿来即用"不成立）：
 
-- 现状两套口径打架：`context_slim._preextract_char_budget` 用 `MODEL_CONTEXT_WINDOW`(=1,048,576)，`context_budget.derive_default_max_bytes` 用另一套推导；而**真实约束是 bundled CLI ≈200K token**，两个 env 都不反映它。
-- 统一到单一来源：新增 `TENDER_EFFECTIVE_CONTEXT_TOKENS`（实测标定，默认取保守值），两处共用。**`MODEL_CONTEXT_WINDOW` 不再作为预算依据**（它描述模型能力，不描述 CLI 行为），仅保留给需要它的其他用途。
-- 标定方法写进档案：二分实测 CLI 拒绝阈值，记录测得值与测法，后续换模型/换 CLI 版本按同法复测。
+- **≥3 字短语才有效**：2 字项名（报价/业绩/工期/资质）**必须扩展**成 ≥3 字候选短语再检索。扩展来源按优先级：criteria item 的 `basis` 原文片段 → 项名 + 领域固定词缀（"投标"+"报价"、"类似"+"业绩"）→ 项名相邻上下文。
+- **多词必须拆 OR，禁单 phrase**：`"投标报价" OR "报价一览"` 命中，`投标报价 报价一览` 单 phrase 为 0。需**扩展 `rag.py` 的查询构造**（初稿写"尽量只读复用"低估了改动面，此处更正）。
+- **零命中不是终点**：任一项零命中时，依次降级 ① 换扩展短语重试 ② 按该项 `basis` 指向的章节直接取 chunk ③ 仍无 → `evidence_unresolved` 且**记录实际用过的查询串**（用户可见，便于判断是漏检还是真没有）。
+- **chunk 形态保底**：投标 OCR 若识别不出章节 → 0 chunk 或单个巨 chunk。规定二次切分：无章节结构时按**页级 + 定长（带页锚）**切分，单 chunk 上限硬约束（超限即再切）。
+- 页锚由 chunk 直接带出（`page_anchor`），证据链 `【第N页】` 不靠模型推算——比现状（模型从大段底稿自己数页码）更可靠。
+- 索引写入时机：投标层预热 OCR 完成后立即建索引；**索引缺失时现场同步补建**（FTS5 对 37 万字是秒级），补建失败才降级，且降级单强制 `manual_review` 不出分（critic F7：旧路径对 400 页投标产出的是**带 warning 的错误评分**，比失败更危险）。
+
+### KD3 · 预算口径单点化 + 闭式账目（按 critic F2 改写）
+
+**现存口径清单（全部必须收编，初稿只提了两处）**：
+
+| 位置 | 常量 | 现值 | 处置 |
+|---|---|---|---|
+| `context_budget.py:47` | `_BYTES_PER_TOKEN` | 3 | 统一单位后保留（仅字节↔token 换算） |
+| `context_budget.py:51` | `_SCAFFOLD_RESERVE_TOKENS` | 30,000 | **收编**（初稿写 18K+7K=25K，与之矛盾） |
+| `context_budget.py:54` | `_AGENT_LOOP_MARGIN_DIVISOR` | 4 | 收编 |
+| `context_budget.py:57` | `FALLBACK_MAX_BYTES` | 256,000 | 收编 |
+| `context_slim.py:38` | `_DEFAULT_CHARS_PER_TOKEN` | 1.0 | **单位冲突**：与 3B/token 并存 → 统一 |
+| `context_slim.py:39` | `_DEFAULT_CONTEXT_MARGIN_TOKENS` | 4,096 | 收编 |
+| `context_slim.py:29` | `_CHUNKS_PER_QUERY` | 3 | 纳入证据预算账 |
+
+**全文统一以 token 计**（字节只在换算处出现，注明中文 UTF-8 3B/字≈1token）——64,000B 那次事故的单位错正源于混用。
+
+**闭式账目**（必须恒成立，AC5 按此断言）：
+
+```
+scaffold + criteria + Σ(per_item_evidence) + margin ≤ TENDER_EFFECTIVE_CONTEXT_TOKENS
+```
+
+各项取值**在 impl 前用事故项目真实 criteria 核基线**（实测 14 评分项 + 资格若干 ≈20+ 查询），不得凭估算落笔——初稿"每项 ≤8KB × 20 项 ≈54K + 脚手架 25K = 79K > 60K"当场就不闭合，是"落笔即不可达"的重演。
+
+**跨项去重是账目的一部分**：多个评分项常命中同一 chunk（如同一张报价表），组装期按 `chunk_id` 去重后再计账；单 chunk 超长时先裁剪再计入。
+
+**标定与失效保护**：`TENDER_EFFECTIVE_CONTEXT_TOKENS` 由二分实测 CLI 拒绝阈值得出，测法与测得值入档可复跑。**标定过期的防护**：CLI 拒绝时的错误必须点名该常量与标定档路径，提示"实测上限已变，请按附录复测"——防止它变成第五个写死的错数字。`MODEL_CONTEXT_WINDOW` 退出预算用途（它描述模型能力、不描述 CLI 行为）；若无其余消费者则一并退役。
+
+### KD3b · 检索时机与兜底边界（critic F3，初稿未定义）
+
+**检索在会话前由服务端机械完成**（非 agentic 工具）。理由：会话中检索会把轮次与注入量重新变成不可控变量，而 08-14 事故正是"反复 Read → `error_max_turns`"。服务端组装 = 注入量在发起前即已确定，可被 AC5 机械断言。
+
+**"模型按需 Read 整份投标"的无界旁路取消**。初稿把它列为风险缓解，实为绕过全部预算机制的后门。替代：
+- 命令侧保留**有界分页 Read**（单次上限 + 会话累计上限，**计入 AC5 账内**）；
+- 超出上限时提示"该项证据需人工调阅"，而非继续读。
+
+注：`server/common/contract.py:38` 已把 `Prompt is too long` 列入不可重试（初稿背景表未反映）——即爆窗现在是**一次性硬失败**，更没有"多读几次试试"的余地。
 
 ### KD4 · 掉落与失败一律可见
 
@@ -124,24 +188,88 @@ tests/                            新增：证据检索、掉落不变量、诊�
 
 ## 切片与顺序
 
-- **S1（止血，低风险）**：KD4 可见性 + KD5 掉落根因修复。做完主链路命中率恢复，且再掉落时能一眼看见。
-- **S2（口径统一）**：KD3 单点预算 + 实测标定。为 S3 提供正确的目标值。
-- **S3（主体）**：KD1/KD2 证据层入索引 + 按项检索组装。
-- **S4（验证）**：真实标书端到端跑通，记录耗时与注入量，对齐"10 分钟内"目标。
+- **S1（可见性，低风险）**：KD4 可见性 + KD5 掉落根因修复。
+- **S2（口径统一）**：KD3 单点预算 + 闭式账目 + 实测标定。为 S3 提供正确目标值。
+- **S3（主体）**：KD1/KD2 证据层入索引 + 查询构造修正 + 按项检索组装。
+- **S4（验证）**：真实标书端到端，**必须在部署矩阵最小窗口模型（DeepSeek/qwen）上跑**（08-14 教训：在 Claude 上验收完就 ship，代价是生产当验收环境）。记录耗时与注入量，对齐 10 分钟目标。
+
+**期望管理（critic F6，必须让用户知道）**：S1/S2 **不能让事故单恢复出分**。修好掉落后主链路命中 → 409K token 注入 → CLI 一次性硬失败（`contract.py:38` 已列不可重试）；S1+S2 加上裁剪 → 复演 08-15 的"largely impossible"。**S1/S2 的价值只是把静默变可见**，大投标单要到 S3 才可评。不写清这点，S1 交付会给出虚假的安全感。
 
 ## 验收标准
 
-- [ ] **AC1**：两层预热 `ready` 时评标必须命中 `doc_layer_reuse`（回归测试断言；实测事故场景不再回落）。
+- [ ] **AC0（S0 门槛，impl 前必须过）**：用部署机真实投标底稿（370,529 字）建索引，跑事故项目真实 criteria 全部查询，记录**命中率 / chunk 大小分布 / 建索引耗时**入档。命中率不达标则回到「已调研方案」表升级到 map-reduce，不硬上。
+- [ ] **AC1**：两层预热 `ready` **且传入 bid_id** 时评标必须命中 `doc_layer_reuse`（回归断言）；合法无 bid_id 的散单路径不在此约束内。
 - [ ] **AC2**：任何降级（掉落 inline、criteria 失败、证据缺失、索引缺失）在结论 `warnings` 与前端均可见，无静默路径（守卫测试：遍历降级分支，断言每条都产出可见信号）。
 - [ ] **AC3**：`criteria_looks_usable` 失败时返回可读原因，透传至任务状态与界面。
 - [ ] **AC4**：投标文件在预热完成后进入 FTS5 索引；`rag.search` 能按评分项名检出带 `page_anchor` 的 chunk。
-- [ ] **AC5**：单次评标注入量 ≤60K token（含脚手架），且**与投标页数无关**——用 40 页与 400 页两份投标实测，注入量差异 ≤20%。
-- [ ] **AC6**：预算口径单点，`MODEL_CONTEXT_WINDOW` 不再被用作预算依据；实测标定方法与测得值入档，可复跑。
-- [ ] **AC7**：真实标书端到端 ≤10 分钟出结论，`scoring` 逐项有分/有 status，证据链页锚来自检索结果。
+- [ ] **AC5**：注入量满足 KD3 闭式账目 `scaffold + criteria + Σ(per_item) + margin ≤ TENDER_EFFECTIVE_CONTEXT_TOKENS`，各项取值以事故项目真实 criteria 核过基线（不接受估算值）。**与投标页数无关**：同一招标 + 40 页 / 400 页两份投标，注入量差异 ≤20%。测量口径：组装完成后对最终 prompt 计 token（命令写进附录 B），计时起点=评标任务 `started_at`。
+- [ ] **AC6**：预算口径单点——KD3 清单里 7 个常量全部收编到单一来源，全文以 token 计；`MODEL_CONTEXT_WINDOW` 退出预算用途；标定方法与测得值入档可复跑；**CLI 拒绝时的错误消息点名该常量与标定档路径**。
+- [ ] **AC7**：真实标书端到端 ≤10 分钟出结论（计时起点=任务 `started_at`），**在部署矩阵最小窗口模型上验**；`scoring` 逐项有分/有 status，证据链页锚来自检索结果；零命中项记录实际查询串。
 - [ ] **AC8**：NO_NEW_FAILURES；ruff 净；前端三件套绿。
 
-## 待查实项（设计期未定，实施前必须查清）
+## 待查实项（S0 阶段完成，impl 前必须清零）
 
-1. `bid_id=null` 的确切成因（前端未传 / 后端解析 / 提交时机），需复现路径。
-2. bundled CLI 的真实上下文上限（二分实测，得出可标定的数字）。
-3. 投标 OCR 文本的 `structure`（`index_document` 需要 structure+body 配对）是否已有——若无需补，成本要评估。
+1. `bid_id=null` 的确切成因（前端未传 / 后端解析 / 提交时机），需复现路径。**前后端字段已核对一致**，剩余怀疑面=提交时机与状态就绪。
+2. bundled CLI 的真实上下文上限（二分实测）→ 得出 `TENDER_EFFECTIVE_CONTEXT_TOKENS` 标定值。
+3. 投标 OCR 文本的 `structure`（`index_document` 要求 structure+body 同源配对）是否已有；无章节结构时的二次切分方案实测（KD2 已给方向，需验证 chunk 大小分布）。
+
+## 附录 A · 评审记录
+
+### Round 1 · Critic Findings（Fable 5, 2026-08-15）
+
+**VERDICT: NEEDS_REVISION** — 方向正确（检索式证据层是唯一与体量脱钩的路子，且复用现成 FTS5），但主承重梁"中文 BM25 召回"零实测、预算算术不闭合，不补则 S3 落地日即第四次事故。
+
+- **F1 [P0]** 检索召回未验证，且 `rag.search` 现行语义与 KD2 直接相抵：`rag_store.py:29` 是 trigram tokenizer、`rag.py:83` 把整串包成单一 phrase → 2 字项名恒零命中、跨空格 phrase 无匹配；投标无章节结构时 0 chunk 或巨 chunk。
+- **F2 [P0]** AC5 的 60K 无推导且账不闭合（脚手架 25K + 20 项 ×8KB ≈ 79K > 60K）；`_SCAFFOLD_RESERVE_TOKENS=30_000` 与设计自述矛盾；KB/token 单位混用，重演 64,000B 单位错。
+- **F3 [P0]** "整份投标可被模型按需 Read"是绕过全部预算的无界旁路（08-14 事故正是反复 Read → max_turns）；且未定义检索发生在会话前还是会话中，两者预算/轮次账完全不同。
+- **F4 [P1]** 缺「已调研的现成方案」节，尤其未对照 map-reduce 多次小会话。
+- **F5 [P1]** 撤走招标原文后，`basis` 指向招标章节的评分项断粮。
+- **F6 [P1]** S1/S2 对大投标单不是恢复服务，缺期望管理；S4 须在最小窗口模型上验；标定过期需防护。
+- **F7 [P1]** "索引缺失→回落旧路径"是把已实证会产错误结论的路径当降级归宿（错评分比失败更危险）。
+- **P2**：AC 测量方法/计时起点未指定、`N 可配`是无消费者的新配置项、AC1 需为散单留限定语、`MODEL_CONTEXT_WINDOW` 若无消费者应退役。
+
+### Round 2 修订（本次，逐条对应）
+
+| Finding | 处置 |
+|---|---|
+| F1 | **新增 S0 Spike 实测节**（本机实跑，7 组查询数据在档）+ KD2 按实测改写（≥3 字短语扩展、多词拆 OR、零命中三级降级并记录查询串、无章节时页级+定长二次切分）+ 新增 **AC0 门槛**：召回率不达标则升级 map-reduce，不硬上 |
+| F2 | KD3 改写：列出**全部 7 个现存常量**并逐一收编、全文统一 token 计、给出**闭式账目公式**、要求以事故项目真实 criteria 核基线、跨项去重计入账目 |
+| F3 | 新增 **KD3b**：检索**在会话前由服务端机械完成**（非 agentic）；**取消无界 Read 旁路**，改有界分页 Read 且计入 AC5；补记 `contract.py:38` 爆窗已是一次性硬失败 |
+| F4 | 新增「已调研的现成方案」节，5 个候选逐个判定；map-reduce 记为**S3 未达标时的升级路径**并写明取舍理由 |
+| F5 | KD1 更正：招标索引**同样参与检索**，`basis` 指向招标章节的项按需带出招标 chunk |
+| F6 | 切片节补**期望管理**：S1/S2 只把静默变可见，大单到 S3 才可评；S4 必须在最小窗口模型上验；AC6 要求 CLI 拒绝错误点名标定常量与档案路径 |
+| F7 | KD2 改：索引缺失**现场同步补建**（37 万字秒级），补建失败才降级，且降级单强制 `manual_review` 不出分 |
+| P2 | AC5/AC7 补测量口径与计时起点；删除"N 可配默认偏大"改为受账目约束；AC1 补散单限定语；`MODEL_CONTEXT_WINDOW` 明确退出预算用途 |
+
+## 附录 B · 可复跑命令
+
+**S0 检索行为实测**（本机，无需部署机）：
+
+```bash
+uv run python -c "
+import sqlite3, sys; sys.path.insert(0,'.')
+from server.stores import rag_store
+from server.ocr.rag import _escape_match_query
+conn=sqlite3.connect(':memory:'); rag_store.ensure_schema(conn)
+rag_store.insert_rows(conn,[dict(chunk_id='c1',file='投标.pdf',chapter_path='商务标',
+  chapter_title='报价一览表',tag='bid',page_start=1,page_end=2,page_artifact='original',
+  chunk_text='投标报价：人民币壹佰贰拾万元整。施工组织设计详见技术标第三章。项目负责人张三。')])
+for q in ['报价','投标报价','施工组织设计','施工组织设计 技术标']:
+    print(q, len(rag_store.query_rows(conn,_escape_match_query(q),tag=None,limit=5)))
+"
+```
+
+**预算常量清单核对**：
+
+```bash
+grep -n "_BYTES_PER_TOKEN\|_SCAFFOLD_RESERVE_TOKENS\|_AGENT_LOOP_MARGIN_DIVISOR\|FALLBACK_MAX_BYTES" server/tender/context_budget.py
+grep -n "_CHUNKS_PER_QUERY\|_DEFAULT_CHARS_PER_TOKEN\|_DEFAULT_CONTEXT_MARGIN_TOKENS" server/tender/context_slim.py
+```
+
+**部署机底稿体量核对**（SSH 可达时）：
+
+```bash
+docker exec agent-backend python3 -c "
+import sqlite3; c=sqlite3.connect('/app/data/db/platform.sqlite3')
+print(list(c.execute('SELECT project_id,ocr_status,length(ocr_text) FROM tender_bid_docs ORDER BY created_at DESC LIMIT 3')))"
+```
