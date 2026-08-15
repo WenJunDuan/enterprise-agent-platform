@@ -10,6 +10,32 @@ baseline_failures: 34
 final_failures: 34
 baseline_diff: "empty"
 
+# ── 返工轮（impl-pass1 REWORK 响应，2026-08-15）─────────────────────────────
+# 执行者：generator subagent（worktree agent-a8a7aaaadda158b5d）。该 worktree 由
+# `git merge worktree-agent-a40c8e9dd8b94062a` 取得上一轮 8 个 code commit（含 wip 快照
+# 8e326d0），合并点 e4d9d96 即返工开工基线。
+rework:
+  executor: "generator subagent (worktree agent-a8a7aaaadda158b5d)"
+  baseline_commit: "e4d9d96"
+  # 开工基线是 wip 半成品（8e326d0 把 _resolve_doc_layer 改成返 DocLayerOutcome，
+  # 但 runner 仍按 tuple 解包）→ 51 条失败。
+  baseline_failures: 51
+  final_failures: 8
+  # comm -13 before after = 0（无新增失败）；comm -23 = 43（修复 43 条）。
+  new_failures: 0
+  fixed_failures: 43
+  baseline_diff: "empty (0 new)"
+  # 收尾 8 条 = 环境失败，与返工无关且改动前后逐条同名：
+  # test_audit_direct.py(6) + test_audit_direct_metrics.py(1) 缺 MODEL_PROFILES_JSON 输出预算配置；
+  # test_supported_document_formats.py(1) demo runbook 冒烟需 paddle。
+  residual_env_failures: 8
+  verify_commands:
+    - "uv run pytest -q -p no:randomly 2>&1 | grep -E '^(FAILED|ERROR)' | sort"
+    - "ruff check server tests  # All checks passed!"
+    - "cd agent-front && bun test  # 203 pass / 0 fail"
+    - "cd agent-front && bunx tsc -b  # exit 0"
+    - "cd agent-front && bun run lint  # exit 0"
+
 records:
   - task: "S1 · KD5 主链路掉落根因修复（bid_id 丢失）"
     commit: "be329ee"
@@ -97,19 +123,131 @@ records:
     green_summary: "14 passed；三章文档得 3 chunk，chapter_title 逐章正确"
     green_observed_at: "2026-08-15"
 
+  # ── 返工轮记录（impl-pass1 REWORK 逐条响应）──────────────────────────────
+
+  - task: "返工 F1 · 证据层信号穿透 runner 落到结论（P0）"
+    commit: "2e0597f"
+    red_command: "uv run pytest tests/test_tender_evidence_wiring.py -q -p no:randomly"
+    red_summary: >-
+      全量 75 failed / 1435 passed。根因单一且是接线层的：_resolve_doc_layer 已返
+      DocLayerOutcome 而 runner 仍 tuple 解包 → TypeError: cannot unpack non-iterable
+      DocLayerOutcome object，波及 read_layer / prewarm_oracle / criteria_ref /
+      retry_non_retryable 等全部走 run_tender_evaluation 的用例。穿透测试 6 条全红。
+    red_observed_at: "2026-08-15"
+    green_command: "uv run pytest tests/test_tender_evidence_wiring.py -q -p no:randomly"
+    green_summary: >-
+      6 passed（其一断言 evidence_unresolved 出现在**最终 payload** 的
+      extracted_data.ocr_warnings；其二断言 force_manual_review 时 model 调用数=0
+      且 inline OCR 调用数=0）。全量 38 failed → 其中 30 条为本轮修复对象。
+    green_observed_at: "2026-08-15"
+
+  - task: "返工 F2 · 回落/preextract 预算扣掉脚手架与循环余量（P0）"
+    commit: "83a840a"
+    red_command: "uv run pytest tests/test_tender_injection_budget.py -q -p no:randomly"
+    red_summary: >-
+      6 failed / 18 passed。AttributeError: module has no attribute
+      'fallback_injection_tokens'；且 fallback_max_bytes() 实测 600,000 B —— 比收编前的
+      硬编码 256,000 松 2.3 倍，回落 400KB 底稿 ≈ 200K+90K token 必撞 CLI 硬拒。
+    red_observed_at: "2026-08-15"
+    green_command: "uv run pytest tests/test_tender_injection_budget.py tests/test_tender_context_budget.py tests/test_tender_context_slim.py -q -p no:randomly"
+    green_summary: >-
+      55 passed。fallback_max_bytes() = 180,000 B（60,000 token = 200,000−90,000−50,000），
+      < 收编前 256,000。新增 AC5 穿透断言：走 inline 回落 + 400KB 底稿，对**最终 prompt**
+      计 token，observed + scaffold + margin ≤ 标定上限。
+    green_observed_at: "2026-08-15"
+
+  - task: "返工 F4 · 检索全零命中归宿改判 manual_review（P1）"
+    commit: "1551bf9"
+    red_command: "uv run pytest tests/test_tender_evidence_context.py tests/test_tender_evidence_wiring.py -q -p no:randomly"
+    red_summary: >-
+      2 failed。单元层 assert result.force_manual_review is True 失败（旧实现返 False
+      并回落整份注入）；穿透层 assert wired['model'] == 0 得 1 —— 全零命中时模型照常被
+      调用，对超预算大标书即复演 08-15 截断错评。
+    red_observed_at: "2026-08-15"
+    green_command: "uv run pytest tests -q -p no:randomly"
+    green_summary: "8 failed（= 环境基线）/ 1518 passed；全零命中不再发 prompt，warning 落结论。"
+    green_observed_at: "2026-08-15"
+
+  - task: "返工 F3 · KD2 多词拆 OR + AC0b 度量脚本拒绝自证 PASS（P1）"
+    commit: "130ba67"
+    red_command: "uv run pytest tests/test_rag_dual_channel.py tests/test_tender_recall_measurement.py -q -p no:randomly"
+    red_summary: >-
+      检索侧 3 failed：`施工组织设计 技术标`、`项目负责人 一级建造师 安全生产许可证`、
+      `报价 施工组织设计` 经 rag.search 全部零命中（_escape_match_query 仍把整串包成单一
+      phrase，跨空格 trigram 序列不存在）。度量侧 2 failed：脚本在无真实底稿时输出
+      `AC0b: PASS` 且退出码 0。
+    red_observed_at: "2026-08-15"
+    green_command: "uv run pytest tests/test_rag_dual_channel.py tests/test_tender_recall_measurement.py -q -p no:randomly"
+    green_summary: >-
+      18 + 3 passed。多词查询拆成 `\"A\" OR \"B\"` 后命中；<3 字词从 FTS 查询剔除（由子串
+      通道负责），全短词回落单 phrase 不产空表达式。脚本无底稿时输出 `AC0b: BLOCKED` +
+      解锁路径、退出码 2，结构上不可能自证通过。
+    green_observed_at: "2026-08-15"
+
+  - task: "返工 F5 · 预算耗尽的项记 evidence_truncated（P1）"
+    commit: "c4613eb"
+    red_command: "uv run pytest tests/test_tender_evidence_index.py tests/test_tender_evidence_context.py -q -p no:randomly"
+    red_summary: >-
+      4 failed。AttributeError: 'EvidenceResult' object has no attribute 'truncated'；
+      把证据额度压到只装得下最大一块后，排序靠后的项**检索到了证据**却既不出块、
+      也不进 unresolved、也无 warning（实测 warnings 为 []）。
+    red_observed_at: "2026-08-15"
+    green_command: "uv run pytest tests/test_tender_evidence_index.py tests/test_tender_evidence_context.py -q -p no:randomly"
+    green_summary: >-
+      17 + 14 passed。饿死项进 truncated[] 并产出 evidence_truncated warning（点名项名 +
+      明确不得判 0）；跨项去重命中的项不算被饿死（证据仍在注入块里）；额度充足时 truncated == []。
+    green_observed_at: "2026-08-15"
+
+  - task: "返工 F6 · structure/body 不匹配抛专用异常，收窄归因面（P1）"
+    commit: "54b82cb"
+    red_command: "uv run pytest tests/test_tender_evidence_index.py -q -p no:randomly"
+    red_summary: >-
+      4 failed。AttributeError: module 'server.ocr.rag' has no attribute
+      'StructureBodyMismatchError'；且注入一个与结构无关的 ValueError 后，build_chunks
+      静默退化成整份单 chunk（不抛错），证实 except ValueError 罩住 index_document +
+      dict(row) 全段。
+    red_observed_at: "2026-08-15"
+    green_command: "uv run pytest tests/test_tender_evidence_index.py -q -p no:randomly"
+    green_summary: >-
+      21 passed。真 mismatch 仍退回整份切分（行为保持），无关 ValueError 上抛（
+      pytest.raises(ValueError, match='完全无关') 通过）；专用类型是 ValueError 子类，
+      既有 except ValueError 调用方行为不变。
+    green_observed_at: "2026-08-15"
+
+  - task: "返工 P2 · 子串通道文档顺序 + 每项 chunk 数单点推导"
+    commit: "babe50e"
+    red_command: "uv run pytest tests/test_rag_dual_channel.py tests/test_tender_injection_budget.py -q -p no:randomly"
+    red_summary: >-
+      4 failed。scan_rows 对 12 块索引取 limit=3 返回 ['__bid__#0','__bid__#1','__bid__#10']
+      （字典序，非文档序）；InjectionPlan 无 chunks_per_item，per-item chunk 数在
+      retrieve_evidence(÷4,000) 与 chunks_per_query_budget(÷3,453) 两处各推一遍。
+    red_observed_at: "2026-08-15"
+    green_command: "uv run pytest tests/test_rag_dual_channel.py tests/test_tender_injection_budget.py -q -p no:randomly"
+    green_summary: "18 + 27 passed。ORDER BY rowid 得 #0/#1/#2；两处推导收敛到 InjectionPlan.chunks_per_item（除数取硬上限 MAX_CHUNK_CHARS）。"
+    green_observed_at: "2026-08-15"
+
 measurements:
-  - name: "AC0b 双通道召回率（等效构造底稿，本机无部署机真实底稿）"
-    command: "uv run python scripts/measure_tender_recall.py /tmp/fake_bid_draft.txt"
+  - name: "AC0b 双通道召回率"
+    status: "BLOCKED —— 不计 PASS（返工 F3 改判）"
+    command: "uv run python scripts/measure_tender_recall.py   # 无底稿时输出 AC0b: BLOCKED, 退出码 2"
     result: >-
-      28,210 字 / 67 页底稿，走生产链路 build_chunks 得 12 chunk
-      （min 1,382 / 中位 2,569 / max 3,830，均 ≤ MAX_CHUNK_CHARS=4,000）。
-      双通道召回 20/20 = 100% / 1.2ms；对照组（仅 FTS5 = 改造前）14/20 = 70%，
-      漏检恰好是 报价 业绩 工期 资质 质量 工艺 六个 2 字词。
-      rag_chunks 与 rag_chunk_scan chunk_id 一致 12/12。门槛 88% → PASS。
-    caveat: >-
-      本机无部署机真实底稿，语料为等效构造（章节结构与中文措辞贴近真实标书，
-      查询词表取自 S0-B 用过的真实 criteria 项名）。对照组数字证明该度量能抓住
-      它要防的失败，不是随便怎么实现都 100%。
+      冒烟自检（构造语料）：7 chunk，双通道 20/20 = 100% / 0.7ms，对照组（仅 FTS5 =
+      改造前）14/20 = 70%，漏检恰好是 报价 业绩 工期 资质 质量 工艺 六个 2 字词；
+      rag_chunks 与 rag_chunk_scan chunk_id 一致。**这组数字只证明双通道接线与两表同源，
+      不构成召回达标证据。**
+    why_blocked: >-
+      构造语料把 20 个查询词逐字埋进正文，≥3 字通道 verbatim 必中；ground truth 用子串
+      匹配，又把"措辞不同"这类漏检排除出分母。该度量**结构上抓不住 S0-B 真实数据暴露的
+      那类失败**（真实项「价格-最后报价」verbatim 缺失 → 裸用召回 38%）。判据一旦能由构造
+      保证，它就不再是判据。上一轮据此计 PASS，是 pass1 F3 的成因。
+    unblock: >-
+      拿部署机真实投标底稿（S0-B 用过的那份，163,170 字）跑
+      `uv run python scripts/measure_tender_recall.py <真实底稿.txt>`，命中率 ≥88%
+      （S0-B 实测基线）方可计 PASS；跌破则按 design「已调研方案」表升级 map-reduce。
+      复测前置条件已就绪：KD2 多词拆 OR 已于 130ba67 补上（此前未实现，是复测最大风险点）。
+    enforcement: >-
+      脚本已改为无真实底稿时只输出 `AC0b: BLOCKED` 并返回 2，结构上不可能自证通过；
+      tests/test_tender_recall_measurement.py 锁住这条不变量。
 
   - name: "脚手架 token 实测（AC6 标定方法可复跑）"
     command: "uv run python scripts/measure_tender_scaffold.py"
