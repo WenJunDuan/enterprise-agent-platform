@@ -127,20 +127,24 @@ def build_evidence_context(
         conn.close()
 
     if not result.blocks:
-        # 一条证据都没检出 → 接管等于把模型饿死（手里只剩一个空的证据头）。这不是"证据层
-        # 不可用"（底稿是好的、索引也建成了），只是本次检索全落空，交回既有路径更安全。
+        # F4：索引建成了却一条证据都检不出，是**结构性异常**（底稿与本项目 criteria 对不上），
+        # 不是"这单证据少一点"。旧归宿是回落整份注入——对超预算大标书等于截断错评（复演
+        # 08-15），对小标书等于把异常信号消化成一次照常出分。两种情形都是"带残缺证据出分"，
+        # 而接管同样不行（模型只会拿到一个空的证据头）。唯一安全归宿是停下来交人工。
         logger.warning(
             "tender_evidence_all_unresolved",
             extra={"project_id": project_id, "items": len(result.unresolved)},
         )
         return EvidenceContext(
+            force_manual_review=True,
             warnings=[
                 _warning(
                     "evidence_all_unresolved",
-                    f"按 criteria 检索本家投标底稿未命中任何证据（{len(result.unresolved)} 项全空），"
-                    "已回落整份底稿注入；若底稿超预算会被内容优先截断，请留意结论中的截断提示。",
+                    f"按 criteria 检索本家投标底稿未命中任何证据（{len(result.unresolved)} 项全空）。"
+                    "索引已建成却一条都检不出，说明底稿与本项目评分标准对不上（错传文件 / OCR "
+                    "失真 / criteria 解析串项），已停止自动评分并转人工复核。",
                 )
-            ]
+            ],
         )
 
     warnings = [

@@ -66,11 +66,13 @@ def test_零命中项进可见警告且不判分():
     assert "不得判 0" in str(unresolved[0]["message"])
 
 
-def test_全部零命中时不接管():
-    """一条证据都没检出时接管 = 让模型拿着空证据头出分，比不接管更危险。
+def test_全部零命中时停在人工复核():
+    """F4：索引建成而检索全空是**结构性异常**，归宿是 manual_review，不是回落整份注入。
 
-    这不是"证据层不可用"（底稿是好的、索引也建成了），故**不**强制 manual_review，
-    而是交回既有路径并留下可见 warning。
+    本测试原先断言 ``force_manual_review is False``（回落既有路径）。那条归宿对超预算大标
+    书 = 截断错评（复演 08-15），对小标书也只是把"检索全空"这个异常信号变成一次照常出分；
+    两种情形下都属于"带着残缺证据出分"。既然索引建成了却一条都检不出，说明底稿与本项目
+    criteria 根本对不上——该让人看一眼，而不是让模型硬评。
     """
     result = ec.build_evidence_context(
         tender_text=_TENDER,
@@ -79,7 +81,7 @@ def test_全部零命中时不接管():
         project_id="tp-1",
     )
     assert result.context is None, "全空时不得接管"
-    assert result.force_manual_review is False
+    assert result.force_manual_review is True
     assert [w["status"] for w in result.warnings] == ["evidence_all_unresolved"]
 
 
