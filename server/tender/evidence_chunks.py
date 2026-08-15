@@ -105,6 +105,10 @@ def build_chunks(text: str, *, file_name: str, tag: str | None) -> list[dict[str
     chunks: list[dict[str, Any]] = []
     if structure["chapters"]:
         conn = sqlite3.connect(":memory:")
+        # row_factory 必须显式设置：默认返回 tuple，``dict(tuple)`` 会抛 ValueError，而下面
+        # 的 except ValueError 会把它误当成"structure/body 不匹配"，于是**每一份文档都静默
+        # 退化成整份单 chunk**——章节级切分形同虚设，且只在日志里留一行 warning。
+        conn.row_factory = sqlite3.Row
         try:
             index_document(structure, text, conn=conn)
             chunks = [

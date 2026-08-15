@@ -12,10 +12,14 @@ import 接线，函数体、命名、日志文案、注释语义逐字未改。r
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 
 from server.stores.tender_doc_store import decode_failed_files
 from server.tender import doc_layer, doc_rerun
+from server.tender.evidence_context import EvidenceContext, build_evidence_context
+
+logger = logging.getLogger(__name__)
 
 
 def _ocr_integrity_warnings(
@@ -115,7 +119,7 @@ async def _resolve_doc_layer(
     return doc_layer_text, warnings
 
 
-# 掉落原因的用户可读说明。键与 ``doc_layer.describe_doc_layer_gap`` 的机器码一一对应；
+# 掉落原因的用户可读说明。键与 :func:`describe_doc_layer_gap` 的机器码一一对应；
 # 新增分支漏配文案会命中 _FALLBACK_REASON_TEXT 的兜底（仍可见），不会静默。
 _FALLBACK_REASON_TEXT = {
     "missing_bid_id": "提交时未能定位本次投标的预热记录",
@@ -133,7 +137,7 @@ async def _doc_layer_fallback_warning(
 ) -> dict[str, object]:
     """把"没用上预热底稿"渲染成结论级 warning（AC2：降级必须留可见痕迹）。"""
     reason = (
-        await asyncio.to_thread(doc_layer.describe_doc_layer_gap, project_id, bid_id, tenant)
+        await asyncio.to_thread(describe_doc_layer_gap, project_id, bid_id, tenant)
         or "doc_layer_unusable"
     )
     detail = _FALLBACK_REASON_TEXT.get(reason, "预热底稿不可用")
@@ -157,3 +161,84 @@ def _ocr_warning_block(warnings: list[dict[str, object]]) -> str:
         f"{lines}\n"
         "依赖上述材料的评分项：证据不足时按现行 evidence 缺失规则处理（manual_review / 不得凭空判 0）。"
     )
+
+
+def load_evidence_context(
+    project_id: str, bid_id: str | None, tenant: str
+) -> EvidenceContext | None:
+    """走证据层组装本次评标的注入块，并把降级信号一并带出（S3）。
+
+    与 :func:`doc_layer.load_doc_layer_context_slim` 的分工：那个只返回文本（十余处测试按 ``str | None``
+    monkeypatch 它），而调用方还需要 ``warnings`` 与 ``force_manual_review`` 两个**必须上界面**
+    的信号，故单开一个返回结构化结果的入口，不去改既有 loader 的签名。
+
+    Args:
+        project_id: 招标项目 ID。
+        bid_id: 当前被评标的投标文件 ID。
+        tenant: 租户作用域。
+
+    Returns:
+        :class:`EvidenceContext`；读层本身不可用（缺 bid_id / 底稿未就绪 / DB 故障）时返回
+        ``None``，由调用方按既有掉落逻辑处理。
+    """
+    if not bid_id:
+        return None
+    try:
+        project_doc = doc_layer.get_project_doc(project_id, tenant)
+        if doc_layer.doc_ocr_status(project_doc) not in doc_layer.DOC_LAYER_USABLE_STATUSES:
+            return None
+        bid = doc_layer.get_bid_doc(project_id, bid_id, tenant)
+        if doc_layer.doc_ocr_status(bid) not in doc_layer.DOC_LAYER_USABLE_STATUSES or not bid.get("ocr_text"):
+            return None
+        return build_evidence_context(
+            tender_text=project_doc["ocr_text"],
+            bid_text=bid["ocr_text"],
+            criteria=doc_layer._parse_stored_criteria(project_doc.get("criteria")),
+            project_id=project_id,
+        )
+    except ValueError:
+        raise  # 枚举违约是内部不变量破坏，与既有读层同一归宿
+    except Exception:
+        logger.warning(
+            "tender_evidence_context_failed",
+            extra={"project_id": project_id, "bid_id": bid_id},
+            exc_info=True,
+        )
+        return None
+
+
+def describe_doc_layer_gap(project_id: str, bid_id: str | None, tenant: str) -> str | None:
+    """回答"这次为什么用不了预热底稿"，供 KD4 把静默掉落变成用户可见 warning。
+
+    只在读层已返回 None 后调用（多一次 doc 行读，代价 = 两条主键查询）。刻意**不**与
+    :func:`_build_doc_context` 合流成"返回值带原因"：后者被十余处测试按 ``str | None``
+    monkeypatch，改签名等于把可见性改造的成本转嫁成一次大范围返工。
+
+    Args:
+        project_id: 招标项目 ID。
+        bid_id: 当前被评标的投标文件 ID；``None`` 即"无法定位当前家"。
+        tenant: 租户作用域。
+
+    Returns:
+        具名原因机器码；确实可用（不该走到这里）时返回 ``None``；读层故障返回
+        ``doc_layer_unreadable``。
+    """
+    if not bid_id:
+        return "missing_bid_id"
+    try:
+        project_doc = doc_layer.get_project_doc(project_id, tenant)
+        bid = doc_layer.get_bid_doc(project_id, bid_id, tenant)
+    except Exception:
+        logger.warning("tender_doc_layer_gap_read_failed", exc_info=True)
+        return "doc_layer_unreadable"
+    if project_doc is None:
+        return "tender_doc_absent"
+    if doc_layer.doc_ocr_status(project_doc) not in doc_layer.DOC_LAYER_USABLE_STATUSES:
+        return "tender_doc_not_usable"
+    if bid is None:
+        return "bid_doc_absent"
+    if doc_layer.doc_ocr_status(bid) not in doc_layer.DOC_LAYER_USABLE_STATUSES:
+        return "bid_doc_not_usable"
+    if not bid.get("ocr_text"):
+        return "bid_doc_empty"
+    return None

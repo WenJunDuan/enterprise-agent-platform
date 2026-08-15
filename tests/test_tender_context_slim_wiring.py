@@ -147,8 +147,12 @@ def test_load_doc_layer_context_slim_uses_slim_text_when_criteria_present(monkey
 
     result = doc_layer.load_doc_layer_context_slim("tp-test", "bid-1", "acme")
 
+    # S3（2026-08-15）行为变更：criteria 有可检索项时改走**证据层按项检索**，产物不再是
+    # "招标瘦身块 + 投标全文"两段拼接，而是逐项检出的证据片段。本测试的原意——"criteria
+    # 在场时只带相关章节、不带无关章节"——由下面两条断言继续守住。
+    # 不比长度：本 fixture 只有 153 字，证据块的固定说明头在这个尺度上必然占大头；
+    # "注入量与体量脱钩"由 test_tender_evidence_index 用真实量级的底稿断言。
     assert result is not None
-    tender_block, bid_block = result.split("\n\n=== 投标文件", maxsplit=1)
-    assert len(tender_block) < len("=== 招标文件底稿 ===\n" + tender_text)
-    assert "商务条款章节独有内容" not in tender_block
-    assert bid_block.endswith("complete bid text")
+    assert "商务条款章节独有内容" not in result, "与 criteria 无关的章节不得注入"
+    assert "技术方案评分章节内容" in result, "criteria 指向的评分章节必须在场"
+    assert "营业执照资格章节内容" in result, "criteria 指向的资格章节必须在场"

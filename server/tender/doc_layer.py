@@ -20,6 +20,7 @@ from datetime import UTC, datetime
 from server.platform.config import get_ocr_concurrency_settings
 from server.stores.tender_doc_store import OCR_STATUSES, get_bid_doc, get_project_doc
 from server.tender.context_slim import build_slim_tender_context
+from server.tender.evidence_context import build_evidence_context
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +111,20 @@ def _build_doc_context(
         tender_text = project_doc["ocr_text"]
         if slim:
             criteria = _parse_stored_criteria(project_doc.get("criteria"))
+            # S3（2026-08-15）：有可检索的 criteria 时改走**证据层按项检索**——注入量因此与
+            # 投标体量脱钩（实测投标底稿 370,529 字，拼整份必爆窗）。证据层不适用时才落回
+            # 既有的"招标瘦身 + 投标全文"拼接。
+            evidence = build_evidence_context(
+                tender_text=tender_text,
+                bid_text=bid["ocr_text"],
+                criteria=criteria,
+                project_id=project_id,
+            )
+            if evidence.context is not None:
+                return evidence.context
+            if evidence.force_manual_review:
+                # 证据层不可用（底稿建不出索引 / 预算不可达）→ 绝不"凑合评一个"。
+                return None
             slim_text = (
                 build_slim_tender_context(tender_text, criteria, file_name=project_id)
                 if criteria is not None
@@ -164,42 +179,6 @@ def load_doc_layer_context_slim(project_id: str, bid_id: str | None, tenant: str
     """
     return _build_doc_context(project_id, bid_id, tenant, slim=True)
 
-
-def describe_doc_layer_gap(project_id: str, bid_id: str | None, tenant: str) -> str | None:
-    """回答"这次为什么用不了预热底稿"，供 KD4 把静默掉落变成用户可见 warning。
-
-    只在读层已返回 None 后调用（多一次 doc 行读，代价 = 两条主键查询）。刻意**不**与
-    :func:`_build_doc_context` 合流成"返回值带原因"：后者被十余处测试按 ``str | None``
-    monkeypatch，改签名等于把可见性改造的成本转嫁成一次大范围返工。
-
-    Args:
-        project_id: 招标项目 ID。
-        bid_id: 当前被评标的投标文件 ID；``None`` 即"无法定位当前家"。
-        tenant: 租户作用域。
-
-    Returns:
-        具名原因机器码；确实可用（不该走到这里）时返回 ``None``；读层故障返回
-        ``doc_layer_unreadable``。
-    """
-    if not bid_id:
-        return "missing_bid_id"
-    try:
-        project_doc = get_project_doc(project_id, tenant)
-        bid = get_bid_doc(project_id, bid_id, tenant)
-    except Exception:
-        logger.warning("tender_doc_layer_gap_read_failed", exc_info=True)
-        return "doc_layer_unreadable"
-    if project_doc is None:
-        return "tender_doc_absent"
-    if doc_ocr_status(project_doc) not in DOC_LAYER_USABLE_STATUSES:
-        return "tender_doc_not_usable"
-    if bid is None:
-        return "bid_doc_absent"
-    if doc_ocr_status(bid) not in DOC_LAYER_USABLE_STATUSES:
-        return "bid_doc_not_usable"
-    if not bid.get("ocr_text"):
-        return "bid_doc_empty"
-    return None
 
 
 async def wait_doc_layer_ready(project_id: str, bid_id: str, tenant: str) -> str:

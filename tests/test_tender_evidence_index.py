@@ -72,6 +72,28 @@ def test_small_chunks_pass_through_untouched():
     assert ch.split_oversized_chunks([chunk]) == [chunk]
 
 
+def test_章节结构必须真的被用上():
+    """回归守卫：章节级切分曾因 ``dict(tuple)`` 抛 ValueError 被 except 吞掉，导致**每一份
+    文档都静默退化成整份单 chunk**——章节切分形同虚设，只在日志里留一行 warning。
+
+    这正是本 sprint 要根治的形态（静默降级），故用"一章一 chunk"直接断言，不看日志。
+    """
+    text = (
+        "# 第一章 评标办法\n技术方案评分章节内容。\n"
+        "# 第二章 资格审查\n营业执照资格章节内容。\n"
+        "# 第三章 商务条款\n商务条款章节独有内容。"
+    )
+    chunks = ch.build_chunks(text, file_name="__tender__", tag=None)
+
+    assert len(chunks) == 3, f"应按章节切成 3 个 chunk，实得 {len(chunks)}"
+    assert not any("商务条款章节独有内容" in c["chunk_text"] for c in chunks[:2])
+    assert {c["chapter_title"] for c in chunks} == {
+        "第一章 评标办法",
+        "第二章 资格审查",
+        "第三章 商务条款",
+    }
+
+
 def test_structureless_text_still_produces_page_anchored_chunks():
     """OCR 认不出章节时按页级 + 定长切，绝不退化成 0 chunk 或单个巨 chunk。"""
     body = "\n".join(f"【第{page}页】\n" + "无结构正文。" * 300 for page in range(1, 4))

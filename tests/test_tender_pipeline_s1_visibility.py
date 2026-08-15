@@ -142,7 +142,7 @@ def test_ready_layers_with_bid_id_must_hit_doc_layer_reuse(monkeypatch):
         },
     )
     assert doc_layer.load_doc_layer_context("tp-1", "bid-a", "acme") is not None
-    assert doc_layer.describe_doc_layer_gap("tp-1", "bid-a", "acme") is None
+    assert doc_context.describe_doc_layer_gap("tp-1", "bid-a", "acme") is None
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -197,7 +197,7 @@ def test_describe_doc_layer_gap_names_every_fallback_cause(
     """遍历每条掉落分支，断言都有具名原因——没有一条能静默走掉。"""
     monkeypatch.setattr(doc_layer, "get_project_doc", lambda pid, tenant: project_row)
     monkeypatch.setattr(doc_layer, "get_bid_doc", lambda pid, b, tenant: bid_row)
-    assert doc_layer.describe_doc_layer_gap("tp-1", bid_id, "acme") == expected
+    assert doc_context.describe_doc_layer_gap("tp-1", bid_id, "acme") == expected
 
 
 def test_doc_layer_fallback_emits_user_visible_warning(monkeypatch):
