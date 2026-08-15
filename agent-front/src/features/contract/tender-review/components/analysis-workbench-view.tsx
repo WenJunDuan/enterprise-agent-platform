@@ -37,7 +37,7 @@ type AnalysisWorkbenchViewProps = {
 const viewLabels: Record<TenderReviewMode, string> = {
   overview: '概要分析',
   detail: '辅助评审',
-  compare: '风险对比',
+  compare: '投标横评',
 }
 
 const emptyProjectInfo: ProjectInfo = {
@@ -91,7 +91,7 @@ export function AnalysisWorkbenchView(props: AnalysisWorkbenchViewProps) {
                 active={props.mode === 'compare'}
                 onClick={() => props.onMode('compare')}
               >
-                风险对比
+                投标横评
               </ModeButton>
             </div>
             <Button size='sm' onClick={() => props.onReport()}>
@@ -578,7 +578,7 @@ function CompareWorkbench({
 }
 
 const compareStatusText: Record<TenderCompareStatus, string> = {
-  none: '尚未开始横比：全部投标人评标完成后会自动开始。',
+  none: '',
   pending: '横比已排队，稍候自动刷新。',
   running: '横比计算中，稍候自动刷新。',
   failed: '横比未成功。',
