@@ -36,6 +36,7 @@ from server.stores.tender_task_store import (
     try_transition_tender_task,
     upsert_tender_task,
 )
+from server.tender.bid_resolve import resolve_prewarm_bid_id
 from server.tender.worker import admission_available, schedule_tender_evaluation_task
 
 logger = logging.getLogger(__name__)
@@ -124,11 +125,33 @@ async def _submit_bid_evaluation(
         if mode != "upload":
             raise HTTPException(status_code=400, detail="multipart requests must use mode=upload")
         raw_form = form_data.get("form_json")
+        submitted_bid_id: str | None = None
+        submitted_bidder_name: str | None = None
         if raw_form:
             try:
-                prewarm_bid_id = (json.loads(raw_form) or {}).get("bid_id") or None
+                parsed_form = json.loads(raw_form) or {}
             except (ValueError, TypeError):
-                prewarm_bid_id = None
+                parsed_form = {}
+            if isinstance(parsed_form, dict):
+                submitted_bid_id = parsed_form.get("bid_id") or None
+                submitted_bidder_name = parsed_form.get("bidder_name") or None
+        # KD5：缺 bid_id 时按投标人名回查预热记录。前端在 uploadBid 未返回就提交（或刷新丢内存
+        # 态）会漏传该字段 → 旧行为直接掉 inline OCR，且两层预热随后转 ready，事后完全看不出来。
+        prewarm_bid_id, bid_gap_reason = resolve_prewarm_bid_id(
+            project_id,
+            tenant,
+            explicit_bid_id=submitted_bid_id,
+            bidder_name=submitted_bidder_name,
+        )
+        if bid_gap_reason is not None:
+            logger.info(
+                "tender_prewarm_bid_unresolved",
+                extra={
+                    "request_id": request_id,
+                    "project_id": project_id,
+                    "reason": bid_gap_reason,
+                },
+            )
         case_path = await materialize_upload_submission(
             request_id=request_id,
             tenant=tenant,

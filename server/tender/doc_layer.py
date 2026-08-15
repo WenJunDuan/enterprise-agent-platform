@@ -165,6 +165,43 @@ def load_doc_layer_context_slim(project_id: str, bid_id: str | None, tenant: str
     return _build_doc_context(project_id, bid_id, tenant, slim=True)
 
 
+def describe_doc_layer_gap(project_id: str, bid_id: str | None, tenant: str) -> str | None:
+    """回答"这次为什么用不了预热底稿"，供 KD4 把静默掉落变成用户可见 warning。
+
+    只在读层已返回 None 后调用（多一次 doc 行读，代价 = 两条主键查询）。刻意**不**与
+    :func:`_build_doc_context` 合流成"返回值带原因"：后者被十余处测试按 ``str | None``
+    monkeypatch，改签名等于把可见性改造的成本转嫁成一次大范围返工。
+
+    Args:
+        project_id: 招标项目 ID。
+        bid_id: 当前被评标的投标文件 ID；``None`` 即"无法定位当前家"。
+        tenant: 租户作用域。
+
+    Returns:
+        具名原因机器码；确实可用（不该走到这里）时返回 ``None``；读层故障返回
+        ``doc_layer_unreadable``。
+    """
+    if not bid_id:
+        return "missing_bid_id"
+    try:
+        project_doc = get_project_doc(project_id, tenant)
+        bid = get_bid_doc(project_id, bid_id, tenant)
+    except Exception:
+        logger.warning("tender_doc_layer_gap_read_failed", exc_info=True)
+        return "doc_layer_unreadable"
+    if project_doc is None:
+        return "tender_doc_absent"
+    if doc_ocr_status(project_doc) not in DOC_LAYER_USABLE_STATUSES:
+        return "tender_doc_not_usable"
+    if bid is None:
+        return "bid_doc_absent"
+    if doc_ocr_status(bid) not in DOC_LAYER_USABLE_STATUSES:
+        return "bid_doc_not_usable"
+    if not bid.get("ocr_text"):
+        return "bid_doc_empty"
+    return None
+
+
 async def wait_doc_layer_ready(project_id: str, bid_id: str, tenant: str) -> str:
     """等招标层 + 当前家投标层预热 OCR 到终态，并回报"为什么不等了"（H3 KD5）。
 

@@ -93,7 +93,29 @@ _MANUAL_NULL_TAGS = _TAG_CANON - {"scored"}
 _SCORE_MODES = {"deduction", "banded", "additive", "formula", "pass_fail", "manual"}
 
 
-def criteria_looks_usable(criteria_obj: object) -> bool:
+# criteria 结构缺陷的用户可读说明（KD4/AC3）。此前只有一个 bool + 一句笼统的
+# "no usable items"，用户在界面上只看得到"识别失败"，无从判断是该重传文件还是该手填规则。
+_CRITERIA_PROBLEM_TEXT = {
+    "criteria_not_object": "评分标准不是一个对象，抽取结果结构性损坏",
+    "items_missing": "评分标准里没有 items 评分项字段",
+    "items_not_array": "评分标准的 items 不是数组",
+    "items_empty": "评分标准的 items 评分项为空",
+    "item_not_object": "存在不是对象的评分项条目",
+    "item_name_missing": "存在没有名称的评分项",
+    "item_max_invalid": "存在满分非法的评分项（须为有限非负数；仅 manual 且需外部输入的项可为空）",
+    "no_numeric_max": "没有任何一项带数值满分，无法据此逐项判分",
+}
+
+
+class CriteriaUnusableError(ValueError):
+    """criteria 结构 sanity 检查未过；``problem`` 携带具名机器码供界面渲染（AC3）。"""
+
+    def __init__(self, problem: str) -> None:
+        super().__init__(f"extracted criteria failed structural sanity check: {problem}")
+        self.problem = problem
+
+
+def criteria_usability_problem(criteria_obj: object) -> str | None:
     """承重结构 sanity 检查（codex R1 P1）：criteria 是否「能用来评标」。
 
     刻意**不**用整份 jsonschema 校验——模型输出几乎总有零星叶子瑕疵（enum 漂移、某个
@@ -103,26 +125,32 @@ def criteria_looks_usable(criteria_obj: object) -> bool:
     评标真正承重的最小结构 = 有评分项 + 每项有名字 + 至少一个数值满分（S3 据此逐项判分）；其余
     枚举/嵌套细节由 normalize_criteria_enums 尽力归一化、注入评标也只作文本 hint、区2 展示也
     防御式渲染，零星瑕疵无害。数值满分必须是有限非负数；仅 ``manual`` 且非 ``scored`` 的项目
-    允许 ``max=null``，这种项目计入评分项数量但不参与满分算术。结构性垃圾（无 items / items
-    非数组 / 项缺名字 / 非法满分 / 没有任何数值满分）→ False
-    → criteria_status=failed（评标自行 S1 解析、区2 显"识别失败"）。
+    允许 ``max=null``，这种项目计入评分项数量但不参与满分算术。
+
+    Returns:
+        ``None`` 表示可用；否则返回**具名机器码**（见 ``_CRITERIA_PROBLEM_TEXT``）。AC3：旧实现
+        只返回 bool，失败时用户界面只显示"识别失败"，无从判断该重传还是该手填。
     """
     if not isinstance(criteria_obj, dict):
-        return False
+        return "criteria_not_object"
     items = criteria_obj.get("items")
-    if not isinstance(items, list) or not items:
-        return False
+    if items is None:
+        return "items_missing"
+    if not isinstance(items, list):
+        return "items_not_array"
+    if not items:
+        return "items_empty"
     has_numeric_max = False
     for item in items:
         if not isinstance(item, dict):
-            return False
+            return "item_not_object"
         name = item.get("item")
         if not isinstance(name, str) or not name.strip():
-            return False
+            return "item_name_missing"
         max_score = item.get("max")
         if isinstance(max_score, (int, float)) and not isinstance(max_score, bool):
             if not math.isfinite(max_score) or max_score < 0:
-                return False
+                return "item_max_invalid"
             has_numeric_max = True
             continue
         if not (
@@ -130,8 +158,16 @@ def criteria_looks_usable(criteria_obj: object) -> bool:
             and item.get("score_mode") == "manual"
             and item.get("tag") in _MANUAL_NULL_TAGS
         ):
-            return False
-    return has_numeric_max
+            return "item_max_invalid"
+    return None if has_numeric_max else "no_numeric_max"
+
+
+def criteria_usability_problem_message(problem: str) -> str:
+    """把 :func:`criteria_usability_problem` 的机器码渲染成界面可读说明。
+
+    机器码同时保留在文案里：运维按码 grep 日志，用户看中文，两者不必各存一份。
+    """
+    return f"{_CRITERIA_PROBLEM_TEXT.get(problem, '评分标准结构不可用')}（{problem}）"
 
 
 def normalize_criteria_enums(criteria_obj: object) -> None:
@@ -252,8 +288,9 @@ async def extract_project_doc_info(
         # 归一化已知枚举漂移（method/tag/score_mode）清洁存储数据，再做承重结构 sanity 检查
         # （容忍零星叶子瑕疵，但无 items/缺名字/满分非数 → failed，不注入残缺 criteria 污染评分）。
         normalize_criteria_enums(criteria_obj)
-        if not criteria_looks_usable(criteria_obj):
-            raise ValueError("extracted criteria failed structural sanity check (no usable items)")
+        problem = criteria_usability_problem(criteria_obj)
+        if problem is not None:
+            raise CriteriaUnusableError(problem)
         # tender_info 仅作展示/回填，best-effort：净化保留已知字段（R7-#2），剥未知字段，不再因
         # additionalProperties:false 整对象丢弃 → 治"区1 基本信息没回传"（用户没手填、直接下一步）。
         tender_info_obj = sanitize_tender_info(tender_info_obj)
@@ -288,10 +325,21 @@ async def extract_project_doc_info(
             "tender_doc_info_extracted",
             extra={"project_id": project_id, "tenant": tenant or "default"},
         )
-    except Exception:
+    except Exception as exc:
+        # AC3：结构不合格有具名原因，其余异常（命令失败/payload 形状不对）归一到一条可读说明——
+        # 两者都必须落库，界面才不会只剩一个"识别失败"。
+        criteria_error = (
+            criteria_usability_problem_message(exc.problem)
+            if isinstance(exc, CriteriaUnusableError)
+            else "评分标准抽取未完成（抽取命令失败或返回结构异常）（extraction_failed）"
+        )
         logger.warning(
             "tender_doc_info_extraction_failed",
-            extra={"project_id": project_id, "case_path": case_path},
+            extra={
+                "project_id": project_id,
+                "case_path": case_path,
+                "criteria_error": criteria_error,
+            },
             exc_info=True,
         )
         try:
@@ -299,6 +347,7 @@ async def extract_project_doc_info(
                 update_project_doc_criteria_extracted,
                 project_id,
                 tenant,
+                criteria_error=criteria_error,
                 criteria_json=None,
                 tender_info_json=None,
                 status="failed",

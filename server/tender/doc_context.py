@@ -105,11 +105,48 @@ async def _resolve_doc_layer(
         else doc_layer.load_doc_layer_context
     )
     doc_layer_text = await asyncio.to_thread(loader, project_id, bid_id, tenant)
-    if doc_layer_text is not None and bid_id:
+    if doc_layer_text is None:
+        # KD4：掉落 inline 此前只在日志里留一行 INFO——三次事故的共同放大器就是这种静默。
+        warnings.append(await _doc_layer_fallback_warning(project_id, bid_id, tenant))
+    elif bid_id:
         # 重跑后重新读一次：warning 必须反映**最终**状态，重跑成功就不该再报警。
         project_doc, bid_doc = await doc_layer.read_doc_rows(project_id, bid_id, tenant)
         warnings.extend(_ocr_integrity_warnings(project_doc, bid_doc))
     return doc_layer_text, warnings
+
+
+# 掉落原因的用户可读说明。键与 ``doc_layer.describe_doc_layer_gap`` 的机器码一一对应；
+# 新增分支漏配文案会命中 _FALLBACK_REASON_TEXT 的兜底（仍可见），不会静默。
+_FALLBACK_REASON_TEXT = {
+    "missing_bid_id": "提交时未能定位本次投标的预热记录",
+    "tender_doc_absent": "招标文件没有预热底稿记录",
+    "tender_doc_not_usable": "招标文件预热 OCR 尚未就绪或已失败",
+    "bid_doc_absent": "本家投标文件没有预热底稿记录",
+    "bid_doc_not_usable": "本家投标文件预热 OCR 尚未就绪或已失败",
+    "bid_doc_empty": "本家投标文件预热底稿为空",
+    "doc_layer_unreadable": "预热底稿读取失败",
+}
+
+
+async def _doc_layer_fallback_warning(
+    project_id: str, bid_id: str | None, tenant: str
+) -> dict[str, object]:
+    """把"没用上预热底稿"渲染成结论级 warning（AC2：降级必须留可见痕迹）。"""
+    reason = (
+        await asyncio.to_thread(doc_layer.describe_doc_layer_gap, project_id, bid_id, tenant)
+        or "doc_layer_unusable"
+    )
+    detail = _FALLBACK_REASON_TEXT.get(reason, "预热底稿不可用")
+    return {
+        "scope": "评标底稿链路",
+        "status": "doc_layer_fallback",
+        "reason": reason,
+        "files": [],
+        "message": (
+            f"未复用预热底稿（{detail}；原因码 {reason}），已改用即时 OCR 重新识别本案目录；"
+            "证据出处与页锚可能与预热底稿不一致，耗时也显著更长。"
+        ),
+    }
 
 
 def _ocr_warning_block(warnings: list[dict[str, object]]) -> str:

@@ -95,6 +95,7 @@ def _initialize_schema() -> None:
                 ocr_status      TEXT NOT NULL DEFAULT 'pending',
                 criteria        TEXT,
                 criteria_status TEXT NOT NULL DEFAULT 'pending',
+                criteria_error  TEXT,
                 tender_info     TEXT,
                 created_at      TEXT NOT NULL,
                 updated_at      TEXT NOT NULL
@@ -134,6 +135,10 @@ def _initialize_schema() -> None:
             conn.execute(
                 "ALTER TABLE tender_project_docs ADD COLUMN tender_info TEXT"
             )
+        # AC3 migration：criteria 抽取失败的**具体原因**（机器码 + 中文说明），供 docs-status
+        # 端点透传给界面。旧实现只有 criteria_status=failed，用户只看得到"识别失败"。
+        if "criteria_error" not in existing_cols:
+            conn.execute("ALTER TABLE tender_project_docs ADD COLUMN criteria_error TEXT")
         # X2 migration: tender_bid_docs 加 bidder_name_source，区分手填(NULL)/
         # agent 回填(agent_extracted)，供只填空回填判优先级（手填任何情况下不被覆盖）。
         existing_bid_cols = {
@@ -343,6 +348,7 @@ def update_project_doc_criteria_extracted(
     criteria_json: str | None,
     tender_info_json: str | None,
     status: str,
+    criteria_error: str | None = None,
 ) -> None:
     """Write criteria + tender_info + criteria_status in one tenant-scoped UPDATE.
 
@@ -355,15 +361,25 @@ def update_project_doc_criteria_extracted(
         criteria_json: JSON-encoded criteria object, or None on failure.
         tender_info_json: JSON-encoded tender_info object, or None on failure.
         status: New criteria_status value (ready or failed).
+        criteria_error: 失败原因（AC3 透传到任务状态与界面）；成功时传 None 顺带清掉旧原因。
     """
     with connect_sqlite(PLATFORM_DB_FILE, immediate=True) as conn:
         conn.execute(
             """
             UPDATE tender_project_docs
-            SET criteria = ?, tender_info = ?, criteria_status = ?, updated_at = ?
+            SET criteria = ?, tender_info = ?, criteria_status = ?, criteria_error = ?,
+                updated_at = ?
             WHERE project_id = ? AND tenant = ?
             """,
-            (criteria_json, tender_info_json, status, utc_now(), project_id, tenant),
+            (
+                criteria_json,
+                tender_info_json,
+                status,
+                criteria_error,
+                utc_now(),
+                project_id,
+                tenant,
+            ),
         )
 
 
