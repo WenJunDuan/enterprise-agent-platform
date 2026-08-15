@@ -49,7 +49,7 @@ tools_available:
 counts:
   features_count: 4
   issues_count: 0
-  refactors_count: 1
+  refactors_count: 2
   systems_count: 10
   reviews_count: 77
   cleanup_count: 7
