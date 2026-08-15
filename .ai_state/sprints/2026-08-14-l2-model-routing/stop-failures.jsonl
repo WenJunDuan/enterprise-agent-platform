@@ -1,0 +1,16 @@
+{"schema_version":1,"event":"StopFailure","error":"server_error","is_interrupt":false,"duration_ms":null,"timestamp":"2026-08-14T12:30:31.007Z"}
+{"schema_version":1,"event":"StopFailure","error":"server_error","is_interrupt":false,"duration_ms":null,"timestamp":"2026-08-14T12:57:48.648Z"}
+{"schema_version":1,"event":"StopFailure","error":"server_error","is_interrupt":false,"duration_ms":null,"timestamp":"2026-08-14T13:04:57.304Z"}
+{"schema_version":1,"event":"StopFailure","error":"server_error","is_interrupt":false,"duration_ms":null,"timestamp":"2026-08-14T14:00:55.715Z"}
+{"schema_version":1,"event":"StopFailure","error":"server_error","is_interrupt":false,"duration_ms":null,"timestamp":"2026-08-15T01:36:44.245Z"}
+{"schema_version":1,"event":"StopFailure","error":"server_error","is_interrupt":false,"duration_ms":null,"timestamp":"2026-08-15T01:50:10.239Z"}
+{"schema_version":1,"event":"StopFailure","error":"server_error","is_interrupt":false,"duration_ms":null,"timestamp":"2026-08-15T02:11:23.066Z"}
+{"schema_version":1,"event":"StopFailure","error":"server_error","is_interrupt":false,"duration_ms":null,"timestamp":"2026-08-15T02:21:40.744Z"}
+{"schema_version":1,"event":"StopFailure","error":"server_error","is_interrupt":false,"duration_ms":null,"timestamp":"2026-08-15T02:30:20.742Z"}
+{"schema_version":1,"event":"StopFailure","error":"server_error","is_interrupt":false,"duration_ms":null,"timestamp":"2026-08-15T03:08:14.757Z"}
+{"schema_version":1,"event":"StopFailure","error":"server_error","is_interrupt":false,"duration_ms":null,"timestamp":"2026-08-15T03:20:45.031Z"}
+{"schema_version":1,"event":"StopFailure","error":"server_error","is_interrupt":false,"duration_ms":null,"timestamp":"2026-08-15T04:35:51.813Z"}
+{"schema_version":1,"event":"StopFailure","error":"server_error","is_interrupt":false,"duration_ms":null,"timestamp":"2026-08-15T04:37:54.572Z"}
+{"schema_version":1,"event":"StopFailure","error":"server_error","is_interrupt":false,"duration_ms":null,"timestamp":"2026-08-15T06:01:52.905Z"}
+{"schema_version":1,"event":"StopFailure","error":"server_error","is_interrupt":false,"duration_ms":null,"timestamp":"2026-08-15T06:04:29.478Z"}
+{"schema_version":1,"event":"StopFailure","error":"server_error","is_interrupt":false,"duration_ms":null,"timestamp":"2026-08-15T09:33:47.397Z"}

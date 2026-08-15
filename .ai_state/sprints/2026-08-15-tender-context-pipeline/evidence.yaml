@@ -1,0 +1,32 @@
+sprint_slug: "2026-08-15-tender-context-pipeline"
+collected_evidence:
+  - tool_use_id: "toolu_017Z4rNaJiCWeKNffdrabGzc"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a8a7aaaadda158b5d/agent-front && bun test 2>&1 | grep -E \"^\\(fail\\)|error:\" | head -20"
+    timestamp: "2026-08-15T13:54:10.502Z"
+  - tool_use_id: "toolu_017Xu8YLj6QHJAHgQPQLJJKM"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a8a7aaaadda158b5d/agent-front && bun test 2>&1 | tail -5"
+    timestamp: "2026-08-15T13:54:56.579Z"
+  - tool_use_id: "toolu_015GZZJMSpVHnaTNiiuc5Day"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a8a7aaaadda158b5d/agent-front && bun run lint 2>&1 | tail -6"
+    timestamp: "2026-08-15T13:55:10.877Z"
+  - tool_use_id: "toolu_01X9Uup89KjEqXPQnprGMWoc"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a8a7aaaadda158b5d/agent-front && bun test 2>&1 | tail -4"
+    timestamp: "2026-08-15T14:00:43.230Z"
+  - tool_use_id: "toolu_01XDxXRr6wRGE5ECwhaVNu5w"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a8a7aaaadda158b5d/agent-front && bun run lint; echo \"lint exit=$?\""
+    timestamp: "2026-08-15T14:00:56.426Z"
+  - tool_use_id: "toolu_01HXTpwTNQKESi9ZNMNCDYJ2"
+    tool: "Bash"
+    result: pass
+    command: "uv run pytest -q -p no:randomly 2>&1 | grep -E \"^FAILED\"; echo \"=== 前端 ===\"; cd agent-front && bun install >/dev/null 2>&1; bun test 2>&1 | tail -3; bunx tsc -b --force 2>&1 | tail -2 && echo \"tsc OK\"; bun run lint 2>&1 | tail -2"
+    timestamp: "2026-08-15T14:11:01.149Z"

@@ -85,7 +85,7 @@ items:
     effort: L
     wave: 1
     depends_on: [D1]
-    status: pending
+    status: in_progress # 2026-08-14 用户拍板先扩建本仓 server/ocr（D4a Registry），不先拆独立服务；design=sprints/2026-08-14-l2-model-routing/design.md，待 Fable 5 review
     note: >
       **2026-07-20 重定义倾向（用户）**：D4 从「进程内 EngineRegistry」→「建**独立 OCR 路由服务**
       （直读+路由+模型池全内聚），本项目 ocr 调用改指向其单一 API（文件字节→结构化底稿带页锚）」。

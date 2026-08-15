@@ -7,3 +7,6 @@
 {"event":"GateBlock","ts":"2026-08-13T08:55:12.048Z","session_id":"f72badcb-2f19-4b64-9dac-c293c0bbc195","reason_sha1":"a0fdb73f5a6df765066456d4427b7b3bb13c8684","stage":"ship","path":"Refactor","consecutive":1}
 {"event":"GateBlock","ts":"2026-08-13T08:56:11.640Z","session_id":"f72badcb-2f19-4b64-9dac-c293c0bbc195","reason_sha1":"e98bab27442eac151d7f782c3c78ec508dd96e4c","stage":"ship","path":"Refactor","consecutive":1}
 {"event":"GatePass","ts":"2026-08-13T08:59:32.078Z","session_id":"f72badcb-2f19-4b64-9dac-c293c0bbc195","reason_sha1":"e98bab27442eac151d7f782c3c78ec508dd96e4c","stage":"ship","path":"Refactor","consecutive":0}
+{"schema_version":1,"event":"StopFailure","error":"server_error","is_interrupt":false,"duration_ms":null,"timestamp":"2026-08-14T02:59:31.120Z"}
+{"schema_version":1,"event":"StopFailure","error":"server_error","is_interrupt":false,"duration_ms":null,"timestamp":"2026-08-14T03:08:29.382Z"}
+{"schema_version":1,"event":"StopFailure","error":"server_error","is_interrupt":false,"duration_ms":null,"timestamp":"2026-08-14T06:14:02.301Z"}
