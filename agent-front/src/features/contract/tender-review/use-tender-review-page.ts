@@ -162,6 +162,9 @@ export function useTenderReviewPage(
   const [progress, setProgress] = useState(0)
   // 思考流式：按 request_id 存各投标人评标进度，避免多 bidder 并发覆盖（codex r4 P1）。
   const [progressByRid, setProgressByRid] = useState<Record<string, string>>({})
+  // 评标起止时刻（ISO 字符串，来源=服务端 started_at/finished_at，精确到秒展示）
+  const [evalStartedAt, setEvalStartedAt] = useState<string | null>(null)
+  const [evalFinishedAt, setEvalFinishedAt] = useState<string | null>(null)
   // 长任务解耦（第5轮）：进行中评标（持久化），可离开/回来恢复、不阻塞、不超时掉回。
   const [activeEval, setActiveEvalState] = useState<ActiveEval | null>(
     () => activeEvalSnapshot
@@ -538,12 +541,30 @@ export function useTenderReviewPage(
     })
     // 终态判定：completed/failed 是终态；null（任务 404/已删/不存在）也当终态，否则脏 rid 会永远
     // 停 analyzing 卡死、不清 localStorage（codex r5 A+B P1）。
-    const allTerminal = statuses.every(
-      (status) =>
-        status === null ||
-        status.status === 'completed' ||
-        status.status === 'failed'
-    )
+    const isTerminal = (status: (typeof statuses)[number]) =>
+      status === null ||
+      status.status === 'completed' ||
+      status.status === 'failed'
+    const allTerminal = statuses.every(isTerminal)
+
+    // 评标耗时可见：服务端 started_at/finished_at 是权威（刷新页面/重连后仍准），
+    // 客户端计时会在 re-attach 时丢失。取最早开始与最晚结束覆盖多家并行的整体窗口。
+    const pickTime = (key: 'started_at' | 'finished_at', latest: boolean) => {
+      const values = statuses
+        .map((status) => status?.[key])
+        .filter((value): value is string => Boolean(value))
+        .sort()
+      return values.length ? (latest ? values[values.length - 1] : values[0]) : null
+    }
+    setEvalStartedAt(pickTime('started_at', false))
+    setEvalFinishedAt(allTerminal ? pickTime('finished_at', true) : null)
+
+    // 进度按"已终态家数"推进：修复前 30% → 100% 之间无任何更新，长单看着像卡死。
+    // 30 是提交完成基线，剩余 65 个百分点按各家完成度分配，留 5 点给终态收尾动作。
+    if (!allTerminal) {
+      const done = statuses.filter(isTerminal).length
+      setProgress(30 + Math.round((done / statuses.length) * 65))
+    }
     if (allTerminal) {
       const { projectId, hasCompare } = activeEval
       // 失败可见（P1-4）：有 failed / 任务丢失 → 提示，不被结果列表静默掩盖。
@@ -1072,6 +1093,8 @@ export function useTenderReviewPage(
     setTimeRange,
     progress,
     progressText,
+    evalStartedAt,
+    evalFinishedAt,
     isAnalyzing: startReviewMutation.isPending,
     exitAnalyzing,
     // A 上传即 OCR：增量上传态（招标/各投标各上传一次后锁定）

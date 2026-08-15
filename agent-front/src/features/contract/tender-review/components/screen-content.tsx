@@ -69,6 +69,8 @@ export function ScreenContent({ page }: { page: TenderReviewPageState }) {
         <AnalyzingView
           progress={page.progress}
           progressText={page.progressText}
+          startedAt={page.evalStartedAt}
+          finishedAt={page.evalFinishedAt}
           title={page.projectForm.title ?? undefined}
           projectForm={page.projectForm}
           docsStatus={page.docsStatus}

@@ -24,9 +24,31 @@ import { MarkdownView } from './markdown-view'
  *
  * 布局：左（区1+2）|右（区3 流式），自适应宽屏；窄屏上下堆叠。
  */
+/** 把服务端 ISO 时刻渲染成本地 HH:mm:ss；缺失（未开始/未结束）显示占位而非空白。 */
+function formatClock(value?: string | null): string {
+  if (!value) return '—'
+  const time = new Date(value)
+  return Number.isNaN(time.getTime())
+    ? '—'
+    : time.toLocaleTimeString('zh-CN', { hour12: false })
+}
+
+/** 耗时 = 结束-开始；仍在进行时按"至此刻"算，让长单也能看到累计用时。 */
+function formatDuration(start?: string | null, end?: string | null): string {
+  if (!start) return '—'
+  const from = new Date(start).getTime()
+  const to = end ? new Date(end).getTime() : Date.now()
+  if (Number.isNaN(from) || Number.isNaN(to) || to < from) return '—'
+  const total = Math.floor((to - from) / 1000)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${pad(Math.floor(total / 3600))}:${pad(Math.floor((total % 3600) / 60))}:${pad(total % 60)}`
+}
+
 export function AnalyzingView({
   progress,
   progressText,
+  startedAt,
+  finishedAt,
   title,
   projectForm,
   docsStatus,
@@ -35,6 +57,8 @@ export function AnalyzingView({
 }: {
   progress: number
   progressText?: string
+  startedAt?: string | null
+  finishedAt?: string | null
   title?: string
   projectForm?: ProjectFormData | null
   docsStatus?: DocsStatusResponse | null
@@ -80,6 +104,11 @@ export function AnalyzingView({
                 className='h-full rounded-full bg-primary transition-all'
                 style={{ width: `${progress}%` }}
               />
+            </div>
+            <div className='flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground'>
+              <span>开始时间：{formatClock(startedAt)}</span>
+              <span>结束时间：{formatClock(finishedAt)}</span>
+              <span>耗时：{formatDuration(startedAt, finishedAt)}</span>
             </div>
           </div>
         </CardContent>
