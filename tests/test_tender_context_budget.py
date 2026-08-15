@@ -332,3 +332,59 @@ def test_select_review_spans_covers_the_whole_matched_chapter():
     ]
 
     assert select_review_spans(lines) == [(2, 5)]
+
+
+# ── 2026-08-15 事故：规则源文件被证据材料挤掉 ──────────────────────────────────
+
+
+def _multi_file_draft(bid_bulk_lines: int) -> list[str]:
+    """构造「投标材料在前且体量远大、招标文件在后」的多文件底稿——事故的真实形态。"""
+    bid = ["### 文件: 某公司投标文件.PDF"]
+    # 投标材料通篇是"投标/技术参数"等词，关键词命中密度高，最易吃光预算。
+    bid += [f"投标人技术参数指标响应第 {i} 条，完全满足招标文件要求。" for i in range(bid_bulk_lines)]
+    tender = [
+        "### 文件: 某项目公开招标文件.doc",
+        "第一章 投标邀请",
+        "招标人：某某单位。",
+        _REVIEW_CHAPTER_TITLE,
+        "一、资格审查",
+        _QUALIFICATION_LINE,
+        "二、评分标准：技术方案 40 分，报价 30 分。",
+    ]
+    return bid + tender
+
+
+def test_rule_source_file_is_detected_by_content_not_filename():
+    """规则源文件按「是否含关键评审章节」判定，不依赖文件名（各家命名千差万别）。"""
+    from server.tender.context_budget import rule_source_spans
+
+    lines = _multi_file_draft(bid_bulk_lines=5)
+    spans = rule_source_spans(lines)
+
+    assert len(spans) == 1, "只有含评审章节的那份文件是规则源"
+    start, end = spans[0]
+    assert lines[start].startswith("### 文件: 某项目公开招标文件")
+    assert end == len(lines)
+
+
+def test_rule_source_survives_when_evidence_would_eat_the_whole_budget():
+    """事故回归：投标材料体量压倒时，招标文件（评分标准）必须仍在底稿里。
+
+    修复前按文档顺序分配，前置的大体量投标材料吃光额度 → 招标文件整份被删
+    （实测 784KB→136KB，截后只剩投标文件）→ 模型无评分标准，只能判
+    insufficient_evidence。
+    """
+    from server.tender.context_budget import bound_draft_by_content
+
+    lines = _multi_file_draft(bid_bulk_lines=400)
+    draft = "\n".join(lines)
+    limit = 4000
+    assert len(draft.encode("utf-8")) > limit * 3, "前置条件：底稿必须远超预算才有意义"
+
+    kept = bound_draft_by_content(draft, limit_bytes=limit)
+
+    assert len(kept.encode("utf-8")) <= limit
+    assert _REVIEW_CHAPTER_TITLE in kept, "评审章节标题必须保留"
+    assert "评分标准：技术方案 40 分" in kept, "评分标准正文必须保留，否则整单无法评分"
+    assert _QUALIFICATION_LINE in kept, "资格审查条款必须保留"
+    assert "某项目公开招标文件" in kept, "规则源文件的文件头必须保留，模型据此定位出处"

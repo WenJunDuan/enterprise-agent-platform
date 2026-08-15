@@ -193,31 +193,100 @@ def _page_note(lines: list[str]) -> str:
     return f"原第 {min(pages)}-{max(pages)} 页"
 
 
-def _chunks(lines: list[str], spans: list[tuple[int, int]]) -> list[tuple[list[str], bool]]:
-    """Slice the draft into document-order ``(lines, is_key)`` chunks around the key spans."""
+def _file_spans(lines: list[str]) -> list[tuple[int, int]]:
+    """按 ``### 文件:`` 分隔符切出每份文件的 ``[start, end)`` 行区段。
+
+    底稿是多文件拼接的（招标文件 + 一到多份投标材料）。没有分隔符时整份视作一个区段。
+    """
+    starts = [index for index, raw in enumerate(lines) if raw.strip().startswith("### 文件:")]
+    if not starts:
+        return [(0, len(lines))]
+    bounds = starts if starts[0] == 0 else [0, *starts]
+    return [
+        (start, bounds[position + 1] if position + 1 < len(bounds) else len(lines))
+        for position, start in enumerate(bounds)
+    ]
+
+
+def rule_source_spans(lines: list[str]) -> list[tuple[int, int]]:
+    """Return the file spans that carry the evaluation rules (评分标准/评标办法/资格审查).
+
+    为什么按**文件**而不只按章节区分优先级：2026-08-15 实测事故——投标材料体量远大于招标
+    文件且通篇是"投标/技术参数"等词，关键词命中密度高，按文档顺序分配预算时把额度吃光，
+    排在其后的**招标文件整份被删**（784KB→136KB，截后只剩投标文件），模型手里没有评分
+    标准，只能判 insufficient_evidence。评标的刚性前提是规则必须在场，证据可以按项截取。
+
+    判定不依赖文件名（各家命名千差万别：招标/采购/谈判/询价/磋商文件…），而看该文件区段内
+    是否出现关键评审章节信号——规则写在哪份文件里，哪份就是规则源。
+    """
+    rule_spans: list[tuple[int, int]] = []
+    for start, end in _file_spans(lines):
+        section = lines[start:end]
+        if select_review_spans(section):
+            rule_spans.append((start, end))
+    return rule_spans
+
+
+def _chunks(
+    lines: list[str],
+    spans: list[tuple[int, int]],
+    extra_bounds: tuple[int, ...] = (),
+) -> list[tuple[list[str], bool]]:
+    """Slice the draft into document-order ``(lines, is_key)`` chunks around the key spans.
+
+    Args:
+        lines: 底稿全部行。
+        spans: 关键评审区段。
+        extra_bounds: 额外的强制切分点（文件起始行）。**必须在文件边界处断开**，否则一个
+            chunk 会横跨"投标材料尾部 + 招标文件头部"，按头部截断时会把后一份文件的
+            文件头连同其前置章节一起丢掉（2026-08-15 实测：评分标准保住了但文件头没了，
+            模型失去出处锚点）。
+    """
     chunks: list[tuple[list[str], bool]] = []
     cursor = 0
     for start, end in spans:
+        for bound in extra_bounds:
+            if cursor < bound < start:
+                chunks.append((lines[cursor:bound], False))
+                cursor = bound
         if start > cursor:
             chunks.append((lines[cursor:start], False))
         chunks.append((lines[start:end], True))
         cursor = end
+    for bound in extra_bounds:
+        if cursor < bound < len(lines):
+            chunks.append((lines[cursor:bound], False))
+            cursor = bound
     if cursor < len(lines):
         chunks.append((lines[cursor:], False))
     return chunks
 
 
-def _allocate(sizes: list[int], is_key: list[bool], budget: int) -> list[int]:
-    """Give key chunks their full size first, then split the rest evenly by document order."""
+def _allocate(sizes: list[int], tiers: list[int], budget: int) -> list[int]:
+    """Allocate the budget tier by tier; within the last tier split evenly by document order.
+
+    Args:
+        sizes: 各 chunk 的字节数。
+        tiers: 各 chunk 的优先级（数字越小越优先）——
+            0=规则源文件的关键评审章节（评分标准所在，必须完整）、
+            1=规则源文件其余内容、2=其它文件的关键节、3=其余证据材料。
+        budget: 可分配字节总额。
+
+    Returns:
+        与 ``sizes`` 等长的分配量。高优先级层足额取用，额度耗尽后低优先级层按剩余均分——
+        保证"规则在场"优先于"证据齐全"，因为缺规则会让整单无法评分，缺部分证据只影响个别项。
+    """
     allocation = [0] * len(sizes)
     left = budget
-    for index, key in enumerate(is_key):
-        if key:
-            allocation[index] = min(sizes[index], left)
-            left -= allocation[index]
-    rest = [index for index, key in enumerate(is_key) if not key]
-    for position, index in enumerate(rest):
-        share = left // (len(rest) - position)
+    ordered = sorted(set(tiers))
+    for tier in ordered[:-1]:
+        for index, value in enumerate(tiers):
+            if value == tier:
+                allocation[index] = min(sizes[index], left)
+                left -= allocation[index]
+    last = [index for index, value in enumerate(tiers) if value == ordered[-1]]
+    for position, index in enumerate(last):
+        share = left // (len(last) - position)
         allocation[index] = min(sizes[index], share)
         left -= allocation[index]
     return allocation
@@ -239,10 +308,22 @@ def bound_draft_by_content(text: str, *, limit_bytes: int) -> str:
     if not spans:
         return _head_bytes(text, limit_bytes)
 
-    chunks = _chunks(lines, spans)
+    # 在文件边界强制切分，保证每个 chunk 只属于一份文件（否则跨文件 chunk 会连累后一份的文件头）。
+    rule_ranges = rule_source_spans(lines)
+    chunks = _chunks(lines, spans, tuple(start for start, _ in _file_spans(lines) if start > 0))
     texts = ["\n".join(chunk_lines) for chunk_lines, _ in chunks]
     sizes = [len(chunk.encode("utf-8")) for chunk in texts]
-    is_key = [key for _, key in chunks]
+    offsets: list[int] = []
+    cursor = 0
+    for chunk_lines, _ in chunks:
+        offsets.append(cursor)
+        cursor += len(chunk_lines)
+    tiers = [
+        (0 if key else 1)
+        if any(start <= offset < end for start, end in rule_ranges)
+        else (2 if key else 3)
+        for offset, (_, key) in zip(offsets, chunks, strict=True)
+    ]
     # 每个 chunk 最坏情况都会被削 → 先按"全削"预留标记开销，保证总量不越预算。
     # 用 chunk 全长渲染标记取长度上界（实际省略量 ≤ 全长 → 数字位数不会更多）。
     markers = [
@@ -254,7 +335,7 @@ def bound_draft_by_content(text: str, *, limit_bytes: int) -> str:
     if reserve >= limit_bytes:
         return _head_bytes(text, limit_bytes)
 
-    allocation = _allocate(sizes, is_key, limit_bytes - reserve)
+    allocation = _allocate(sizes, tiers, limit_bytes - reserve)
     kept: list[str] = []
     for index, chunk in enumerate(texts):
         if allocation[index] >= sizes[index]:
