@@ -7,6 +7,7 @@ from server.tender.context_slim import (
     build_preextract_tender_context,
     build_slim_tender_context,
 )
+from server.tender.injection_budget import fallback_injection_tokens
 
 
 def _body(text: str, file_name: str = "招标文件.pdf") -> str:
@@ -185,30 +186,38 @@ def test_preextract_context_still_bounded_when_model_window_is_undeclared(monkey
 
 
 def test_preextract_context_caps_large_unstructured_ocr(monkeypatch):
-    monkeypatch.setenv("TENDER_EFFECTIVE_CONTEXT_TOKENS", "94000")
+    # F2：可注入额度 = 标定上限 − 脚手架 − 循环余量（200000-60000-50000=90000），
+    # 不再等于整个窗口——那样加上脚手架必然爆窗。
+    monkeypatch.setenv("TENDER_EFFECTIVE_CONTEXT_TOKENS", "200000")
+    monkeypatch.setenv("TENDER_SCAFFOLD_RESERVE_TOKENS", "60000")
+    budget = fallback_injection_tokens()
     body = "项目名称：超大文件\n" + ("无结构 OCR 正文\n" * 50000)
 
     result = build_preextract_tender_context(body)
 
     assert result is not None
-    assert len(result) <= 94000
+    assert len(result) <= budget
     assert result.startswith("项目名称：超大文件")
     assert "章节中间内容省略" in result
 
 
 def test_bound_tender_context_follows_the_calibrated_ceiling(monkeypatch):
     """AC6 改写：上限来自标定常量单点，不再从 MODEL_PROFILES_JSON 的窗口推导。"""
-    monkeypatch.setenv("TENDER_EFFECTIVE_CONTEXT_TOKENS", "98")
+    monkeypatch.setenv("TENDER_EFFECTIVE_CONTEXT_TOKENS", "1000")
+    monkeypatch.setenv("TENDER_SCAFFOLD_RESERVE_TOKENS", "650")
+    budget = fallback_injection_tokens()
 
     result = bound_tender_context("x" * 150, model="small-model")
 
     assert result is not None
-    assert len(result) <= 98
+    assert len(result) <= budget
     assert "章节中间内容省略" in result
 
 
 def test_bound_tender_context_preserves_tender_and_criteria_before_bid_trim(monkeypatch):
-    monkeypatch.setenv("TENDER_EFFECTIVE_CONTEXT_TOKENS", "118")
+    monkeypatch.setenv("TENDER_EFFECTIVE_CONTEXT_TOKENS", "1000")
+    monkeypatch.setenv("TENDER_SCAFFOLD_RESERVE_TOKENS", "630")
+    budget = fallback_injection_tokens()
     context = (
         "=== OCR/直读底稿 ===\n"
         "=== 招标文件底稿 ===\n评分标准核心条款\n"
@@ -220,6 +229,6 @@ def test_bound_tender_context_preserves_tender_and_criteria_before_bid_trim(monk
     result = bound_tender_context(context, model="small-model")
 
     assert result is not None
-    assert len(result) <= 118
+    assert len(result) <= budget
     assert "评分标准核心条款" in result
     assert "criteria核心条款" in result

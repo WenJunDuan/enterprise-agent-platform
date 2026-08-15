@@ -164,6 +164,45 @@ def test_runner_logs_the_recalibration_hint_when_the_cli_rejects(monkeypatch):
     assert budget.CALIBRATION_DOC_PATH in hint
 
 
+def test_final_prompt_token_count_stays_under_the_calibrated_ceiling(monkeypatch):
+    """AC5（F2 补）：对**最终 prompt** 计 token，加脚手架与循环余量后仍 ≤ 标定上限。
+
+    只断言"预算函数返回值正确"不够——pass1 的两个预算函数各自都自洽，错在没扣脚手架，
+    而这条只有在真正走完组装、拿到发出去的那串文本时才暴露。这里走的是最危险的一条：
+    inline 回落 + 超大底稿（400KB 量级，正是 08-15 那单的形态）。
+    """
+    import asyncio
+
+    from server.tender import doc_layer, runner
+
+    huge_draft = "投标文件正文段落，与评标办法无关的附件材料。" * 20_000
+    assert len(huge_draft.encode("utf-8")) > 400_000
+
+    monkeypatch.setattr(doc_layer, "load_doc_layer_context", lambda *_a, **_kw: None)
+    monkeypatch.setattr(doc_layer, "load_doc_layer_context_slim", lambda *_a, **_kw: None)
+    monkeypatch.setattr(runner, "ocr_preprocess_block", lambda *_a, **_kw: huge_draft)
+
+    sent: dict[str, str] = {}
+
+    import types
+
+    async def capture(_cmd, *_a, **opts):
+        sent["context"] = opts.get("context") or ""
+        return {"verdict": "approved"}, types.SimpleNamespace(retry_count=0)
+
+    monkeypatch.setattr(runner, "run_command_json", capture)
+
+    asyncio.run(
+        runner.run_tender_evaluation(
+            request_id="rid-ac5", tenant="t1", directory_path="/fake/dir"
+        )
+    )
+
+    plan = budget.plan_injection(criteria=None, query_count=1)
+    observed = budget.estimate_tokens(sent["context"])
+    assert observed + plan.scaffold_tokens + plan.margin_tokens <= budget.effective_context_tokens()
+
+
 # ── 收编：旧常量不得再各写一份 ───────────────────────────────────────────────
 
 
@@ -199,7 +238,45 @@ def test_model_context_window_no_longer_drives_the_budget(monkeypatch):
 
 
 def test_fallback_max_bytes_is_derived_from_the_calibrated_token_ceiling():
-    """字节兜底闸不再是独立常量，而是 token 上限的换算产物（单点）。"""
+    """字节兜底闸不再是独立常量，而是**回落可注入额度**的换算产物（单点）。"""
     assert budget.fallback_max_bytes() == budget.tokens_to_bytes(
-        budget.effective_context_tokens()
+        budget.fallback_injection_tokens()
     )
+
+
+# ── F2：回落闸必须扣掉脚手架与循环余量 ──────────────────────────────────────
+
+
+def test_fallback_budget_reserves_scaffold_and_margin():
+    """F2：回落额度 = 有效上限 − 脚手架 − 循环余量，与 ``plan_injection`` 同构造。
+
+    pass1 把回落闸收编成"整窗"（``tokens_to_bytes(200_000)``=600,000B），两者都没扣
+    scaffold(90K)+margin(50K)——按 injection_budget 自己的账，回落注入 400KB 底稿会得到
+    200K+90K≈290K token，CLI 一次性硬拒，整单无结论。
+    """
+    total = budget.effective_context_tokens()
+    plan = budget.plan_injection(criteria=None, query_count=1)
+    assert budget.fallback_injection_tokens() == total - plan.scaffold_tokens - plan.margin_tokens
+    assert budget.fallback_injection_tokens() < total
+
+
+def test_fallback_gate_is_not_looser_than_before_the_single_point_refactor():
+    """F2 回归闸：收编不得把闸放松。旧硬编码默认是 256,000 B，收编后只能更紧。"""
+    _PRE_REFACTOR_FALLBACK_MAX_BYTES = 256_000
+    assert budget.fallback_max_bytes() < _PRE_REFACTOR_FALLBACK_MAX_BYTES
+
+
+def test_fallback_injection_plus_scaffold_and_margin_fits_the_ceiling():
+    """闭式账目对回落路径同样成立（回落时没有 criteria 块，证据额度整块给底稿）。"""
+    total = budget.effective_context_tokens()
+    plan = budget.plan_injection(criteria=None, query_count=1)
+    assert (
+        budget.fallback_injection_tokens() + plan.scaffold_tokens + plan.margin_tokens <= total
+    )
+
+
+def test_preextract_char_budget_shares_the_same_construction():
+    """``context_slim`` 的字符预算必须与回落额度同源，否则又是两套口径（AC6 单点）。"""
+    from server.tender import context_slim
+
+    assert context_slim._preextract_char_budget() == budget.fallback_injection_tokens()

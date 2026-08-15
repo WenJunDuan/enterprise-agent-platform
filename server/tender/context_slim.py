@@ -20,7 +20,7 @@ from server.common.corpus import (
 from server.ocr.docstructure import build_doc_structure
 from server.ocr.rag import index_document, search
 from server.tender.context_budget import first_heading_index, select_review_spans
-from server.tender.injection_budget import chunks_per_query_budget, effective_context_tokens
+from server.tender.injection_budget import chunks_per_query_budget, fallback_injection_tokens
 
 _ELIGIBILITY_TAG = "qualification_review"
 _EVALUATION_TAG = "evaluation_method"
@@ -46,10 +46,11 @@ def _preextract_char_budget(model: str | None = None) -> int | None:
 
     Returns:
         字符上限。恒非 None——旧实现在部署未声明窗口时返回 None（等于闸整体失效），
-        而事故当天正是这个状态。
+        而事故当天正是这个状态。取**回落额度**而非有效上限（F2）：整窗额度不扣脚手架，
+        加上 90K 脚手架必然爆窗。
     """
     del model  # 预算口径已与模型窗口解耦（AC6）
-    return effective_context_tokens()
+    return fallback_injection_tokens()
 
 
 def _trim_context_block(block: str, limit: int) -> str:

@@ -86,9 +86,23 @@ def tokens_to_bytes(tokens: int) -> int:
     return tokens * _BYTES_PER_TOKEN
 
 
+def fallback_injection_tokens() -> int:
+    """证据层不适用时，**回落路径**可注入的 token 额度。
+
+    与 :func:`plan_injection` 同构造：``有效上限 − 脚手架 − 循环余量``。回落路径没有 criteria
+    注入块（那条路上 criteria 本来就取不到），故只扣这两项，剩下的整块给底稿。
+
+    **不得直接用 :func:`effective_context_tokens`**（pass1 就是这么写的）：那等于把整个窗口
+    当成底稿可用额度，加上 90K 脚手架必然超窗，而爆窗是一次性硬失败——闸开得比收编前还大
+    2.3 倍，形同虚设。
+    """
+    total = effective_context_tokens()
+    return max(1, total - scaffold_tokens() - total // _AGENT_LOOP_MARGIN_DIVISOR)
+
+
 def fallback_max_bytes() -> int:
-    """底稿注入的字节兜底上限——由 token 上限换算，不再是独立常量（AC6 单点）。"""
-    return tokens_to_bytes(effective_context_tokens())
+    """底稿注入的字节兜底上限——由回落 token 额度换算，不再是独立常量（AC6 单点）。"""
+    return tokens_to_bytes(fallback_injection_tokens())
 
 
 def scaffold_tokens() -> int:
