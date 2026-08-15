@@ -17,9 +17,10 @@ import unicodedata
 from collections.abc import Callable
 from pathlib import Path
 
-from server.ocr import OcrDependencyError
+from server.ocr import OcrDependencyError, OcrError
 from server.ocr.formats import suffixes
 from server.ocr.locks import FITZ_LOCK
+from server.ocr.office_convert import convert_office_to_pdf
 
 logger = logging.getLogger(__name__)
 
@@ -221,14 +222,43 @@ def _read_legacy_word_utf16_fallback(path: Path) -> str:
     return "\n".join(lines)
 
 
-def read_legacy_word(path: Path) -> dict:
-    """Read legacy binary ``.doc`` files through native text extractors before OCR.
+def _legacy_word_via_libreoffice(path: Path) -> dict | None:
+    """把旧版 ``.doc`` 转成 ``.docx`` 后复用 :func:`read_word`，返回段落 + **表格**。
 
-    Order matters for deployment:
-    - macOS: ``textutil`` preserves enough Word text without extra packages.
-    - Linux containers: ``catdoc`` first, then ``antiword``.
-    - Final fallback: extract embedded UTF-16LE text runs from the binary.
+    为什么必须优先于 catdoc/antiword：招标文件的评分标准几乎总在 Word 表格里，而纯文本
+    转换器只吐正文、表格结构全丢（实测某招标文件转 docx 后有 9 表 93 行 22KB 表格文本，
+    「得分」出现 9 次，正是评分标准本体）。catdoc/antiword 对部分真 OLE2 文件还会直接
+    产不出内容（实测该文件两者皆空、LibreOffice 成功）。
+
+    Returns:
+        成功且抽到内容时返回 :func:`read_word` 的结果；LibreOffice 不可用/转换失败/
+        产物无内容时返回 ``None``，由调用方继续走文本转换器降级链。
     """
+    try:
+        with convert_office_to_pdf(path, target="docx") as converted:
+            result = read_word(converted)
+    except (OcrDependencyError, OcrError, OSError, ValueError):
+        return None
+    if not result.get("blocks") and not result.get("tables"):
+        return None
+    return result
+
+
+def read_legacy_word(path: Path) -> dict:
+    """Read legacy binary ``.doc`` files through native extractors before OCR.
+
+    降级阶梯（顺序即优先级，每层失败才落到下一层）：
+    1. LibreOffice 转 ``.docx`` → python-docx 直读：**唯一能拿到表格的路径**。
+    2. macOS ``textutil`` / Linux ``catdoc`` / ``antiword``：纯文本，无表格。
+    3. 二进制 UTF-16LE 文本抽取：最后兜底。
+
+    全部失败时返回 ``kind="error"``——静默返回空底稿会让上游评标在"看似正常"的空输入上
+    产出 manual_review，事故排查成本极高（2026-08-15 实测事故）。
+    """
+    via_office = _legacy_word_via_libreoffice(path)
+    if via_office is not None:
+        return via_office
+
     commands: list[list[str]] = []
     if sys.platform == "darwin":
         commands.append(["textutil", "-convert", "txt", "-stdout", str(path)])
@@ -241,7 +271,12 @@ def read_legacy_word(path: Path) -> dict:
             break
     if not text:
         text = _read_legacy_word_utf16_fallback(path)
-    return {"kind": "word", "blocks": [text] if text else [], "tables": []}
+    if not text:
+        raise OcrError(
+            f"legacy .doc extraction produced no text: {path.name}"
+            " (LibreOffice/catdoc/antiword/binary fallback all empty)"
+        )
+    return {"kind": "word", "blocks": [text], "tables": []}
 
 
 def read_pdf_text(

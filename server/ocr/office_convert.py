@@ -76,27 +76,47 @@ def _terminate_process_group(process: subprocess.Popen[bytes]) -> None:
         pass
 
 
-def _validated_pdf(output_dir: Path, stem: str) -> Path:
-    pdf = output_dir / f"{stem}.pdf"
+# 目标格式 → 产物文件魔数。转换产物必须自证格式，防 LibreOffice 静默产出错误类型
+# （例如转换失败留下一个 0 字节壳）后被下游当作有效输入解析。
+_TARGET_MAGIC: dict[str, bytes] = {"pdf": b"%PDF-", "docx": b"PK"}
+
+
+def _validated_output(output_dir: Path, stem: str, target: str) -> Path:
+    magic = _TARGET_MAGIC[target]
+    # 错误消息里用大写格式名（PDF / DOCX）：既符合既有措辞，也让 target 出现在文案中可定位。
+    label = target.upper()
+    produced = output_dir / f"{stem}.{target}"
     try:
-        resolved = pdf.resolve(strict=True)
+        resolved = produced.resolve(strict=True)
         resolved.relative_to(output_dir.resolve())
     except (OSError, ValueError) as exc:
-        raise OcrDependencyError("LibreOffice produced no safe PDF output") from exc
-    if pdf.is_symlink() or not resolved.is_file():
-        raise OcrDependencyError("LibreOffice PDF output is not a regular file")
+        raise OcrDependencyError(f"LibreOffice produced no safe {label} output") from exc
+    if produced.is_symlink() or not resolved.is_file():
+        raise OcrDependencyError(f"LibreOffice {label} output is not a regular file")
     size = resolved.stat().st_size
     if size > OCR_OFFICE_MAX_OUTPUT_BYTES:
-        raise OcrDependencyError("LibreOffice PDF output exceeds configured byte limit")
+        raise OcrDependencyError(f"LibreOffice {label} output exceeds configured byte limit")
     with resolved.open("rb") as handle:
-        if handle.read(5) != b"%PDF-":
-            raise OcrDependencyError("LibreOffice output failed PDF magic validation")
+        if handle.read(len(magic)) != magic:
+            raise OcrDependencyError(f"LibreOffice output failed {label} magic validation")
     return resolved
 
 
 @contextmanager
-def convert_office_to_pdf(path: Path) -> Iterator[Path]:
-    """Yield a validated temporary PDF and clean all conversion state on exit."""
+def convert_office_to_pdf(path: Path, *, target: str = "pdf") -> Iterator[Path]:
+    """Yield a validated temporary conversion product and clean all state on exit.
+
+    Args:
+        path: 待转换的 Office 文件。
+        target: 目标格式，``pdf``（默认，供 OCR 渲染）或 ``docx``（供 python-docx
+            直读段落+表格）。旧版 ``.doc`` 走 ``docx`` 才能拿到评分标准所在的表格——
+            OCR 渲染路径会把表格拍成图，对非多模态模型不可用。
+
+    Raises:
+        OcrDependencyError: 不支持的后缀/目标格式、LibreOffice 缺失、转换失败或产物校验不过。
+    """
+    if target not in _TARGET_MAGIC:
+        raise OcrDependencyError(f"unsupported conversion target: {target}")
     source = Path(path)
     suffix = source.suffix.lower()
     if suffix not in _CONVERTIBLE_SUFFIXES:
@@ -134,7 +154,7 @@ def convert_office_to_pdf(path: Path) -> Iterator[Path]:
             "--norestore",
             f"-env:UserInstallation={profile.resolve().as_uri()}",
             "--convert-to",
-            "pdf",
+            target,
             "--outdir",
             str(output_dir),
             str(copied),
@@ -167,7 +187,7 @@ def convert_office_to_pdf(path: Path) -> Iterator[Path]:
                 raise OcrDependencyError(
                     f"LibreOffice conversion failed ({process.returncode}): {detail}"
                 )
-            yield _validated_pdf(output_dir, copied.stem)
+            yield _validated_output(output_dir, copied.stem, target)
         finally:
             if isinstance(getattr(process, "pid", None), int):
                 _terminate_process_group(process)
