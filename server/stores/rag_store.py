@@ -103,8 +103,9 @@ def scan_rows(
         limit: 返回上限。
 
     Returns:
-        按 ``chunk_id`` 升序（≈文档顺序）的行；``rank`` 恒为 0——子串命中没有 BM25 分，
-        上层按出现顺序取，不伪造一个相关度。
+        按写入顺序（= 文档顺序）的行；``rank`` 恒为 0——子串命中没有 BM25 分，上层按出现
+        顺序取，不伪造一个相关度。**按 rowid 而不是 chunk_id 排**：chunk_id 是字符串，
+        ``"#10" < "#2"``，超过 9 块就开始错位，limit 截断时选到的块变成任意的。
     """
     ensure_schema(conn)
     if not needle:
@@ -122,7 +123,7 @@ def scan_rows(
     if tag is not None:
         sql += " AND tag = ?"
         params.append(tag)
-    sql += " ORDER BY chunk_id LIMIT ?"
+    sql += " ORDER BY rowid LIMIT ?"
     params.append(limit)
     return cur.execute(sql, params).fetchall()
 

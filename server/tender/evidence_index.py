@@ -21,7 +21,7 @@ from typing import Any
 
 from server.ocr.rag import search
 from server.stores import rag_store
-from server.tender.evidence_chunks import MAX_CHUNK_CHARS, build_chunks
+from server.tender.evidence_chunks import build_chunks
 from server.tender.injection_budget import InjectionPlan, estimate_tokens, plan_injection
 
 logger = logging.getLogger(__name__)
@@ -203,8 +203,9 @@ def retrieve_evidence(
         return EvidenceResult()
 
     plan = plan_injection(criteria=criteria, query_count=query_count_hint or len(items))
-    # 每项取几个 chunk：由该项的 token 额度除以单 chunk 上限得出，至少 1 个。
-    per_item_chunks = max(1, plan.per_item_tokens // MAX_CHUNK_CHARS)
+    # 每项取几个 chunk：只在 InjectionPlan 里推导一次（P2/DRY）——此前这里与
+    # ``chunks_per_query_budget`` 各推一遍同一个概念，还用了不同除数。
+    per_item_chunks = plan.chunks_per_item
 
     blocks: list[EvidenceBlock] = []
     unresolved: list[UnresolvedItem] = []

@@ -196,3 +196,20 @@ def test_all_terms_too_short_still_yields_no_crash(conn):
     rag_store.insert_rows(conn, [_row("c1", "投标报价一览表。")])
 
     rag.search("报价 业绩", conn=conn, limit=5)
+
+
+# ── P2：子串通道必须按文档顺序，而不是 chunk_id 字典序 ──────────────────────
+
+
+def test_scan_channel_orders_by_document_order_not_lexicographic_id(conn):
+    """``"#10" < "#2"`` 是字典序——按 chunk_id 排会让 limit 截断时选到任意块。
+
+    真实索引里 chunk_id 形如 ``__bid__#0 … __bid__#12``，超过 9 块就开始错位：
+    limit=3 本该给前三块（文档最前面的证据），字典序下给的是 #0/#1/#10。
+    """
+    rows = [_row(f"__bid__#{i}", f"第{i}段：投标报价内容。") for i in range(12)]
+    rag_store.insert_rows(conn, rows)
+
+    hits = rag_store.scan_rows(conn, "投标报价", tag=None, limit=3)
+
+    assert [r["chunk_id"] for r in hits] == ["__bid__#0", "__bid__#1", "__bid__#2"]

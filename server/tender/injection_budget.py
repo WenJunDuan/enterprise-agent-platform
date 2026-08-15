@@ -24,6 +24,8 @@ import os
 from dataclasses import dataclass
 from typing import Any
 
+from server.tender.evidence_chunks import MAX_CHUNK_CHARS
+
 # 标定档：CLI 有效上限的测法与测得值。错误消息一律带上它——防止本常量变成第五个写死的错数字。
 CALIBRATION_DOC_PATH = ".ai_state/sprints/2026-08-15-tender-context-pipeline/design.md"
 
@@ -138,6 +140,16 @@ class InjectionPlan:
     query_count: int
     total_tokens: int
 
+    @property
+    def chunks_per_item(self) -> int:
+        """每个检索项可取几个 chunk——本概念的**唯一**推导处（P2/DRY）。
+
+        除数取 chunk 的硬上限而非 p90：p90 会系统性高估装得下几块，而越预算的代价是整单
+        一次性硬失败。至少 1 个——取 0 等于该项必然 ``evidence_unresolved``，那不是预算
+        问题而是配置错。
+        """
+        return max(1, self.per_item_tokens // MAX_CHUNK_CHARS)
+
 
 def plan_injection(*, criteria: dict[str, Any] | None, query_count: int) -> InjectionPlan:
     """按闭式账目分配本次注入额度。
@@ -180,13 +192,6 @@ def plan_injection(*, criteria: dict[str, Any] | None, query_count: int) -> Inje
     )
 
 
-# 一个 chunk 的典型 token 量（S0-B 部署机实测：146 chunk 的 p90 = 3,453 字；见标定档）。
-# 用 p90 而非中位数：按中位数算会系统性高估能塞下的 chunk 数，超窗的代价远大于少取一个 chunk。
-_TYPICAL_CHUNK_TOKENS = 3_453
-# 每项至少取 1 个 chunk：取 0 等于该项必然 evidence_unresolved，那不是预算问题而是配置错。
-_MIN_CHUNKS_PER_QUERY = 1
-
-
 def chunks_per_query_budget(*, criteria: dict[str, Any] | None, query_count: int) -> int:
     """每个检索项可取几个 chunk——由闭式账目派生，替代旧的写死常量 ``_CHUNKS_PER_QUERY=3``。
 
@@ -197,8 +202,7 @@ def chunks_per_query_budget(*, criteria: dict[str, Any] | None, query_count: int
     Returns:
         每项 chunk 数上限（≥1）。项数越多每项越少，总量恒受标定上限约束。
     """
-    plan = plan_injection(criteria=criteria, query_count=query_count)
-    return max(_MIN_CHUNKS_PER_QUERY, plan.per_item_tokens // _TYPICAL_CHUNK_TOKENS)
+    return plan_injection(criteria=criteria, query_count=query_count).chunks_per_item
 
 
 def describe_context_rejection(*, observed_tokens: int) -> str:

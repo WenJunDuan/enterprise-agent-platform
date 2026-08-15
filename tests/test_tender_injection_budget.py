@@ -280,3 +280,34 @@ def test_preextract_char_budget_shares_the_same_construction():
     from server.tender import context_slim
 
     assert context_slim._preextract_char_budget() == budget.fallback_injection_tokens()
+
+
+# ── P2：每项 chunk 数只许推导一次 ───────────────────────────────────────────
+
+
+def test_chunks_per_item_has_exactly_one_derivation():
+    """P2/DRY：``chunks_per_query_budget`` 与 ``retrieve_evidence`` 曾各推一遍同一个概念，
+    还用了不同除数（3,453 的 p90 vs 4,000 的硬上限）——同一份 criteria 会得出两个答案。
+    """
+    plan = budget.plan_injection(criteria=_criteria(14), query_count=20)
+
+    assert (
+        budget.chunks_per_query_budget(criteria=_criteria(14), query_count=20)
+        == plan.chunks_per_item
+    )
+
+
+def test_chunks_per_item_uses_the_hard_chunk_cap_not_a_percentile():
+    """除数取 chunk 的**硬上限**：p90 会系统性高估装得下几块，越预算的代价是整单硬失败。"""
+    from server.tender.evidence_chunks import MAX_CHUNK_CHARS
+
+    plan = budget.plan_injection(criteria=_criteria(2), query_count=2)
+
+    assert plan.chunks_per_item == max(1, plan.per_item_tokens // MAX_CHUNK_CHARS)
+
+
+def test_chunks_per_item_is_never_zero():
+    """取 0 等于该项必然 evidence_unresolved——那不是预算问题而是配置错。"""
+    plan = budget.plan_injection(criteria=_criteria(14), query_count=20_000)
+
+    assert plan.chunks_per_item >= 1
