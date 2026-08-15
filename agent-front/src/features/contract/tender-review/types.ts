@@ -45,6 +45,9 @@ export type IssueCategory =
   | 'missing_material'
   | 'parameter_deviation'
   | 'pending_verification'
+  // 底稿/链路降级（掉回 inline OCR、底稿部分缺失、索引缺失…）。不是投标人的问题，是本次
+  // 分析所依据的材料有洞——三次事故的共同放大器就是这类降级从不上界面。
+  | 'pipeline_degraded'
 export type IssueStatus = 'risk' | 'warning' | 'pending'
 
 // S10 概要分析 checklist：符合性三态（达到 / 未达到 / 待核验）。

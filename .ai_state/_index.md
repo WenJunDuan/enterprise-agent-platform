@@ -47,7 +47,7 @@ tools_available:
 
 # === 进度计数 (index-updater hook 自动维护, 不手填) ===
 counts:
-  features_count: 4
+  features_count: 3
   issues_count: 0
   refactors_count: 2
   systems_count: 10
@@ -64,9 +64,9 @@ pointers:
   latest_review: "sprints/2026-08-15-tender-context-pipeline/reviews/impl-pass1.md" # REWORK: F1 主承重墙未接线/F2 回落闸反松 2.3 倍
   latest_cleanup: "sprints/2026-08-12-prompt-architecture/cleanup-pass.md"
   latest_brainstorm: ""
-  latest_decisions: ["compound/2026-07-20-decision-ocr-as-standalone-service.md", "compound/2026-07-16-decision-carve-f6-schema-split-from-d2.md", "compound/2026-07-16-decision-schema-split-tender.md", "compound/2026-07-15-decision-ocr-service-layer.md", "compound/2026-07-02-decision-ocr-routing-ladder.md"]
+  latest_decisions: ["compound/2026-07-20-decision-ocr-as-standalone-service.md", "compound/2026-07-16-decision-schema-split-tender.md", "compound/2026-07-16-decision-carve-f6-schema-split-from-d2.md", "compound/2026-07-15-decision-ocr-service-layer.md", "compound/2026-07-02-decision-ocr-routing-ladder.md"]
   latest_lessons: ["compound/2026-08-14-learning-prompt-budget-must-be-per-session.md", "compound/2026-08-13-learning-design-budget-must-account-own-mandates.md", "compound/2026-08-12-learning-review-chain-catches-fix-induced-p0.md", "compound/2026-07-30-learning-document-ingestion-deployment-evidence.md", "compound/2026-07-18-learning-prompt-gate-contradiction-literal-model.md"]
-  latest_architecture_update: "2026-08-14T09:26:47.542Z"
+  latest_architecture_update: "2026-08-15T09:40:14.417Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
 next_action: "【2026-08-15 tender-context-pipeline 返工中·用户外出暂停】sprint=2026-08-15-tender-context-pipeline path=Refactor stage=impl。恢复链: ①代码在 worktree `.claude/worktrees/agent-a40c8e9dd8b94062a`(分支 worktree-agent-a40c8e9dd8b94062a), 基线 main f55cdf34, 已 8 commits + 1 个 wip 快照 8e326d0(F1 接线中途, 勿合并) ②Fable 复查判 REWORK, findings 在 sprints/2026-08-15-tender-context-pipeline/reviews/impl-pass1.md(main bf2ce3e): 两个 P0 = F1 主承重墙未接线(load_evidence_context 零调用方/enforce_manual_review 只被自测调用, 已主 agent 独立复核)、F2 回落闸未扣脚手架反比收编前松 2.3 倍; P1 = F3 AC0b 应改判 blocked 且 KD2 多词拆OR未实现、F4 全零命中归宿应改 manual_review、F5 预算耗尽静默饿死、F6 except ValueError 归因面过宽 ③返工顺序: F1 接线+穿透测试 → F2 扣脚手架 → F4 归宿改判 → P1 三项 ④返工完再过一轮 Fable 复查, PASS 才部署 ⑤部署形态: 后端 docker build --build-arg WITH_OCR=1(漏了会缺 pymupdf/paddleocr), 前端 agent-front/deploy/Containerfile.agent-front 需先本地 bun run build; env 改动必须 docker rm -f 重建容器(restart 不重读 --env-file)。生产现役: agent-backend:0815b2 / agent-front:0815b2。用户口径: 评标须 10 分钟内出结论, 超 20 分钟即视为架构问题。"

@@ -106,10 +106,10 @@ def _criteria_with_unknown_manual_items() -> dict:
     }
 
 
-def test_criteria_looks_usable_accepts_seven_numeric_and_two_manual_null_items():
-    from server.tender.doc_pipeline import criteria_looks_usable
+def test_criteria_usability_problem_accepts_seven_numeric_and_two_manual_null_items():
+    from server.tender.doc_pipeline import criteria_usability_problem
 
-    assert criteria_looks_usable(_criteria_with_unknown_manual_items()) is True
+    assert criteria_usability_problem(_criteria_with_unknown_manual_items()) is None
 
 
 @pytest.mark.parametrize(
@@ -123,30 +123,30 @@ def test_criteria_looks_usable_accepts_seven_numeric_and_two_manual_null_items()
         ("formula", "requires_cross_bid_comparison"),
     ],
 )
-def test_criteria_looks_usable_rejects_illegal_null_max(score_mode, tag):
-    from server.tender.doc_pipeline import criteria_looks_usable
+def test_criteria_usability_problem_rejects_illegal_null_max(score_mode, tag):
+    from server.tender.doc_pipeline import criteria_usability_problem
 
     criteria = _criteria_with_unknown_manual_items()
     criteria["items"][-1].update(score_mode=score_mode, tag=tag)
-    assert criteria_looks_usable(criteria) is False
+    assert criteria_usability_problem(criteria) is not None
 
 
-def test_criteria_looks_usable_requires_at_least_one_numeric_max():
-    from server.tender.doc_pipeline import criteria_looks_usable
+def test_criteria_usability_problem_requires_at_least_one_numeric_max():
+    from server.tender.doc_pipeline import criteria_usability_problem
 
     criteria = _criteria_with_unknown_manual_items()
     criteria["items"] = criteria["items"][-2:]
-    assert criteria_looks_usable(criteria) is False
+    assert criteria_usability_problem(criteria) is not None
 
 
 @pytest.mark.parametrize("invalid_max", [-1, math.nan, math.inf, -math.inf])
-def test_criteria_looks_usable_rejects_negative_or_non_finite_numeric_max(invalid_max):
-    from server.tender.doc_pipeline import criteria_looks_usable
+def test_criteria_usability_problem_rejects_negative_or_non_finite_numeric_max(invalid_max):
+    from server.tender.doc_pipeline import criteria_usability_problem
 
     criteria = _criteria_with_unknown_manual_items()
     criteria["items"][0]["max"] = invalid_max
 
-    assert criteria_looks_usable(criteria) is False
+    assert criteria_usability_problem(criteria) is not None
 
 
 def test_criteria_schema_allows_null_max_for_service_semantic_gate():

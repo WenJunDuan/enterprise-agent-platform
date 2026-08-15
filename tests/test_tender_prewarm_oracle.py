@@ -459,7 +459,10 @@ def test_wait_cap_reached_falls_back_to_inline_once_with_warning(monkeypatch):
 
     assert inline_calls == [True], "上限到期后回落 inline 恰好一次"
     warnings = payload["extracted_data"]["ocr_warnings"]
-    assert [w["status"] for w in warnings] == ["prewarm_timeout"]
+    # KD4（2026-08-15）：回落 inline 本身也必须留可见痕迹，故此处是两条——「为什么不等了」
+    # （prewarm_timeout）与「最终没用上预热底稿」（doc_layer_fallback）。
+    assert [w["status"] for w in warnings] == ["prewarm_timeout", "doc_layer_fallback"]
+    assert warnings[1]["reason"] == "bid_doc_not_usable"
 
 
 def test_ready_docs_produce_no_warning_and_no_rerun(monkeypatch):

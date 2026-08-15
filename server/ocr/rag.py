@@ -98,11 +98,35 @@ def _format_page_anchor(
     return page_anchor_text(page_start, artifact=artifact or ARTIFACT_ORIGINAL, page_end=page_end)
 
 
+# trigram tokenizer 的最小 gram 长度。查询短于它时 FTS5 恒零命中——这是 tokenizer 的定义，
+# 不是可调参数，故写死并注明出处：https://sqlite.org/fts5.html#the_trigram_tokenizer
+_TRIGRAM_MIN_LENGTH = 3
+
+
 def search(
     query: str, *, conn: sqlite3.Connection, tag: str | None = None, limit: int = 10
 ) -> list[dict]:
-    """Search indexed chunks by escaped FTS5 phrase and return BM25 hits."""
-    rows = rag_store.query_rows(conn, _escape_match_query(query), tag=tag, limit=limit)
+    """Search indexed chunks and return hits with page anchors.
+
+    **双通道**（2026-08-15 S0-B 实测定案）：查询短于 3 字符时走普通表子串扫描，否则走
+    FTS5 BM25。原因是 ``rag_chunks`` 用 trigram tokenizer，2 字中文词在其上 ``MATCH`` 与
+    ``LIKE`` 双双为 0（SQLite 把 FTS5 表上的 LIKE 也优化成走 trigram 索引）；而
+    「报价」「业绩」「工期」「资质」这类 2 字评分项名在评标里极常见，裸用 FTS5 时实测召回
+    仅 38%。子串旁路实测 88% / 4ms，且**文档无关**——不猜任何具体标书的措辞。
+
+    Args:
+        query: 检索词（通常是 criteria 的评分项名或资格检查项）。
+        conn: 索引连接。
+        tag: 章节语义标签过滤。
+        limit: 返回上限。
+
+    Returns:
+        命中 chunk（含 ``page_anchor``），两个通道形状一致。
+    """
+    if len(query.strip()) < _TRIGRAM_MIN_LENGTH:
+        rows = rag_store.scan_rows(conn, query.strip(), tag=tag, limit=limit)
+    else:
+        rows = rag_store.query_rows(conn, _escape_match_query(query), tag=tag, limit=limit)
     return [
         {
             "chunk_id": row["chunk_id"],

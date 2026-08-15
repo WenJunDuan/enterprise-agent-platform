@@ -380,6 +380,11 @@ export type DocsStatusTenderDoc = {
   ocr_status: OcrStatus
   /** R1: criteria 抽取状态（与 ocr_status 独立轮询）。旧后端可能不返回。 */
   criteria_status?: CriteriaStatus
+  /**
+   * AC3: criteria_status=failed 时的**具体**原因（中文说明 + 机器码）。旧后端不返回，
+   * 此时界面回落到通用文案——但绝不静默。
+   */
+  criteria_error?: string | null
 }
 
 export type DocsStatusBid = {

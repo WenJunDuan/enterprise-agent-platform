@@ -28,7 +28,12 @@ import {
   type TenderProjectDetailResponse,
 } from './api'
 import type { ProjectFormData } from './components/create-review-view'
-import { isOcrTerminal, isOcrUsable, ocrImpairedNotice } from './ocr-status'
+import {
+  criteriaProblemNotice,
+  isOcrTerminal,
+  isOcrUsable,
+  ocrImpairedNotice,
+} from './ocr-status'
 import {
   buildDashboardSummary,
   buildTenderReviewData,
@@ -194,7 +199,14 @@ export function useTenderReviewPage(
     new Set()
   )
   // R6-R2：记各家预热 bid_id（uploadBid 返回）→ 提交评标时透传，worker 复用预热 OCR 免重 OCR。
-  const [prewarmBidIds, setPrewarmBidIds] = useState<Record<number, string>>({})
+  // KD5 掉落根因：canStartReview 刻意只看"本地选了文件"，用户可在 uploadBid 的 POST 未返回时
+  // 就点开始分析。此前 bid_id 存在 useState 里，此时它还是空的，且 submitReview 的闭包也读不到
+  // 之后的 setState 结果 → bid_id 丢失 → 评标掉回 inline OCR 重跑整个目录（实测 784KB 底稿）。
+  // 故改用 ref 存两份：在途上传的 promise（供 submitReview 等齐，仿 tenderUploadRef 先例）与
+  // 已拿到的 bid_id（绕开 stale closure）。服务端另有按 bidder_name 回查的权威兜底。
+  // 这两份都不参与渲染（上传态由 uploadingBidderIds / uploadedBidderIds 表达），故 ref 合适。
+  const bidUploadsRef = useRef<Record<number, Promise<unknown>>>({})
+  const prewarmBidIdsRef = useRef<Record<number, string>>({})
   // 防招标文件多选时并发重复建项目（createTenderProject 异步，第二次 add 在 resolve 前会重复建）。
   const creatingProjectRef = useRef(false)
   // R7：在途的招标预热上传 promise（resolve 为 project_id）。submitReview 若在它 resolve 前被点，
@@ -335,11 +347,16 @@ export function useTenderReviewPage(
     return bids.every((bid) => isOcrUsable(bid.ocr_status))
   }, [uploadProjectId, docsStatusQuery.data])
 
-  // 底稿降级/部分缺失时的告警提示（不阻断，只告知：结论会标注受影响的评分项）。
-  const ocrNotice = useMemo(
-    () => ocrImpairedNotice(docsStatusQuery.data ?? null),
-    [docsStatusQuery.data]
-  )
+  // 底稿降级/部分缺失 + criteria 解析失败的告警提示（不阻断，只告知）。AC2/AC3：两类降级都
+  // 必须上界面，此前 criteria 失败在开始分析前完全不可见。
+  const ocrNotice = useMemo(() => {
+    const docs = docsStatusQuery.data ?? null
+    return (
+      [ocrImpairedNotice(docs), criteriaProblemNotice(docs)]
+        .filter(Boolean)
+        .join(' ') || null
+    )
+  }, [docsStatusQuery.data])
 
   const selectedResultRequestId = useMemo(() => {
     const results = resultsQuery.data ?? []
@@ -706,7 +723,8 @@ export function useTenderReviewPage(
     setUploadedBidderIds(new Set())
     setUploadingTender(false)
     setUploadingBidderIds(new Set())
-    setPrewarmBidIds({})
+    bidUploadsRef.current = {}
+    prewarmBidIdsRef.current = {}
     creatingProjectRef.current = false
     tenderUploadRef.current = null
   }
@@ -772,7 +790,8 @@ export function useTenderReviewPage(
     setUploadBidders([DEFAULT_UPLOAD_BIDDER])
     setUploadedBidderIds(new Set())
     setUploadingBidderIds(new Set())
-    setPrewarmBidIds({})
+    bidUploadsRef.current = {}
+    prewarmBidIdsRef.current = {}
     setSubmitError('')
     creatingProjectRef.current = false
     tenderUploadRef.current = null
@@ -846,8 +865,11 @@ export function useTenderReviewPage(
     setSubmitError('')
     setUploadingBidderIds((prev) => new Set(prev).add(id))
     try {
-      const res = await uploadBid(uploadProjectId, bidderName, natives) // 触发后台 OCR
-      setPrewarmBidIds((prev) => ({ ...prev, [id]: res.bid_id })) // R6-R2：记预热 bid_id 供评标复用
+      const upload = uploadBid(uploadProjectId, bidderName, natives) // 触发后台 OCR
+      // 先登记在途 promise：用户在这一步之后随时可能点「开始分析」，submitReview 靠它等齐。
+      bidUploadsRef.current[id] = upload
+      const res = await upload
+      prewarmBidIdsRef.current[id] = res.bid_id // R6-R2：记预热 bid_id 供评标复用
       setUploadedBidderIds((prev) => new Set(prev).add(id))
       void queryClient.invalidateQueries({
         queryKey: ['tender-docs-status', uploadProjectId],
@@ -941,6 +963,10 @@ export function useTenderReviewPage(
 
     setProgress(10)
 
+    // KD5：等齐在途的投标预热上传，再读 bid_id。allSettled 而非 all——某家上传失败不该拖住
+    // 其余家的提交（该家自然拿不到 bid_id，服务端回查兜底，最差回落 inline 并显式告警）。
+    await Promise.allSettled(Object.values(bidUploadsRef.current))
+
     // partial 容错（codex r5 P1）：逐家提交，单家受理失败不丢已受理的其余家；全失败才 throw 回 create。
     const acceptedTasks = []
     const submitFailures: string[] = []
@@ -950,7 +976,9 @@ export function useTenderReviewPage(
           bidderName: bidder.name,
           tenderFiles: nativeTenderFiles,
           bidderFiles: bidder.nativeFiles,
-          bidId: prewarmBidIds[bidder.id], // R6-R2：透传预热 bid_id → worker 复用 OCR 免重跑
+          // 读 ref 而非 state：submitReview 的闭包捕获的是点击那一刻的 state 快照，
+          // 上面 await 之后写入的 bid_id 在本闭包捕获的 state 里永远看不到（KD5 根因之一）。
+          bidId: prewarmBidIdsRef.current[bidder.id], // R6-R2：透传预热 bid_id → worker 复用 OCR
         })
         acceptedTasks.push(accepted)
       } catch {

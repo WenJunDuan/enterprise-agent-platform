@@ -46,6 +46,7 @@ from server.tender.doc_context import (
 # 拆分后仍从本模块 re-export（tests/test_tender_doc_ocr_status.py 与
 # tests/test_tender_prewarm_oracle.py 按 ``runner._ocr_integrity_warnings`` 调用）。
 from server.tender.doc_context import _ocr_integrity_warnings as _ocr_integrity_warnings
+from server.tender.injection_budget import describe_context_rejection, estimate_tokens
 from server.tender.output import TENDER_OUTPUT_SCHEMA_NAME
 
 logger = logging.getLogger(__name__)
@@ -85,13 +86,8 @@ _TENDER_EFFORT = os.getenv("TENDER_REASONING_EFFORT", "xhigh")
 
 # 底稿注入的**无条件**字节上限（2026-08-14 生产事故）：云 OCR 写超时 → 降级 inline_ocr 把整个
 # case 目录的 OCR 全文注入，无任何长度上限 → 内网 DeepSeek Flash "Prompt is too long"，整单无
-# 结论。已有的 context_slim.bound_tender_context 是**配置态**闸（部署未声明模型窗口/输出预算时
-# 整体不生效，事故当天正是这个状态），故这里再加一道兜底。
-#
-# 默认值不再硬编码常量（2026-08-14 第二次事故 Bug A）：旧默认 64,000 B 是按"最小窗口模型
-# 64K token"的错误前提反推的，而实际部署 MODEL_CONTEXT_WINDOW=1048576，64 KB 只占窗口 2%，
-# 把 103 KB 的底稿截成 64 KB、砍掉评标办法整章。现改为从模型窗口推导，见
-# ``context_budget.derive_default_max_bytes``；显式设 ``TENDER_CONTEXT_MAX_BYTES`` 仍以其为准。
+# 结论。默认值由 ``injection_budget`` 单点标定（2026-08-15 收编，见 KD3：旧的 64,000 B 是单位
+# 错，改按模型窗口推导又得出 2.1MB 等于没有闸）；显式设 ``TENDER_CONTEXT_MAX_BYTES`` 仍以其为准。
 
 # 截断标记：让模型**看见**底稿被截，从而对被截材料走证据缺失规则，而不是当成"材料未提供"判 0。
 # 标记本身（~160 B）附加在上限之外，故意保证"被截了"这件事一定进上下文。
@@ -278,6 +274,17 @@ async def run_tender_evaluation(
             # 确定性失败立即上抛：重发同一 prompt 结果必然相同（2026-08-14 事故）。判定上提到
             # server.common.contract，与 audit 的两处同型重试环共用（2026-08-14 后续）。
             if is_non_retryable(exc):
+                # AC6：爆窗是一次性硬失败（contract.py 已列不可重试），这条日志就是运维唯一
+                # 线索——必须带上"去哪复标定"，否则标定常量会变成第五个被凭猜调的错数字。
+                logger.error(
+                    "tender_context_rejected",
+                    extra={
+                        "request_id": request_id,
+                        "recalibration_hint": describe_context_rejection(
+                            observed_tokens=estimate_tokens(context or "")
+                        ),
+                    },
+                )
                 raise
             if attempt >= TENDER_CONTRACT_MAX_RETRY:
                 raise

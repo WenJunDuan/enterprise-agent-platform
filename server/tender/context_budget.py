@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from server.common.corpus import parse_page_anchor
 from server.ocr.docstructure import chapter_heading
-from server.platform.config import resolve_model_context_window, resolve_model_max_output_tokens
+from server.tender.injection_budget import fallback_max_bytes
 
 # 关键评审章节关键词（单点定义，context_slim 首抽瘦身与本模块的预算闸共用）。
 # 「评审方法」「评审程序」是 2026-08-14 事故补入的：事故章节标题是「第四章 评审方法和程序」，
@@ -41,45 +41,24 @@ KEY_SECTION_KEYWORDS: tuple[str, ...] = (
 )
 
 # ── 默认预算推导 ────────────────────────────────────────────────────────────────
-#
-# 中文 OCR 底稿按 UTF-8 3 字节/汉字、1 汉字≈1 token 估（与 context_slim 的 1 字符≈1 token 同源
-# 假设，只是这里的预算单位是字节）。
-_BYTES_PER_TOKEN = 3
-# 单次评标脚手架：实测提示词 55,439 B ≈ 18,500 token，再加 criteria 注入块 + 底稿告警块 +
-# 估算误差余量 → 取整 30,000 token
-# （见 compound/2026-08-14-learning-prompt-budget-must-be-per-session.md）。
-_SCAFFOLD_RESERVE_TOKENS = 30_000
-# 评标是**多轮** agent 循环（默认 30 轮）：模型还会 Read 原文件、重识别低清页、扩展思考，
-# 这些都在同一窗口里累积。底稿不得独占整窗，按窗口的 1/4 留给循环自身。
-_AGENT_LOOP_MARGIN_DIVISOR = 4
-# 两 env 都缺失（部署未声明模型窗口/输出预算）时的保守常量。取 256,000 B ≈ 8.5 万 token：
-# 足以容纳一份完整招标文件底稿（事故当天 103 KB），又远低于任何主流部署窗口。
-FALLBACK_MAX_BYTES = 256_000
 
 
 def derive_default_max_bytes(model: str | None = None) -> int:
-    """Derive the OCR-draft byte budget from the deployed model's window.
+    """底稿注入的字节兜底上限。
+
+    KD3（2026-08-15 收编）：本函数曾自己持有 4 个预算常量并按 ``MODEL_CONTEXT_WINDOW`` 推导。
+    那条路线已被证伪两次——部署值 1,048,576 推出 2.1MB 预算（等于没有闸），而 bundled CLI 约
+    200K token 就拒；模型能力不描述 CLI 行为。现在全部口径收敛到
+    ``server.tender.injection_budget``，本函数只做换算转发。
 
     Args:
-        model: 本次评标实际使用的模型名；``None`` 走全局默认模型配置。
+        model: 保留参数以维持既有调用形态；预算不再随模型窗口变化（那正是被证伪的假设）。
 
     Returns:
-        底稿注入的字节上限。窗口/输出预算任一未声明、或声明值自相矛盾（扣完预留后无余量）时，
-        回落 ``FALLBACK_MAX_BYTES``——不猜某个模型的窗口，也不放任无上限注入。
+        字节上限（由标定的 token 上限换算）。
     """
-    window = resolve_model_context_window(model=model)
-    reserved_output = resolve_model_max_output_tokens(model=model)
-    if window <= 0 or reserved_output is None:
-        return FALLBACK_MAX_BYTES
-    available = (
-        window
-        - reserved_output
-        - _SCAFFOLD_RESERVE_TOKENS
-        - window // _AGENT_LOOP_MARGIN_DIVISOR
-    )
-    if available <= 0:
-        return FALLBACK_MAX_BYTES
-    return available * _BYTES_PER_TOKEN
+    del model  # 预算口径已与模型窗口解耦（AC6）
+    return fallback_max_bytes()
 
 
 # ── 关键节选区 ──────────────────────────────────────────────────────────────────
