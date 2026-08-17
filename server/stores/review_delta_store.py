@@ -234,34 +234,6 @@ def archive_review_delta_payload(
     return record
 
 
-def list_review_delta_records(
-    tenant: str,
-    claim_id: str | None = None,
-    final_recommendation: str | None = None,
-    reviewer_verdict: str | None = None,
-    agrees_with_initial: bool | None = None,
-    limit: int = 20,
-    offset: int = 0,
-) -> list[dict[str, Any]]:
-    return REVIEW_DELTA_STORE.list_records(
-        tenant=tenant,
-        claim_id=claim_id,
-        final_recommendation=final_recommendation,
-        reviewer_verdict=reviewer_verdict,
-        agrees_with_initial=agrees_with_initial,
-        limit=limit,
-        offset=offset,
-    )
-
-
-def get_review_delta_record_by_request_id(request_id: str, tenant: str) -> dict[str, Any] | None:
-    return REVIEW_DELTA_STORE.get_record_by_request_id(request_id, tenant)
-
-
-def get_review_delta_payload_by_request_id(request_id: str, tenant: str) -> dict[str, Any] | None:
-    return REVIEW_DELTA_STORE.get_payload_by_request_id(request_id, tenant)
-
-
 def list_review_delta_records_admin(
     claim_id: str | None = None,
     final_recommendation: str | None = None,
@@ -284,7 +256,3 @@ def get_review_delta_record_by_request_id_admin(request_id: str) -> dict[str, An
 
 def get_review_delta_payload_by_request_id_admin(request_id: str) -> dict[str, Any] | None:
     return REVIEW_DELTA_STORE.get_payload_by_request_id_admin(request_id)
-
-
-def describe_review_delta_store() -> dict[str, Any]:
-    return REVIEW_DELTA_STORE.describe()

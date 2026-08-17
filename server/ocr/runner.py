@@ -453,36 +453,6 @@ async def map_extraction_to_form(
     raise AssertionError("unreachable: doc-extract retry loop exited") from last_error
 
 
-async def run_doc_extract(
-    case_dir: str,
-    *,
-    form_schema: dict[str, Any],
-    request_id: str,
-    tenant: str | None = None,
-    run_seal: bool = False,
-    **opts: Any,
-) -> dict[str, Any]:
-    """跑一次文档识别 → 表单回填；返回经 form-fill 契约校验的结果。
-
-    确定性识别在 server.ocr 进程内完成（0 网关往返），仅字段映射经一次模型往返。
-    识别与映射分别由 run_doc_recognize / map_extraction_to_form 承担，本函数只做编排。
-
-    Args:
-        case_dir: 案件目录（项目内相对或绝对路径），含待识别文件。
-        form_schema: 目标表单定义（组件 + options + 子表列），注入 prompt 指导映射。
-        request_id: 请求标识，贯穿会话日志。
-        tenant: 租户标识。
-        run_seal: 是否对扫描件追加印章识别。
-
-    Returns:
-        符合 form-fill.schema.json 的回填结果 dict。
-    """
-    recognized = await run_doc_recognize(case_dir, run_seal=run_seal)
-    return await map_extraction_to_form(
-        recognized["block"], form_schema, request_id=request_id, tenant=tenant, **opts
-    )
-
-
 async def run_doc_recognize(
     case_dir: str,
     *,

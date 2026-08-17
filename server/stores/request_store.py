@@ -261,33 +261,6 @@ def append_request_audit(record: RequestAuditRecord) -> None:
     REQUEST_AUDIT_STORE.append_record(record)
 
 
-def list_request_audits(
-    tenant: str,
-    conversation_id: str | None = None,
-    claude_session_id: str | None = None,
-    route: str | None = None,
-    status: str | None = None,
-    limit: int = 20,
-    offset: int = 0,
-) -> list[dict[str, Any]]:
-    return REQUEST_AUDIT_STORE.list_records(
-        tenant=tenant,
-        conversation_id=conversation_id,
-        claude_session_id=claude_session_id,
-        route=route,
-        status=status,
-        limit=limit,
-        offset=offset,
-    )
-
-
-def get_request_audit_by_request_id(
-    request_id: str,
-    tenant: str,
-) -> dict[str, Any] | None:
-    return REQUEST_AUDIT_STORE.get_record_by_request_id(request_id=request_id, tenant=tenant)
-
-
 def list_request_audits_admin(
     conversation_id: str | None = None,
     claude_session_id: str | None = None,

@@ -20,8 +20,6 @@ from server.platform.sqlite_store import connect_sqlite, utc_now
 
 ensure_local_layout()
 
-# 招标项目生命周期状态（对齐前端 TenderProject.status）。
-VALID_PROJECT_STATUS = {"doing", "review", "done", "archived"}
 VALID_PROJECT_SCENARIO = {"bidder_self_check", "expert_assist", "post_eval_monitor"}
 DEFAULT_PROJECT_SCENARIO = "expert_assist"
 
@@ -202,17 +200,6 @@ def list_projects(
         return [dict(row) for row in connection.execute(query, params).fetchall()]
 
 
-def update_project_status(project_id: str, tenant: str, status: str) -> bool:
-    """更新招标项目状态（doing/review/done/archived）。返回是否命中。"""
-    if status not in VALID_PROJECT_STATUS:
-        raise ValueError(f"invalid project status: {status!r}")
-    with connect_sqlite(PLATFORM_DB_FILE, immediate=True) as connection:
-        cursor = connection.execute(
-            "UPDATE tender_projects SET status = ?, updated_at = ? "
-            "WHERE project_id = ? AND tenant = ?",
-            (status, utc_now(), project_id, tenant),
-        )
-        return cursor.rowcount > 0
 
 
 # Columns allowed to be auto-filled from OCR-derived tender_info (R1).

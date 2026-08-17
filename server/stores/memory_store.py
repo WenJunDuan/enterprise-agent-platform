@@ -126,9 +126,6 @@ class SQLiteMemoryStore:
             ).fetchone()
         return self._row_to_dict(row) if row else None
 
-    def list_records_by_request_id(self, request_id: str) -> list[dict[str, Any]]:
-        return self.list_records(source_request_id=request_id, limit=100, offset=0)
-
     def describe(self) -> dict[str, Any]:
         description = describe_sqlite_target(self.db_path, backend="sqlite+knowledge-files")
         description["memory_root"] = str(self.memory_root)
@@ -243,10 +240,6 @@ def list_memory_records(
 
 def get_memory_record_by_id(memory_id: str) -> dict[str, Any] | None:
     return MEMORY_STORE.get_record_by_memory_id(memory_id)
-
-
-def list_memory_records_by_request_id(request_id: str) -> list[dict[str, Any]]:
-    return MEMORY_STORE.list_records_by_request_id(request_id)
 
 
 def describe_memory_store() -> dict[str, Any]:

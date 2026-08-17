@@ -422,26 +422,6 @@ def archive_result_payload(
     return record
 
 
-def list_result_records(
-    tenant: str,
-    conversation_id: str | None = None,
-    claim_id: str | None = None,
-    verdict: str | None = None,
-    manual_review_reason: str | None = None,
-    limit: int = 20,
-    offset: int = 0,
-) -> list[dict[str, Any]]:
-    return RESULT_STORE.list_records(
-        tenant=tenant,
-        conversation_id=conversation_id,
-        claim_id=claim_id,
-        verdict=verdict,
-        manual_review_reason=manual_review_reason,
-        limit=limit,
-        offset=offset,
-    )
-
-
 def get_result_record_by_request_id(
     request_id: str,
     tenant: str,
