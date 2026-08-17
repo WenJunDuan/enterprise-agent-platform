@@ -30,3 +30,8 @@ collected_evidence:
     result: pass
     command: "uv run pytest -q -p no:randomly 2>&1 | grep -E \"^FAILED\"; echo \"=== 前端 ===\"; cd agent-front && bun install >/dev/null 2>&1; bun test 2>&1 | tail -3; bunx tsc -b --force 2>&1 | tail -2 && echo \"tsc OK\"; bun run lint 2>&1 | tail -2"
     timestamp: "2026-08-15T14:11:01.149Z"
+  - tool_use_id: "toolu_01Mpe5rHWk8Podh4L94YVL31"
+    tool: "Bash"
+    result: pass
+    command: "cd agent-front && bun run build 2>&1 | tail -3 && cd .. && rsync -az --delete -e \"ssh -o ControlPath=/tmp/ssh-ea\" agent-front/dist/ smardaten@100.91.100.13:/opt/application/enterprise-agent-platform/agent-front/dist/ && ssh -o ControlPath=/tmp/ssh-ea smardaten@100.91.100.13 'cd /opt/application/enterprise-agent-platform && docker build -f agent-front/deploy/Containerfile.agent-front -t agent-front:0815b3 . >/dev/null 2>&1 && docker rm -f agent-front >/dev/null && docker run -d --name agent-front"
+    timestamp: "2026-08-17T01:33:41.597Z"

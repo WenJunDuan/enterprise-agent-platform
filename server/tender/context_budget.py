@@ -172,6 +172,18 @@ def _page_note(lines: list[str]) -> str:
     return f"原第 {min(pages)}-{max(pages)} 页"
 
 
+def _omitted_note(text: str, kept_bytes: int) -> str:
+    """Describe the page range of the part that was actually dropped.
+
+    2026-08-17 用户实测反馈：标记原先用**整个 chunk** 的页码范围与字节数，但截断只丢尾部
+    （头部 ``kept_bytes`` 保留）。于是模型读到"已省略原第 1-400 页约 681709 字节"却同时看得见
+    第 101-158 页，把推理卡在"这怎么对得上"。标记必须只描述**真正丢掉的那一段**。
+    """
+    kept_text = _head_bytes(text, kept_bytes)
+    dropped = text[len(kept_text) :]
+    return _page_note(dropped.splitlines())
+
+
 def _file_spans(lines: list[str]) -> list[tuple[int, int]]:
     """按 ``### 文件:`` 分隔符切出每份文件的 ``[start, end)`` 行区段。
 
@@ -303,14 +315,14 @@ def bound_draft_by_content(text: str, *, limit_bytes: int) -> str:
         else (2 if key else 3)
         for offset, (_, key) in zip(offsets, chunks, strict=True)
     ]
-    # 每个 chunk 最坏情况都会被削 → 先按"全削"预留标记开销，保证总量不越预算。
-    # 用 chunk 全长渲染标记取长度上界（实际省略量 ≤ 全长 → 数字位数不会更多）。
-    markers = [
+    # 预算预留仍按"全削"取上界（实际省略量 ≤ 全长 → 渲染后的标记不会更长），保证总量不越限；
+    # 但**写进产物的标记必须按实际省略量重算**，否则会谎报（见 _omitted_note 的事故说明）。
+    reserve_markers = [
         _OMISSION_MARKER.format(note=_page_note(chunk_lines), size=size)
         for (chunk_lines, _), size in zip(chunks, sizes, strict=True)
     ]
     # 预留 = 全部标记 + chunk 之间的换行分隔符（重新 join 时补回，必须计入预算）。
-    reserve = sum(len(marker.encode("utf-8")) for marker in markers) + max(0, len(chunks) - 1)
+    reserve = sum(len(m.encode("utf-8")) for m in reserve_markers) + max(0, len(chunks) - 1)
     if reserve >= limit_bytes:
         return _head_bytes(text, limit_bytes)
 
@@ -320,5 +332,10 @@ def bound_draft_by_content(text: str, *, limit_bytes: int) -> str:
         if allocation[index] >= sizes[index]:
             kept.append(chunk)
             continue
-        kept.append(_head_bytes(chunk, allocation[index]) + markers[index])
+        head = _head_bytes(chunk, allocation[index])
+        marker = _OMISSION_MARKER.format(
+            note=_omitted_note(chunk, allocation[index]),
+            size=sizes[index] - len(head.encode("utf-8")),
+        )
+        kept.append(head + marker)
     return "\n".join(kept)

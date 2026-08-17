@@ -51,6 +51,33 @@ def doc_ocr_status(row: dict | None) -> str | None:
     return status
 
 
+CRITERIA_TERMINAL_STATUSES = frozenset({"ready", "failed"})
+
+
+def _criteria_pending(project_doc: dict | None, stale_sec: float) -> bool:
+    """招标层的 criteria 抽取是否仍在进行（值得再等一会）。
+
+    证据层（S3）只在有 criteria 时接管；criteria 抽取与评标提交是并发的，评标可能抢跑。
+    ``criteria_status`` 的状态机是 pending→running→ready|failed，故终态即可放行；
+    非终态但心跳陈旧（进程重启遗留的僵尸 running）按"不会有了"处理，避免白等到上限。
+    """
+    if project_doc is None:
+        return False
+    status = str(project_doc.get("criteria_status") or "").strip()
+    if status in CRITERIA_TERMINAL_STATUSES:
+        return False
+    raw = project_doc.get("updated_at")
+    if not isinstance(raw, str):
+        return False
+    try:
+        updated = datetime.fromisoformat(raw)
+    except ValueError:
+        return False
+    if updated.tzinfo is None:
+        updated = updated.replace(tzinfo=UTC)
+    return (datetime.now(UTC) - updated).total_seconds() < stale_sec
+
+
 def is_prewarm_in_flight(row: dict | None, *, stale_sec: float) -> bool:
     """预热是否真的在途（KD5 in-flight oracle）。
 
@@ -204,6 +231,17 @@ async def wait_doc_layer_ready(project_id: str, bid_id: str, tenant: str) -> str
             proj_status in DOC_LAYER_TERMINAL_STATUSES
             and bid_status in DOC_LAYER_TERMINAL_STATUSES
         ):
+            # 两层 OCR 到终态还不够：证据层（S3）要 criteria 才启用，而 criteria 抽取与评标
+            # 是并发的。2026-08-17 实测——评标 01:40:18 取底稿时 criteria 尚未落库，直到
+            # 01:40:54 才抽完（晚 36 秒），于是 build_evidence_context 走"无 criteria→交回
+            # 既有路径"分支，整份 784KB 底稿退回全量注入 + 截断。故这里多等一档：招标层
+            # criteria 仍在抽（未落库且预热在途）时继续等，抽完或确定不会有了再放行。
+            if _criteria_pending(proj, settings.prewarm_stale_sec):
+                now = time.monotonic()
+                if now >= deadline:
+                    return "wait_cap_reached"
+                await asyncio.sleep(DOC_LAYER_POLL_SEC)
+                continue
             return "terminal"
         in_flight = is_prewarm_in_flight(
             proj, stale_sec=settings.prewarm_stale_sec

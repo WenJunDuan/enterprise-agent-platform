@@ -72,7 +72,7 @@ pointers:
 next_action: "【2026-08-15 tender-context-pipeline 返工中·用户外出暂停】sprint=2026-08-15-tender-context-pipeline path=Refactor stage=impl。恢复链: ①代码在 worktree `.claude/worktrees/agent-a40c8e9dd8b94062a`(分支 worktree-agent-a40c8e9dd8b94062a), 基线 main f55cdf34, 已 8 commits + 1 个 wip 快照 8e326d0(F1 接线中途, 勿合并) ②Fable 复查判 REWORK, findings 在 sprints/2026-08-15-tender-context-pipeline/reviews/impl-pass1.md(main bf2ce3e): 两个 P0 = F1 主承重墙未接线(load_evidence_context 零调用方/enforce_manual_review 只被自测调用, 已主 agent 独立复核)、F2 回落闸未扣脚手架反比收编前松 2.3 倍; P1 = F3 AC0b 应改判 blocked 且 KD2 多词拆OR未实现、F4 全零命中归宿应改 manual_review、F5 预算耗尽静默饿死、F6 except ValueError 归因面过宽 ③返工顺序: F1 接线+穿透测试 → F2 扣脚手架 → F4 归宿改判 → P1 三项 ④返工完再过一轮 Fable 复查, PASS 才部署 ⑤部署形态: 后端 docker build --build-arg WITH_OCR=1(漏了会缺 pymupdf/paddleocr), 前端 agent-front/deploy/Containerfile.agent-front 需先本地 bun run build; env 改动必须 docker rm -f 重建容器(restart 不重读 --env-file)。生产现役: agent-backend:0815b2 / agent-front:0815b2。用户口径: 评标须 10 分钟内出结论, 超 20 分钟即视为架构问题。"
 last_subagent: "codex-exec" # tender-report-dimensions D0-D5 headless (codex 0.142.1, gpt-5.5)；必须 env -u HTTP_PROXY -u HTTPS_PROXY 否则 streaming API 挂起，见 compound/2026-06-25-trick-codex-proxy-hangs-streaming.md
 last_subagent_at: "2026-06-25T00:00:00.000Z"
-active_worktrees: ["agent-a40c8e9dd8b94062a"] # tender-context-pipeline 返工中, 含 wip 快照 8e326d0, 勿清理
+active_worktrees: [] # 2026-08-17 两个返工 worktree 已合并 369c53e 并清理
 last_critic_round: 4 # demo-full-doc-ocr: R1-R3 修订，R4 PASS
 design_changed_after_impl: false # prompt-architecture 实施期 design 修订(beb1ce3)已由 pass2 增量重核覆盖(evaluator 授权范围), 2026-08-13 释放
 

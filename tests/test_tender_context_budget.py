@@ -410,3 +410,30 @@ def test_rule_source_survives_when_evidence_would_eat_the_whole_budget():
     assert "评分标准：技术方案 40 分" in kept, "评分标准正文必须保留，否则整单无法评分"
     assert _QUALIFICATION_LINE in kept, "资格审查条款必须保留"
     assert "某项目公开招标文件" in kept, "规则源文件的文件头必须保留，模型据此定位出处"
+
+
+# ── 2026-08-17 用户实测：省略标记谎报整份 ──────────────────────────────────────
+
+
+def test_omission_marker_reports_only_the_dropped_part_not_the_whole_chunk():
+    """标记只能描述**真正丢掉的那一段**，不能报整个 chunk 的页码与字节。
+
+    事故：标记写「已省略原第 1-400 页约 681709 字节」，而模型手里同时看得见第 101-158 页，
+    推理卡在"这怎么对得上"（用户贴回的模型原话）。根因是标记用整个 chunk 的 _page_note 与
+    全长 size 渲染，但截断只丢尾部、头部是保留的。
+    """
+    from server.tender.context_budget import bound_draft_by_content
+
+    # 需含关键评审章节，否则走的是"无关键节→保留开头"的回落分支，不经过省略标记路径。
+    lines = ["### 文件: 某招标文件.pdf", _REVIEW_CHAPTER_TITLE, "评分标准：技术方案 40 分。"]
+    for page in range(1, 41):
+        lines.append(f"【第{page}页】")
+        lines.append(f"第 {page} 页正文内容，" + "投标材料明细。" * 20)
+    draft = "\n".join(lines)
+
+    kept = bound_draft_by_content(draft, limit_bytes=4000)
+
+    assert "第 1 页正文内容" in kept, "前置内容应被保留（截断只丢尾部）"
+    assert "已省略" in kept, "前置条件：本用例必须真的触发截断"
+    # 标记里的页码范围必须落在被丢弃的尾部，不能从第 1 页起算。
+    assert "原第 1-" not in kept, "标记谎报：把保留下来的页也算进了省略范围"
