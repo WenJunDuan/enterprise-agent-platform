@@ -54,8 +54,8 @@ counts:
   reviews_count: 79
   cleanup_count: 7
   compound:
-    learning: 16
-    trick: 3
+    learning: 17
+    trick: 4
     decision: 8
     explore: 2
 # === Pointers (指向最新相关文件) ===
@@ -65,23 +65,21 @@ pointers:
   latest_cleanup: "sprints/2026-08-12-prompt-architecture/cleanup-pass.md"
   latest_brainstorm: ""
   latest_decisions: ["compound/2026-07-20-decision-ocr-as-standalone-service.md", "compound/2026-07-16-decision-carve-f6-schema-split-from-d2.md", "compound/2026-07-16-decision-schema-split-tender.md", "compound/2026-07-15-decision-ocr-service-layer.md", "compound/2026-07-02-decision-ocr-routing-ladder.md"]
-  latest_lessons: ["compound/2026-08-14-learning-prompt-budget-must-be-per-session.md", "compound/2026-08-13-learning-design-budget-must-account-own-mandates.md", "compound/2026-08-12-learning-review-chain-catches-fix-induced-p0.md", "compound/2026-07-30-learning-document-ingestion-deployment-evidence.md", "compound/2026-07-18-learning-prompt-gate-contradiction-literal-model.md"]
+  latest_lessons: ["compound/2026-08-17-learning-retrieval-quality-needs-the-chunk-body.md", "compound/2026-08-14-learning-prompt-budget-must-be-per-session.md", "compound/2026-08-13-learning-design-budget-must-account-own-mandates.md", "compound/2026-08-12-learning-review-chain-catches-fix-induced-p0.md", "compound/2026-07-30-learning-document-ingestion-deployment-evidence.md"]
   latest_architecture_update: "2026-08-14T09:26:47.542Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "【2026-08-17 tender-context-pipeline · S5 三缺陷已修完并提交(4802fee), 下一步=部署验证真实模型耗时】sprint=2026-08-15-tender-context-pipeline path=Refactor stage=impl。
+next_action: "【2026-08-17 会话末复盘 · 下会话唯一入口 = sprints/2026-08-15-tender-context-pipeline/handoff-2026-08-17.md】sprint=2026-08-15-tender-context-pipeline path=Refactor stage=impl。
 
-★ 前一轮阻塞项已证伪 ★ 第三轮「检索命中错误证据」的判断**不成立**——第四轮逐块打开原文核对: 命中页 315/317/345/349/310 的正文首行分别是 4.7.企业综合实力 / 4.8.类似业绩(含 3 行业绩表) / 4.9.拟派项目负责人 / 4.10.技术参数指标 / 4.6.5.2.维护队伍配备, **全部是正确证据**; 且 trigram phrase 等价子串匹配, 每条命中都字面含查询词, BM25 排序与 tag 过滤都不是问题。第三轮误判源于只看渲染出的出处行没打开正文。**不需要推翻 KD2 检索设计**。
+本日概况: S5 三缺陷修复已推送(4802fee, 全量 17F/1614P 与基线同名); S6 部分重合回退作 WIP 提交(证据层 138 测试绿+ruff 净, **全量回归未跑**——下会话第一件事补跑)。用户四次纠偏(样本只验证不当规格 / 项目数据不进仓库 / 判断放 .claude 侧 Python 只做物理层+有界原语 / 不推翻能跑的), 详见 handoff 第三节。
 
-【S5 三缺陷已修完 · 4802fee】用户拍板"三条一起修 + 等修完再部署"。修法与实测(design 增量 S5/KD6 + evidence 第四五轮 + tdd-evidence s5_kd6): ①**出处保真**: 切片按自身首行重推标签(局部十进制识别器, 刻意不动全局 chapter_heading——会同时改招标章节树/目录判定/structure-body 行数不变量), 相符率 0/4 → **27/27**。②**索引去重**: 切片后按正文去重 + 按 (page_start,原序) 稳定排序, 645 → **509 chunk 无重复**, 且 rowid 恒等于文档顺序(续接依赖, 由构造保证)。③**按小节取满**: 命中后沿文档顺序续接、按 per_item_tokens 收满(首块仍只受全局账目管)。技术参数指标 221 → **5,338 字**(含真参数行), 全项 3,480 → **23,594 字**(额度 39.6%), truncated 空。续接三条边界缺一不可(全部实测逼出): 命中块自身不是小节标题就不续接(否则无终点, 既有接线守卫抓出它吃进 8,500 字无关附件) / 止于同族同级下一小节且跨编号族不比较(否则「企业综合实力」吃进「类似业绩」39 块; 硬比层级会让偏离表在第一行被截断) / 空白扫描页跳过但继续往后走(p319-344 只剩页码)。十进制编号必须含小数点且以点收尾——宁可漏认「4.7 企业综合实力」也不能把「21.5 寸液晶显示屏」认成标题。evidence_index 越 300 行硬线故拆出 evidence_retrieval(83+270)。全量 **17 failed/1614 passed**, 与基线逐条同名(本机缺 PIL/paddleocr, 已 git stash 在干净树复跑确认), **新增失败 0**。AC 度量可复跑: `uv run python scripts/measure_tender_evidence.py <投标底稿.txt>`(六项全 PASS)。
+下会话按 handoff 第四节顺序执行: ①补全量回归 ②修招标抢位(投标层优先, 先造真红, evidence 第六轮有数据) ③开放决策·续接边界去排版化(小设计增量) ④开放决策·KD8 search-bid 有界工具(推翻 KD3b 须 critic 评审) ⑤athena-review 整体 review aa08c4e..HEAD(用户点名 Fable 5 执行并实跑) ⑥golden-case eval+度量脚本实跑, 部署机 E2E 计时(10 分钟目标未验) ⑦全部收口再部署。
 
-【已完成并推送 main(57ce023)】①7731e16 省略标记不谎报+criteria 竞态等待 ②9fae313 第二波四项(法规/记忆改服务端注入删模型自取 Read; 底稿在场锁 Glob/Read 例外 ocr-page; 判0/manual 仲裁 5 处收敛单一决策表; 契约失败改 resume 修补不整单重跑) ③1a52e92 .doc 兜底档 BEL 还原 Word 表格 ④3701e91 章节定位三修(目录识别/粘连拆行/评审方法标签) ⑤f8b6966 目录跳过规则两处对齐(修我自己引入的回归: rag 与 docstructure 跳过规则不一致→招标层退化 10 粗 chunk) ⑥57ce023 .doc 改先转 PDF 拿真实页号。提示词净减 5,840B(SKILL.md -54%)。
+遗留风险: 招标抢位未修(首块=招标规定而非投标应答, 影响评分依据); 续接边界对未知编号风格静默变薄; 10 分钟耗时未实测。
 
-【三轮实跑实测】招标抽取 0.07s/表格21单元格; 结构解析 0.004s/7章正文树/evaluation_method 一次命中无试错; 投标 43MB400页直读 3.0-3.2s/19-21万字/399页锚; 建索引 0.15s/招标105+投标645 chunk; 按项检索 9/9 命中 1ms(含2字词报价走子串旁路), 6/9 带真实页锚(其余3个来自招标.doc, 本机无 LibreOffice)。
+【部署】生产现役 agent-backend:0817b1 + agent-front:0815b3(仅第一波)。部署形态: 后端 docker build --build-arg WITH_OCR=1, 前端先本地 bun run build; env 改动须 docker rm -f 重建(restart 不重读 --env-file); SSH 用长连接 ControlMaster+ControlPersist=60m。
 
-【部署】生产现役 agent-backend:0817b1 + agent-front:0815b3(仅含第一波)。第二波及 S5 全部未部署——**这是下一步**。三条缺陷已修完, 用户原口径「等修完再部署」的前置条件已满足。**唯一未验的是真实模型耗时**: 注入从 3,480 字涨到 23,594 字(块数 8 → 41), 叠加脚手架 90K 后单次约 115K token, 10 分钟目标须在部署机实测复核(AC7); 若超时, design 已写明按满分权重分配 per-item 额度(大分值项多给), **不回退取量**。另: `直播间总体方案设计`(15 分)仍 unresolved——投标写的是「4.1.项目需求及总体设计方案」, 字面不匹配, 属 S0-B 已记录的召回上限, 按设计走 evidence_unresolved 不判 0。部署形态: 后端 docker build --build-arg WITH_OCR=1(漏了缺 pymupdf/paddleocr), 前端需先本地 bun run build; env 改动必须 docker rm -f 重建容器(restart 不重读 --env-file); SSH 必须建长连接 ControlMaster+ControlPersist=60m(反复短连接打满 sshd MaxStartups, 本会话踩过两次)。.env 已注释 TENDER_CONTEXT_MAX_BYTES(备份 .env.before-0817)。
-
-【用户口径】评标须 10 分钟内出结论, 超 20 分钟即视为架构问题; 提示词只删重复表述不删规则; 本机缺 paddleocr/LibreOffice, PDF 云 OCR 与 .doc 转换只能在部署机验; 跑测试勿并发多个 pytest(会互抢资源假超时)。"
+【用户口径】评标 10 分钟内出结论, 超 20 分钟=架构问题; 提示词只删重复不删规则; 本机缺 paddleocr/LibreOffice, 云 OCR 与 .doc 转换只能部署机验; 勿并发多个 pytest。"
 last_subagent: "codex-exec" # tender-report-dimensions D0-D5 headless (codex 0.142.1, gpt-5.5)；必须 env -u HTTP_PROXY -u HTTPS_PROXY 否则 streaming API 挂起，见 compound/2026-06-25-trick-codex-proxy-hangs-streaming.md
 last_subagent_at: "2026-06-25T00:00:00.000Z"
 active_worktrees: [] # 2026-08-17 两个返工 worktree 已合并 369c53e 并清理
