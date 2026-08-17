@@ -324,6 +324,10 @@ async def run_agent_json(
             )
         except Exception as exc:
             final_status = "error"
+            # D：把产生该失败的 CLI 会话戳进异常，供上层做 resume 修补轮（见
+            # ``server.tender.contract_repair``）。只在异常自己没带时补，不覆盖更内层的判断。
+            if isinstance(exc, JSONContractError) and exc.session_id is None:
+                exc.session_id = final_claude_session_id
             _log_bridge_failure(
                 exc,
                 request_id=request_id,

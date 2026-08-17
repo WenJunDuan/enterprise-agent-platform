@@ -6,10 +6,11 @@
 **OCR 依赖处置**：ocr 是 feature 域之下的服务层，故本模块内嵌 ``ocr_preprocess_block``
 合法（tender→ocr）；``test_layering.py`` 守卫是**单向**的，禁止 ocr→tender/audit。
 
-**边界**：本模块只留主流程——底稿获取（doc 层复用 / inline OCR 回落）、注入前的字节预算闸、
-模型调用与契约重试。底稿层决策与完整性告警在 ``doc_context``，criteria 注入块与结论
-``criteria_ref`` 回执在 ``criteria_context``。预算闸刻意留在此处：``tender_context_truncated``
-是按 logger 名 ``server.tender.runner`` 可检索的运维日志，挪家会改记录里的 logger 名。
+**边界**：本模块只留主流程——底稿获取（doc 层复用 / inline OCR 回落）、上下文装配、模型调用
+与契约重试。底稿层决策与完整性告警在 ``doc_context``，criteria 注入块与结论 ``criteria_ref``
+回执在 ``criteria_context``，法规/记忆注入块在 ``rules_context``，字节预算闸的纯计算在
+``draft_budget``，契约修补轮的文案在 ``contract_repair``。``tender_context_truncated`` 这条
+告警刻意留在本模块：它按 logger 名 ``server.tender.runner`` 可检索，挪家会改记录里的 logger 名。
 """
 
 from __future__ import annotations
@@ -23,12 +24,13 @@ from typing import Any
 
 from server.common.command_adapter import run_command_json
 from server.common.contract import is_non_retryable
+from server.common.json_bridge import run_agent_json
 from server.ocr.pipeline import ocr_preprocess_block
 from server.platform.config import get_tender_eval_settings
 from server.stores.session_store import new_conversation_id
 from server.tender.compare_input import resolve_project_criteria
-from server.tender.context_budget import bound_draft_by_content, derive_default_max_bytes
 from server.tender.context_slim import bound_tender_context
+from server.tender.contract_repair import build_repair_prompt, repair_session_id
 from server.tender.criteria_context import _criteria_context_block, _stamp_criteria_ref
 from server.tender.doc_context import (
     _inject_ocr_warnings,
@@ -38,12 +40,19 @@ from server.tender.doc_context import (
 
 # re-export：两处测试按 ``runner._ocr_integrity_warnings`` 调用（拆分前的公开位置）。
 from server.tender.doc_context import _ocr_integrity_warnings as _ocr_integrity_warnings
+from server.tender.draft_budget import TRUNCATION_NOTICE, bound_draft, context_max_bytes
 from server.tender.evidence_context import build_manual_review_result
 from server.tender.injection_budget import describe_context_rejection, estimate_tokens
 from server.tender.output import TENDER_OUTPUT_SCHEMA_NAME
 from server.tender.rules_context import tender_rules_block
 
 logger = logging.getLogger(__name__)
+
+# 拆分前的公开位置：两处测试按 ``runner._TRUNCATION_NOTICE`` / ``runner._context_max_bytes``
+# 调用（与 ``_ocr_integrity_warnings`` 同款保位）。用赋值而非 ``import as``——后者名字不同名，
+# 会被 F401 当未用导入删掉。
+_TRUNCATION_NOTICE = TRUNCATION_NOTICE
+_context_max_bytes = context_max_bytes
 
 # 评标场景 OCR 目的：让引擎在通用文本提取之外，重点完整、结构化地还原评分标准/评标办法/扣分
 # 细则/废标条款等【表格】——评分表是评标命脉。上传预热（tender_doc_pipeline）与本模块共用此常量。
@@ -75,18 +84,6 @@ TENDER_CONTRACT_MAX_RETRY = int(os.getenv("TENDER_CONTRACT_MAX_RETRY", "2"))
 # 不走全局 build_options 默认 → 不拖慢 audit，codex r4 P1）；env 可调或设非法值走端点默认。
 _TENDER_EFFORT = os.getenv("TENDER_REASONING_EFFORT", "xhigh")
 
-# 底稿注入的**无条件**字节上限（2026-08-14 生产事故）：inline_ocr 回落把整个 case 目录的 OCR
-# 全文无上限注入 → "Prompt is too long"，整单无结论。默认值由 ``injection_budget`` 单点标定
-# （KD3）；显式设 ``TENDER_CONTEXT_MAX_BYTES`` 仍以其为准。
-# 截断标记：让模型**看见**底稿被截，从而对被截材料走证据缺失规则，而不是当成"材料未提供"判 0。
-# 标记本身（~160 B）附加在上限之外，故意保证"被截了"这件事一定进上下文。
-_TRUNCATION_NOTICE = (
-    "\n【底稿超出上下文预算，已截断：按内容优先保留（评标办法/评分标准/资格审查等关键章节优先），"
-    "共保留 {kept} 字节 / 原始 {total} 字节；被省略区段在正文中以 ...[已省略…]... 标出，"
-    "涉及被截材料的评分项按证据缺失处理】\n"
-)
-
-
 # B（2026-08-17 延时治理）：底稿已注入时的工具面。`error_max_turns` 的根因是自相矛盾的指令
 # ——注入头写"无需再 Read 文件"，S0 却让模型 Glob 列目录、后续再逐个 Read，每一次都是一整轮
 # 重新预填充 ~83K token 底稿。提示词说服不了模型的部分由工具面兜底：底稿在场时子进程根本
@@ -96,16 +93,11 @@ _TRUNCATION_NOTICE = (
 DRAFT_INJECTED_TOOLS = ["Bash"]
 
 
-def _context_max_bytes(model: str | None = None) -> int:
-    """Return the OCR draft byte budget (reads ``TENDER_CONTEXT_MAX_BYTES`` live)."""
-    configured = os.getenv("TENDER_CONTEXT_MAX_BYTES")
-    if configured:
-        return int(configured)
-    return derive_default_max_bytes(model)
-
-
 def _bound_ocr_block(ocr_block: str, *, request_id: str, model: str | None = None) -> str:
-    """Fit the OCR draft into the byte budget, keeping review-critical sections first.
+    """Fit the OCR draft into the byte budget and log the truncation for ops.
+
+    截断本身是纯计算（``draft_budget``）；这条 ``tender_context_truncated`` 告警刻意留在
+    runner——它按 logger 名 ``server.tender.runner`` 可检索，挪家会改记录里的 logger 名。
 
     Args:
         ocr_block: 待注入的 OCR/直读底稿全文（doc 层复用或 inline OCR 均经此）。
@@ -115,22 +107,19 @@ def _bound_ocr_block(ocr_block: str, *, request_id: str, model: str | None = Non
     Returns:
         未超限时原样返回；超限时返回 ``内容优先截断后的底稿 + 截断标记``。
     """
-    limit = _context_max_bytes(model)
-    raw = ocr_block.encode("utf-8")
-    if len(raw) <= limit:
+    truncated = bound_draft(ocr_block, model=model)
+    if truncated is None:
         return ocr_block
-    kept = bound_draft_by_content(ocr_block, limit_bytes=limit)
-    kept_bytes = len(kept.encode("utf-8"))
     logger.warning(
         "tender_context_truncated",
         extra={
             "request_id": request_id,
-            "original_bytes": len(raw),
-            "kept_bytes": kept_bytes,
-            "limit_bytes": limit,
+            "original_bytes": truncated.original_bytes,
+            "kept_bytes": truncated.kept_bytes,
+            "limit_bytes": truncated.limit_bytes,
         },
     )
-    return kept + _TRUNCATION_NOTICE.format(kept=kept_bytes, total=len(raw))
+    return truncated.text
 
 
 async def run_tender_evaluation(
@@ -250,38 +239,58 @@ async def run_tender_evaluation(
     # hook 是唯一闸；这是显式设计，不是 case_root 默认回填带来的副作用。
     evaluation_case_root = case_root if case_root is not None else Path(directory_path)
 
-    # 契约失败重试（对齐 audit runner）：deepseek 文本模式偶发不出 JSON / 写坏 JSON，重跑可成功。
+    # 两条调用路径共用的 kwargs（整单跑 / resume 修补轮），逐字同一套，避免两份参数表漂移。
+    def _call_kwargs() -> dict[str, Any]:
+        return {
+            "schema_name": TENDER_OUTPUT_SCHEMA_NAME,
+            "request_id": request_id,
+            "tenant": tenant,
+            # 显式透传 → 结论落 results.project_id（codex P1.3）
+            "project_id": project_id,
+            # X2：显式透传 → 结论落 results.bid_id（bids 层手填回填 join key）
+            "bid_id": bid_id,
+            # 每次 attempt 取新 conversation_id：整单重跑那条路径靠"查不到同 conversation 的
+            # 历史会话"来保证真的重来一遍；共用一个 id 会让它悄悄变成隐式 resume。
+            "conversation_id": new_conversation_id(),
+            # R1 evidence-resolution：透传**原始底稿** ocr_block（带 ### 文件:/【第N页】 锚点）
+            # 给结论校验闸做出处回查。**传 ocr_block 而非 context**——context 尾部已追加 criteria
+            # 注入块 + OCR 头注释，会干扰 tier/page 解析（design critic blind-spot C）。
+            "evidence_source": ocr_block,
+            "case_root": evaluation_case_root,
+            "on_progress": on_progress,  # 思考流式：agent 文本片段实时回调给 worker
+            "effort": _TENDER_EFFORT,  # 评标 per-call 扩展思考（不全局默认，避免拖慢 audit）
+            # 遗留①：开 include_partial_messages → 端点逐字吐 StreamEvent partial，on_progress
+            # 实时收增量(真·流式)。端点不支持流式则无 partial、退回完整 AssistantMessage + 兜底
+            # final-flush，行为不退化。env TENDER_STREAM_PARTIAL=0 可关。
+            "include_partial_messages": _stream_partial_enabled(),
+            # 文本模式（与 audit 对齐）：大底稿(百页标书)下 SDK 结构化输出会 error_max_structured_
+            # output_retries；文本模式由服务端抽 JSON，对大输入更稳。配合命令里的 JSON 输出硬化。
+            "structured": False,
+            **tool_kwargs,
+            **model_kwargs,
+        }
+
+    # 契约失败重试（对齐 audit runner）：deepseek 文本模式偶发不出 JSON / 写坏 JSON。
     # OCR 预处理在循环外只做一次（慢且确定性），仅重试模型调用。
+    # D：失败带回了 CLI 会话 id 时**不整单重跑**——resume 那个会话只发一条短修补指令让模型把
+    # JSON 改对（评标结论已在会话里，重发底稿 = 让它从头再评一遍，正是那个 20 分钟档）。
     last_error: Exception | None = None
+    session_to_repair: str | None = None
     for attempt in range(TENDER_CONTRACT_MAX_RETRY + 1):
         try:
-            payload, meta = await run_command_json(
-                "tender-evaluate",
-                directory_path,
-                schema_name=TENDER_OUTPUT_SCHEMA_NAME,
-                request_id=request_id,
-                tenant=tenant,
-                project_id=project_id,  # 显式透传 → 结论落 results.project_id（codex P1.3）
-                bid_id=bid_id,  # X2：显式透传 → 结论落 results.bid_id（bids 层手填回填 join key）
-                conversation_id=new_conversation_id(),
-                context=context,
-                # R1 evidence-resolution：透传**原始底稿** ocr_block（带 ### 文件:/【第N页】 锚点）
-                # 给结论校验闸做出处回查。**传 ocr_block 而非 context**——context 尾部已追加 criteria
-                # 注入块 + OCR 头注释，会干扰 tier/page 解析（design critic blind-spot C）。
-                evidence_source=ocr_block,
-                case_root=evaluation_case_root,
-                on_progress=on_progress,  # 思考流式：agent 文本片段实时回调给 worker
-                effort=_TENDER_EFFORT,  # 评标 per-call 扩展思考（不全局默认，避免拖慢 audit）
-                # 遗留①：开 include_partial_messages → 端点逐字吐 StreamEvent partial，on_progress
-                # 实时收增量(真·流式)。端点不支持流式则无 partial、退回完整 AssistantMessage + 兜底
-                # final-flush，行为不退化。env TENDER_STREAM_PARTIAL=0 可关。
-                include_partial_messages=_stream_partial_enabled(),
-                # 文本模式（与 audit 对齐）：大底稿(百页标书)下 SDK 结构化输出会 error_max_structured_
-                # output_retries；文本模式由服务端抽 JSON，对大输入更稳。配合命令里的 JSON 输出硬化。
-                structured=False,
-                **tool_kwargs,
-                **model_kwargs,
-            )
+            if session_to_repair is not None:
+                payload, meta = await run_agent_json(
+                    build_repair_prompt(last_error),
+                    resume_session_id=session_to_repair,
+                    **_call_kwargs(),
+                )
+            else:
+                payload, meta = await run_command_json(
+                    "tender-evaluate",
+                    directory_path,
+                    context=context,
+                    **_call_kwargs(),
+                )
             # D1 M1（返工）：契约重试次数是运维基线指标（design 评分维度表「运维指标」，
             # S7 配套问题②），供 eval 回归闸捕捉「D8 底稿瘦身导致 JSON 更易写坏→重试变多」
             # 这类回归信号。成功时的 attempt（从 0 计数）即实际重试了几次；AgentRunMeta 已
@@ -310,11 +319,14 @@ async def run_tender_evaluation(
                 raise
             if attempt >= TENDER_CONTRACT_MAX_RETRY:
                 raise
+            # 拿得到会话就走修补轮；拿不到（会话建立前就失败）回落整单重跑，不静默少跑一轮。
+            session_to_repair = repair_session_id(exc)
             logger.warning(
-                "tender attempt failed (%s, %d/%d), retrying: %s",
+                "tender attempt failed (%s, %d/%d), retrying via %s: %s",
                 type(exc).__name__,
                 attempt + 1,
                 TENDER_CONTRACT_MAX_RETRY + 1,
+                "contract_repair" if session_to_repair else "full_rerun",
                 exc,
                 extra={"request_id": request_id, "tenant": tenant or "default"},
             )
