@@ -759,18 +759,25 @@ def test_投标层零命中时招标层仍参与():
 # ── S7：续接边界改 hit-stop（去排版假设）+ 逐项注入量留痕 ────────────────────
 
 
-def _unrecognized_numbering_bid() -> str:
+_GAP_PAGE = "人员配置与荣誉证书续页说明。" * 200
+
+
+def _unrecognized_numbering_bid(gap_pages: int = 1) -> str:
     """小节编号用半角 ``(一)``——**两个识别器都不认**（真实标书里这类写法很常见）。
 
     ``docstructure.chapter_heading`` 只认「第X章」「一、」「（一）」（全角括号），
     ``_DECIMAL_HEADING_RE`` 只认十进制且必须以点收尾。故本语料下"命中块是不是小节标题"
     这个问题恒答"不是"，S5 的排版边界在此**静默失效**。
+
+    Args:
+        gap_pages: 两个命中块之间垫几页正文。加大它就把下一个命中块推到前瞻额度之外
+            （F2 复现形态），其余要素不变。
     """
     return "# 综合评审\n" + "\n".join(
         [
             _section(11, "(一) 企业综合实力", "企业资质与荣誉说明。"),
-            _paged(12, "人员配置与荣誉证书续页说明。" * 200),
-            _section(13, "(二) 类似业绩", "业绩明细表内容。"),
+            *[_paged(page, _GAP_PAGE) for page in range(12, 12 + gap_pages)],
+            _section(11 + gap_pages + 1, "(二) 类似业绩", "业绩明细表内容。"),
         ]
     )
 
@@ -803,6 +810,49 @@ def test_编号风格不被识别时仍按邻项命中续接():
     assert volume["类似业绩"] > 0, (
         f"续接必须止于邻项命中块，不得把下一个评分项的证据吃进上一项：{result.item_tokens}"
     )
+
+
+def test_邻项命中块超出前瞻额度时续接不得归零():
+    """pass3/F2：下一个命中块落在前瞻额度之外时，已收集的续接被**整批丢弃**。
+
+    与上一条同语料形态（编号风格两个识别器都不认），只把两个命中块之间的正文撑到超过每项
+    额度。旧实现在 ``used >= budget`` 处返回"没收在命中块上"，于是走排版兜底，而兜底在标题
+    认不出时返回空——已取到的正文全丢，该项又只剩一个标题块。reviewer 实测：中间正文放大后
+    该项 item_tokens 从 2873 掉到 28，且既不进 ``unresolved`` 也不进 ``truncated``。
+
+    这条路径在生产口径下是**常态而非极端**：9 项时 per_item ≈ 6.6K token，而真实投标 163K
+    字里相邻命中块的间隔通常远大于它（F7 记的 ``chunks_per_item`` 恒为 1 更放大该影响）。
+
+    额度本身就是上界，故"保留到额度为止"不等于越预算——账目闭式仍由末两条断言咬住。
+    """
+    gap_pages = 6
+    conn = _indexed(_unrecognized_numbering_bid(gap_pages))
+    result = er.retrieve_evidence(
+        {"items": [{"item": "企业综合实力", "max": 6}, {"item": "类似业绩", "max": 9}]},
+        conn=conn,
+        query_count_hint=9,
+    )
+    conn.close()
+
+    # 语料前提守卫（同 test_语料确实复现抢位 的用意）：两个前提缺一条，这条测试就退化成
+    # 上一条的副本而"未红即绿"——① 中间正文真的超出前瞻额度；② 命中块的编号确实不被识别。
+    per_item = result.plan.per_item_tokens
+    assert gap_pages * len(_GAP_PAGE) > per_item, (
+        f"语料没把下一个命中块推到额度之外：{gap_pages} 页 × {len(_GAP_PAGE)} 字 vs 额度 {per_item}"
+    )
+    assert ch.slice_heading(result.blocks[0].text.splitlines()) is None, (
+        f"语料前提失效：命中块的编号被识别出来了，走的是排版边界那条路：{result.blocks[0].text[:40]!r}"
+    )
+
+    volume = dict(result.item_tokens)
+    injected = "\n".join(block.text for block in result.blocks)
+    assert "人员配置与荣誉证书续页说明" in injected, "预算耗尽不得把已收集的续接整批丢弃"
+    assert volume["企业综合实力"] >= per_item // 2, (
+        f"续接归零：该项只剩标题块，注入量远低于它自己的额度 {per_item}：{result.item_tokens}"
+    )
+    assert volume["类似业绩"] > 0, f"邻项自己的证据不得被顺带吃掉：{result.item_tokens}"
+    assert sum(tokens for _, tokens in result.item_tokens) == result.total_tokens
+    assert result.total_tokens <= result.plan.evidence_tokens, "保留到额度为止不得越预算"
 
 
 def test_逐项注入量逐项留痕含零值(indexed_conn):
