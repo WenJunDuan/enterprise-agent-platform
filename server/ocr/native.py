@@ -164,6 +164,48 @@ def read_word(path: Path) -> dict:
     return {"kind": "word", "blocks": blocks, "tables": tables}
 
 
+_WORD_CELL_SEPARATOR = "\x07"
+
+
+def recover_bel_tables(text: str) -> tuple[list[str], list[dict]]:
+    """Split legacy ``.doc`` text into plain blocks and BEL-delimited table rows.
+
+    Word 用 ``\\x07``(BEL) 作表格单元格分隔符，二进制兜底档会原样保留它。此前
+    ``_clean_extracted_text`` 只把它当普通字符，于是评分表在模型眼里是一串黏连乱码
+    （实测："…证书扫描件。\\x076\\x070\\x07客观分\\x07\\x072\\x07类似业绩\\x07…"，
+    其中 6/0 是最高分最低分、2 是下一项序号），而评标最需要的评分标准恰恰全在表格里。
+
+    Args:
+        text: 兜底档抽出的原始文本。
+
+    实测边界（真实标书，2026-08-17）：同一张评分表会**两种形态混用**——
+    项 1-3 是 BEL 分隔（一行装多列，黏连不可读），项 4-8 已是每单元格独立成行（换行即分列）。
+    本函数只治前者；后者本来就是逐行可读文本，模型顺序读得懂，**刻意不动**——强行按空行
+    重组反而会把正文段落误判成表格。
+
+    Args:
+        text: 兜底档抽出的原始文本。
+
+    Returns:
+        ``(正文行, 表格列表)``；表格形态与 :func:`read_word` 一致（``{"rows": [[cell…]]}``），
+        便于下游一视同仁。无 BEL 时表格为空、正文原样返回。
+    """
+    blocks: list[str] = []
+    rows: list[list[str]] = []
+    for line in text.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+        if _WORD_CELL_SEPARATOR not in line:
+            if line.strip():
+                blocks.append(line)
+            continue
+        cells = [cell.strip() for cell in line.split(_WORD_CELL_SEPARATOR)]
+        # 连续 BEL 会产生空单元格（原表的合并/空列），丢掉以免污染列对齐。
+        cells = [cell for cell in cells if cell]
+        if cells:
+            rows.append(cells)
+    tables = [{"rows": rows}] if rows else []
+    return blocks, tables
+
+
 def _clean_extracted_text(text: str) -> str:
     """Normalize command/fallback text into non-empty, readable lines."""
     text = text.replace("\x00", "")
@@ -276,7 +318,10 @@ def read_legacy_word(path: Path) -> dict:
             f"legacy .doc extraction produced no text: {path.name}"
             " (LibreOffice/catdoc/antiword/binary fallback all empty)"
         )
-    return {"kind": "word", "blocks": [text], "tables": []}
+    # 文本转换器与二进制兜底都会原样留下 Word 的 BEL 单元格分隔符——按它还原表格，
+    # 否则评分表在模型眼里是黏连乱码（2026-08-17 实跑发现，真实标书可重建 19 个字段）。
+    blocks, tables = recover_bel_tables(text)
+    return {"kind": "word", "blocks": blocks or [text], "tables": tables}
 
 
 def read_pdf_text(
