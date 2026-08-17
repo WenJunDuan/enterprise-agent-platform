@@ -322,3 +322,32 @@ s5_kd6:
         全项 3,480 字 → 23,594 字 = 额度 59,517 的 39.6%，truncated 空、闭式账目成立。
         内容抽查：类似业绩取到业绩表 + 4.8.1/4.8.2/4.8.3 三份合同，跳过中间空白扫描页、
         到 4.9 止步。六项检查全 PASS。
+
+# ── S6 收口全量回归（2026-08-17 晚，handoff §四① 补跑）─────────────────────────
+s6_full_regression:
+  executor: "main agent"
+  # 覆盖改动面：S6 部分重合回退(1d40be2) + 函数级死代码清理(f7a2be8)。
+  full_suite_command: "uv run pytest -q -p no:randomly  # 35m20s"
+  result: "17 failed / 1617 passed / 3 skipped"
+  # passed 1614→1617：+3 为 S6 新增测试；failed 17 条与 S5 记录同族
+  # （OCR 引擎/pptx/paddle runbook，缺 PIL/paddleocr 的既有环境失败），0 新增。
+  new_failures: 0
+  # 本轮 17 条逐名留档（S5 只记了家族描述，自此可逐名 diff）：
+  failure_names:
+    - tests/test_ocr_engine.py::test_openai_compatible_image_keeps_image_mime_type
+    - tests/test_ocr_engine_fallback.py::test_success_response_read_connection_reset_falls_back_to_tesseract
+    - tests/test_ocr_engine_fallback.py::test_valid_image_pixel_limit_is_checked_before_network
+    - tests/test_ocr_engine_fallback.py::test_image_vlm_failure_uses_tesseract_and_marks_degraded
+    - tests/test_ocr_engine_fallback.py::test_default_remote_path_never_builds_local_paddle
+    - tests/test_ocr_engine_fallback.py::test_page_text_is_truncated_to_configured_limit
+    - tests/test_ocr_engine_fallback.py::test_image_parser_exception_is_structured_and_never_networks
+    - tests/test_ocr_engine_fallback.py::test_legal_image_passes_byte_and_pixel_gates
+    - tests/test_ocr_engine_fallback.py::test_legal_webp_passes_resource_gates_and_reaches_vlm
+    - tests/test_ocr_engine_fallback.py::test_malformed_webp_is_rejected_before_network
+    - tests/test_ocr_engine_fallback.py::test_cloud_malformed_image_is_rejected_before_backend
+    - tests/test_ocr_engine_fallback.py::test_cloud_image_reuses_single_validated_bytes_for_multipart
+    - tests/test_ocr_native_formats.py::test_real_pptx_reader_detects_scanned_picture_with_short_title
+    - tests/test_ocr_native_formats.py::test_real_grouped_pptx_picture_and_short_title_trigger_scan_upgrade
+    - tests/test_ocr_pipeline.py::test_ocr_purpose_injected_into_openai_prompt
+    - tests/test_ocr_pipeline.py::test_audit_ocr_path_has_no_tender_purpose
+    - tests/test_supported_document_formats.py::test_demo_runbook_syncs_scripts_and_fails_closed_on_smoke_pipeline
