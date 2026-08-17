@@ -41,6 +41,7 @@ from server.tender.doc_context import _ocr_integrity_warnings as _ocr_integrity_
 from server.tender.evidence_context import build_manual_review_result
 from server.tender.injection_budget import describe_context_rejection, estimate_tokens
 from server.tender.output import TENDER_OUTPUT_SCHEMA_NAME
+from server.tender.rules_context import tender_rules_block
 
 logger = logging.getLogger(__name__)
 
@@ -211,6 +212,12 @@ async def run_tender_evaluation(
         except Exception:
             injected_criteria_version = None
             logger.debug("criteria context injection failed, continuing without", exc_info=True)
+
+    # A（2026-08-17 延时治理）：通则层法规 + 业务记忆改服务端注入，命令/skill 里对应的 Read
+    # 指令已删。拼在 criteria **之后**——bound_tender_context 只削 criteria 之前的证据段，
+    # 法定底座落在尾段才不会被预算闸削掉（削掉 = 承重 policy_refs 无处可引）。
+    if context:
+        context = context + tender_rules_block()
 
     # H3 KD2：底稿降级/缺失对模型显式可见（不静默）——与结论里的 ocr_warnings 同源同文案。
     if context and ocr_warnings:

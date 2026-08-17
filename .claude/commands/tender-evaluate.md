@@ -47,10 +47,7 @@ allowed-tools: Read, Glob, Skill, Task
   - `tag` 标"可判定性"（与 `score_mode` 正交）：可依投标文件判定 → `scored`；命中 `requires_live_event`（现场答辩）/ `requires_external_data`（外部信用）/ `requires_cross_bid_comparison`（价格横比）→ 留待 S3 走 `manual_review`。
   - **`max:null` 仅限人工未知满分项**：只有 `score_mode:"manual" && tag!="scored"` 可为 null；`scored/null` 或其他 score_mode/null 无效。manual/null 项计入评分项数量，但不参与满分、待核验分值或得分合计；整份 criteria 至少须有一个数值满分项。
 - 这份 `criteria` 就是本次评标的**会话项目规则**，随结论持久化（落 data/）；S3 据它先跑资格审查、再逐项评分。criteria 须**逐字依招标文件资格审查/初步评审/评标办法原文**（资格检查项、评分项、满分、规则不增删改），确保同一招标在不同投标人评标时得到**一致的 criteria**——这是后续多家公平横向比较的前提。
-- 同时 `Read` 通则层国家法规作**法律底座**（注意：**不是**项目评分标准，而是废标 / 资格 / 一致性 / 程序的法定依据，跨项目稳定）：
-  - `knowledge/tender/evalmethod.rules.json`（《评标委员会和评标方法暂行规定》，发改委12号令）
-  - `knowledge/tender/regulation.rules.json`（《招标投标法实施条例》）
-  - 读取每个文件顶层 `source_path` / `source_version` 作追溯。
+- 通则层国家法规（《评标委员会和评标方法暂行规定》《招标投标法实施条例》）作**法律底座**——**已由服务端注入**在下方 `=== 通则层国家法规 ===` 节（**不是**项目评分标准，而是废标 / 资格 / 一致性 / 程序的法定依据，跨项目稳定）。**不要再 Read 这些文件**；追溯直接引各文件顶层 `source_path` / `source_version`。
 - （可选 · G2 类型化计划）把读取 / 评分计划以结构化节点写入 `extracted_data.plan`，满足 `.claude/contracts/common/plan.schema.json`（每节点 `{step, intent, reads, tools, produces, tag}`，tag ∈ sequential/parallel/external_data/manual_review）。平台会校验其形；便于审计与（未来）按 `parallel` 节点并行拆分。
 - **护栏**：招标文件载明的资格审查规则和评分标准**直读即权威**——这是评标的法定方式（依据 `tender_evalmethod_001`：评标只依据招标文件规定的标准和方法；`tender_evalmethod_003`：综合评估法需量化的因素及权重应在招标文件中明确规定）。招标文件**没有写**的标准，不得用训练记忆或臆测补充。**缺招标文件、或招标文件里定位不到资格审查 / 初步评审 / 评标办法 / 评分标准** → 相关资格或评分项降级 `manual_review`（`rule_gap`），并写清缺什么。
 
