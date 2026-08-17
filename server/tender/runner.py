@@ -87,6 +87,15 @@ _TRUNCATION_NOTICE = (
 )
 
 
+# B（2026-08-17 延时治理）：底稿已注入时的工具面。`error_max_turns` 的根因是自相矛盾的指令
+# ——注入头写"无需再 Read 文件"，S0 却让模型 Glob 列目录、后续再逐个 Read，每一次都是一整轮
+# 重新预填充 ~83K token 底稿。提示词说服不了模型的部分由工具面兜底：底稿在场时子进程根本
+# 不存在 Read/Glob/Grep/Task，**唯一例外是 Bash**——它受 build_options 的 ocr-page PreToolUse
+# hook 约束，只放行按页重识别。**必须非空**：build_options 里 `defaults.get("tools") or
+# _AGENT_TOOLS` 会把空清单悄悄还原成全量工具。
+DRAFT_INJECTED_TOOLS = ["Bash"]
+
+
 def _context_max_bytes(model: str | None = None) -> int:
     """Return the OCR draft byte budget (reads ``TENDER_CONTEXT_MAX_BYTES`` live)."""
     configured = os.getenv("TENDER_CONTEXT_MAX_BYTES")
@@ -231,6 +240,11 @@ async def run_tender_evaluation(
     # model kwargs（零行为变更）。生产 tender_worker 调用从不传 model 也从不设该 env，
     # 故这条兜底路径只在 eval CLI / 部署机手动调参场景生效。
     model_kwargs: dict[str, str] = {"model": resolved_model} if resolved_model else {}
+    # B：底稿在场 → 锁掉自由 Glob/Read（见 DRAFT_INJECTED_TOOLS）。底稿缺失时**不锁**，
+    # 那条降级路径下模型必须还能自己读文件。
+    tool_kwargs: dict[str, list[str]] = (
+        {"tools": DRAFT_INJECTED_TOOLS, "allowed_tools": DRAFT_INJECTED_TOOLS} if context else {}
+    )
     # 有意的安全设计（D11 TA4）：case_root 恒绑定本案目录，因此受 ocr-page
     # PreToolUse hook 约束的 Bash 对每次评标都可用——任一评标都可能需要低清页重识别。
     # hook 是唯一闸；这是显式设计，不是 case_root 默认回填带来的副作用。
@@ -265,6 +279,7 @@ async def run_tender_evaluation(
                 # 文本模式（与 audit 对齐）：大底稿(百页标书)下 SDK 结构化输出会 error_max_structured_
                 # output_retries；文本模式由服务端抽 JSON，对大输入更稳。配合命令里的 JSON 输出硬化。
                 structured=False,
+                **tool_kwargs,
                 **model_kwargs,
             )
             # D1 M1（返工）：契约重试次数是运维基线指标（design 评分维度表「运维指标」，
