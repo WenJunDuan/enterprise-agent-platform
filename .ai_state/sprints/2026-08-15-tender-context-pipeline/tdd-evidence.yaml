@@ -323,6 +323,23 @@ s5_kd6:
         内容抽查：类似业绩取到业绩表 + 4.8.1/4.8.2/4.8.3 三份合同，跳过中间空白扫描页、
         到 4.9 止步。六项检查全 PASS。
 
+# ── S7/S8 收口全量回归（2026-08-17 深夜，pass3 spec-compliance M1 缺口回填）──────
+s7_full_regression:
+  executor: "main agent"
+  # 覆盖代码状态 bb8c754 = S8(5e083c7 投标层优先) + S7(2d8f434 hit-stop) 合并后；
+  # 其后 3dc390b/cb334ad 均为 .ai_state 文档提交，代码状态未变，故本轮即 pass3 范围的 HEAD 取证。
+  covered_code_commit: "bb8c754"
+  full_suite_command: "uv run pytest -q -p no:randomly  # 35m20s"
+  result: "17 failed / 1623 passed / 3 skipped"
+  # 与 s6_full_regression 的 17 条**逐名 diff 为空**（0 新增 0 消失，diff 命令实跑 EXIT=0）；
+  # passed 1617→1623 = +6，即 S8 三条 + S7 三条新测试。
+  new_failures: 0
+  baseline_diff: "empty (0 new, 0 gone) vs s6_full_regression.failure_names"
+  verify_command: >-
+    diff <(grep '^FAILED' <s6 输出> | sort) <(grep '^FAILED' <s7 输出> | sort)  # EXIT=0
+  # ⚠ pass3 的三条 P1（F1/F2/F3）修复合并后须再跑一轮，作 pass4 的 HEAD 取证。
+  note: "closes pass3 M1 for the reviewed code state; pass4 needs its own run after F1/F2/F3 merge"
+
 # ── S6/KD7 轮补记（2026-08-17 深夜，pass3 spec-compliance M2 缺口回填）──────────
 # S6 实施时（1d40be2，主 agent 单写者 WIP）未落八字段轮次，本条为**补记**：红绿观测均为
 # 当日真实实测（出处见各字段），非事后编造；补记时间 ≠ 观测时间。
