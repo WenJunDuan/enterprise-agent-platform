@@ -128,6 +128,45 @@ def scan_rows(
     return cur.execute(sql, params).fetchall()
 
 
+def following_rows(
+    conn: sqlite3.Connection, chunk_id: str, *, limit: int
+) -> list[sqlite3.Row]:
+    """Return the chunks that follow ``chunk_id`` in document order, same file only.
+
+    只查普通副本表：``rag_chunks`` 是 FTS5 虚表，两表的 rowid 并不保证一一对应，跨表按
+    rowid 续接会在删改后错位。副本表的 rowid = 写入顺序，而写入顺序由
+    ``evidence_chunks.dedupe_in_document_order`` 排成文档顺序（构造保证，见该函数）。
+
+    限定 ``file`` 相同：招标层与投标层同库不同 file，续接不得从投标末尾滑进招标正文。
+
+    Args:
+        conn: 索引连接。
+        chunk_id: 命中块的 id；不存在时返回空列表（调用方据此停止续接）。
+        limit: 本次取多少块。
+
+    Returns:
+        紧随其后的行，按文档顺序。
+    """
+    ensure_schema(conn)
+    cur = conn.cursor()
+    cur.row_factory = sqlite3.Row
+    anchor = cur.execute(
+        f"SELECT rowid, file FROM {SCAN_TABLE_NAME} WHERE chunk_id = ?", (chunk_id,)
+    ).fetchone()
+    if anchor is None:
+        return []
+    return cur.execute(
+        f"""
+        SELECT chunk_id, file, chapter_path, chapter_title, tag, page_start, page_end,
+               page_artifact, chunk_text, 0 AS rank
+        FROM {SCAN_TABLE_NAME}
+        WHERE file = ? AND rowid > ?
+        ORDER BY rowid LIMIT ?
+        """,
+        (anchor["file"], anchor["rowid"], limit),
+    ).fetchall()
+
+
 def query_rows(
     conn: sqlite3.Connection, match_query: str, *, tag: str | None, limit: int
 ) -> list[sqlite3.Row]:

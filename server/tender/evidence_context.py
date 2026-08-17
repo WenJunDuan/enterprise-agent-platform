@@ -17,7 +17,8 @@ from server.common.agent_bridge import AgentRunMeta
 from server.platform.sqlite_store import utc_now
 from server.stores.result_store import archive_result_payload
 from server.stores.session_store import new_conversation_id
-from server.tender.evidence_index import build_evidence_index, retrieve_evidence
+from server.tender.evidence_index import build_evidence_index
+from server.tender.evidence_retrieval import retrieve_evidence
 from server.tender.injection_budget import CALIBRATION_DOC_PATH, InjectionBudgetExhausted
 from server.tender.output import TENDER_OUTPUT_SCHEMA_NAME
 

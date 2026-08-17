@@ -16,6 +16,7 @@ import pytest
 
 from server.tender import evidence_chunks as ch
 from server.tender import evidence_index as ev
+from server.tender import evidence_retrieval as er
 
 
 def _criteria() -> dict:
@@ -165,7 +166,7 @@ def indexed_conn():
 
 def test_每项都拿到证据且带页锚(indexed_conn):
     """AC7：证据链页锚来自检索结果，不靠模型从大段底稿自己数页码。"""
-    result = ev.retrieve_evidence(_criteria(), conn=indexed_conn, query_count_hint=None)
+    result = er.retrieve_evidence(_criteria(), conn=indexed_conn, query_count_hint=None)
 
     assert result.unresolved == [], f"不应有零命中项：{result.unresolved}"
     assert all(block.page_anchor for block in result.blocks)
@@ -173,7 +174,7 @@ def test_每项都拿到证据且带页锚(indexed_conn):
 
 def test_两字项名也能命中(indexed_conn):
     """「报价」这类 2 字项名正是裸用 FTS5 时全军覆没的一类。"""
-    result = ev.retrieve_evidence(
+    result = er.retrieve_evidence(
         {"items": [{"item": "报价", "max": 40}]}, conn=indexed_conn, query_count_hint=None
     )
     assert result.unresolved == []
@@ -182,7 +183,7 @@ def test_两字项名也能命中(indexed_conn):
 
 def test_basis_指向招标章节的项带出招标chunk(indexed_conn):
     """KD1-F5：criteria 只有项名和满分，装不下技术参数表；该类项必须带出招标原文。"""
-    result = ev.retrieve_evidence(
+    result = er.retrieve_evidence(
         {"items": [{"item": "技术参数偏差", "max": 30, "basis": "逐条响应招标文件第三章技术参数"}]},
         conn=indexed_conn,
         query_count_hint=None,
@@ -192,7 +193,7 @@ def test_basis_指向招标章节的项带出招标chunk(indexed_conn):
 
 def test_零命中项记录实际用过的查询串(indexed_conn):
     """AC2/AC7：零命中不判 0，且要告诉用户检索了什么——便于分辨漏检还是真没有。"""
-    result = ev.retrieve_evidence(
+    result = er.retrieve_evidence(
         {"items": [{"item": "现场答辩得分", "max": 10}]},
         conn=indexed_conn,
         query_count_hint=None,
@@ -213,7 +214,7 @@ def test_跨项去重按chunk_id(indexed_conn):
             {"item": "报价一览表", "max": 10},
         ]
     }
-    result = ev.retrieve_evidence(criteria, conn=indexed_conn, query_count_hint=None)
+    result = er.retrieve_evidence(criteria, conn=indexed_conn, query_count_hint=None)
     ids = [block.chunk_id for block in result.blocks]
     assert len(ids) == len(set(ids)), "同一 chunk 不得重复注入"
 
@@ -221,7 +222,7 @@ def test_跨项去重按chunk_id(indexed_conn):
 def test_注入量受闭式账目约束(indexed_conn, monkeypatch):
     """AC5：组装产物必须落在预算内——账目在这里从公式变成可断言的事实。"""
     monkeypatch.setenv("TENDER_EFFECTIVE_CONTEXT_TOKENS", "200000")
-    result = ev.retrieve_evidence(_criteria(), conn=indexed_conn, query_count_hint=None)
+    result = er.retrieve_evidence(_criteria(), conn=indexed_conn, query_count_hint=None)
     assert result.total_tokens <= result.plan.evidence_tokens
 
 
@@ -239,7 +240,7 @@ def test_注入量与投标体量脱钩(monkeypatch):
     for bid_text in (small, large):
         conn = sqlite3.connect(":memory:")
         ev.build_evidence_index(conn, tender_text=tender, bid_text=bid_text, project_id="tp-1")
-        result = ev.retrieve_evidence(_criteria(), conn=conn, query_count_hint=None)
+        result = er.retrieve_evidence(_criteria(), conn=conn, query_count_hint=None)
         # 反"trivially 通过"：两边都必须真的检出证据。全部 unresolved 时注入量也"相等"，
         # 那是检索失效而不是脱钩成功。
         assert result.unresolved == [], f"投标 {len(bid_text)} 字时漏检：{result.unresolved}"
@@ -275,9 +276,9 @@ def test_额度耗尽的项被记为truncated而不是静默消失(indexed_conn,
     monkeypatch.setenv("TENDER_EFFECTIVE_CONTEXT_TOKENS", str(total))
     monkeypatch.setenv("TENDER_SCAFFOLD_RESERVE_TOKENS", str(scaffold))
 
-    result = ev.retrieve_evidence(criteria, conn=indexed_conn)
+    result = er.retrieve_evidence(criteria, conn=indexed_conn)
 
-    all_items = {name for name, _ in ev._item_queries(criteria)}
+    all_items = {name for name, _ in er._item_queries(criteria)}
     starved = set(result.truncated)
     assert result.blocks, "至少排序靠前的项要拿到证据"
     assert starved, "被额度饿死的项必须留痕，不能既不出块也不出声"
@@ -287,7 +288,7 @@ def test_额度耗尽的项被记为truncated而不是静默消失(indexed_conn,
 
 def test_额度充足时没有任何项被记为truncated(indexed_conn):
     """反向守卫：正常路径不得凭空报 truncated，否则这条信号会被无视。"""
-    result = ev.retrieve_evidence(_criteria(), conn=indexed_conn)
+    result = er.retrieve_evidence(_criteria(), conn=indexed_conn)
 
     assert result.truncated == []
 
@@ -296,7 +297,7 @@ def test_跨项去重命中的项不算被饿死(indexed_conn):
     """去重把本项的块归给了前一项——证据仍在注入块里，不构成"这项没证据"。"""
     criteria = {"items": [{"item": "投标报价", "max": 40}, {"item": "投标报价", "max": 10}]}
 
-    result = ev.retrieve_evidence(criteria, conn=indexed_conn)
+    result = er.retrieve_evidence(criteria, conn=indexed_conn)
 
     assert result.truncated == []
 
@@ -347,3 +348,214 @@ def test_其它ValueError不再被误当成mismatch静默吞掉(monkeypatch):
 
     with pytest.raises(ValueError, match="完全无关"):
         ch.build_chunks("# 第一章 甲\n正文。", file_name="__bid__", tag="bid")
+
+
+# ── S5/KD6：出处保真 + 索引去重 + 证据取满（2026-08-17 第四轮实跑） ──────────
+
+
+def _paged(page: int, text: str) -> str:
+    return f"【第{page}页】\n{text}"
+
+
+def test_切片标签跟着自身小节标题走():
+    """KD6-a：切片自带小节标题时，``chapter_path`` 末端必须是它自己。
+
+    实测形态（第四轮）：投标用 ``4.8.`` 十进制编号，``chapter_heading`` 不认，于是
+    「十、雷击事故应急预案」一路吞到 p349，业绩表的出处行渲染成 `【…雷击事故应急预案】
+    【第317页】`——内容对、出处错，回查闸失去依据。切片首行是**直接观测到的事实**，
+    祖先链是结构解析的**推断**；推断失效时不该让它继续冒充出处。
+    """
+    body = "# 十、雷击事故应急预案\n" + "\n".join(
+        [
+            _paged(307, "雷击应急处置流程。" * 600),
+            _paged(317, "4.8.类似业绩\n序号 项目名称 合同金额\n1 某直播间建设项目 375000 元"),
+        ]
+    )
+    chunks = ch.build_chunks(body, file_name="__bid__", tag="bid")
+
+    hit = next(c for c in chunks if "4.8.类似业绩" in c["chunk_text"])
+    assert hit["chapter_path"].endswith("4.8.类似业绩"), (
+        f"出处末端应是切片自身的小节标题，实得 {hit['chapter_path']!r}"
+    )
+    # 没有自带标题的切片仍沿用继承来的路径（有什么说什么，不留空）。
+    other = next(c for c in chunks if "雷击应急处置流程" in c["chunk_text"])
+    assert "雷击事故应急预案" in other["chapter_path"]
+
+
+def test_父子节点产出的重复正文被去重():
+    """KD6-b：``_chunk_spans`` 对每个树节点各出一块，父节点 span 含子孙正文，
+    切片又在页锚处重新对齐 → 产出逐字相同、仅 chunk_id 不同的块。
+
+    实测：真实投标 645 chunk / 不同文本仅 509 / 冗余 61,790 字 = 20%。按 chunk_id 去重
+    看不见这种重复，放开取量后它会直接吃掉扩出来的额度。
+    """
+    body = "# 一、总体方案\n" + "\n".join(
+        [
+            _paged(1, "总体方案概述。" * 300),
+            "（一）子方案\n" + _paged(2, "子方案正文。" * 300),
+            _paged(3, "子方案续页正文。" * 300),
+        ]
+    )
+    chunks = ch.build_chunks(body, file_name="__bid__", tag="bid")
+
+    texts = [c["chunk_text"] for c in chunks]
+    assert len(texts) == len(set(texts)), (
+        f"同一段正文不得入索引两次：{len(texts)} 块 / {len(set(texts))} 份不同正文"
+    )
+
+
+def test_chunk按页码升序入库使rowid等于文档顺序():
+    """KD6-b：``scan_rows`` 注释里写着"ORDER BY rowid = 文档顺序"，但 DFS 先序 + 父子
+    交错会让 rowid 与页码脱节。续接取"后续块"依赖这条，故由排序**构造保证**它成立。
+    """
+    body = "# 一、甲章\n" + "\n".join(
+        [
+            _paged(1, "甲章正文。" * 300),
+            "（一）甲子节\n" + _paged(2, "甲子节正文。" * 300),
+            _paged(3, "甲子节续页。" * 300),
+        ]
+    )
+    chunks = ch.build_chunks(body, file_name="__bid__", tag="bid")
+
+    pages = [c["page_start"] for c in chunks if c["page_start"] is not None]
+    assert pages == sorted(pages), f"入库顺序必须是文档顺序，实得页码序列 {pages}"
+
+
+def _tech_bid() -> str:
+    """项名只出现在小节标题里、正文不含该词——第四轮实测的真实形态。"""
+    return "# 技术标\n" + "\n".join(
+        [
+            _paged(1, "投标文件商务部分正文。" * 300),
+            _paged(2, "4.10.技术参数指标\n技术部分产品常规参数正负偏离表"),
+            _paged(3, "核心影像参数：分辨率不低于 4K，帧率不低于 50fps。" + "参数明细。" * 280),
+            _paged(4, "屏幕与交互：显示器不小于 21.5 寸液晶显示屏。" + "参数明细。" * 280),
+        ]
+    )
+
+
+def test_命中小节标题时续接后续正文():
+    """KD6-c：评分项名只出现在小节标题里，正文（偏离表行/业绩表/方案正文）不含该词，
+    **因此加大检索 limit 一定无效**——实测 `技术参数指标` 全文字面命中仅 2 块且互为重复。
+
+    第四轮实测后果：25 分的项只拿到 221 字（标题 + 表头，零行参数），模型据此评分必然错判。
+    """
+    conn = sqlite3.connect(":memory:")
+    ev.build_evidence_index(
+        conn, tender_text="# 第三章 技术参数\n额定功率不小于 50kW。", bid_text=_tech_bid(),
+        project_id="tp-1",
+    )
+    result = er.retrieve_evidence(
+        {"items": [{"item": "技术参数指标", "max": 25}]}, conn=conn, query_count_hint=None
+    )
+    conn.close()
+
+    injected = "\n".join(block.text for block in result.blocks)
+    assert "4.10.技术参数指标" in injected, "命中块本身要在"
+    assert "核心影像参数" in injected, "后续正文必须随命中块一起注入，否则只有表头可评"
+    assert "屏幕与交互" in injected
+
+
+def test_单项续接不得吃光全局额度():
+    """KD6-c：续接必须按**每项**额度封顶。否则排序靠前的项会把 ``evidence_tokens``
+    吃光，后面的项全部 truncated——那正是 F5 要防的静默饿死，只是换成由续接引发。
+    """
+    conn = sqlite3.connect(":memory:")
+    ev.build_evidence_index(
+        conn,
+        tender_text="# 第三章 技术参数\n额定功率不小于 50kW。",
+        bid_text=_tech_bid()
+        + "\n"
+        + "\n".join(
+            [
+                _paged(5, "投标报价：壹佰贰拾万元整。" + "报价明细。" * 280),
+                _paged(6, "营业执照副本附后。" + "资格材料。" * 280),
+            ]
+        ),
+        project_id="tp-1",
+    )
+    criteria = {
+        "items": [
+            {"item": "技术参数指标", "max": 25},
+            {"item": "投标报价", "max": 40},
+            {"item": "营业执照", "max": 10},
+        ]
+    }
+    result = er.retrieve_evidence(criteria, conn=conn, query_count_hint=None)
+    conn.close()
+
+    assert result.unresolved == [], f"不该有零命中项：{result.unresolved}"
+    assert result.truncated == [], f"排序靠后的项被前面的项吃光额度：{result.truncated}"
+    assert result.total_tokens <= result.plan.evidence_tokens
+
+
+def _section(page: int, heading: str, filler: str) -> str:
+    """一页：小节标题 + 足量正文（让整份超过 MAX_CHUNK_CHARS 而在页锚处切开）。"""
+    return _paged(page, heading + "\n" + filler * 200)
+
+
+def test_续接止于同族同级的下一小节():
+    """KD6-c 边界：``4.7.x`` 子节要跟着命中块来，``4.8`` 是**另一个评分项的小节**必须止步。
+
+    第四轮修复后实测：不设边界时「企业综合实力」一路吃进「类似业绩」整节共 39 块——
+    模型会在错误的小节里给企业实力打分，比证据少更糟。
+
+    跨编号族不比较（``一、`` 与 ``4.10`` 的层级不可通约）：真实标书里 `4.10.技术参数指标`
+    的偏离表正文用 `一、核心影像参数` 分栏，按层级数值比会当场止步、又回到只有表头。
+    """
+    conn = sqlite3.connect(":memory:")
+    ev.build_evidence_index(
+        conn,
+        tender_text="# 第三章 技术参数\n额定功率不小于 50kW。",
+        bid_text="# 十、雷击事故应急预案\n"
+        + "\n".join(
+            [
+                _section(315, "4.7.企业综合实力", "企业资质与荣誉说明。"),
+                _section(316, "4.7.2.具有有效期内的企业安全生产许可证", "许可证明细。"),
+                _section(317, "4.8.类似业绩", "业绩明细表内容。"),
+            ]
+        ),
+        project_id="tp-1",
+    )
+    result = er.retrieve_evidence(
+        {"items": [{"item": "企业综合实力", "max": 6}]}, conn=conn, query_count_hint=9
+    )
+    conn.close()
+
+    injected = "\n".join(block.text for block in result.blocks)
+    assert "4.7.企业综合实力" in injected
+    assert "安全生产许可证" in injected, "同族更深的子节必须跟着命中块一起来"
+    assert "类似业绩" not in injected, "下一个评分项的小节必须止步，不得串入"
+
+
+def test_无实质内容的块不作为证据注入():
+    """实测：投标 p319-344 是合同扫描件，PDF 文本层只剩一个页码（14 字），
+    而每块还要带一行出处抬头——注入它们等于用噪音挤掉真证据。
+
+    判据不设字数阈值：**正文除页锚外没有任何文字**（只剩页码数字）即无实质内容。
+    """
+    conn = sqlite3.connect(":memory:")
+    ev.build_evidence_index(
+        conn,
+        tender_text="# 第三章 技术参数\n额定功率不小于 50kW。",
+        bid_text="# 十、雷击事故应急预案\n"
+        + "\n".join(
+            [
+                _section(317, "4.8.类似业绩", "业绩表：某直播间建设项目 375000 元。"),
+                _paged(318, "318"),
+                _paged(319, "319"),
+                _section(320, "4.8.1.青岛诺德中心直播间建设项目", "合同要点摘录。"),
+            ]
+        ),
+        project_id="tp-1",
+    )
+    result = er.retrieve_evidence(
+        {"items": [{"item": "类似业绩", "max": 9}]}, conn=conn, query_count_hint=9
+    )
+    conn.close()
+
+    anchors = [block.page_anchor for block in result.blocks]
+    assert not any("318" in anchor for anchor in anchors), f"空白扫描页不该进注入：{anchors}"
+    assert not any("319" in anchor for anchor in anchors), f"空白扫描页不该进注入：{anchors}"
+    assert any("合同要点摘录" in block.text for block in result.blocks), (
+        "跳过空白页后仍须继续取到后面的真内容"
+    )

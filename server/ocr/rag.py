@@ -160,21 +160,42 @@ def search(
         rows = rag_store.scan_rows(conn, query.strip(), tag=tag, limit=limit)
     else:
         rows = rag_store.query_rows(conn, _escape_match_query(query), tag=tag, limit=limit)
-    return [
-        {
-            "chunk_id": row["chunk_id"],
-            "file": row["file"],
-            "chapter_path": row["chapter_path"],
-            "chapter_title": row["chapter_title"],
-            "tag": row["tag"],
-            "page_start": row["page_start"],
-            "page_end": row["page_end"],
-            "page_artifact": row["page_artifact"] or ARTIFACT_ORIGINAL,
-            "page_anchor": _format_page_anchor(
-                row["page_start"], row["page_end"], row["page_artifact"]
-            ),
-            "text": row["chunk_text"],
-            "score": -row["rank"],
-        }
-        for row in rows
-    ]
+    return [_as_hit(row) for row in rows]
+
+
+def following(chunk_id: str, *, conn: sqlite3.Connection, limit: int = 10) -> list[dict]:
+    """Return the chunks that follow ``chunk_id`` in document order (same file).
+
+    评分项名往往只出现在**小节标题**里，正文（偏离表行、业绩表、方案正文）不含该词——
+    2026-08-17 实测「技术参数指标」全文字面命中仅 2 块且互为重复，于是 25 分的项只拿到
+    221 字的标题加表头。加大检索 ``limit`` 对这种形态**一定无效**，只有沿文档顺序续接
+    才取得到正文。
+
+    Args:
+        chunk_id: 命中块的 id。
+        conn: 索引连接。
+        limit: 最多取几块。
+
+    Returns:
+        与 :func:`search` 形状一致的块（``score`` 恒 0——续接不是相关度排序的结果）。
+    """
+    return [_as_hit(row) for row in rag_store.following_rows(conn, chunk_id, limit=limit)]
+
+
+def _as_hit(row: sqlite3.Row) -> dict:
+    """Shape one stored row as a retrieval hit (single mapping point for both channels)."""
+    return {
+        "chunk_id": row["chunk_id"],
+        "file": row["file"],
+        "chapter_path": row["chapter_path"],
+        "chapter_title": row["chapter_title"],
+        "tag": row["tag"],
+        "page_start": row["page_start"],
+        "page_end": row["page_end"],
+        "page_artifact": row["page_artifact"] or ARTIFACT_ORIGINAL,
+        "page_anchor": _format_page_anchor(
+            row["page_start"], row["page_end"], row["page_artifact"]
+        ),
+        "text": row["chunk_text"],
+        "score": -row["rank"],
+    }
