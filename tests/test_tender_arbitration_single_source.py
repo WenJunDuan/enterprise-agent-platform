@@ -79,7 +79,7 @@ SEMANTIC_MAP: list[tuple[str, str, str, tuple[str, ...]]] = [
         "A7",
         "cmd 一致性核验② + CLAUDE.md 典型一致性风险",
         "仅写法存疑同一人（简繁/形近/OCR 易混）→ manual_review(data_conflict)",
-        ("data_conflict", "牛亚犇"),
+        ("data_conflict", "王建国"),
     ),
     (
         "A6+A7 证据",
