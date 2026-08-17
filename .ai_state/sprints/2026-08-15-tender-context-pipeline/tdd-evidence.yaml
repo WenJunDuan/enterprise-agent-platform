@@ -351,3 +351,41 @@ s6_full_regression:
     - tests/test_ocr_pipeline.py::test_ocr_purpose_injected_into_openai_prompt
     - tests/test_ocr_pipeline.py::test_audit_ocr_path_has_no_tender_purpose
     - tests/test_supported_document_formats.py::test_demo_runbook_syncs_scripts_and_fails_closed_on_smoke_pipeline
+
+# ── S8 轮（2026-08-17）· 招标抢位修复（handoff §四② 遗留缺陷）────────────────
+# 执行者：generator subagent（worktree agent-aa770a482853121eb，红区单写者）。
+# 按主 agent 派工只跑证据层子集回归，不跑全量（全量由主 agent 收口）。
+s8_bid_layer_first:
+  executor: "generator subagent (worktree agent-aa770a482853121eb)"
+  baseline_commit: "b9952e6"
+  cycles:
+    - task: "S8 · 投标层优先检索，招标层退为兜底（修招标评分表抢位）"
+      commit: "5e083c7"
+      red_command: >-
+        uv run pytest tests/test_tender_evidence_index.py -q -p no:randomly
+        -k "抢位 or 投标层"
+      red_summary: >-
+        2 failed / 1 passed。①test_投标层优先_招标评分表不得抢占评分项证据：
+        AssertionError「首块必须是投标应答，实得 tender：第四章 评审方法和程序」——
+        招标评分表短块 BM25 压过投标 4.8 应答块，评分依据错位（第六轮真标书实测同形态：
+        类似业绩注入 755 → 248 字）。②test_投标层零命中时招标层仍参与：
+        AssertionError「招标层兜底必须留痕：['评审委员会']」——检索不分层，来源无痕。
+        第 3 条 test_语料确实复现抢位 修复前后都应绿（它是**语料前提守卫**：走裸
+        rag.search 断言招标块确实排第一，一旦失效说明小语料不再复现缺陷、抢位守卫会退化
+        成永真式——上一版守卫测试正是因"未红即绿"被删）。
+        红是在**移除 server/ 改动**（git stash push -- server/）后于同一 worktree 实测取得。
+      red_observed_at: "2026-08-17T17:36:01+0800"
+      green_command: >-
+        uv run pytest tests/test_tender_evidence_context.py tests/test_tender_evidence_index.py
+        tests/test_tender_evidence_wiring.py tests/test_tender_context_budget.py
+        tests/test_tender_context_slim.py tests/test_tender_context_slim_wiring.py
+        tests/test_rag.py tests/test_rag_dual_channel.py tests/test_rag_page_artifact.py
+        tests/test_docstructure_toc.py tests/test_tender_injection_budget.py
+        tests/test_tender_eval.py -q -p no:randomly
+      green_summary: >-
+        204 passed（证据层 + 检索层 12 个文件全绿），`uv run ruff check server tests` EXIT=0。
+        _search_item 改两轮 × 两层：层序 (BID_FILE, TENDER_FILE)，招标层仅在该轮投标层零命中时
+        参与；限层落 SQL（rag_store._scope_filter 供两个通道共用），因为 limit 先于过滤生效，
+        Python 侧过滤等于没修。既有 test_basis_指向招标章节的项带出招标chunk 保持绿（basis 指向
+        招标章节的项在投标侧本就零命中，落进兜底路径）。续接边界机制未动（S7 另案）。
+      green_observed_at: "2026-08-17T17:44:00+0800"

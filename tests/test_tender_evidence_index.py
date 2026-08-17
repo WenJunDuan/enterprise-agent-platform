@@ -648,3 +648,103 @@ def test_整串能命中时不触发回退():
     assert hits, "整串应能命中"
     assert not any("部分重合" in query for query in used), f"整串命中就不该跑回退：{used}"
 
+
+# ── S8：招标评分表抢位（两层同入索引后的通用缺陷） ──────────────────────────
+
+
+_SCORING_TABLE_TENDER = (
+    "# 第四章 评审方法和程序\n"
+    "评分表：类似业绩 9 分；实施方案 5 分；培训方案 3 分。评审委员会按下表逐项打分。"
+)
+
+
+def _rivalry_conn() -> sqlite3.Connection:
+    """两层都字面含项名的语料：招标评分表短、投标应答长 → BM25 天然偏向招标块。
+
+    这正是 2026-08-17 第六轮实测的形态（`类似业绩` 首块 = 招标「第四章 评审方法和程序」，
+    投标 755 字掉到 248 字）。三个要素缺一不可，否则复现不出抢位：项名在投标里**只出现在
+    小节标题**一次（正文用别的措辞）、投标块比招标评分表长得多、两层同入一个索引。
+    **语料必须真的复现抢位**，否则守卫测试"未红即绿"——上一版就是这么被删掉的。
+    """
+    conn = sqlite3.connect(":memory:")
+    ev.build_evidence_index(
+        conn,
+        tender_text=_SCORING_TABLE_TENDER,
+        bid_text="# 4.综合评审评分项\n"
+        + "\n".join(
+            [
+                _paged(
+                    317,
+                    "4.8.类似业绩\n序号 项目名称 合同金额：某直播间建设项目 375000 元。\n"
+                    + "本项目已完成同类演播室建设，合同金额与工期均满足招标要求。" * 60,
+                ),
+                _paged(
+                    330,
+                    "4.9.实施方案\n实施步骤与进度安排说明。\n"
+                    + "分阶段推进设备进场、系统集成与联调验收。" * 60,
+                ),
+            ]
+        ),
+        project_id="tp-1",
+    )
+    return conn
+
+
+def test_语料确实复现抢位():
+    """守住上一条测试的前提：不受修复影响的裸检索里，招标块**确实**压过投标块。
+
+    这条断言走 ``rag.search``（不带层过滤），故修复前后都成立；它一旦转绿失效，说明
+    ``_rivalry_conn`` 已不再复现缺陷，抢位守卫测试也就退化成永真式。
+    """
+    from server.ocr.rag import search
+
+    conn = _rivalry_conn()
+    hits = search("类似业绩", conn=conn, tag=None, limit=5)
+    conn.close()
+
+    assert hits, "两层都含该词，不该零命中"
+    assert hits[0]["file"] == ev.TENDER_FILE, (
+        f"语料没能复现抢位，守卫测试将失去意义：{[h['file'] for h in hits]}"
+    )
+
+
+def test_投标层优先_招标评分表不得抢占评分项证据():
+    """评标判的是**投标应答**；招标评分表含全部项名，BM25 上压过投标应答就会顶掉真证据。
+
+    第六轮实测：`类似业绩` 首块变成招标「第四章 评审方法和程序」、注入从 755 字掉到 248 字。
+    招标规定本身已由 criteria 注入过，再占一次证据额度是净损失——模型据招标原文给投标打分。
+    """
+    conn = _rivalry_conn()
+    result = er.retrieve_evidence(
+        {"items": [{"item": "类似业绩", "max": 9}]}, conn=conn, query_count_hint=9
+    )
+    conn.close()
+
+    assert result.blocks, "投标侧有应答，不该零命中"
+    assert result.blocks[0].scope == "bid", (
+        f"首块必须是投标应答，实得 {result.blocks[0].scope}：{result.blocks[0].chapter_path}"
+    )
+    assert all(block.scope == "bid" for block in result.blocks), (
+        f"投标层有命中时招标块不得参与：{[(b.scope, b.chapter_path) for b in result.blocks]}"
+    )
+    assert any("375000" in block.text for block in result.blocks), "要拿到投标的业绩正文"
+
+
+def test_投标层零命中时招标层仍参与():
+    """投标层优先不等于把招标层关掉：投标里根本没有的项，招标原文仍是唯一可用证据。
+
+    与 :func:`test_basis_指向招标章节的项带出招标chunk` 是同一条口径的两面——那条从
+    ``basis`` 侧进，这条从"投标零命中"侧进。
+    """
+    conn = _rivalry_conn()
+    result = er.retrieve_evidence(
+        {"items": [{"item": "评审委员会", "max": 5}]}, conn=conn, query_count_hint=9
+    )
+    _, used = er._search_item(["评审委员会"], conn=conn, limit=3)
+    conn.close()
+
+    assert result.unresolved == [], f"招标层含该词，不该记零命中：{result.unresolved}"
+    assert any(block.scope == "tender" for block in result.blocks), "投标零命中时招标层必须参与"
+    # AC2：证据来自哪一层要留痕，否则用户分不清"投标里就是没有"与"检索没查投标"。
+    assert any("招标层" in query for query in used), f"招标层兜底必须留痕：{used}"
+
