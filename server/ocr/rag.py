@@ -147,7 +147,12 @@ OVERLAP_MIN_CHARS = 6
 
 
 def search(
-    query: str, *, conn: sqlite3.Connection, tag: str | None = None, limit: int = 10
+    query: str,
+    *,
+    conn: sqlite3.Connection,
+    tag: str | None = None,
+    limit: int = 10,
+    file: str | None = None,
 ) -> list[dict]:
     """Search indexed chunks and return hits with page anchors.
 
@@ -162,14 +167,18 @@ def search(
         conn: 索引连接。
         tag: 章节语义标签过滤。
         limit: 返回上限。
+        file: 只在该 file 内检索；``None`` 表示全库。**限层必须落到 SQL**：在 Python 侧
+            过滤返回结果不等价——``limit`` 先于过滤生效，本层的块会被别层顶出候选集。
 
     Returns:
         命中 chunk（含 ``page_anchor``），两个通道形状一致。
     """
     if len(query.strip()) < _TRIGRAM_MIN_LENGTH:
-        rows = rag_store.scan_rows(conn, query.strip(), tag=tag, limit=limit)
+        rows = rag_store.scan_rows(conn, query.strip(), tag=tag, limit=limit, file=file)
     else:
-        rows = rag_store.query_rows(conn, _escape_match_query(query), tag=tag, limit=limit)
+        rows = rag_store.query_rows(
+            conn, _escape_match_query(query), tag=tag, limit=limit, file=file
+        )
     return [_as_hit(row) for row in rows]
 
 
@@ -191,7 +200,12 @@ def _overlap_match_query(query: str) -> str | None:
 
 
 def search_overlap(
-    query: str, *, conn: sqlite3.Connection, tag: str | None = None, limit: int = 10
+    query: str,
+    *,
+    conn: sqlite3.Connection,
+    tag: str | None = None,
+    limit: int = 10,
+    file: str | None = None,
 ) -> list[dict]:
     """Search for chunks sharing a verbatim run of ``query``, ranked by BM25 (KD7).
 
@@ -208,6 +222,7 @@ def search_overlap(
         conn: 索引连接。
         tag: 章节语义标签过滤。
         limit: 返回上限。
+        file: 只在该 file 内检索；语义同 :func:`search`。
 
     Returns:
         与 :func:`search` 形状一致的命中；查询串短于一个窗口时返回空列表。
@@ -215,7 +230,8 @@ def search_overlap(
     expression = _overlap_match_query(query)
     if expression is None:
         return []
-    return [_as_hit(row) for row in rag_store.query_rows(conn, expression, tag=tag, limit=limit)]
+    rows = rag_store.query_rows(conn, expression, tag=tag, limit=limit, file=file)
+    return [_as_hit(row) for row in rows]
 
 
 def following(chunk_id: str, *, conn: sqlite3.Connection, limit: int = 10) -> list[dict]:

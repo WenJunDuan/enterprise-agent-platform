@@ -88,8 +88,37 @@ def insert_rows(conn: sqlite3.Connection, rows: list[dict]) -> None:
     )
 
 
+def _scope_filter(*, tag: str | None, file: str | None) -> tuple[str, list[object]]:
+    """Build the ``AND`` clause shared by both retrieval channels.
+
+    单点构造（DRY）：两个通道的过滤条件必须逐字一致，否则同一次检索在 <3 字与 ≥3 字两条
+    路径上会取到不同的行集合，而这种漂移在上层表现为"换个项名就漏检"。
+
+    Args:
+        tag: 章节语义标签过滤；``None`` 不过滤。
+        file: 文档层过滤（招标层 / 投标层各一个 file 标识）；``None`` 不过滤。
+
+    Returns:
+        ``(sql 片段, 参数)``，按出现顺序对齐。
+    """
+    sql = ""
+    params: list[object] = []
+    if tag is not None:
+        sql += " AND tag = ?"
+        params.append(tag)
+    if file is not None:
+        sql += " AND file = ?"
+        params.append(file)
+    return sql, params
+
+
 def scan_rows(
-    conn: sqlite3.Connection, needle: str, *, tag: str | None, limit: int
+    conn: sqlite3.Connection,
+    needle: str,
+    *,
+    tag: str | None,
+    limit: int,
+    file: str | None = None,
 ) -> list[sqlite3.Row]:
     """Return chunks whose text literally contains ``needle``, in document order.
 
@@ -101,6 +130,7 @@ def scan_rows(
             未转义的 ``%`` 会匹配全部 chunk。
         tag: 章节语义标签过滤，语义与 :func:`query_rows` 一致。
         limit: 返回上限。
+        file: 只在该 file 内检索；``None`` 表示全库。
 
     Returns:
         按写入顺序（= 文档顺序）的行；``rank`` 恒为 0——子串命中没有 BM25 分，上层按出现
@@ -120,9 +150,9 @@ def scan_rows(
         WHERE chunk_text LIKE ? ESCAPE '\\'
     """
     params: list[object] = [f"%{escaped}%"]
-    if tag is not None:
-        sql += " AND tag = ?"
-        params.append(tag)
+    scope_sql, scope_params = _scope_filter(tag=tag, file=file)
+    sql += scope_sql
+    params.extend(scope_params)
     sql += " ORDER BY rowid LIMIT ?"
     params.append(limit)
     return cur.execute(sql, params).fetchall()
@@ -168,9 +198,25 @@ def following_rows(
 
 
 def query_rows(
-    conn: sqlite3.Connection, match_query: str, *, tag: str | None, limit: int
+    conn: sqlite3.Connection,
+    match_query: str,
+    *,
+    tag: str | None,
+    limit: int,
+    file: str | None = None,
 ) -> list[sqlite3.Row]:
-    """Return FTS5 matches ordered by ascending BM25 rank."""
+    """Return FTS5 matches ordered by ascending BM25 rank.
+
+    Args:
+        conn: 索引连接。
+        match_query: 已转义的 FTS5 MATCH 表达式。
+        tag: 章节语义标签过滤；``None`` 不过滤。
+        limit: 返回上限。
+        file: 只在该 file 内检索；``None`` 表示全库。
+
+    Returns:
+        命中行，BM25 升序（rank 越小越相关）。
+    """
     ensure_schema(conn)
     cur = conn.cursor()
     cur.row_factory = sqlite3.Row
@@ -181,9 +227,9 @@ def query_rows(
         WHERE rag_chunks MATCH ?
     """
     params: list[object] = [match_query]
-    if tag is not None:
-        sql += " AND tag = ?"
-        params.append(tag)
+    scope_sql, scope_params = _scope_filter(tag=tag, file=file)
+    sql += scope_sql
+    params.extend(scope_params)
     sql += " ORDER BY rank LIMIT ?"
     params.append(limit)
     return cur.execute(sql, params).fetchall()
