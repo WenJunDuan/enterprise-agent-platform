@@ -27,7 +27,7 @@ tools: Read, Glob
 - `attachments`：按材料事实列出 `name / path / media_type / document_type`
 - `extracted_fields` / `missing_fields` / `ambiguities`：据实记录
   - 一致性线索必须写进 `ambiguities`，例如：
-    - "拟派负责人姓名在不同文件写法不一致（如 牛亚犇 / 生亚犇）"
+    - "拟派负责人姓名在不同文件写法不一致（如 王建国 / 玉建国）"
     - "所报业绩的项目经理与拟派项目负责人疑似不一致"
 - `reviewed_by` 固定为 `tender-extractor`
 

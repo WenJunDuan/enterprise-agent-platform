@@ -1,7 +1,7 @@
 """混合 PDF（数字页 + 扫描页）整份转云 OCR 触发单测。
 
 背景：classify 以文件级 fonts>0 判 native，整份 PDF 只要有文本层就全判 native，其中扫描页经
-pymupdf get_text 抽出空串被静默丢失（ZJ 400 页投标含 ~59 页扫描资质/业绩证书 → 底稿缺据 →
+pymupdf get_text 抽出空串被静默丢失（长标书 400 页投标含 ~59 页扫描资质/业绩证书 → 底稿缺据 →
 评分只能 manual）。修复：检测混合 PDF 且空白页**计数**达阈值（比例兜底小份多扫描件）→ 整份转
 云 OCR 补回。计数为主（59 页绝对量不该被 341 数字页稀释成 ratio 0.147）。
 """
@@ -32,7 +32,7 @@ def test_blank_page_count_counts_empty_and_near_empty():
 
 
 def test_should_cloud_ocr_triggers_by_count_zhangjian_profile():
-    """ZJ画像：59 空白 / 400 页（ratio 0.147）→ 计数 59≥10 触发（比例本身够不着）。"""
+    """长标书画像：59 空白 / 400 页（ratio 0.147）→ 计数 59≥10 触发（比例本身够不着）。"""
     blocks = [""] * 59 + ["数字页正文内容很多很多" * 3] * 341
     assert _should_cloud_ocr_mixed_pdf(blocks) is True
 
@@ -54,7 +54,7 @@ def test_should_not_cloud_ocr_empty_blocks():
 
 
 def test_thresholds_are_env_tunable(monkeypatch):
-    """阈值 env 可灰度：调高计数阈值后ZJ画像（59 空）应改为不触发。"""
+    """阈值 env 可灰度：调高计数阈值后长标书画像（59 空）应改为不触发。"""
     monkeypatch.setattr(pipeline_mod, "OCR_BLANK_PAGE_MIN_COUNT", 100)
     monkeypatch.setattr(pipeline_mod, "OCR_BLANK_PAGE_RATIO", 0.9)
     blocks = [""] * 59 + ["数字页正文内容很多" * 3] * 341

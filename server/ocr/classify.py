@@ -45,7 +45,7 @@ def _probe_pdf(data: bytes) -> dict:
         "scanned": image_filters > 0 and not has_text,
         # 混合 PDF：既有文本层(fonts>0)又含图像编码页(扫描/盖章页)。整体仍判 native（多数页可
         # 直读），但 pipeline 据此 + 空白页计数决定是否对扫描页做子集云 OCR 补回——native 直读对
-        # 扫描页抽出空串被静默丢失（ZJ 400 页投标含 ~59 页扫描证书）。纯数字 PDF 的空白页是
+        # 扫描页抽出空串被静默丢失（长标书 400 页投标含 ~59 页扫描证书）。纯数字 PDF 的空白页是
         # 真空页(无扫描内容可补)，故必须用 image_filters>0 区分"空因扫描"vs"空因无内容"。
         # 注：image_filters 含正文嵌图/电子章/Logo 会假阳性置 mixed_pdf=True，但无害——下游还要过
         # 空白页计数/比例阈值，且对真空页 OCR 出空文本不回填（pipeline text.strip() 守卫）。

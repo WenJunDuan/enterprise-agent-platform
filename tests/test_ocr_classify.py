@@ -72,7 +72,7 @@ def test_text_pdf_with_large_embedded_image_routes_native(tmp_path):
 
 def test_mixed_pdf_flagged_but_routes_native(tmp_path):
     # 有字体(文本层) + 含图像滤镜(扫描/盖章页) → 整体判 native pdf_text，但标记 mixed_pdf=True，
-    # 供 pipeline 据空白页计数决定是否整份转云 OCR 补回扫描页（ZJ 400 页投标画像）。
+    # 供 pipeline 据空白页计数决定是否整份转云 OCR 补回扫描页（长标书 400 页投标画像）。
     data = (
         b"%PDF-1.4\n/Type /Page\n/Font /Helvetica\nBT (text) Tj ET\n/DCTDecode\n" + b"\x00" * 5000
     )

@@ -354,3 +354,8 @@ collected_evidence:
     result: pass
     command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/agent-front && bun run build 2>&1 | tail -5 && grep -rl \"投标横评\" dist/assets/*.js 2>/dev/null | head -2 && echo \"→ 产物含新文案\""
     timestamp: "2026-08-15T02:43:32.308Z"
+  - tool_use_id: "toolu_019ZkfMvuqD8hjza115Z3Scm"
+    tool: "Bash"
+    result: pass
+    command: "cd agent-front && bun test 2>&1 | tail -6"
+    timestamp: "2026-08-17T13:21:08.066Z"

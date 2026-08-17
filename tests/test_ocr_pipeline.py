@@ -270,7 +270,7 @@ def test_read_legacy_word_utf16_fallback_extracts_text(tmp_path, monkeypatch):
     path = tmp_path / "公开招标文件.doc"
     path.write_bytes(
         b"\xd0\xcf\x11\xe0"
-        + "招标人ZJ网院直播间建设项目\n评分点名称\n价格分：30分".encode(
+        + "示例学院网络教学系统建设项目\n评分点名称\n价格分：30分".encode(
             "utf-16le"
         )
     )

@@ -656,14 +656,14 @@ describe('contract tender review model', () => {
           {
             request_id: 'req-a',
             claim_id: '91320602MA1X9Y1234',
-            bidder_name: '投标人XH',
+            bidder_name: '甲科技有限公司',
             status: 'completed',
             verdict: 'manual_review',
           },
           {
             request_id: 'req-b',
             claim_id: '91320602MA1X9Y5678',
-            bidder_name: '投标人YQ',
+            bidder_name: '乙工程有限公司',
             status: 'completed',
             verdict: 'manual_review',
           },
@@ -675,13 +675,13 @@ describe('contract tender review model', () => {
         {
           request_id: 'req-a',
           claim_id: '91320602MA1X9Y1234',
-          bidder_name: '投标人XH',
+          bidder_name: '甲科技有限公司',
           verdict: 'manual_review',
         },
         {
           request_id: 'req-b',
           claim_id: '91320602MA1X9Y5678',
-          bidder_name: '投标人YQ',
+          bidder_name: '乙工程有限公司',
           verdict: 'manual_review',
         },
       ],
@@ -691,7 +691,7 @@ describe('contract tender review model', () => {
         explanation: '需横比后确认价格分。',
         extracted_data: {
           bidder: {
-            name: '投标人XH',
+            name: '甲科技有限公司',
             credit_code: '91320602MA1X9Y1234',
             legal_rep: '张三',
           },
@@ -724,7 +724,7 @@ describe('contract tender review model', () => {
           explanation: '需横比后确认价格分。',
           extracted_data: {
             bidder: {
-              name: '投标人YQ',
+              name: '乙工程有限公司',
               credit_code: '91320602MA1X9Y5678',
               legal_rep: '李四',
             },
@@ -772,14 +772,14 @@ describe('contract tender review model', () => {
     })
 
     expect(data.reviewBidders.map((bidder) => bidder.name)).toEqual([
-      '投标人XH',
-      '投标人YQ',
+      '甲科技有限公司',
+      '乙工程有限公司',
     ])
     expect(
       data.compareScoreRows
         ?.find((row) => row.item === '企业实力')
         ?.cells.map((cell) => cell.bidderName)
-    ).toEqual(['投标人XH', '投标人YQ'])
+    ).toEqual(['甲科技有限公司', '乙工程有限公司'])
     expect(data.paragraphs[0]).toMatchObject({
       label: '投标文件【第315页】',
     })

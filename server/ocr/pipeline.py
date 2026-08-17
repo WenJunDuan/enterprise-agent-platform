@@ -31,7 +31,7 @@ from server.ocr.office_convert import convert_office_to_pdf
 
 logger = logging.getLogger(__name__)
 
-# 单文件底稿截断上限，防超大扫描件撑爆映射 prompt。默认 600000：评标标书动辄数百页（ZJ 400 页
+# 单文件底稿截断上限，防超大扫描件撑爆映射 prompt。默认 600000：评标标书动辄数百页（长标书 400 页
 # 投标底稿 ~215k，旧 200000 恰好截掉尾 ~15k——而那正是模型引用的证据所在，致 evidence 回查
 # unresolved 偏高；提到 600k 后实测回查率 71%→92%、unresolved 8→1，见
 # sprints/2026-06-23-tender-ui-scoring-fixes/findings.md）。大上下文模型（如 deepseek [1M]）可吃下；
@@ -74,7 +74,7 @@ def _env_float(name: str, default: float) -> float:
 
 
 # 混合 PDF（数字页 + 扫描页）子集云 OCR 的触发阈值。背景：classify 以文件级 fonts>0 判 native，
-# 整份 PDF 只要有文本层就全判 native，其中扫描页经 pymupdf get_text 抽出空串被静默丢失（ZJ
+# 整份 PDF 只要有文本层就全判 native，其中扫描页经 pymupdf get_text 抽出空串被静默丢失（长标书
 # 400 页投标含 ~59 页扫描资质/业绩/职称证书 → 底稿缺据 → 技术/业绩/负责人评分只能 manual）。
 # 触发判据 = 计数为主 + 比例兜底：空白页**数量** ≥ MIN_COUNT（59 页绝对量是强信号，不该被
 # 341 数字页稀释成 ratio 0.147），或空白**比例** > RATIO（兜底小份多扫描件，如 6 页 4 扫 ratio
@@ -284,7 +284,7 @@ def _augment_mixed_pdf_blocks(
     取真实页（blocks 一页一项 → render_body 按真实页打锚点），evidence 回查【第N页】不失准。
 
     返回 None → 调用方回退整份云 OCR（Layer 1），覆盖三种"子集路径不可靠"情形（与"无法抽页"
-    对称，最大化ZJ出真分机会，整份云路径的页→内容映射由云直接给出，不依赖本函数 offset 假设）：
+    对称，最大化长标书出真分机会，整份云路径的页→内容映射由云直接给出，不依赖本函数 offset 假设）：
     ① 本地抽页失败（fitz 缺失/渲染错，extract_pdf_subset→None）；
     ② 子集云 OCR 失败（OcrError/OcrDependencyError，如 transient 网络/job 失败）；
     ③ 云返回页数 ≠ 提交扫描页数（云端切页/合并与预期不符，按 offset 回填会错位）。
