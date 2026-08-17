@@ -76,3 +76,37 @@ Done Contract 对照：AC14/15（s7_hit_stop 真红）✅；AC9/10/11（s5_kd6�
 **defer 至 polish**：F4 / F5 / F6。**随 AC16 窗口**：F7。
 
 Sisyphus：已完成项均有真红转绿；AC16/AC7 合规 deferred；须 pass4 PASS 才进 polish。
+
+---
+
+## 修复轮追记（主 agent，2026-08-17 深夜）
+
+### F2 已修并合入（`09343a2`+`e07e067`，merge 见 main）
+`_walk_following` 把「前瞻额度用尽」归位成**合法终点**（与撞上 `stop_ids` 同级），`_bounded_by_layout`
+职责一字未动、退为「未耗尽额度就走完整份文档」时才管边界。真红先于实现取得并二次复现
+（复现用 `git show HEAD:… >` 覆盖而非 `git stash`——`refs/stash` 全仓共享，会与并行 worktree 抢栈）。
+脱钩守卫非空过：40 页/400 页两份投标注入量同为 88 token（比值 1.0，要求 ≤1.2）；额度即上界的
+直接测量：同语料 gap 取 1/6/20 页（底稿 6,450→59,802 字，9.3 倍）该项 `item_tokens` 恒 4,825。
+证据落 tdd-evidence `pass3_f2`。
+
+**主 agent 复核 `truncated` 口径判断（修复者请求复核）**：接受。`truncated` 语义仍为「有命中却
+一块都没进注入」；「吃满自己额度」刻意不记 truncated——生产口径下几乎每项都会吃满，记进去会把
+该信号变成常态噪音，且与 `test_额度充足时没有任何项被记为truncated` 反向守卫对冲；既有 hit-stop
+路径被 `_assemble_item` 按 per_item 截断时同样不记，口径一致。该形态由 `item_tokens` 逐项账留痕
+（AC15 本职），账目闭式由新测试末两条断言咬住。
+
+### F8 [P1，新发现，本轮不修] 单块超过每项额度时续接完全不发生
+- 来源：修复 F2 时查清 reviewer 原 repro（单块 14K 字）修复后仍为 2,018 token——**机制不同，不属 F2**。
+- 机制：`split_oversized_chunks` 按行切，遇到**整行无换行的超长文本**切不动 → 单 chunk 远超
+  `_assemble_item` 的每项额度 → 首块之后即 break，续接完全不发生。
+- 触发条件有二，第二条是常态风险：① 单行 > `MAX_CHUNK_CHARS`(4,000)，OCR 表格丢换行即可产生；
+  ② **`criteria` 评分项数 ≥ 15** 使 `per_item = evidence_tokens / n_items < 4,000`，此时任何满尺寸
+  chunk 都装不下（20 项时 per_item ≈ 2,994）。真实标书 15+ 评分项常见，而本 sprint 全部实测用的是
+  9 项的那一份——**该形态从未被真实数据覆盖**。
+- 与 **F7 同根**（`chunks_per_item = per_item // MAX_CHUNK_CHARS` 恒为 1）：都是「每项额度 vs 单块尺寸」
+  的量纲冲突。
+- 后果与既有信号：该项仍能拿到首块（不归零、不静默），且 `item_tokens` 会显示其偏小——AC15 使其
+  **可见**，故不构成 pass3 那类「变薄且无痕」。
+- **本轮不盲修的理由**：候选修法（A 允许不可分单块借用全局额度 / B 超长行按字符数兜底切分 /
+  C 视为固有约束）各有代价，其中 A 会破坏刚建立的闭式账目不变量。**应在 AC16 部署窗口用真实
+  多评分项标书测出实际形态后再定**，而非凭合成语料盲改。已并入 AC16 任务清单。
