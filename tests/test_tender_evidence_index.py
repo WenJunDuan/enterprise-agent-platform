@@ -493,14 +493,16 @@ def _section(page: int, heading: str, filler: str) -> str:
     return _paged(page, heading + "\n" + filler * 200)
 
 
-def test_续接止于同族同级的下一小节():
-    """KD6-c 边界：``4.7.x`` 子节要跟着命中块来，``4.8`` 是**另一个评分项的小节**必须止步。
+def test_续接止于下一个被命中的块():
+    """S7/hit-stop：终点是**下一个被任何评分项命中的块**，不是靠编号排版认出来的小节。
 
-    第四轮修复后实测：不设边界时「企业综合实力」一路吃进「类似业绩」整节共 39 块——
-    模型会在错误的小节里给企业实力打分，比证据少更糟。
+    改写自 ``test_续接止于同族同级的下一小节``（S5 的排版边界语义）。要防的坏形态没变：
+    第四轮实测不设边界时「企业综合实力」一路吃进「类似业绩」整节共 39 块，模型会在错误的
+    小节里给企业实力打分，**比证据少更糟**。变的是判据——各项的命中点天然把文档分了段，
+    用它当终点不需要对编号风格作任何假设（``4.7.x`` 子节仍跟着命中块来，因为没有项命中它）。
 
-    跨编号族不比较（``一、`` 与 ``4.10`` 的层级不可通约）：真实标书里 `4.10.技术参数指标`
-    的偏离表正文用 `一、核心影像参数` 分栏，按层级数值比会当场止步、又回到只有表头。
+    「谁吃了那一块」在 ``blocks`` 里看不出来（跨项去重后同一块只出现一次），故判据落在
+    逐项注入量上：邻项自己还留得住证据，就说明边界收在它前面。
     """
     conn = sqlite3.connect(":memory:")
     ev.build_evidence_index(
@@ -517,14 +519,19 @@ def test_续接止于同族同级的下一小节():
         project_id="tp-1",
     )
     result = er.retrieve_evidence(
-        {"items": [{"item": "企业综合实力", "max": 6}]}, conn=conn, query_count_hint=9
+        {"items": [{"item": "企业综合实力", "max": 6}, {"item": "类似业绩", "max": 9}]},
+        conn=conn,
+        query_count_hint=9,
     )
     conn.close()
 
     injected = "\n".join(block.text for block in result.blocks)
     assert "4.7.企业综合实力" in injected
-    assert "安全生产许可证" in injected, "同族更深的子节必须跟着命中块一起来"
-    assert "类似业绩" not in injected, "下一个评分项的小节必须止步，不得串入"
+    assert "安全生产许可证" in injected, "命中块与下一个停止点之间的正文必须跟着来"
+    volume = dict(result.item_tokens)
+    assert volume["类似业绩"] > 0, (
+        f"下一个被命中的块归它自己，不得被前一项吃掉：{result.item_tokens}"
+    )
 
 
 def test_无实质内容的块不作为证据注入():
@@ -747,4 +754,78 @@ def test_投标层零命中时招标层仍参与():
     assert any(block.scope == "tender" for block in result.blocks), "投标零命中时招标层必须参与"
     # AC2：证据来自哪一层要留痕，否则用户分不清"投标里就是没有"与"检索没查投标"。
     assert any("招标层" in query for query in used), f"招标层兜底必须留痕：{used}"
+
+
+# ── S7：续接边界改 hit-stop（去排版假设）+ 逐项注入量留痕 ────────────────────
+
+
+def _unrecognized_numbering_bid() -> str:
+    """小节编号用半角 ``(一)``——**两个识别器都不认**（真实标书里这类写法很常见）。
+
+    ``docstructure.chapter_heading`` 只认「第X章」「一、」「（一）」（全角括号），
+    ``_DECIMAL_HEADING_RE`` 只认十进制且必须以点收尾。故本语料下"命中块是不是小节标题"
+    这个问题恒答"不是"，S5 的排版边界在此**静默失效**。
+    """
+    return "# 综合评审\n" + "\n".join(
+        [
+            _section(11, "(一) 企业综合实力", "企业资质与荣誉说明。"),
+            _paged(12, "人员配置与荣誉证书续页说明。" * 200),
+            _section(13, "(二) 类似业绩", "业绩明细表内容。"),
+        ]
+    )
+
+
+def test_编号风格不被识别时仍按邻项命中续接():
+    """AC14：续接的终点不该依赖"认得出编号风格"——认不出时旧代码**静默不续接**。
+
+    旧行为（S5 排版边界）：命中块自身不是可识别小节标题 → 直接不续接。证据从"整节"缩成
+    "一个标题块"，而这条路径既不进 ``unresolved`` 也不进 ``truncated``——**证据变薄且无痕**，
+    正是本 sprint 要根治的静默降级形态。评分项名只出现在小节标题里是实测常态
+    （``技术参数指标`` 全文字面命中仅 2 块且互为重复），所以这一变薄直接等于错判。
+
+    新行为（hit-stop）：各项的命中点天然把文档分段，续接止于**下一个被任何项命中的块**，
+    对编号风格零假设。
+    """
+    conn = _indexed(_unrecognized_numbering_bid())
+    result = er.retrieve_evidence(
+        {"items": [{"item": "企业综合实力", "max": 6}, {"item": "类似业绩", "max": 9}]},
+        conn=conn,
+        query_count_hint=9,
+    )
+    conn.close()
+
+    injected = "\n".join(block.text for block in result.blocks)
+    assert "(一) 企业综合实力" in injected, "命中块本身要在"
+    assert "人员配置与荣誉证书续页说明" in injected, (
+        "编号风格不被识别时续接静默不发生：25 分的项只拿得到一个标题块"
+    )
+    volume = dict(result.item_tokens)
+    assert volume["类似业绩"] > 0, (
+        f"续接必须止于邻项命中块，不得把下一个评分项的证据吃进上一项：{result.item_tokens}"
+    )
+
+
+def test_逐项注入量逐项留痕含零值(indexed_conn):
+    """AC15：``item_tokens`` 是"证据变薄"的唯一可见量纲，故**每一项都要有一行**。
+
+    hit-stop 自身也有变薄面（邻项 unresolved 导致边界后移 / 噪音命中制造伪边界提前截断 /
+    末项收尾），三者都不产生 unresolved 或 truncated。只有逐项注入量能让它们被看见——
+    零命中项记 0 而不是从清单里消失，否则读者分不清"这项没证据"与"这项没被检索"。
+    """
+    criteria = {
+        "eligibility_rules": [{"check": "营业执照", "requirement": "有效期内"}],
+        "items": [{"item": "报价", "max": 40}, {"item": "现场答辩得分", "max": 10}],
+    }
+
+    result = er.retrieve_evidence(criteria, conn=indexed_conn, query_count_hint=None)
+
+    volume = dict(result.item_tokens)
+    assert [name for name, _ in result.item_tokens] == [
+        name for name, _ in er._item_queries(criteria)
+    ], "逐项留痕必须覆盖全部检索项且保持检索顺序"
+    assert volume["报价"] > 0
+    assert volume["现场答辩得分"] == 0, "零命中项必须显式记 0，不能从清单里消失"
+    assert sum(tokens for _, tokens in result.item_tokens) == result.total_tokens, (
+        "逐项之和必须等于总注入量，否则这本账对不上就没有可信度"
+    )
 

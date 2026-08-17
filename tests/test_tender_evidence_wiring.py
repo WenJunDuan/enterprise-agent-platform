@@ -127,6 +127,26 @@ def test_evidence_unresolved_warning_reaches_final_payload(wired, monkeypatch):
     assert unresolved["queries"], "必须带出实际用过的查询串"
 
 
+def test_逐项注入量留痕穿透到最终结论(wired, monkeypatch):
+    """AC15：证据"变薄"没有专属故障码——它既不是 unresolved 也不是 truncated。
+
+    hit-stop 的边界质量依赖邻项命中的疏密（邻项 unresolved 则边界后移、噪音命中制造伪边界
+    提前截断、末项之后无停止点），三种都无痕。唯一能让它们被看见的量纲是**逐项实际注入了
+    多少 token**，故它必须和其它证据信号一样穿透到结论，而不是只活在服务端日志里。
+    """
+    _patch_docs(monkeypatch, bid_text=_BID)
+
+    payload, _meta = _run()
+
+    volume = next(
+        (w for w in _warnings(payload) if w["status"] == "evidence_volume"), None
+    )
+    assert volume is not None, f"逐项注入量没穿透到结论：{[w['status'] for w in _warnings(payload)]}"
+    tokens = {row["item"]: row["tokens"] for row in volume["items"]}
+    assert tokens["报价"] > 0, f"命中项的注入量必须是实测值：{tokens}"
+    assert tokens["现场答辩表现"] == 0, f"零命中项要显式记 0，不能从清单里消失：{tokens}"
+
+
 def test_evidence_context_actually_injected(wired, monkeypatch):
     """接线的另一半：注入给模型的确实是检索到的证据，不是整份投标底稿。"""
     noise = "与任何评分项都无关的大段附件正文。"

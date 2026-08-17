@@ -70,13 +70,24 @@ def main(argv: list[str]) -> int:
     ev.build_evidence_index(conn, tender_text=tender_text, bid_text=bid_text, project_id="measure")
 
     # ── 逐项：报告取量与首块出处；判定只看不变量 ──────────────────────────────
-    print("[AC10/AC13] 逐项（预算按全项数分配）")
+    #
+    # **取量必须取「全项同跑」那一次**（S7）：续接的终点是"下一个被任何评分项命中的块"，
+    # 单项独跑没有邻项停止点，走的是排版兜底那条分支——拿它的字数去对比基线，等于用没上线的
+    # 行为给上线行为背书。故字数一律读 ``result.item_tokens``（逐项实际进注入的量，
+    # ``estimate_tokens`` 下 1 token = 1 字），单项独跑只留着报告首块出处与层次（检索侧行为，
+    # 两种跑法一致）。跨项去重会把重复块记给排序靠前的项，故 0 字未必等于没证据。
+    result = er.retrieve_evidence(criteria, conn=conn)
+    volumes = dict(result.item_tokens)
+    deduped: list[str] = []
+    print("[AC10/AC13] 逐项（预算按全项数分配，字数取全项同跑）")
     tender_first: list[str] = []
     unresolved_without_trace: list[str] = []
     for item in items:
         name = (item.get("item") or "").strip()
         single = er.retrieve_evidence({"items": [item]}, conn=conn, query_count_hint=len(items))
-        chars = sum(len(block.text) for block in single.blocks)
+        chars = volumes.get(name, 0)
+        if single.blocks and not chars:
+            deduped.append(name)
         if single.blocks:
             first = single.blocks[0]
             head = slice_heading(first.text.splitlines()) or first.chapter_path
@@ -90,8 +101,9 @@ def main(argv: list[str]) -> int:
             if not any("部分重合" in query for query in queries):
                 unresolved_without_trace.append(name)
         print(f"       {name[:16]:<18} {chars:>7,} 字  ({state:<14}) 首块={head[:34]}")
+    if deduped:
+        print(f"       ↳ 0 字但有命中的项（证据已由排序靠前的项带出，跨项去重）：{deduped}")
 
-    result = er.retrieve_evidence(criteria, conn=conn)
     total_chars = sum(len(block.text) for block in result.blocks)
     budget = result.plan.evidence_tokens if result.plan else 0
     share = f"{100 * total_chars / budget:.1f}%" if budget else "n/a"
