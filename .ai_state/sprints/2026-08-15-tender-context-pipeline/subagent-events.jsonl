@@ -9,3 +9,8 @@
 {"schema_version":1,"event":"SubagentStart","agent_id":"a5226a52e06204272","agent_type":"generator","sprint_slug":"2026-08-15-tender-context-pipeline","timestamp":"2026-08-17T03:16:54.008Z"}
 {"schema_version":1,"event":"SubagentStart","agent_id":"adee49f74e6ba18cf","agent_type":"Explore","sprint_slug":"2026-08-15-tender-context-pipeline","timestamp":"2026-08-17T08:14:44.269Z"}
 {"schema_version":1,"event":"SubagentStop","agent_id":"adee49f74e6ba18cf","agent_type":"Explore","sprint_slug":"2026-08-15-tender-context-pipeline","timestamp":"2026-08-17T08:23:32.382Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"a08f87c8b969f9499","agent_type":"generator","sprint_slug":"2026-08-15-tender-context-pipeline","timestamp":"2026-08-17T09:01:48.687Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"af00592bb5d5065c1","agent_type":"critic","sprint_slug":"2026-08-15-tender-context-pipeline","timestamp":"2026-08-17T09:02:05.737Z"}
+{"schema_version":1,"event":"SubagentStop","agent_id":"af00592bb5d5065c1","agent_type":"critic","sprint_slug":"2026-08-15-tender-context-pipeline","timestamp":"2026-08-17T09:07:28.687Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"aa770a482853121eb","agent_type":"generator","sprint_slug":"2026-08-15-tender-context-pipeline","timestamp":"2026-08-17T09:14:33.775Z"}
+{"schema_version":1,"event":"SubagentStop","agent_id":"aa770a482853121eb","agent_type":"generator","sprint_slug":"2026-08-15-tender-context-pipeline","timestamp":"2026-08-17T09:41:55.578Z"}
