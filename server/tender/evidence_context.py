@@ -157,6 +157,19 @@ def build_evidence_context(
         )
         for item in result.unresolved
     ]
+    # AC15：逐项注入量是"证据变薄"的唯一可见量纲。变薄既不是 unresolved（底稿里真没有）也不是
+    # truncated（有但没装下）——续接边界收在哪取决于邻项命中的疏密，三种变薄形态都不产故障码。
+    # 与其余证据信号同走 warnings 通道：它同时进模型上下文（据此对薄证据项走 evidence 缺失规则）
+    # 与结论落盘（人工复核时不必回翻日志就知道哪一项手里只有一行）。
+    warnings.append(
+        _warning(
+            "evidence_volume",
+            "逐项注入证据量（token）："
+            + "；".join(f"{name} {tokens}" for name, tokens in result.item_tokens)
+            + "。数值为 0 或明显偏小的项证据可能不完整，按 evidence 缺失规则处理。",
+            items=[{"item": name, "tokens": tokens} for name, tokens in result.item_tokens],
+        )
+    )
     if result.truncated:
         # F5：这些项**检索到了证据**，只是额度被排序靠前的项吃光而没装进注入块。此前它们
         # 既不出块也不进 unresolved，整条路径静默——用户拿到的是一份看似证据齐全的结论。

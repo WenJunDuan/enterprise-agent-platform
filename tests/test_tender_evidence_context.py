@@ -32,7 +32,9 @@ def test_组装产物含证据与出处而非投标全文():
     assert "投标报价" in result.context
     assert "【" in result.context, "证据块必须带出处与页锚"
     assert not result.force_manual_review
-    assert result.warnings == []
+    # 顺利路径不得出任何降级信号；逐项注入量（AC15）是常在的留痕账，不是降级——它走同一条
+    # warnings 通道只因为那是唯一能把信号送进结论的接线，故此处按 status 判而不是判空。
+    assert [w["status"] for w in result.warnings] == ["evidence_volume"], result.warnings
 
 
 def test_注入量远小于投标全文():
