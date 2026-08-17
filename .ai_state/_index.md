@@ -61,7 +61,7 @@ counts:
 # === Pointers (指向最新相关文件) ===
 pointers:
   latest_design: "sprints/2026-08-15-tender-context-pipeline/design.md" # Fable R1 NEEDS_REVISION 已全响应+S0/S0-B 实测在档
-  latest_review: "sprints/2026-08-15-tender-context-pipeline/reviews/impl-pass1.md" # REWORK: F1 主承重墙未接线/F2 回落闸反松 2.3 倍
+  latest_review: "sprints/2026-08-15-tender-context-pipeline/reviews/impl-pass2.md" # PASS: 两 P0 四 P1 全闭合, 建议先部署验证
   latest_cleanup: "sprints/2026-08-12-prompt-architecture/cleanup-pass.md"
   latest_brainstorm: ""
   latest_decisions: ["compound/2026-07-20-decision-ocr-as-standalone-service.md", "compound/2026-07-16-decision-schema-split-tender.md", "compound/2026-07-16-decision-carve-f6-schema-split-from-d2.md", "compound/2026-07-15-decision-ocr-service-layer.md", "compound/2026-07-02-decision-ocr-routing-ladder.md"]
@@ -69,7 +69,15 @@ pointers:
   latest_architecture_update: "2026-08-15T09:40:14.417Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "【2026-08-15 tender-context-pipeline 返工中·用户外出暂停】sprint=2026-08-15-tender-context-pipeline path=Refactor stage=impl。恢复链: ①代码在 worktree `.claude/worktrees/agent-a40c8e9dd8b94062a`(分支 worktree-agent-a40c8e9dd8b94062a), 基线 main f55cdf34, 已 8 commits + 1 个 wip 快照 8e326d0(F1 接线中途, 勿合并) ②Fable 复查判 REWORK, findings 在 sprints/2026-08-15-tender-context-pipeline/reviews/impl-pass1.md(main bf2ce3e): 两个 P0 = F1 主承重墙未接线(load_evidence_context 零调用方/enforce_manual_review 只被自测调用, 已主 agent 独立复核)、F2 回落闸未扣脚手架反比收编前松 2.3 倍; P1 = F3 AC0b 应改判 blocked 且 KD2 多词拆OR未实现、F4 全零命中归宿应改 manual_review、F5 预算耗尽静默饿死、F6 except ValueError 归因面过宽 ③返工顺序: F1 接线+穿透测试 → F2 扣脚手架 → F4 归宿改判 → P1 三项 ④返工完再过一轮 Fable 复查, PASS 才部署 ⑤部署形态: 后端 docker build --build-arg WITH_OCR=1(漏了会缺 pymupdf/paddleocr), 前端 agent-front/deploy/Containerfile.agent-front 需先本地 bun run build; env 改动必须 docker rm -f 重建容器(restart 不重读 --env-file)。生产现役: agent-backend:0815b2 / agent-front:0815b2。用户口径: 评标须 10 分钟内出结论, 超 20 分钟即视为架构问题。"
+next_action: "【2026-08-17 tender-context-pipeline 耗时治理进行中】sprint=2026-08-15-tender-context-pipeline path=Refactor stage=impl。已完成并推送到 main(f8b6966): ①第一波 7731e16(省略标记不谎报+criteria 竞态等待) ②第二波 9fae313(A 法规/记忆改服务端注入删模型自取 Read; B 底稿在场锁 Glob/Read 例外 ocr-page; C 判0/manual 仲裁 5 处收敛单一决策表; D 契约失败改 resume 修补不整单重跑) ③1a52e92 .doc 兜底档 BEL 还原 Word 表格 ④3701e91 章节定位三修(目录识别/粘连拆行/评审方法标签) ⑤f8b6966 目录跳过规则两处对齐。提示词净减 5,840B(SKILL.md -54%)。两轮实跑记录见 evidence/dry-run-2026-08-17.md。
+
+【实跑实测数据】招标抽取 0.07s/表格21单元格; 结构解析 0.004s/7章正文树/evaluation_method 一次命中无试错; 投标 43MB400页直读 3.2s/19万字; 建索引 0.14s/招标105+投标223 chunk; 按项检索 9/9 命中 1ms(含2字词报价走子串旁路)。
+
+【下一步·未做】⚠️缺陷②native 直读路径无页锚: draft_render.render_body 只对 OCR 引擎产物(pages)渲染【第N页】, native 直读(.doc/文本层PDF 的 blocks)零页锚 → 检索 page_anchor 全是页码未知 → 证据链给不出可回查页码, 回查闸失依据。实测招标底稿 39,056字/0页锚。用户已拍板【先改这个】, 改完再实跑验证+审核出结论。两条路: (推荐)pymupdf 按页取文本拿真实页号 / 或改提示词用章节路径代页码。
+
+【部署】生产现役 agent-backend:0817b1 + agent-front:0815b3(仅含第一波)。第二波及之后全部未部署。部署形态: 后端 docker build --build-arg WITH_OCR=1(漏了缺 pymupdf/paddleocr), 前端需先本地 bun run build; env 改动必须 docker rm -f 重建容器(restart 不重读 --env-file); SSH 必须建长连接 ControlMaster+ControlPersist=60m(反复短连接会打满 sshd MaxStartups)。.env 已注释 TENDER_CONTEXT_MAX_BYTES(备份 .env.before-0817)。
+
+【用户口径】评标须 10 分钟内出结论, 超 20 分钟即视为架构问题; 提示词只删重复表述不删规则; 本机缺 paddleocr/LibreOffice, PDF 云 OCR 与 .doc 转换只能在部署机验。"
 last_subagent: "codex-exec" # tender-report-dimensions D0-D5 headless (codex 0.142.1, gpt-5.5)；必须 env -u HTTP_PROXY -u HTTPS_PROXY 否则 streaming API 挂起，见 compound/2026-06-25-trick-codex-proxy-hangs-streaming.md
 last_subagent_at: "2026-06-25T00:00:00.000Z"
 active_worktrees: [] # 2026-08-17 两个返工 worktree 已合并 369c53e 并清理
