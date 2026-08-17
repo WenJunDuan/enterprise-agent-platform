@@ -252,9 +252,12 @@ async def run_tender_evaluation(
             # 每次 attempt 取新 conversation_id：整单重跑那条路径靠"查不到同 conversation 的
             # 历史会话"来保证真的重来一遍；共用一个 id 会让它悄悄变成隐式 resume。
             "conversation_id": new_conversation_id(),
-            # R1 evidence-resolution：透传**原始底稿** ocr_block（带 ### 文件:/【第N页】 锚点）
-            # 给结论校验闸做出处回查。**传 ocr_block 而非 context**——context 尾部已追加 criteria
-            # 注入块 + OCR 头注释，会干扰 tier/page 解析（design critic blind-spot C）。
+            # R1 evidence-resolution：透传注入给模型的那份底稿 ocr_block 给结论校验闸做出处
+            # 回查。**传 ocr_block 而非 context**——context 尾部已追加 criteria 注入块 + OCR
+            # 头注释，会干扰 tier/page 解析（design critic blind-spot C）。
+            # 两种形态都带 `### 文件:` + `【第N页】` 锚点，parse_corpus 一视同仁：doc 层/inline
+            # 是**整份底稿**；证据层是**按项检出的片段**，其锚点由 EvidenceBlock.render 逐块
+            # 补齐（块不自带文件头时归属会跟着检索顺序漂，见该函数 docstring / pass3 F1）。
             "evidence_source": ocr_block,
             "case_root": evaluation_case_root,
             "on_progress": on_progress,  # 思考流式：agent 文本片段实时回调给 worker

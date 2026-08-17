@@ -171,6 +171,61 @@ def _parse_file_head(head: str) -> tuple[str, str, bool]:
     return name, clarity, _PAGE_UNRELIABLE_MARK in head
 
 
+def file_head(line: str) -> str | None:
+    """解析一行是否为 ``### 文件:`` 头 → 头串（文件名 + kind/route/清晰度等标记）；否则 ``None``。
+
+    与 :func:`parse_page_anchor` 同为底稿协议的解析单点。证据层按项检出的片段要把来源文件
+    原样带回（review pass3 F1），它切头与本模块读头**必须用同一条识别规则**，否则"切出来的
+    段"与"读回来的段"会在标记写法上悄悄分叉。
+
+    Args:
+        line: 底稿中的单行文本。
+
+    Returns:
+        ``### 文件:`` 之后的整串（不做拆分——clarity/页号存疑等标记的解析在
+        :func:`_parse_file_head`），不是文件头行时返回 ``None``。
+    """
+    match = _FILE_RE.match(line or "")
+    return match.group(1).strip() if match else None
+
+
+def file_head_line(head: str) -> str:
+    """文件头行字面量（不含换行）：与 :func:`file_head` 互为逆。
+
+    Args:
+        head: 头串（``build_extraction_block`` 产的原串，或退而求其次的层名）。
+    """
+    return f"### 文件: {head}"
+
+
+def split_source_files(text: str) -> list[tuple[str | None, str]]:
+    """把底稿按 ``### 文件:`` 行切成 ``[(头串, 该文件正文)]``（文件头行本身不进正文）。
+
+    与 :func:`parse_corpus` 的分工：那个按"文件 + 页"切到页级并做规范化，供**回查**；这个只
+    切到文件级且保留原文，供**建索引**——证据层要按源文件独立建块，块与源文件一一对应之后，
+    "这块来自哪个文件"才不再取决于切分位置落在哪一刀（review pass3 F1）。
+
+    头串原样保留（含 ``(kind=…)`` / ``[⚠清晰度低]`` 等标记）：回查闸的 clarity 与页号存疑
+    降级都从这一行解析，只留纯文件名等于把降级信号丢在建索引这一步。
+
+    Args:
+        text: 底稿全文。
+
+    Returns:
+        按文档顺序的分段；没有文件头的底稿返回单段 ``[(None, text)]``。
+    """
+    segments: list[tuple[str | None, list[str]]] = []
+    for line in text.splitlines():
+        head = file_head(line)
+        if head is not None:
+            segments.append((head, []))
+            continue
+        if not segments:
+            segments.append((None, []))
+        segments[-1][1].append(line)
+    return [(head, "\n".join(lines)) for head, lines in segments]
+
+
 def _normalize_filename(s: str) -> str:
     """文件名规范化：basename + NFKC + lower + 去路径分隔，供 source 点名匹配。"""
     s = unicodedata.normalize("NFKC", s or "").lower()
@@ -327,10 +382,10 @@ def parse_corpus(evidence_source: str) -> list[dict[str, Any]]:
             cur_artifact = ARTIFACT_ORIGINAL
             cur_page_unreliable = False
             continue
-        m_file = _FILE_RE.match(line)
-        if m_file:
+        head = file_head(line)
+        if head is not None:
             flush()
-            cur_file, cur_clarity, cur_page_unreliable = _parse_file_head(m_file.group(1))
+            cur_file, cur_clarity, cur_page_unreliable = _parse_file_head(head)
             cur_page = None
             cur_artifact = ARTIFACT_ORIGINAL
             continue

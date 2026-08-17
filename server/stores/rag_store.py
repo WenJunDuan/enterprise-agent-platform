@@ -25,6 +25,7 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
             chunk_text,
             chunk_id UNINDEXED,
             file UNINDEXED,
+            source_file UNINDEXED,
             chapter_path UNINDEXED,
             chapter_title UNINDEXED,
             tag UNINDEXED,
@@ -42,6 +43,7 @@ def ensure_schema(conn: sqlite3.Connection) -> None:
         CREATE TABLE IF NOT EXISTS {SCAN_TABLE_NAME} (
             chunk_id      TEXT PRIMARY KEY,
             file          TEXT,
+            source_file   TEXT,
             chapter_path  TEXT,
             chapter_title TEXT,
             tag           TEXT,
@@ -61,13 +63,22 @@ def delete_rows_for_file(conn: sqlite3.Connection, file: str) -> None:
     conn.execute(f"DELETE FROM {SCAN_TABLE_NAME} WHERE file = ?", (file,))
 
 
+# ``file`` 是**层/文档标识**（证据层用 ``__bid__`` / ``__tender__``，限层检索按它过滤）；
+# ``source_file`` 是该 chunk 在底稿里的**真实来源文件头串**（``### 文件:`` 之后的原串）。
+# 两者必须并存：只留层标识，注入块就写不出真实出处，回查闸按 file 分桶的页号核实随之落空
+# （review pass3 F1）；只留真实文件名，S8 的投标层优先过滤就没得过滤。
 _COLUMNS = (
-    "chunk_text, chunk_id, file, chapter_path, chapter_title, tag, page_start, page_end,"
-    " page_artifact"
+    "chunk_text, chunk_id, file, source_file, chapter_path, chapter_title, tag, page_start,"
+    " page_end, page_artifact"
 )
 _PLACEHOLDERS = (
-    ":chunk_text, :chunk_id, :file, :chapter_path, :chapter_title, :tag, :page_start,"
-    " :page_end, :page_artifact"
+    ":chunk_text, :chunk_id, :file, :source_file, :chapter_path, :chapter_title, :tag,"
+    " :page_start, :page_end, :page_artifact"
+)
+# 三条检索通道共用的返回列（必须与 ``rag._as_hit`` 读的键一一对应）。
+_SELECT_COLUMNS = (
+    "chunk_id, file, source_file, chapter_path, chapter_title, tag, page_start, page_end,"
+    " page_artifact, chunk_text"
 )
 
 
@@ -144,8 +155,7 @@ def scan_rows(
     cur = conn.cursor()
     cur.row_factory = sqlite3.Row
     sql = f"""
-        SELECT chunk_id, file, chapter_path, chapter_title, tag, page_start, page_end,
-               page_artifact, chunk_text, 0 AS rank
+        SELECT {_SELECT_COLUMNS}, 0 AS rank
         FROM {SCAN_TABLE_NAME}
         WHERE chunk_text LIKE ? ESCAPE '\\'
     """
@@ -187,8 +197,7 @@ def following_rows(
         return []
     return cur.execute(
         f"""
-        SELECT chunk_id, file, chapter_path, chapter_title, tag, page_start, page_end,
-               page_artifact, chunk_text, 0 AS rank
+        SELECT {_SELECT_COLUMNS}, 0 AS rank
         FROM {SCAN_TABLE_NAME}
         WHERE file = ? AND rowid > ?
         ORDER BY rowid LIMIT ?
@@ -220,9 +229,8 @@ def query_rows(
     ensure_schema(conn)
     cur = conn.cursor()
     cur.row_factory = sqlite3.Row
-    sql = """
-        SELECT chunk_id, file, chapter_path, chapter_title, tag, page_start, page_end,
-               page_artifact, chunk_text, bm25(rag_chunks) AS rank
+    sql = f"""
+        SELECT {_SELECT_COLUMNS}, bm25(rag_chunks) AS rank
         FROM rag_chunks
         WHERE rag_chunks MATCH ?
     """

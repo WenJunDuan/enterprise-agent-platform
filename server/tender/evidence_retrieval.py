@@ -16,6 +16,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Any
 
+from server.common.corpus import file_head_line, parse_page_anchor
 from server.ocr.rag import OVERLAP_MIN_CHARS, search, search_overlap
 from server.tender.evidence_continuation import continuation
 from server.tender.evidence_index import BID_FILE, TENDER_FILE
@@ -31,11 +32,30 @@ class EvidenceBlock:
     chapter_path: str
     page_anchor: str
     text: str
+    # 该块在底稿里的原始 ``### 文件:`` 头串；底稿没有文件头（inline OCR 单份）时为 None。
+    source_file: str | None = None
 
     def render(self) -> str:
-        """Render this block for prompt injection, keeping provenance inline."""
+        """Render this block as a **self-contained 底稿片段**（层标记 + 文件头 + 页锚 + 正文）。
+
+        为什么每块都要自带这三件套：结论出处的回查闸 ``corpus.parse_corpus`` 是**流式状态
+        机**——遇到 ``### 文件: X`` 后其后所有页锚一路归 X，直到下一个文件头。证据块按**检索
+        顺序**排列，某块不自带文件头时它的页锚就挂到前一块的文件名下，排在第一个文件头之前
+        的块甚至一段都不产（review pass3 F1 实测：三块只解析出一段、招标块挂到投标文件名下、
+        tier 退化成 ``whole``）。一家投标常含多份文件、每份页码各自从 1 重置，file 级归属正是
+        页号回查的前提。每块自洽 = 误归属在构造上不可能，不再取决于切分位置落在哪一刀。
+
+        没有 ``source_file`` 时回落层名（``投标文件`` / ``招标文件``）：宁可粗到层级，也不能
+        让整块落在"无文件"状态被回查闸整段丢弃。
+        """
         origin = "招标文件" if self.scope == "tender" else "投标文件"
-        return f"【{origin}·{self.chapter_path}】{self.page_anchor}\n{self.text}"
+        lines = [f"=== {origin}底稿 ===", file_head_line(self.source_file or origin)]
+        # 页锚必须**独占一行**才会被 parse_corpus 认出来（``页码未知`` 之类不是锚，不硬塞）。
+        if parse_page_anchor(self.page_anchor) is not None:
+            lines.append(self.page_anchor)
+        lines.append(f"【章节: {self.chapter_path}】")
+        lines.append(self.text)
+        return "\n".join(lines)
 
 
 @dataclass(frozen=True)
@@ -195,6 +215,7 @@ def _assemble_item(
                 chapter_path=hit["chapter_path"],
                 page_anchor=hit["page_anchor"],
                 text=hit["text"],
+                source_file=hit["source_file"],
             )
         )
     return blocks, item_tokens, has_evidence
