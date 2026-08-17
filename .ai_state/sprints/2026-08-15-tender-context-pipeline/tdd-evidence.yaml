@@ -323,6 +323,34 @@ s5_kd6:
         内容抽查：类似业绩取到业绩表 + 4.8.1/4.8.2/4.8.3 三份合同，跳过中间空白扫描页、
         到 4.9 止步。六项检查全 PASS。
 
+# ── S6/KD7 轮补记（2026-08-17 深夜，pass3 spec-compliance M2 缺口回填）──────────
+# S6 实施时（1d40be2，主 agent 单写者 WIP）未落八字段轮次，本条为**补记**：红绿观测均为
+# 当日真实实测（出处见各字段），非事后编造；补记时间 ≠ 观测时间。
+s6_kd7:
+  executor: "main agent (single writer, WIP commit 1d40be2)"
+  baseline_commit: "4802fee"
+  cycles:
+    - task: "S6 · KD7 零命中项按部分重合回退（search_overlap 6 元 OR）"
+      commit: "1d40be2"
+      red_command: >-
+        补记声明：红观测记录于 evidence/dry-run-2026-08-17.md 第六轮（真标书实测）与
+        单元测试首跑，当时缺独立八字段留档；真实缺口证据见 red_summary
+      red_summary: >-
+        真标书实测（第六轮）：`直播间总体方案设计`（15 分项）全部 phrase 查询零命中 →
+        unresolved，而投标实有「4.1.项目需求及总体设计方案」整节可评（字面错位：标题与
+        项名共享连续 11 字但互不包含整串）。单元层三条新测试（整串零命中时按连续原文重合
+        回退 / 回退要求连续原文重合_碎片不算证据 / 整串能命中时不触发回退）在实现前对旧
+        代码为红。
+      red_observed_at: "2026-08-17"
+      green_command: >-
+        uv run pytest tests/test_tender_evidence_index.py tests/test_rag_dual_channel.py
+        -q -p no:randomly（证据层子集）
+      green_summary: >-
+        证据层子集 138 passed + ruff 净（当日会话收尾记录，见 handoff §一）；真标书验证
+        该项从 unresolved 变为取到 p21「4.1」节本身（dry-run 第六轮，AC13 前半）。
+        AC13 后半（其余 8 项逐项不变比对）未逐项留档 → 并入 AC16 部署窗口重测。
+      green_observed_at: "2026-08-17"
+
 # ── S6 收口全量回归（2026-08-17 晚，handoff §四① 补跑）─────────────────────────
 s6_full_regression:
   executor: "main agent"
