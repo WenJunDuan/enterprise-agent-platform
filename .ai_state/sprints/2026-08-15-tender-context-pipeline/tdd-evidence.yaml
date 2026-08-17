@@ -579,3 +579,67 @@ pass3_f2:
     - "test_注入量远小于投标全文: PASSED"
     - "test_额度耗尽的项被记为truncated而不是静默消失: PASSED（truncated 语义未动）"
     - "test_额度充足时没有任何项被记为truncated: PASSED（反向守卫，未凭空报 truncated）"
+# ── review pass3 F1+F3 合修轮（2026-08-17）· 证据块携带真实来源文件 + 命令侧口径 ──
+# 执行者：generator subagent（worktree agent-a3203247d14f3f999，红区单写者）。
+# 基线在主 checkout 合入 F2（evidence_continuation）之前，本轮**未碰** evidence_continuation.py。
+pass3_f1_f3:
+  executor: "generator subagent (worktree agent-a3203247d14f3f999)"
+  baseline_commit: "3dc390b"
+  cycles:
+    - task: "pass3 F1+F3 · 证据块自带 `### 文件:`/页锚/层标记，修回查闸跨文件误归属；命令侧补证据片段口径"
+      commit: "1ea2954"
+      red_command: >-
+        uv run pytest tests/test_tender_evidence_provenance.py -q -p no:randomly
+      red_summary: >-
+        7 failed（新增穿透测试，在**未动实现**的基线码上实测取得）。语料是 F1 的原形态：
+        一家投标两份源文件（商务标.pdf / 技术标.pdf，页码各自从第 1 页起）+ 招标文件.pdf，
+        criteria 顺序让招标块排在投标文件头**之后**。实测 parse_corpus 只解析出**一段**：
+        `[{'tier': 'whole', 'file': '技术标.pdf', 'page': 1, ...}]`——①商务标那一块整段落在
+        任何 `### 文件:` 行之前，flush 因 `cur_file is None` 直接丢弃（标记 '壹佰贰拾万元整'
+        命中 0 段）；②招标块被前一块 chunk 里偶然带到的 `### 文件: 技术标.pdf` 收编，挂到
+        投标文件名下；③tier 退化成 whole（断言 {'whole'} == {'bid','tender'} 失败）。
+        另 4 条：EvidenceBlock 无 source_file 字段（TypeError）、chunk 无 source_file 键、
+        无文件头底稿一段都不产、命令正文不含「证据片段」与「不等于投标人未提供」（F3）。
+      red_observed_at: "2026-08-17T20:29:41+0800"
+      green_command: >-
+        uv run pytest tests/test_tender_evidence*.py tests/test_rag*.py
+        tests/test_tender_context*.py tests/test_prompt_budget.py
+        tests/test_tender_pending_reason.py tests/test_layering.py -q -p no:randomly
+      green_summary: >-
+        160 passed（派工指定的回归子集全绿），`uv run ruff check server tests` EXIT=0。
+        另跑 tests/test_evidence_resolution.py tests/test_evidence_page_gate.py
+        tests/test_page_anchor_protocol.py tests/test_docstructure*.py tests/test_boq.py
+        tests/test_tender_output.py tests/test_tender_info_extraction.py
+        tests/test_tender_scenario.py tests/test_tender_arbitration_single_source.py
+        = 225 passed（改到了 corpus/rag/rag_store 三个共享模块，故加跑其消费面）。
+        索引结构：rag_chunks 与 rag_chunk_scan 各加一列 `source_file`（该 chunk 在底稿里的
+        原始 `### 文件:` 头串，含 kind/route/清晰度标记），`file` 列**保持层标识**
+        （__bid__/__tender__，S8 限层过滤依赖它）；三条检索通道共用 _SELECT_COLUMNS。
+        建块改为**逐源文件独立建块 + 独立排序再拼接**（corpus.split_source_files 切段），
+        块与源文件因此一一对应，"这块来自哪个文件"不再取决于切分位置；副作用是 rowid 变成
+        「先文件序、文件内再页序」的真文档顺序（此前全层按页码排会把多份文件交错）。
+        EvidenceBlock.render 每块渲染成自洽底稿片段：`=== X文件底稿 ===` + `### 文件: <头串>`
+        + 独占一行的页锚 + `【章节: …】` + 正文，故 parse_corpus 逐段 file/tier/page 归属正确
+        且 tier 不再退化 whole；clarity 等降级标记随头串原样带回。
+      green_observed_at: "2026-08-17T20:55:12+0800"
+  # 提示词字节数（上界 40,000，test_prompt_budget.py 咬）：38,720 → 39,192（净 +472B，余量 808B）。
+  prompt_bytes:
+    file: ".claude/commands/tender-evaluate.md"
+    before: 38720
+    after: 39192
+    cap: 40000
+  must_pass:
+    - "test_证据层context逐段归属回它真正的来源文件: PASSED（F1 主判据，真红转绿）"
+    - "test_证据层context不产生whole兜底tier: PASSED（真红转绿）"
+    - "test_同一家多份文件的页号各自归属自己的文件: PASSED（真红转绿）"
+    - "test_每个chunk带回自己的源文件名且不丢层标识: PASSED（真红转绿）"
+    - "test_单块render自带文件头页锚与降级标记: PASSED（真红转绿）"
+    - "test_底稿没有文件头时按层名兜底而不是让归属漂移: PASSED（真红转绿）"
+    - "test_命令的取材纪律与证据层头部口径一致: PASSED（F3，真红转绿）"
+    - "tests/test_tender_evidence_index.py: 36 passed（必保，全绿）"
+    - "tests/test_tender_evidence_context.py: 14 passed（必保，全绿）"
+    - "tests/test_tender_evidence_wiring.py: 7 passed（必保，全绿）"
+    - "tests/test_tender_pending_reason.py: 11 passed（提示词改动的契约链）"
+    - "tests/test_prompt_budget.py: PASSED（39,192B ≤ 40,000B）"
+  not_touched:
+    - "server/tender/evidence_continuation.py（F2 由另一 worktree 修，本轮零改动）"

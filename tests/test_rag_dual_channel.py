@@ -26,6 +26,8 @@ def _row(chunk_id: str, text: str, *, tag: str = "bid", file: str = "投标.pdf"
     return {
         "chunk_id": chunk_id,
         "file": file,
+        # 单文档索引里层标识就是来源文件；两层合建的证据层索引才会让两者分开（pass3 F1）。
+        "source_file": file,
         "chapter_path": "商务标 > 报价一览表",
         "chapter_title": "报价一览表",
         "tag": tag,

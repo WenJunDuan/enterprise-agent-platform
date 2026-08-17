@@ -1,7 +1,8 @@
 """证据层的 chunk 成形：章节切分 + 超长二次切分 + 页锚保真（KD2）。
 
-与 ``evidence_index`` 分家的理由是变更理由不同：本模块只回答"**一份底稿怎么切成带页锚的
-chunk**"，索引写入与按项检索组装在 ``evidence_index``。S0-B 实测的形态约束都落在这里：
+与 ``evidence_index`` 分家的理由是变更理由不同：本模块只回答"**一层底稿怎么切成带页锚、带
+来源文件的 chunk**"，索引写入与按项检索组装在 ``evidence_index``。S0-B 实测的形态约束都落
+在这里：
 
 - chunk 字数 min 21 / 中位 212 / p90 3,453 / **max 26,107**，10 个超 8,000 → 二次切分必需；
 - ``build_doc_structure`` 对投标能出 60 章节，但 OCR 认不出结构时会退化成单个巨 chunk。
@@ -16,7 +17,7 @@ import re
 import sqlite3
 from typing import Any
 
-from server.common.corpus import ARTIFACT_ORIGINAL, parse_page_anchor
+from server.common.corpus import ARTIFACT_ORIGINAL, parse_page_anchor, split_source_files
 from server.ocr.docstructure import build_doc_structure, chapter_heading, normalize_body
 from server.ocr.rag import StructureBodyMismatchError, index_document
 from server.stores import rag_store
@@ -205,26 +206,22 @@ def dedupe_in_document_order(chunks: list[dict[str, Any]]) -> list[dict[str, Any
     )
 
 
-def build_chunks(text: str, *, file_name: str, tag: str | None) -> list[dict[str, Any]]:
-    """把一份底稿切成带页锚的 chunk。
-
-    优先用 ``build_doc_structure`` 的章节结构；**认不出结构时不退化成 0 chunk 或单个巨
-    chunk**，而是整份当一个 chunk 交给 :func:`split_oversized_chunks` 按页级 + 定长切开。
+def _chunks_for_body(
+    body: str, *, file_name: str, tag: str | None, structure_file: str
+) -> list[dict[str, Any]]:
+    """把**一份**底稿正文切成 chunk：优先章节结构，认不出结构时整份交给二次切分。
 
     Args:
-        text: 底稿全文（可含 ``【第N页】`` 页锚）。
-        file_name: 索引内的 file 标识（两层必须不同）。
-        tag: 投标侧传固定标签；招标侧传 ``None`` 表示沿用 docstructure 的语义标签。
+        body: 单个源文件的正文（已规范化，不含 ``### 文件:`` 头行）。
+        file_name: 索引内的层标识（``__bid__`` / ``__tender__``）。
+        tag: 投标侧固定标签；``None`` 表示沿用 docstructure 的语义标签。
+        structure_file: 建 chunk_id 用的前缀，多源文件时逐段不同以免 id 相撞。
 
     Returns:
-        chunk 列表；空文本返回空列表。
+        chunk 列表；**认不出结构时不退化成 0 chunk 或单个巨 chunk**，而是整份当一个 chunk
+        交给 :func:`split_oversized_chunks` 按页级 + 定长切开。
     """
-    if not (text or "").strip():
-        return []
-    # structure 与 body 必须同源：build_doc_structure 内部会拆开粘连的章标题（行数会变），
-    # 而 index_document 要求 body 就是构建 structure 时那份文本，否则章节数对不上直接退化。
-    text = normalize_body(text)
-    structure = build_doc_structure(text, file_name=file_name)
+    structure = build_doc_structure(body, file_name=structure_file)
     chunks: list[dict[str, Any]] = []
     if structure["chapters"]:
         conn = sqlite3.connect(":memory:")
@@ -233,7 +230,7 @@ def build_chunks(text: str, *, file_name: str, tag: str | None) -> list[dict[str
         # 退化成整份单 chunk**——章节级切分形同虚设，且只在日志里留一行 warning。
         conn.row_factory = sqlite3.Row
         try:
-            index_document(structure, text, conn=conn)
+            index_document(structure, body, conn=conn)
             chunks = [
                 dict(row) for row in conn.execute(f"SELECT * FROM {rag_store.SCAN_TABLE_NAME}")
             ]
@@ -249,19 +246,55 @@ def build_chunks(text: str, *, file_name: str, tag: str | None) -> list[dict[str
     if not chunks:
         chunks = [
             {
-                "chunk_id": f"{file_name}#0",
+                "chunk_id": f"{structure_file}#0",
                 "file": file_name,
                 "chapter_path": file_name,
                 "chapter_title": file_name,
                 "tag": tag,
-                "page_start": _page_at(text.splitlines()),
+                "page_start": _page_at(body.splitlines()),
                 "page_end": None,
                 "page_artifact": ARTIFACT_ORIGINAL,
-                "chunk_text": text,
+                "chunk_text": body,
             }
         ]
     for chunk in chunks:
         chunk["file"] = file_name
         if tag is not None:
             chunk["tag"] = tag
-    return dedupe_in_document_order(split_oversized_chunks(chunks))
+    return chunks
+
+
+def build_chunks(text: str, *, file_name: str, tag: str | None) -> list[dict[str, Any]]:
+    """把一层底稿（可能由多份源文件拼成）切成带页锚、带来源文件的 chunk。
+
+    逐源文件独立建块 + 独立排序，再按文件顺序拼接：``rowid`` 因此是"先文件顺序、文件内再
+    页码顺序"的真文档顺序。**不能全层一起按页码排**——一家投标常含多份文件、每份页码各自
+    从 1 重置，全层排序会把它们交错，续接（``following_rows`` 只限同层）随之从甲文件的第 5
+    页滑进乙文件的第 1 页。去重同样按源文件各算各的：两份文件里逐字相同的段落是**两条不同
+    出处**的证据，合并掉等于把其中一条的文件名与页号抹了。
+
+    Args:
+        text: 该层底稿全文（可含 ``### 文件:`` 头与 ``【第N页】`` 页锚）。
+        file_name: 索引内的层标识（两层必须不同）。
+        tag: 投标侧传固定标签；招标侧传 ``None`` 表示沿用 docstructure 的语义标签。
+
+    Returns:
+        chunk 列表，每块带 ``source_file``（原始 ``### 文件:`` 头串；底稿没有文件头时为
+        ``None``）；空文本返回空列表。
+    """
+    if not (text or "").strip():
+        return []
+    # structure 与 body 必须同源：build_doc_structure 内部会拆开粘连的章标题（行数会变），
+    # 而 index_document 要求 body 就是构建 structure 时那份文本，否则章节数对不上直接退化。
+    sources = split_source_files(normalize_body(text))
+    out: list[dict[str, Any]] = []
+    for index, (source_file, body) in enumerate(sources):
+        if not body.strip():
+            continue
+        # 单源文件时前缀保持原样，chunk_id 与切分前逐字相同（不制造无谓的 id 漂移）。
+        prefix = file_name if len(sources) == 1 else f"{file_name}@{index}"
+        chunks = _chunks_for_body(body, file_name=file_name, tag=tag, structure_file=prefix)
+        for chunk in chunks:
+            chunk["source_file"] = source_file
+        out.extend(dedupe_in_document_order(split_oversized_chunks(chunks)))
+    return out

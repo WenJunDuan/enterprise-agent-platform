@@ -72,6 +72,9 @@ def _chunk_spans(structure: dict, body: str) -> list[dict]:
             {
                 "chunk_id": f"{structure['file']}#{i}",
                 "file": structure["file"],
+                # 单文档索引里"层标识"与"真实来源文件"是同一个；两层合建的证据层索引会把
+                # 它改写成该 chunk 所属底稿文件的 ``### 文件:`` 头串（evidence_chunks）。
+                "source_file": structure["file"],
                 "chapter_path": node["chapter_path"],
                 "chapter_title": node["title"],
                 "tag": node["tag"],
@@ -258,6 +261,7 @@ def _as_hit(row: sqlite3.Row) -> dict:
     return {
         "chunk_id": row["chunk_id"],
         "file": row["file"],
+        "source_file": row["source_file"],
         "chapter_path": row["chapter_path"],
         "chapter_title": row["chapter_title"],
         "tag": row["tag"],
