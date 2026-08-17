@@ -27,7 +27,18 @@ StructuredJSON = dict[str, Any] | list[Any]
 
 
 class JSONContractError(ValueError):
-    """Raised when a Claude response does not satisfy the JSON contract."""
+    """Raised when a Claude response does not satisfy the JSON contract.
+
+    Attributes:
+        session_id: 产生该失败的 CLI 会话 id，由 ``run_agent_json`` 在上抛前戳上。契约重试环
+            据它 ``resume`` 同一会话发一轮**修补**（只让模型改 JSON），而不是把整个 prompt +
+            数十 KB 底稿重发、让模型从头再评一遍标。``None`` = 会话建立前就失败了，调用方
+            回落整单重跑。
+    """
+
+    def __init__(self, *args: object, session_id: str | None = None) -> None:
+        super().__init__(*args)
+        self.session_id = session_id
 
 
 # 确定性失败标记（2026-08-14 生产事故）：这类错误把同一个 prompt 原样重发必然同样失败，
