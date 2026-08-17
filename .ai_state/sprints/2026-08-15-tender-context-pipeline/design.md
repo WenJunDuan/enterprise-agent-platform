@@ -533,6 +533,21 @@ tests/                               零命中回退命中真证据 / 噪音不�
 
 ### 验收标准
 
-- [ ] **AC14**：真红转绿 + 必保测试全绿（评审档清单）。
-- [ ] **AC15**：逐项注入量留痕进底稿，证据变薄从此可见（AC2「无静默路径」实质达成）。
-- [ ] **AC16**：数据闸对比不回退（本机或部署机真标书语料）。
+- [x] **AC14**：真红转绿 + 必保测试全绿（评审档清单）。红=半角 `(一)` 语料下旧代码续接
+  静默不发生（tdd-evidence `s7_hit_stop`）；绿=207 passed，必保 19/19。
+- [x] **AC15**：逐项注入量留痕进底稿（`EvidenceResult.item_tokens` → warnings 通道
+  `status=evidence_volume`，同达模型上下文与落盘结论），证据变薄从此可见。
+- [ ] **AC16**：数据闸对比不回退（部署机真标书语料，tdd-evidence 记 deferred）。
+
+### 实施修订（2026-08-17 merge `2d8f434` 时补记，与实现对齐）
+
+1. **hybrid 提前采用（非纯 A）**：按本档先落纯 A 实测，三条既有「无关正文不该整份注入」
+   守卫当场转红——下游无命中点时续接失去终点，注入量重新绑回投标体量（AC5「40/400 页差异
+   ≤20%」失守），即 critic F2③ 预判形态。故按 critic F3 预授权直接落 hybrid：hit-stop 优先，
+   **看不见下一个命中块时**退回 S5 排版边界。`heading_rank`/`slice_heading` 因此未成孤儿、
+   保留；`_starts_sibling_section` 并入唯一调用点 `_bounded_by_layout`。
+2. **变更轴拆分**：改后 `evidence_retrieval.py` 332 行越 coding-standards P0 的 300 行硬线，
+   续接边界拆出 `evidence_continuation.py`（103 行，单一导出 `continuation()`）。
+3. **AC16 口径警告**：S5 的逐项基线数字是「单项独跑」口径，S7 语义下单项独跑无邻项停止点、
+   恒走兜底分支。部署窗口对比须按「全项同跑 `item_tokens`」重测 S5 基线，或改用内容判据
+   （该项证据是否仍覆盖同一小节）；度量脚本已改读全项同跑口径。
