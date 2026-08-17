@@ -323,6 +323,24 @@ s5_kd6:
         内容抽查：类似业绩取到业绩表 + 4.8.1/4.8.2/4.8.3 三份合同，跳过中间空白扫描页、
         到 4.9 止步。六项检查全 PASS。
 
+# ── pass4 HEAD 取证全量回归（2026-08-17 收尾，含三条 P1 修复 + 匿名化）──────────
+# 本轮才是 pass4 可用的取证：覆盖 F2(f2a6dd7) + F1/F3(908abac) + 匿名化(de18251/d68b410)
+# + 度量脚本补 source_file(0e95845)。
+pass4_full_regression:
+  executor: "main agent"
+  covered_code_commit: "0e95845"
+  full_suite_command: "uv run pytest -q -p no:randomly  # 35m21s"
+  result: "17 failed / 1632 passed / 3 skipped"
+  new_failures: 0
+  baseline_diff: "empty (0 new, 0 gone) vs s6_full_regression.failure_names — diff EXIT=0"
+  # passed 1623→1632 = +9：F2 一条 + F1/F3 七条(provenance) + 语料守卫一条。
+  # ⚠ 前一轮（未含 0e95845）曾出现 **2 条真新增失败**
+  # （test_tender_recall_measurement 的两条，root cause = F1/F3 加必填列 source_file
+  # 漏掉 scripts/measure_tender_recall.py 这个手搓 chunk dict 的调用方）。
+  # 教训见 compound/2026-08-17-learning-schema-column-add-needs-caller-sweep.md：
+  # 改数据契约时回归面按「谁构造这个结构」选，不按「谁 import 这个模块」选。
+  note: "pass4 可直接引用本轮作 NO_NEW_FAILURES 取证；代码未再变动前无需重跑"
+
 # ── S7/S8 收口全量回归（2026-08-17 深夜，pass3 spec-compliance M1 缺口回填）──────
 s7_full_regression:
   executor: "main agent"
