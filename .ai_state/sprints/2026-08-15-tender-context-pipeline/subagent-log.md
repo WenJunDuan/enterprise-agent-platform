@@ -38,3 +38,12 @@
 - Event: SubagentStart
 - Agent ID: a5226a52e06204272
 
+## 2026-08-17T08:14:44.270Z · Explore
+- Event: SubagentStart
+- Agent ID: adee49f74e6ba18cf
+
+## 2026-08-17T08:23:32.383Z · Explore
+- Event: SubagentStop
+- Agent ID: adee49f74e6ba18cf
+- Last message: ## 一、入口点清单 ### 1. 容器/进程真实入口 | 入口 | 命令 | 目标 | |---|---|---| | `Dockerfile` CMD | `python -m uvicorn server.api:app --host 0.0.0.0 --port 9999` | `/Users/mi_manchi/workspace/enterprise-agent-platform/se
+

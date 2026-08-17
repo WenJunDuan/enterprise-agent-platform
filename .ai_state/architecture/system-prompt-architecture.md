@@ -6,11 +6,15 @@
 > 「预算门禁」的单文件字节判据被证明**方向性错误**。真因与教训见
 > `compound/2026-08-14-learning-prompt-budget-must-be-per-session.md`。
 >
-> **当前现状**：`tender-evaluate.md` = 38,754B 单文件形态（回滚至 eac2a16 版）+ SKILL.md tag
-> 语义内联恢复；5 个 references 成孤儿文件留作重设素材；KD2 schema 单源（output.py 惰性 loader）
-> 与 KD4 调度表修正仍有效。**改 `/tender-evaluate` 规则直接改命令文件本体**，不要按下文的
-> 骨架/references 判据放置。下文保留作历史设计参考——重设结构时判据必须先改为
-> 「单会话累计注入字节 vs 部署最小窗口模型」再动手。
+> **当前现状（2026-08-17 更新）**：`tender-evaluate.md` = 单文件自洽形态（38,720B，含当日
+> 外来 skill 四点吸收，见 `compound/2026-08-17-decision-bid-auditor-skill-absorption.md`）；
+> tender-eval 的 6 个 references 已**收敛删除**（5 个孤儿死副本 + `s1-locate-criteria.md`
+> 内联进 `/tender-extract-info` 后删除，git 可回溯），`skills/tender-eval/` 仅剩 SKILL.md
+> 纯路由；脚手架实测 57,988 → 38,029 字（`scripts/measure_tender_scaffold.py` 复跑）。
+> KD2 schema 单源（output.py 惰性 loader）与 KD4 调度表修正仍有效。
+> **改 `/tender-evaluate` 规则直接改命令文件本体**，不要按下文的骨架/references 判据放置。
+> 下文保留作历史设计参考——重设结构时判据必须先改为「单会话累计注入字节 vs 部署最小窗口
+> 模型」再动手。
 
 <details><summary>以下为 2026-08-13 原档（已回滚，仅作历史参考）</summary>
 
