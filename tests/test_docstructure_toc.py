@@ -64,3 +64,30 @@ def test_document_without_toc_is_unchanged():
     titles = [c["title"] for c in parse_chapters(lines)]
 
     assert titles == ["第一章 总则", "第二章 罚则"]
+
+
+def test_structure_and_rag_skip_the_same_toc_lines():
+    """docstructure 与 rag 必须用同一套目录跳过规则，否则每份带目录的文档都误判不匹配。
+
+    实测（2026-08-17）：parse_chapters 跳目录后产出 98 个节点，而 rag 的
+    _flatten_heading_lines 仍数 133 个标题行，差的 35 正是目录条目 →
+    StructureBodyMismatchError → 招标层退化成 10 个粗 chunk（应为 105 个章节级）。
+    """
+    from server.ocr.docstructure import build_doc_structure, normalize_body
+    from server.ocr.rag import _flatten_heading_lines, _flatten_tree
+
+    body = normalize_body("\n".join(_toc_then_body()))
+    structure = build_doc_structure(body)
+
+    assert len(_flatten_tree(structure["chapters"])) == len(_flatten_heading_lines(body.splitlines()))
+
+
+def test_normalize_body_is_idempotent_and_structure_aligned():
+    """规范化必须幂等，且 structure 只能基于规范化后的文本构建（否则行号错位）。"""
+    from server.ocr.docstructure import normalize_body
+
+    raw = "正文结束。 第四章 评审方法和程序\n一、开标模式\n内容"
+    once = normalize_body(raw)
+
+    assert normalize_body(once) == once
+    assert "第四章 评审方法和程序" in once.splitlines()

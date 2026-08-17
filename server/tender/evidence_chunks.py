@@ -16,7 +16,7 @@ import sqlite3
 from typing import Any
 
 from server.common.corpus import ARTIFACT_ORIGINAL, parse_page_anchor
-from server.ocr.docstructure import build_doc_structure
+from server.ocr.docstructure import build_doc_structure, normalize_body
 from server.ocr.rag import StructureBodyMismatchError, index_document
 from server.stores import rag_store
 
@@ -101,6 +101,9 @@ def build_chunks(text: str, *, file_name: str, tag: str | None) -> list[dict[str
     """
     if not (text or "").strip():
         return []
+    # structure 与 body 必须同源：build_doc_structure 内部会拆开粘连的章标题（行数会变），
+    # 而 index_document 要求 body 就是构建 structure 时那份文本，否则章节数对不上直接退化。
+    text = normalize_body(text)
     structure = build_doc_structure(text, file_name=file_name)
     chunks: list[dict[str, Any]] = []
     if structure["chapters"]:

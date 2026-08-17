@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 
 from server.common.corpus import ARTIFACT_ORIGINAL, page_anchor_text
-from server.ocr.docstructure import chapter_heading, scan_page_context
+from server.ocr.docstructure import chapter_heading, scan_page_context, toc_line_indexes
 from server.stores import rag_store
 
 
@@ -20,10 +20,16 @@ def _flatten_tree(chapters: list[dict], ancestors: tuple[str, ...] = ()) -> list
 
 
 def _flatten_heading_lines(lines: list[str]) -> list[tuple[int, str, int]]:
-    """Locate document headings by reusing the docstructure heading recognizer."""
+    """Locate document headings by reusing the docstructure heading recognizer.
+
+    必须与 :func:`~server.ocr.docstructure.parse_chapters` 用**同一套**跳过规则——它跳目录块
+    而这里不跳的话，节点数与标题行数天然对不上，每份带目录的文档都会误判成 structure/body
+    不匹配、退化成整份粗切分（实测：招标层 98 节点 vs 133 标题行，差的 35 就是目录条目）。
+    """
+    skip = toc_line_indexes(lines)
     out: list[tuple[int, str, int]] = []
     for index, raw in enumerate(lines):
-        if raw.strip().startswith("### 文件:"):
+        if raw.strip().startswith("### 文件:") or index in skip:
             continue
         heading = chapter_heading(raw)
         if heading is not None:

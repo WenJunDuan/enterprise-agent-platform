@@ -87,6 +87,18 @@ def split_glued_chapter_headings(lines: Sequence[str]) -> list[str]:
     return out
 
 
+def normalize_body(text: str) -> str:
+    """Return the exact text :func:`build_doc_structure` parses.
+
+    拆行会改变行数，而 ``rag.index_document`` 要求 **body 必须是构建 structure 时用的同一份
+    原文**（否则章节数与标题行数对不上，抛 ``StructureBodyMismatchError`` 退化成整份单 chunk）。
+    调用方凡是要把 structure 与 body 一起交给下游的，都必须先过本函数取规范化文本。
+
+    实测（2026-08-17）：漏掉这一步会让招标层从章节级切分退化成 10 个粗 chunk。
+    """
+    return "\n".join(split_glued_chapter_headings((text or "").splitlines()))
+
+
 def chapter_heading(raw: str) -> tuple[str, int] | None:
     """Recognize a conservative chapter heading and return its title and level."""
     markdown = _MARKDOWN_TITLE_RE.match(raw)
