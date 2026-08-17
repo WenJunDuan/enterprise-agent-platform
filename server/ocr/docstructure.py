@@ -31,7 +31,9 @@ _TABLE_HEADER_RE = re.compile(r"^\s*\[表:\s*(.*?)\]\s*$")
 _TABLE_SEPARATOR_RE = re.compile(r"^\s*\|?\s*:?-{2,}:?\s*(?:\|\s*:?-{2,}:?\s*)+\|?\s*$")
 
 _TAG_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("evaluation_method", ("评标办法", "评分标准", "评分细则", "评审办法")),
+    # 「评审方法」「评审程序」是 2026-08-17 实跑补入：真实标书章名是「第四章 评审方法和程序」，
+    # 旧表只有「评审办法」，一字之差整章标签落到 general，检索评分标准命中不到。
+    ("evaluation_method", ("评标办法", "评分标准", "评分细则", "评审办法", "评审方法", "评审程序")),
     (
         "qualification_review",
         ("资格审查", "资格评审", "资格要求", "初步评审", "符合性审查", "响应性审查"),
@@ -62,6 +64,29 @@ def scan_page_context(lines: Sequence[str]) -> tuple[list[int | None], set[int]]
     return page_of, pages
 
 
+# 粘在正文句尾的章标题：前面是句末标点（。；：）或右括号，后面紧跟「第X章 」。
+# 旧版 .doc 的兜底档会丢失换行，实测真实标书里「…自验收通过之日起计算。 第四章 评审方法和程序」
+# 挤成一行 → chapter_heading 认不出行首标题 → 整章在结构树里消失 → 模型定位评分标准只能试错。
+_GLUED_CHAPTER_RE = re.compile(r"(?<=[。；：）\)])\s*(?=第[一二三四五六七八九十百千0-9]+[章节篇部分]\s)")
+
+
+def split_glued_chapter_headings(lines: Sequence[str]) -> list[str]:
+    """Break lines where a chapter heading got glued onto the end of body text.
+
+    只在**句末标点之后**切，避免把正文里的引用（如「见招标文件第四章规定」）误切——
+    那种情况前面是普通字符而非句末标点。实测真实标书仅 1 行命中，但恰是评审方法章。
+    """
+    out: list[str] = []
+    for raw in lines:
+        parts = _GLUED_CHAPTER_RE.split(raw, maxsplit=1)
+        if len(parts) == 2 and parts[0].strip() and parts[1].strip():
+            out.append(parts[0].rstrip())
+            out.append(parts[1].strip())
+        else:
+            out.append(raw)
+    return out
+
+
 def chapter_heading(raw: str) -> tuple[str, int] | None:
     """Recognize a conservative chapter heading and return its title and level."""
     markdown = _MARKDOWN_TITLE_RE.match(raw)
@@ -86,15 +111,73 @@ def tag_chapter(title: str) -> str | None:
     return "general"
 
 
+# 连续多少个标题行（中间无正文）判定为目录块。招标文件开头的目录动辄 6-8 章连排，
+# 而正文里两章之间必有内容，故 3 是安全下界：正文极少出现连续 3 个纯标题行。
+_TOC_RUN_MIN = 3
+
+
+def toc_line_indexes(lines: Sequence[str]) -> set[int]:
+    """Return line indexes that belong to a table-of-contents block.
+
+    判别特征：**连续 ≥3 个标题行、中间没有任何正文**。招标文件开头的目录就是这个形态
+    （第一章…第七章连排），而正文里两个章节之间必然夹着内容。
+
+    2026-08-17 实跑发现：不区分目录会让「第四章 评审方法和程序」在章节树里出现两次，
+    且检索到的是目录条目（不带后续内容），模型定位评分标准必须先命中、再发现不对、再找
+    一次——纯烧轮次，而这是服务端能确定性解决的。
+    """
+    heading_rows: list[tuple[int, int]] = []
+    for index, raw in enumerate(lines):
+        if raw.strip().startswith("### 文件:"):
+            continue
+        heading = chapter_heading(raw)
+        if heading is not None:
+            heading_rows.append((index, heading[1]))
+
+    heading_at = {index for index, _ in heading_rows}
+
+    def _trim_body_start(block: list[int]) -> list[int]:
+        """目录块的最后一条若后面跟着正文，它其实是正文首章，不该当目录删掉。
+
+        实测：真实标书目录是「第二章…第七章」+ 紧接着的正文「第一章 投标邀请」，后者下一行
+        就是「项目概况」正文。不剔除会把正文首章一起吞掉。
+        """
+        while block and (block[-1] + 1) not in heading_at:
+            block = block[:-1]
+        return block
+
+    toc: set[int] = set()
+    run: list[int] = []
+    run_level: int | None = None
+    for index, level in heading_rows:
+        # 同级是关键：目录是「第一章…第七章」清一色 level 1 连排；正文里章标题后面紧跟的是
+        # 「一、二、三」等**下级**小节（level 2），不构成目录。少了这条约束会把正文章节
+        # 连同其小节一起误删（实测：真实标书的第四章、第五章整章消失）。
+        if run and index == run[-1] + 1 and level == run_level:
+            run.append(index)
+            continue
+        if len(run) >= _TOC_RUN_MIN:
+            toc.update(_trim_body_start(run))
+        run, run_level = [index], level
+    if len(run) >= _TOC_RUN_MIN:
+        toc.update(_trim_body_start(run))
+    return toc
+
+
 def parse_chapters(
     lines: Sequence[str], page_of: Sequence[int | None] | None = None
 ) -> list[dict[str, Any]]:
-    """Parse formal headings into a nested chapter tree."""
+    """Parse formal headings into a nested chapter tree.
+
+    目录块（连续标题行）不产出章节节点——它们没有正文可带，留着只会让同一章重复出现，
+    并把检索引到不含内容的条目上（见 :func:`toc_line_indexes`）。
+    """
     contexts = page_of if page_of is not None else scan_page_context(lines)[0]
+    skip = toc_line_indexes(lines)
     roots: list[dict[str, Any]] = []
     stack: list[dict[str, Any]] = []
     for index, raw in enumerate(lines):
-        if raw.strip().startswith("### 文件:"):
+        if raw.strip().startswith("### 文件:") or index in skip:
             continue
         heading = chapter_heading(raw)
         if heading is None:
@@ -104,6 +187,8 @@ def parse_chapters(
             "title": title,
             "level": level,
             "page": contexts[index] if index < len(contexts) else None,
+            # 行号让下游能判断命中的是正文章节而非目录条目，也便于按章取正文区段。
+            "line_start": index,
             "tag": tag_chapter(title),
             "children": [],
         }
@@ -337,7 +422,8 @@ def _page_artifact(lines: Sequence[str]) -> str:
 
 def build_doc_structure(block_or_body: str, *, file_name: str | None = None) -> dict[str, Any]:
     """Build a schema-shaped document structure from a pipeline extraction block."""
-    lines = (block_or_body or "").splitlines()
+    # 先把粘在正文句尾的章标题拆出来再解析——否则整章认不出（见 split_glued_chapter_headings）。
+    lines = split_glued_chapter_headings((block_or_body or "").splitlines())
     page_of, pages = scan_page_context(lines)
     return {
         "file": _file_name(block_or_body or "", file_name),
