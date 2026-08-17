@@ -559,3 +559,92 @@ def test_无实质内容的块不作为证据注入():
     assert any("合同要点摘录" in block.text for block in result.blocks), (
         "跳过空白页后仍须继续取到后面的真内容"
     )
+
+
+# ── S6/KD7：零命中时按「共享连续原文」回退 ──────────────────────────────────
+
+
+def _scoring_response_bid() -> str:
+    """投标的评分应答节：小节标题用招标的措辞，但与**项名**词序相反（实测形态）。
+
+    招标项名 `直播间总体方案设计` / 招标细则 `需求及总体设计方案…` / 投标标题
+    `4.1.项目需求及总体设计方案`——项名与投标只共享「总体」「设计」「方案」这些 2 字碎片
+    （方案设计 vs 设计方案），而细则与投标共享**连续 9 个字**。
+    """
+    return "# 4.综合评审评分项\n" + "\n".join(
+        [
+            _section(21, "4.1.项目需求及总体设计方案", "演播室建设需求与设计说明。"),
+            _section(30, "4.2.关键技术、工艺", "关键技术难点与工艺说明。"),
+        ]
+    )
+
+
+_BASIS = "需求及总体设计方案优化完美，产品选型合理的得5分；未提供不得分。"
+
+
+def _indexed(bid_text: str) -> sqlite3.Connection:
+    conn = sqlite3.connect(":memory:")
+    ev.build_evidence_index(
+        conn,
+        tender_text="# 第三章 技术参数\n额定功率不小于 50kW。",
+        bid_text=bid_text,
+        project_id="tp-1",
+    )
+    return conn
+
+
+def test_整串零命中时按连续原文重合回退():
+    """KD7：项名整串必然零命中（投标不含该串），而 basis 与投标标题共享连续 9 个字。
+
+    现状为什么捞不到：``_escape_match_query`` 只按**空白**拆 OR，中文句子没有空白 →
+    整段 basis 被包成单个 phrase，trigram 索引上等价于要求整段逐字出现 → 恒 0。
+    这一项在真实标书上值 **15 分**，零命中即整单无法自动完成。
+    """
+    conn = _indexed(_scoring_response_bid())
+    result = er.retrieve_evidence(
+        {"items": [{"item": "直播间总体方案设计", "max": 15, "basis": _BASIS}]},
+        conn=conn,
+        query_count_hint=9,
+    )
+    conn.close()
+
+    assert result.unresolved == [], f"应由回退通道命中：{result.unresolved}"
+    injected = "\n".join(block.text for block in result.blocks)
+    assert "4.1.项目需求及总体设计方案" in injected, "回退要拿到 4.1 节本身，不是别处"
+
+
+def test_回退要求连续原文重合_碎片不算证据():
+    """噪音比缺失更危险：项名拆出的短碎片在正文里随处可见。
+
+    实测（`/tmp/diag_ngram.py`）：命中块与查询串的最长公共连续子串，噪音 ≤5 字、真证据
+    7-9 字，故取 6 字为窗口。**criteria 没有 basis 时该项应保持 unresolved**——拿碎片凑证据
+    会让模型在错误证据上给分，而 unresolved 走人工。
+    """
+    conn = _indexed(_scoring_response_bid())
+    result = er.retrieve_evidence(
+        {"items": [{"item": "直播间总体方案设计", "max": 15}]},  # 无 basis
+        conn=conn,
+        query_count_hint=9,
+    )
+    conn.close()
+
+    assert result.blocks == [], "只共享 2 字碎片的块不得当证据"
+    assert len(result.unresolved) == 1
+    assert any("部分重合" in query for query in result.unresolved[0].queries), (
+        f"回退尝试过也要留痕，否则用户分不清是整串没中还是连部分重合都没有：{result.unresolved[0].queries}"
+    )
+
+
+def test_整串能命中时不触发回退():
+    """回退只在零命中时跑，故对已命中的项零影响——否则会把相关度更低的块混进来。
+
+    判据落在 ``_search_item`` 的尝试记录上：注入块里含续接段（本来就不字面含查询串），
+    按块判断分不出"回退跑了"还是"续接带进来的"。
+    """
+    conn = _indexed(_scoring_response_bid())
+    hits, used = er._search_item(["关键技术、工艺"], conn=conn, limit=3)
+    conn.close()
+
+    assert hits, "整串应能命中"
+    assert not any("部分重合" in query for query in used), f"整串命中就不该跑回退：{used}"
+

@@ -135,6 +135,16 @@ def _format_page_anchor(
 # 不是可调参数，故写死并注明出处：https://sqlite.org/fts5.html#the_trigram_tokenizer
 _TRIGRAM_MIN_LENGTH = 3
 
+# 「共享连续原文」的窗口长度：回退通道要求命中块与查询串至少有这么长的一段**逐字相同**。
+#
+# 取 6 有实测依据（2026-08-17，命令见 sprint design 增量 S6）：命中块与查询串的最长公共连续
+# 子串在真实标书上呈清晰分离——**噪音 ≤5 字，真证据 7–9 字**。N=3/4/5 时短项名拆出的碎片捞回
+# 4–5 个全噪音块；N=6 时噪音归零而真证据仍排第一；N=8 开始漏真证据。原理侧同向：连续 6 个汉字
+# （约合 3–4 个词）偶然重合的概率极低。
+#
+# 换一份标书时判据是「噪音 LCS 上界 < 本值 ≤ 真证据 LCS 下界」，按同法复测，不要凭印象调。
+OVERLAP_MIN_CHARS = 6
+
 
 def search(
     query: str, *, conn: sqlite3.Connection, tag: str | None = None, limit: int = 10
@@ -161,6 +171,51 @@ def search(
     else:
         rows = rag_store.query_rows(conn, _escape_match_query(query), tag=tag, limit=limit)
     return [_as_hit(row) for row in rows]
+
+
+def _overlap_match_query(query: str) -> str | None:
+    """把查询串拆成**自身的**连续 :data:`OVERLAP_MIN_CHARS` 字窗口并 OR，短于一个窗口返回 None。
+
+    只用查询串已有的字符，**不引入任何新词**——这是它与 S0-B 已证伪的"硬编码词缀扩展"的
+    分界：后者凭猜给项名加「一览表」「明细」之类后缀，赌的是某份标书的措辞。
+    """
+    if len(query) < OVERLAP_MIN_CHARS:
+        return None
+    windows = {
+        query[i : i + OVERLAP_MIN_CHARS] for i in range(len(query) - OVERLAP_MIN_CHARS + 1)
+    }
+    windows = {w for w in windows if not any(ch.isspace() for ch in w)}
+    if not windows:
+        return None
+    return " OR ".join(_phrase(window) for window in sorted(windows))
+
+
+def search_overlap(
+    query: str, *, conn: sqlite3.Connection, tag: str | None = None, limit: int = 10
+) -> list[dict]:
+    """Search for chunks sharing a verbatim run of ``query``, ranked by BM25 (KD7).
+
+    整串 phrase 零命中时的回退通道。2026-08-17 实测的形态：招标细则写「需求及总体设计方案
+    优化完美…」，投标应答标题写「4.1.项目需求及总体设计方案」，两者共享**连续 11 个字**，
+    但整串互不包含；而 ``_escape_match_query`` 只按空白拆 OR，中文句子没有空白 → 整段被包成
+    单个 phrase → 恒 0。该项在真实标书上值 15 分。
+
+    **必须只在整串零命中后调用**：它的相关度门槛低于精确短语，抢在前面会把相关度更低的块
+    顶上来。窗口长度的取值依据见 :data:`OVERLAP_MIN_CHARS`。
+
+    Args:
+        query: 检索词（项名 / 类别 / basis 原文）。
+        conn: 索引连接。
+        tag: 章节语义标签过滤。
+        limit: 返回上限。
+
+    Returns:
+        与 :func:`search` 形状一致的命中；查询串短于一个窗口时返回空列表。
+    """
+    expression = _overlap_match_query(query)
+    if expression is None:
+        return []
+    return [_as_hit(row) for row in rag_store.query_rows(conn, expression, tag=tag, limit=limit)]
 
 
 def following(chunk_id: str, *, conn: sqlite3.Connection, limit: int = 10) -> list[dict]:

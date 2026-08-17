@@ -15,7 +15,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Any
 
-from server.ocr.rag import following, search
+from server.ocr.rag import OVERLAP_MIN_CHARS, following, search, search_overlap
 from server.tender.evidence_chunks import has_substance, heading_rank, slice_heading
 from server.tender.evidence_index import TENDER_FILE
 from server.tender.injection_budget import InjectionPlan, estimate_tokens, plan_injection
@@ -100,14 +100,27 @@ def _search_item(
 ) -> tuple[list[dict[str, Any]], list[str]]:
     """Run one item's queries and return ``(hits, queries_actually_used)``.
 
-    按顺序试：项名 → 类别/basis。命中即停——第一个查询串通常最贴题，继续试只会稀释相关性。
-    ``basis`` 指向招标章节的项（典型："逐条响应第 X 章技术参数"）因此能带出招标侧 chunk：
-    criteria 只有项名和满分，装不下几十页技术参数表（KD1 F5）。
+    **两轮**（KD7）。第一轮按整串精确短语，顺序试：项名 → 类别/basis，命中即停——第一个查询串
+    通常最贴题，继续试只会稀释相关性。``basis`` 指向招标章节的项（典型："逐条响应第 X 章技术
+    参数"）因此能带出招标侧 chunk：criteria 只有项名和满分，装不下几十页技术参数表（KD1 F5）。
+
+    第一轮全部零命中才跑第二轮：退到"共享连续原文"（:func:`~server.ocr.rag.search_overlap`）。
+    实测形态是招标细则与投标应答标题共享连续 11 字、却互不包含整串——那一项值 15 分，零命中
+    即整单无法自动完成。两轮的顺序不可颠倒：回退的相关度门槛更低。
+
+    Returns:
+        ``queries_actually_used`` 把两轮**分别留痕**（回退过的带 ``部分重合`` 标记），否则用户
+        看到"检索过这些词"却分不清是整串没中、还是连部分重合都没有（AC2）。
     """
     used: list[str] = []
     for query in queries:
         used.append(query)
         hits = search(query, conn=conn, tag=None, limit=limit)
+        if hits:
+            return hits, used
+    for query in queries:
+        used.append(f"{query}（{OVERLAP_MIN_CHARS}字部分重合）")
+        hits = search_overlap(query, conn=conn, limit=limit)
         if hits:
             return hits, used
     return [], used
