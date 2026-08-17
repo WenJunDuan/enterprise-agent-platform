@@ -344,3 +344,13 @@ collected_evidence:
     tool: "Edit"
     file: "/Users/mi_manchi/workspace/enterprise-agent-platform/agent-front/src/features/contract/tender-review/model.test.ts"
     timestamp: "2026-06-25T15:38:45.538Z"
+  - tool_use_id: "toolu_01DncVFrXRZp7Kbvt9NHj1Kz"
+    tool: "Bash"
+    result: pass
+    command: "grep -rn \"风险对比\" agent-front/src --include='*.tsx' --include='*.ts' | grep -vE \"//|\\*\" | head -5; echo \"--- 前端测试 ---\"; bun test 2>&1 | tail -4"
+    timestamp: "2026-08-15T01:36:11.130Z"
+  - tool_use_id: "toolu_01D3Q4o4MCZ6JgkMaHX3QCvP"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/agent-front && bun run build 2>&1 | tail -5 && grep -rl \"投标横评\" dist/assets/*.js 2>/dev/null | head -2 && echo \"→ 产物含新文案\""
+    timestamp: "2026-08-15T02:43:32.308Z"
