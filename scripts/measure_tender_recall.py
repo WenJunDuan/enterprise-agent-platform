@@ -72,6 +72,10 @@ def _build_corpus() -> tuple[str, list[dict]]:
             {
                 "chunk_id": f"构造底稿.pdf#{index}",
                 "file": "构造底稿.pdf",
+                # 构造语料只有一份源文件，故来源头串即文件名本身（生产路径由 build_chunks
+                # 从底稿的 `### 文件:` 头解析）。**不能省**：store 层要求该键显式给出，
+                # 缺了就是生产链路忘记带来源，必须当场炸而不是静默写 NULL。
+                "source_file": "构造底稿.pdf",
                 "chapter_path": title,
                 "chapter_title": title,
                 "tag": "bid",
