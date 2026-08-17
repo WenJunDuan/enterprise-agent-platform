@@ -20,7 +20,11 @@ allowed-tools: Read, Glob
 
 ### 步骤 1 — 定位资格审查与评标办法/评分标准
 
-`Read .claude/skills/tender-eval/references/s1-locate-criteria.md`（已注入的 OCR 底稿优先），按其中的定位优先级、关键排除与自检执行。
+在已注入的 OCR 底稿内定位（这步错则全错）：
+
+- **定位优先级**：先找最高优先级的资格/初步审查规则，再找评分表。资格规则常见标题：资格审查 / 资格性审查 / 资格评审 / 初步评审 / 符合性审查 / 响应性评审 / 资格审查证明文件。评分标准通常由评分表承载，常见列名：序号 / 评分点名称 / 评审标准 / 最高分 / 最低分 / 主客观分 / 评分项 / 分值 / 权重；章节标题含开标、评标、评审、商务技术标、报价标的也可能是来源，不限于《评标办法》字样。章节位置与标题因标书而异（正文某章 / 评标须知 / 前附表 / 附录皆有可能），**以本招标文件实际结构为准，不要预设固定章节或标题**。
+- **关键排除**：详细评分标准是评标委员会对投标文件打分用的商务技术、报价等评分项，合计应等于满分；资格审查是并列的前置招标项，只进 `eligibility_rules[]`，不计入 `total_max`。**必须排除**中标后的考核方案 / 考核指标 / 季度·绩效·履约考核 / KPI 表——这类履约阶段表常挂在附件或考核方案里、也列分值，误取会让整套 `criteria` 取错。
+- **定位后自检**：评分 `items[].max` 之和必须等于 `total_max`（资格审查不参与合计）；对不上即漏取或取错表，回底稿重新定位。
 
 ### 步骤 2 — 抽取 criteria（资格审查 + 评分标准）
 
@@ -36,7 +40,7 @@ allowed-tools: Read, Glob
   - `additive`（基础分+加分）→ `base` + `awards[]`：`{condition, points, cap, source_quote}`。
   - `formula`（公式分）→ `formula`（原文）+ `formula_spec`：`{expression, variables[{name, source, value, unit, ref}], rounding, cap}`；变量 `source` 按白名单标 tender_constant/bid_component/cross_bid 等。
   - `pass_fail` / `manual`：客观通过或主观/现场/外部不可判定。
-- `rejection_rules[]`：废标/资格否决条款逐条提取，`{id, condition, source_quote, source_ref}`。
+- `rejection_rules[]`：废标/资格否决条款逐条提取，`{id, condition, source_quote, source_ref}`。**触发词兜底检索（防漏）**：在底稿内检索「无效标 / 无效投标 / 作无效 / 作废标 / 否则不得分 / 视为不响应 / 取消…资格」等触发词——强制承诺函等硬约束常藏在技术需求正文而非评标办法/格式章，逐条登记；要求提交承诺函的，`condition` 写明须有对应承诺函且内容点齐全。
 - **`tag` 可判定性标签（与 score_mode 正交）**：全可依单份投标文件判定 → `scored`；含 cross_bid/external_data/live_event → 对应 manual tag。
 - **`max:null` 是窄例外**：只有招标文件确实未给出该人工项分值，且该项同时满足 `score_mode:"manual"` 与 `tag!="scored"` 时才可输出 `max:null`。`scored/null`、非 manual/null 均属无效结果；已载明分值不得改成 null。整份 criteria 至少保留一个数值 `max` 项。
 

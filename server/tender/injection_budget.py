@@ -40,12 +40,13 @@ TENDER_EFFECTIVE_CONTEXT_TOKENS = 200_000
 # 各存一份换算假设，且一处写 1.0 一处写 3，正是 64,000B 单位错的温床）。
 _BYTES_PER_TOKEN = 3
 
-# 脚手架实测（本机 2026-08-15，命令见 ``scripts/measure_tender_scaffold.py``）：
-#   /tender-evaluate 命令文件 20,260 字 + tender-eval skill 全部 references 21,331 字
-#   + audit-result/criteria 两份 schema 16,398 字 = 57,988 字（中文为主，1 字≈1 token）。
+# 脚手架实测（2026-08-17 复跑，命令见 ``scripts/measure_tender_scaffold.py``）：
+#   /tender-evaluate 命令 20,212 字 + tender-eval SKILL.md 1,419 字（references 死副本已删）
+#   + audit-result/criteria 两份 schema 16,398 字 = 38,029 字（中文为主，1 字≈1 token）。
 # 再加 CLI 自身的 system prompt 与工具定义（服务端不可测，按同量级留额）与服务端固定块
-# （OCR 头注释 / criteria 头尾 / 底稿告警 / 截断标记）→ 取 90,000 token。
-# **旧值 30,000 已被本次实测证伪**：仅提示词资产就 57,988，30K 从来装不下。
+# （OCR 头注释 / criteria 头尾 / 底稿告警 / 截断标记）→ 常量维持 90,000 token 不下调，
+# 差额转成评标循环与证据侧的安全垫；调低须先复跑脚本确认不跌破下界（见脚本头注）。
+# **旧值 30,000 已被 2026-08-15 实测（当时 57,988 字）证伪**：30K 从来装不下。
 _SCAFFOLD_RESERVE_TOKENS = 90_000
 
 # agent 循环自留：评标是多轮循环，模型还会重识别低清页、扩展思考、写长 JSON 结论，

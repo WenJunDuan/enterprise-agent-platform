@@ -18,7 +18,7 @@ skills:
 
 1. 接收符合 `.claude/contracts/tender/extract-result.schema.json` 的提取结果作为事实底稿；若只有原始材料没有 extract-result，先回到提取阶段。
 2. 一次性取齐本案评判依据：
-   - **本项目规则（criteria）**：`Read` 招标文件，并按 `.claude/skills/tender-eval/references/s1-locate-criteria.md` 定位其中规定资格审查/初步评审和评分标准的评标办法，直读解析为项目规则（`eligibility_rules[]` + 评分项 / 满分 / 评分规则 / 出处 / 可判定性标签），写入 `extracted_data.criteria`（对齐 `.claude/contracts/tender/criteria.schema.json`）；若上游已在 `extracted_data.criteria` 传入则直接复用。资格审查是与评分项并列的最高优先级招标项，先运行，不计入满分。
+   - **本项目规则（criteria）**：`Read` 招标文件，按 `/tender-evaluate` S1 的「定位线索与排除」纪律（权威版在 `.claude/commands/tender-evaluate.md`，需要时 `Read`）定位其中规定资格审查/初步评审和评分标准的评标办法，直读解析为项目规则（`eligibility_rules[]` + 评分项 / 满分 / 评分规则 / 出处 / 可判定性标签），写入 `extracted_data.criteria`（对齐 `.claude/contracts/tender/criteria.schema.json`）；若上游已在 `extracted_data.criteria` 传入则直接复用。资格审查是与评分项并列的最高优先级招标项，先运行，不计入满分。
    - **通则层国家法规（法律底座，非项目评分标准）**：`knowledge/tender/evalmethod.rules.json`（评标方法暂行规定）、`knowledge/tender/regulation.rules.json`（招标投标法实施条例），读取顶层 `source_path` / `source_version` 作为追溯。
    招标文件载明的资格审查与评分标准**直读即权威**；招标文件没写的标准不得臆造补充。**缺招标文件 / 招标文件里定位不到资格审查或评标办法** → 相关项降级输出 `manual_review`（`rule_gap`）。
 3. 如 `knowledge/memory/tender/` 中存在与本案高度相似的案例 / 异常记忆，读取并作为 `memory:` 辅助证据，不能替代结构化规则。

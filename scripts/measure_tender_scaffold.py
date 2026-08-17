@@ -4,7 +4,8 @@
     uv run python scripts/measure_tender_scaffold.py
 
 统计进入单次评标 prompt 的**固定**提示词资产：/tender-evaluate 命令文件、tender-eval skill
-的全部 references、输出契约 schema。中文为主，按 1 字符 ≈ 1 token 计。
+目录（2026-08-17 起仅 SKILL.md，references 死副本已收敛删除）、输出契约 schema。
+中文为主，按 1 字符 ≈ 1 token 计。
 
 不含 CLI 自身的 system prompt 与工具定义（服务端不可观测），故实测值是
 ``server.tender.injection_budget._SCAFFOLD_RESERVE_TOKENS`` 的**下界**——该常量在实测值之上

@@ -1,10 +1,11 @@
 """提示词预算门禁（KD3）：热路径提示词字节上界 + CLAUDE.md 调度实体存在性机械核对。
 
-**超界了怎么办**：不要抬这里的常量。把超界文件里的裁决细则**下沉**到对应 skill 的
-`references/` 下（一个细则一档，单档 ≤ ``REFERENCE_FILE_CAP``），并在命令里对应步骤开头写一条
-确定性 `Read` 指令拉取——先例见 `.claude/commands/tender-evaluate.md` 的 S1–S4 与
-`.claude/skills/tender-eval/references/`。上界确需调整时，走 PR 显式改本文件常量并说明理由
-（棘轮机械化：只有改常量这一个入口，防"每出一次事故加一段"把命令重新撑回 38KB）。
+**超界了怎么办**：不要抬这里的常量。先删重复表述、收紧措辞（先例：2026-08-17 `b1bc53f`
+仲裁口径收敛为单一决策表，净省约 2.7KB）；确属新增规则挤不下时，走 PR 显式改本文件常量并
+说明理由（棘轮机械化：只有改常量这一个入口，防"每出一次事故加一段"把命令越撑越大）。
+**不要**把细则下沉到 references/ 再加运行时 `Read`——该形态已于 2026-08-14 因会话累计
+上下文反增导致生产爆窗而回滚（见下方修正记录）；现行架构 = 按入口**单文件自洽** + 服务端
+注入，references/ 仅存于允许交互 `Read` 的 skill（如 multi-ocr）。
 
 上界取值 = 2026-08-12/13 实测字节 + 约 15% 余量。
 
@@ -35,7 +36,10 @@ PROMPT_BUDGETS: dict[str, int] = {
     # 见模块 docstring）。此上界是"守住不再变长"，不是"允许长"——重设结构时按新判据重取。
     ".claude/commands/tender-evaluate.md": 40_000,
     ".claude/commands/tender-compare.md": 8_200,  # 实测 7,132
-    ".claude/commands/tender-extract-info.md": 6_800,  # 实测 5,871
+    # 2026-08-17 收敛：s1-locate-criteria.md（1,633B，原运行时 Read）内联进命令后删除，
+    # 另吸收无效标触发词检索 371B。单会话账持平（旧 5,871+Read 1,633≈7,504 → 新 7,491，
+    # 且省一次工具往返），故常量随迁移调整，非放松棘轮。
+    ".claude/commands/tender-extract-info.md": 7_700,  # 实测 7,491
     ".claude/commands/audit.md": 5_300,  # 实测 4,584
     ".claude/CLAUDE.md": 9_600,  # KD4 改后实测 8,412
 }
@@ -57,8 +61,8 @@ def test_prompt_file_within_byte_budget(rel_path: str, cap: int) -> None:
     size = _byte_size(path)
     assert size <= cap, (
         f"{rel_path} 已 {size}B，超上界 {cap}B（超 {size - cap}B）。"
-        "超界须把裁决细则下沉到对应 skill 的 references/ 并在步骤开头加确定性 Read，"
-        "而不是抬高本文件常量；流程见本测试头注。"
+        "先删重复表述/收紧措辞，而不是抬高本文件常量；确属新增规则挤不下时"
+        "走 PR 显式改常量并说明理由，流程见本测试头注（勿下沉 references+Read，已回滚）。"
     )
 
 

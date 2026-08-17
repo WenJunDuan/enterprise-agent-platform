@@ -73,15 +73,9 @@ def test_audit_schema_accepts_known_pending_reason():
 
 def test_tender_evaluate_prompt_declares_every_pending_reason():
     """契约链：prompt 必须写明产出义务与全部枚举值，否则模型永远不产出该字段。"""
-    # 运行时 prompt = 命令骨架 + S3 开头确定性 Read 的裁决细则（枚举随细则一并下沉，
-    # 见 sprints/2026-08-12-prompt-architecture）。断言不变，只是读全模型实际看到的两份。
-    prompt = "\n".join(
-        Path(rel).read_text(encoding="utf-8")
-        for rel in (
-            ".claude/commands/tender-evaluate.md",
-            ".claude/skills/tender-eval/references/s3-scoring-modes.md",
-        )
-    )
+    # 2026-08-14 回滚后命令为单文件自洽形态（骨架+Read references 因会话上下文反增爆窗
+    # 而废弃，见 tests/test_prompt_budget.py 头注），枚举全部内联在命令本体。
+    prompt = Path(".claude/commands/tender-evaluate.md").read_text(encoding="utf-8")
     assert "pending_reason" in prompt
     for reason in PENDING_REASONS:
         assert reason in prompt, reason
