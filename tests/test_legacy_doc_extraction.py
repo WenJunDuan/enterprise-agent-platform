@@ -19,14 +19,19 @@ from server.ocr import OcrDependencyError, OcrError, native
 
 
 def _fake_docx_conversion(payload: dict):
-    """替身：让 convert_office_to_pdf(target="docx") 成功并让 read_word 返回 payload。"""
+    """替身：让 convert_office_to_pdf 成功并让读取器返回 payload。
+
+    2026-08-17 更新：主路径已改为**先转 PDF**——`read_pdf_text` 自带 `find_tables`，
+    同样拿得到表格，还多拿到证据链必需的真实页号（转 docx 拿不到页号，实测底稿 0 页锚）。
+    故不再断言 target=="docx"；本替身对两种目标都放行，read_pdf_text/read_word 都返回同一
+    payload，以便复用既有断言检验"表格必须透传"这一意图。
+    """
 
     @contextlib.contextmanager
     def _convert(path: Path, *, target: str = "pdf"):
-        assert target == "docx", "旧版 .doc 必须转 docx 才能拿到表格，转 pdf 会把表格拍成图"
         yield path
 
-    return _convert, lambda _path: payload
+    return _convert, lambda _path, **_kw: payload
 
 
 def test_legacy_doc_prefers_libreoffice_and_keeps_tables(monkeypatch, tmp_path):
@@ -39,6 +44,7 @@ def test_legacy_doc_prefers_libreoffice_and_keeps_tables(monkeypatch, tmp_path):
     convert, read_word = _fake_docx_conversion(payload)
     monkeypatch.setattr(native, "convert_office_to_pdf", convert)
     monkeypatch.setattr(native, "read_word", read_word)
+    monkeypatch.setattr(native, "read_pdf_text", read_word)
     called: list[list[str]] = []
     monkeypatch.setattr(native, "_run_text_converter", lambda argv: called.append(argv) or None)
 
@@ -76,7 +82,9 @@ def test_legacy_doc_ignores_empty_libreoffice_result(monkeypatch, tmp_path):
     """LibreOffice 转换成功但产物无内容时，必须继续降级而不是返回空。"""
     convert, _ = _fake_docx_conversion({"kind": "word", "blocks": [], "tables": []})
     monkeypatch.setattr(native, "convert_office_to_pdf", convert)
-    monkeypatch.setattr(native, "read_word", lambda _p: {"kind": "word", "blocks": [], "tables": []})
+    empty = lambda _p, **_kw: {"kind": "word", "blocks": [], "tables": []}  # noqa: E731
+    monkeypatch.setattr(native, "read_word", empty)
+    monkeypatch.setattr(native, "read_pdf_text", empty)  # 主路径先转 PDF，同样要空产物
     monkeypatch.setattr(native, "_run_text_converter", lambda argv: "兜底正文")
 
     doc = tmp_path / "招标文件.doc"

@@ -276,21 +276,35 @@ def _legacy_word_via_libreoffice(path: Path) -> dict | None:
         成功且抽到内容时返回 :func:`read_word` 的结果；LibreOffice 不可用/转换失败/
         产物无内容时返回 ``None``，由调用方继续走文本转换器降级链。
     """
+    # 先转 PDF：只有 PDF 能给出**真实页号**，`read_pdf_text` 逐页 append 后由
+    # `draft_render._render_paged_blocks` 打 `【第N页】`。转 docx 拿得到表格却拿不到页号，
+    # 而评标要求逐条证据带页锚、回查闸也据此核验——实测 .doc 底稿 39,056 字 0 个页锚，
+    # 检索结果 page_anchor 全是「页码未知」。PDF 直读同样带 find_tables 抽表，两者兼得。
+    try:
+        with convert_office_to_pdf(path, target="pdf") as converted:
+            result = read_pdf_text(converted)
+    except (OcrDependencyError, OcrError, OSError, ValueError):
+        result = None
+    if result and (result.get("blocks") or result.get("tables")):
+        return result
+    # PDF 路线失败（转换不支持 / 文本层为空）时退回 docx：仍比纯文本转换器多拿到表格。
     try:
         with convert_office_to_pdf(path, target="docx") as converted:
-            result = read_word(converted)
+            fallback = read_word(converted)
     except (OcrDependencyError, OcrError, OSError, ValueError):
         return None
-    if not result.get("blocks") and not result.get("tables"):
+    if not fallback.get("blocks") and not fallback.get("tables"):
         return None
-    return result
+    return fallback
 
 
 def read_legacy_word(path: Path) -> dict:
     """Read legacy binary ``.doc`` files through native extractors before OCR.
 
     降级阶梯（顺序即优先级，每层失败才落到下一层）：
-    1. LibreOffice 转 ``.docx`` → python-docx 直读：**唯一能拿到表格的路径**。
+    1. LibreOffice 转 **PDF** → :func:`read_pdf_text`：**唯一能拿到真实页号**的路径，
+       同时经 ``find_tables`` 拿到表格。证据链的 ``【第N页】`` 依赖它。
+    1b. 转 PDF 失败时退回转 ``.docx`` → python-docx：有表格但**无页号**。
     2. macOS ``textutil`` / Linux ``catdoc`` / ``antiword``：纯文本，无表格。
     3. 二进制 UTF-16LE 文本抽取：最后兜底。
 
