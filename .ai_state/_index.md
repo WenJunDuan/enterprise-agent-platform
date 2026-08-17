@@ -69,15 +69,17 @@ pointers:
   latest_architecture_update: "2026-08-15T09:40:14.417Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "【2026-08-17 tender-context-pipeline 耗时治理进行中】sprint=2026-08-15-tender-context-pipeline path=Refactor stage=impl。已完成并推送到 main(f8b6966): ①第一波 7731e16(省略标记不谎报+criteria 竞态等待) ②第二波 9fae313(A 法规/记忆改服务端注入删模型自取 Read; B 底稿在场锁 Glob/Read 例外 ocr-page; C 判0/manual 仲裁 5 处收敛单一决策表; D 契约失败改 resume 修补不整单重跑) ③1a52e92 .doc 兜底档 BEL 还原 Word 表格 ④3701e91 章节定位三修(目录识别/粘连拆行/评审方法标签) ⑤f8b6966 目录跳过规则两处对齐。提示词净减 5,840B(SKILL.md -54%)。两轮实跑记录见 evidence/dry-run-2026-08-17.md。
+next_action: "【2026-08-17 tender-context-pipeline · 下会话首要任务=查检索相关性错位】sprint=2026-08-15-tender-context-pipeline path=Refactor stage=impl。
 
-【实跑实测数据】招标抽取 0.07s/表格21单元格; 结构解析 0.004s/7章正文树/evaluation_method 一次命中无试错; 投标 43MB400页直读 3.2s/19万字; 建索引 0.14s/招标105+投标223 chunk; 按项检索 9/9 命中 1ms(含2字词报价走子串旁路)。
+★★ 阻塞项(先做这个, 未解决前不部署) ★★ 第三轮实跑发现**检索命中的是错误证据**: 9 个评分项 9/9 命中且 1ms, 但投标侧全部落在同一章「十、雷击事故应急预案」(企业综合实力→第315页/类似业绩→317/拟派项目负责人→345/技术参数指标→349/售后服务→310)。抽查「类似业绩」top1 内容, 「业绩」仅出现 1 次且是应急预案顺带提及, 不是业绩证明材料。**9/9 是假的好看**——错误证据比缺失证据更危险(模型据此评分会错判)。根因初判: ①BM25 在 645 chunk 上长章节词频压过真正相关的短章节 ②检索传 tag=None, 语义标签过滤没用上 ③可能需按 criteria 的 basis 关键词检索而非只用项名。排查顺序: 加 tag 过滤重测 → 查 BM25 排序与 chunk 粒度 → 若属策略问题需改 KD2 检索设计并重新评审。复现命令与全部数据见 evidence/dry-run-2026-08-17.md。
 
-【下一步·未做】⚠️缺陷②native 直读路径无页锚: draft_render.render_body 只对 OCR 引擎产物(pages)渲染【第N页】, native 直读(.doc/文本层PDF 的 blocks)零页锚 → 检索 page_anchor 全是页码未知 → 证据链给不出可回查页码, 回查闸失依据。实测招标底稿 39,056字/0页锚。用户已拍板【先改这个】, 改完再实跑验证+审核出结论。两条路: (推荐)pymupdf 按页取文本拿真实页号 / 或改提示词用章节路径代页码。
+【已完成并推送 main(57ce023)】①7731e16 省略标记不谎报+criteria 竞态等待 ②9fae313 第二波四项(法规/记忆改服务端注入删模型自取 Read; 底稿在场锁 Glob/Read 例外 ocr-page; 判0/manual 仲裁 5 处收敛单一决策表; 契约失败改 resume 修补不整单重跑) ③1a52e92 .doc 兜底档 BEL 还原 Word 表格 ④3701e91 章节定位三修(目录识别/粘连拆行/评审方法标签) ⑤f8b6966 目录跳过规则两处对齐(修我自己引入的回归: rag 与 docstructure 跳过规则不一致→招标层退化 10 粗 chunk) ⑥57ce023 .doc 改先转 PDF 拿真实页号。提示词净减 5,840B(SKILL.md -54%)。
 
-【部署】生产现役 agent-backend:0817b1 + agent-front:0815b3(仅含第一波)。第二波及之后全部未部署。部署形态: 后端 docker build --build-arg WITH_OCR=1(漏了缺 pymupdf/paddleocr), 前端需先本地 bun run build; env 改动必须 docker rm -f 重建容器(restart 不重读 --env-file); SSH 必须建长连接 ControlMaster+ControlPersist=60m(反复短连接会打满 sshd MaxStartups)。.env 已注释 TENDER_CONTEXT_MAX_BYTES(备份 .env.before-0817)。
+【三轮实跑实测】招标抽取 0.07s/表格21单元格; 结构解析 0.004s/7章正文树/evaluation_method 一次命中无试错; 投标 43MB400页直读 3.0-3.2s/19-21万字/399页锚; 建索引 0.15s/招标105+投标645 chunk; 按项检索 9/9 命中 1ms(含2字词报价走子串旁路), 6/9 带真实页锚(其余3个来自招标.doc, 本机无 LibreOffice)。
 
-【用户口径】评标须 10 分钟内出结论, 超 20 分钟即视为架构问题; 提示词只删重复表述不删规则; 本机缺 paddleocr/LibreOffice, PDF 云 OCR 与 .doc 转换只能在部署机验。"
+【部署】生产现役 agent-backend:0817b1 + agent-front:0815b3(仅含第一波)。第二波及之后全部未部署, 且**检索错位未解决前不应部署**。部署形态: 后端 docker build --build-arg WITH_OCR=1(漏了缺 pymupdf/paddleocr), 前端需先本地 bun run build; env 改动必须 docker rm -f 重建容器(restart 不重读 --env-file); SSH 必须建长连接 ControlMaster+ControlPersist=60m(反复短连接打满 sshd MaxStartups, 本会话踩过两次)。.env 已注释 TENDER_CONTEXT_MAX_BYTES(备份 .env.before-0817)。
+
+【用户口径】评标须 10 分钟内出结论, 超 20 分钟即视为架构问题; 提示词只删重复表述不删规则; 本机缺 paddleocr/LibreOffice, PDF 云 OCR 与 .doc 转换只能在部署机验; 跑测试勿并发多个 pytest(会互抢资源假超时)。"
 last_subagent: "codex-exec" # tender-report-dimensions D0-D5 headless (codex 0.142.1, gpt-5.5)；必须 env -u HTTP_PROXY -u HTTPS_PROXY 否则 streaming API 挂起，见 compound/2026-06-25-trick-codex-proxy-hangs-streaming.md
 last_subagent_at: "2026-06-25T00:00:00.000Z"
 active_worktrees: [] # 2026-08-17 两个返工 worktree 已合并 369c53e 并清理
