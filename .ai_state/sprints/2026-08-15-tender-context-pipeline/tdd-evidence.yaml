@@ -499,3 +499,66 @@ s7_hit_stop:
     - "test_编号风格不被识别时仍按邻项命中续接: PASSED（AC14 新增，真红转绿）"
     - "test_逐项注入量逐项留痕含零值: PASSED（AC15 新增）"
     - "test_逐项注入量留痕穿透到最终结论: PASSED（AC15 新增，断言到最终 payload）"
+
+# ── pass3 F2 轮（2026-08-17）· 续接预算耗尽保留已收块（review pass3 F2 [P1]）───
+# 执行者：generator subagent（worktree agent-a7004dbd81153b1bf）。本轮与 F1/F3 修复并行，
+# 只动 F2 归属文件（evidence_continuation.py + 其测试），不碰提示词与 runner 侧。
+# 按主 agent 派工只跑证据层子集回归，不跑全量（全量由主 agent 在三条 P1 合并后收口）。
+pass3_f2:
+  executor: "generator subagent (worktree agent-a7004dbd81153b1bf)"
+  baseline_commit: "3dc390b"
+  cycles:
+    - task: "pass3/F2 · 前瞻额度耗尽时保留已收集的续接块（评分正确性缺陷）"
+      commit: "09343a2"
+      red_command: >-
+        uv run pytest tests/test_tender_evidence_index.py tests/test_tender_evidence_wiring.py
+        tests/test_tender_evidence_context.py -q -p no:randomly -k "邻项命中块超出前瞻额度"
+      red_summary: >-
+        1 failed / 57 deselected。新测试 test_邻项命中块超出前瞻额度时续接不得归零：
+        AssertionError「预算耗尽不得把已收集的续接整批丢弃」——断言 '人员配置与荣誉证书续页说明'
+        in 注入块失败，实得只有命中块自身（'【第11页】(一) 企业综合实力 企业资质与荣誉说明。…'）
+        与邻项自己的块（'业绩明细表内容。…'），中间六页正文一个字都没进来。
+        两条**语料前提守卫先通过**（否则这条测试会退化成 AC14 那条的副本而"未红即绿"）：
+        ① 中间正文 6 页 × 2,800 字 = 16,800 > per_item 6,653；② 命中块编号 (一) 为半角、
+        slice_heading 返 None，即走的正是 _bounded_by_layout 里 boundary is None 那条路。
+        同语料逐项注入量实测：gap=1 页 [('企业综合实力', 4825), ('类似业绩', 1616)]；
+        gap=6 页 [('企业综合实力', 2018), ('类似业绩', 1616)]——2,018 即命中块自身，续接归零，
+        且 truncated=[] / unresolved=[]（无痕），与 reviewer 复现同形态。
+        红取自**未动实现时**（先写测试、后改实现）；本条时间戳是收尾复核时把
+        server/tender/evidence_continuation.py 还原成 HEAD 版后重取的同一条红
+        （用 git show HEAD:… 覆盖文件，不用 git stash——refs/stash 全仓共享，
+        与并行 worktree 抢栈会误 pop 对方的改动）。
+      red_observed_at: "2026-08-17T20:47:17+0800"
+      green_command: >-
+        uv run pytest tests/test_tender_evidence_index.py tests/test_tender_evidence_wiring.py
+        tests/test_tender_evidence_context.py -q -p no:randomly ;
+        uv run pytest tests/test_tender_evidence*.py tests/test_rag*.py
+        tests/test_tender_injection_budget.py tests/test_tender_context*.py -q -p no:randomly ;
+        uv run ruff check server tests
+      green_summary: >-
+        必保三文件 58 passed（57 + 新增 1）；回归子集 155 passed；
+        `uv run ruff check server tests` EXIT=0；S7 点名的 19 条必保逐名复跑 19/19 PASSED。
+        改法：_walk_following 把「前瞻额度用尽」归位成**终点**（与撞上 stop_ids 同级），
+        返回值语义由"是否收在命中块上"改成"续接是否已有终点"；False 只留给"没耗尽额度就走完了
+        整份文档"（末项之后 / 文档尾），_bounded_by_layout 的兜底职责与实现一字未动。
+        **脱钩守卫仍绿且非空过**：test_注入量与投标体量脱钩 PASSED，实测 40 页(77 字) /
+        400 页(101,835 字) 两份投标注入量同为 88 token、比值 1.0（守卫要求 ≤1.2），
+        且 88 < len(large)/10 = 10,183；同族 test_注入量远小于投标全文 /
+        test_evidence_context_actually_injected /「读层在有criteria时改走证据层」均 PASSED。
+        额度是上界的直接证据：同语料 gap 取 1 / 6 / 20 页（底稿 6,450 → 20,490 → 59,802 字，
+        9.3 倍）该项 item_tokens 恒 4,825、total 恒 6,441 ≤ evidence_tokens 59,877——
+        保留到额度为止不随体量无界吃入。
+        语义协调：truncated 口径不动（仍是"有命中却一块都没进注入"）。"吃满自己额度"**不进**
+        truncated——那会把「不得判 0、需人工调阅」变成常态噪音（生产口径下几乎每项都会吃满
+        额度），且与既有 hit-stop 路径被 _assemble_item 按 per_item 截断时的处置不一致；
+        该形态由 item_tokens 逐项账留痕（AC15 本职）。账目闭式由新测试末两条断言咬住：
+        Σ item_tokens == total_tokens 且 total_tokens ≤ evidence_tokens。
+      green_observed_at: "2026-08-17T20:47:26+0800"
+  # 本轮点名必保（S7 的 19 条 + 与 F2 语义直接相邻的 5 条守卫），逐名复跑结果：
+  must_pass:
+    - "S7 点名 19 条: 19/19 PASSED（-k 逐名复跑，39 deselected）"
+    - "test_邻项命中块超出前瞻额度时续接不得归零: PASSED（F2 新增，真红转绿）"
+    - "test_注入量与投标体量脱钩: PASSED（40/400 页均 88 token，比值 1.0）"
+    - "test_注入量远小于投标全文: PASSED"
+    - "test_额度耗尽的项被记为truncated而不是静默消失: PASSED（truncated 语义未动）"
+    - "test_额度充足时没有任何项被记为truncated: PASSED（反向守卫，未凭空报 truncated）"
