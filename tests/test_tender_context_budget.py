@@ -3,6 +3,13 @@
 事故链：云 OCR 写超时 → runner 降级 ``inline_ocr`` → ``ocr_preprocess_block(directory_path)``
 把整个 case 目录的 OCR 全文无上限注入 → 内网 DeepSeek Flash ``Prompt is too long``。
 闸放在 tender 调用侧（``server/ocr/`` 禁改），两条底稿来源（doc_layer_reuse / inline_ocr）同过。
+
+**2026-08-18 归宿变更**：整份注入路径一旦触发截断即失去评分权威性，runner 改为短路到
+``build_manual_review_result``（不发 prompt、不出分），故"截断后的底稿注入给模型"这一形态
+不复存在。本文件里原先经 ``run_tender_evaluation`` 断言注入产物的用例，按其**真正的被测
+对象**重新落点：算法性质（关键节保留 / UTF-8 边界 / 省略标记 / 预算不越限）落到
+``bound_draft`` 这个纯计算上，"哪几条路径受闸约束"落到 runner 的新归宿上。
+转人工归宿本身由 ``tests/test_tender_truncation_authority.py`` 守。
 """
 
 from __future__ import annotations
@@ -54,10 +61,56 @@ def _run_evaluation(monkeypatch, runner, *, request_id: str) -> dict:
     return calls
 
 
+def _run_for_payload(monkeypatch, runner, *, request_id: str) -> dict:
+    """跑一次评标并返回**结论**——整份注入被截断后模型不再被调用，故取不到 calls。"""
+    sent = {"model": 0}
+
+    async def fake_run_command_json(command_name, *arguments, schema_name, **opts):
+        sent["model"] += 1
+        return {"verdict": "approved"}, _fake_meta(opts["request_id"])
+
+    monkeypatch.setattr(runner, "run_command_json", fake_run_command_json)
+    monkeypatch.setattr(runner, "resolve_project_criteria", lambda *_a, **_kw: (None, None))
+    payload, _meta = asyncio.run(
+        runner.run_tender_evaluation(
+            request_id=request_id,
+            tenant="acme",
+            directory_path="/fake/dir",
+            project_id="tp-test",
+        )
+    )
+    assert sent["model"] == 0, "整份注入被截断时不得把注定证据残缺的 prompt 发出去"
+    return payload
+
+
 def _kept_material(context: str) -> str:
     """取注入上下文里"截断标记之前的底稿本体"（标记自带前导换行，不算底稿内容）。"""
     body = context.split(TRUNCATION_NOTICE_PREFIX)[0]
     return body.split("===\n", maxsplit=1)[1].removesuffix("\n")
+
+
+def _bounded(draft: str) -> str:
+    """取预算闸对 ``draft`` 的实际产物（截断后的底稿 + 截断标记）。
+
+    2026-08-18 后整份注入被截即转人工、不再进 prompt，故算法性质只能在这一层验；
+    ``bound_draft`` 正是 runner 调用的同一个纯计算，不是为测试新造的旁路。
+    """
+    from server.tender.draft_budget import bound_draft
+
+    truncated = bound_draft(draft)
+    assert truncated is not None, "前置条件：本用例必须真的触发截断"
+    return truncated.text
+
+
+def _kept_body(bounded: str) -> str:
+    """取 ``_bounded`` 产物里截断标记之前的底稿本体。"""
+    return bounded.split(TRUNCATION_NOTICE_PREFIX)[0].removesuffix("\n")
+
+
+def _truncation_account(payload: dict) -> dict:
+    """从结论里取截断账目 warning（KD4：三个字节数随结论落盘）。"""
+    warnings = payload["extracted_data"]["ocr_warnings"]
+    return next(w for w in warnings if w["status"] == "draft_truncated")
 
 
 def _use_inline_ocr(monkeypatch, runner, text: str) -> None:
@@ -67,18 +120,13 @@ def _use_inline_ocr(monkeypatch, runner, text: str) -> None:
     monkeypatch.setattr(runner, "ocr_preprocess_block", lambda *a, **kw: text)
 
 
-def test_inline_ocr_block_over_budget_is_truncated_with_visible_marker(monkeypatch):
-    from server.tender import runner
-
+def test_over_budget_draft_is_truncated_with_visible_marker(monkeypatch):
     monkeypatch.setenv("TENDER_CONTEXT_MAX_BYTES", "300")
     # 每个汉字 3 字节：150 字 = 450 字节 > 300 字节上限
-    _use_inline_ocr(monkeypatch, runner, "招" * 150)
+    bounded = _bounded("招" * 150)
 
-    calls = _run_evaluation(monkeypatch, runner, request_id="rid-budget-inline")
-
-    context = calls["context"]
-    assert TRUNCATION_NOTICE_PREFIX in context
-    kept = _kept_material(context)
+    assert TRUNCATION_NOTICE_PREFIX in bounded
+    kept = _kept_body(bounded)
     assert len(kept.encode("utf-8")) <= 300
     # 保留的是**前** N 字节，不是随机片段
     assert kept == "招" * 100
@@ -86,15 +134,11 @@ def test_inline_ocr_block_over_budget_is_truncated_with_visible_marker(monkeypat
 
 def test_truncation_cuts_on_utf8_boundary(monkeypatch):
     """上限落在多字节字符中间时不得截出半个字符（截断产物必须严格 UTF-8 可解码）。"""
-    from server.tender import runner
-
     # 100 不是 3 的整数倍 → 第 34 个汉字被上限劈开
     monkeypatch.setenv("TENDER_CONTEXT_MAX_BYTES", "100")
-    _use_inline_ocr(monkeypatch, runner, "标" * 60)
 
-    calls = _run_evaluation(monkeypatch, runner, request_id="rid-budget-utf8")
+    raw = _kept_body(_bounded("标" * 60)).encode("utf-8")
 
-    raw = _kept_material(calls["context"]).encode("utf-8")
     # 33 个完整汉字 = 99 字节；第 34 个字被上限劈开，必须整字丢弃而不是留半个
     assert len(raw) == 99
     # 严格解码：出现半个字符会抛 UnicodeDecodeError
@@ -119,8 +163,8 @@ def test_truncation_emits_structured_warning_log(monkeypatch, caplog):
     assert record.limit_bytes == 300
 
 
-def test_doc_layer_reuse_path_is_also_bounded(monkeypatch):
-    """预热底稿理论上也可能超大 → 复用路径同样过闸。"""
+def test_doc_layer_reuse_path_is_also_gated(monkeypatch):
+    """预热底稿理论上也可能超大 → 复用路径同样受闸约束（归宿现为转人工）。"""
     from server.tender import runner
 
     monkeypatch.setenv("TENDER_CONTEXT_MAX_BYTES", "300")
@@ -132,22 +176,26 @@ def test_doc_layer_reuse_path_is_also_bounded(monkeypatch):
 
     monkeypatch.setattr(runner, "ocr_preprocess_block", fail_if_called)
 
-    calls = _run_evaluation(monkeypatch, runner, request_id="rid-budget-doc-layer")
+    payload = _run_for_payload(monkeypatch, runner, request_id="rid-budget-doc-layer")
 
-    assert TRUNCATION_NOTICE_PREFIX in calls["context"]
+    assert payload["verdict"] == "manual_review"
+    assert _truncation_account(payload)["original_bytes"] == 450
 
 
-def test_evidence_source_matches_the_bounded_block(monkeypatch):
-    """evidence_source 与模型看到的底稿必须同源，否则出处回查会指向未注入内容。"""
+def test_evidence_source_matches_the_injected_block(monkeypatch):
+    """evidence_source 与模型看到的底稿必须同源，否则出处回查会指向未注入内容。
+
+    截断那一档现在由**不再发 prompt** 兜底（见 ``test_tender_truncation_authority.py``）：
+    被截底稿根本不会成为任何结论的出处。此处守的是仍会注入的那一档。
+    """
     from server.tender import runner
 
     monkeypatch.setenv("TENDER_CONTEXT_MAX_BYTES", "300")
-    _use_inline_ocr(monkeypatch, runner, "招" * 150)
+    _use_inline_ocr(monkeypatch, runner, "招" * 50)
 
     calls = _run_evaluation(monkeypatch, runner, request_id="rid-budget-evidence")
 
     assert calls["evidence_source"] in calls["context"]
-    assert TRUNCATION_NOTICE_PREFIX in calls["evidence_source"]
 
 
 def test_under_budget_block_is_passed_through_unchanged(monkeypatch, caplog):
@@ -174,10 +222,12 @@ def test_default_budget_bounds_a_whole_directory_dump(monkeypatch):
     monkeypatch.delenv("CLAUDE_CODE_MAX_OUTPUT_TOKENS", raising=False)
     _use_inline_ocr(monkeypatch, runner, "招" * 400_000)  # 1.2 MB 整目录全文
 
-    calls = _run_evaluation(monkeypatch, runner, request_id="rid-budget-default")
+    account = _truncation_account(
+        _run_for_payload(monkeypatch, runner, request_id="rid-budget-default")
+    )
 
-    assert TRUNCATION_NOTICE_PREFIX in calls["evidence_source"]
-    assert len(calls["evidence_source"].encode("utf-8")) < 1_200_000
+    assert account["original_bytes"] == 1_200_000
+    assert account["limit_bytes"] < 1_200_000, "默认上限必须真的生效"
 
 
 # ── Bug A（2026-08-14 P0）：预算闸默认值错 + 盲截砍掉评分标准 ──────────────────
@@ -214,43 +264,31 @@ def _draft_with_tail_review_chapter(*, filler_lines: int) -> str:
 
 def test_review_chapter_in_document_tail_survives_the_budget_gate(monkeypatch):
     """核心红：关键节（评审方法/资格审查/评分标准）在预算内时必须被保留，不得盲截丢弃。"""
-    from server.tender import runner
-
     monkeypatch.setenv("TENDER_CONTEXT_MAX_BYTES", "4000")
     draft = _draft_with_tail_review_chapter(filler_lines=200)
     assert len(draft.encode("utf-8")) > 4000
-    _use_inline_ocr(monkeypatch, runner, draft)
 
-    context = _run_evaluation(monkeypatch, runner, request_id="rid-tail-chapter")["context"]
+    bounded = _bounded(draft)
 
-    assert TRUNCATION_NOTICE_PREFIX in context
-    assert _REVIEW_CHAPTER_TITLE in context
-    assert _QUALIFICATION_LINE in context
-    assert _SCORING_LINE in context
+    assert TRUNCATION_NOTICE_PREFIX in bounded
+    assert _REVIEW_CHAPTER_TITLE in bounded
+    assert _QUALIFICATION_LINE in bounded
+    assert _SCORING_LINE in bounded
 
 
 def test_content_first_truncation_marks_the_omitted_regions(monkeypatch):
-    """AC②：被省略的区段在正文里有可见标记，模型能看出"哪一段没给"。"""
-    from server.tender import runner
-
+    """AC②：被省略的区段在正文里有可见标记，读者能看出"哪一段没给"。"""
     monkeypatch.setenv("TENDER_CONTEXT_MAX_BYTES", "4000")
-    _use_inline_ocr(monkeypatch, runner, _draft_with_tail_review_chapter(filler_lines=200))
 
-    context = _run_evaluation(monkeypatch, runner, request_id="rid-omission-mark")["context"]
-
-    assert "已省略" in context
+    assert "已省略" in _bounded(_draft_with_tail_review_chapter(filler_lines=200))
 
 
 def test_content_first_truncation_respects_budget_and_stays_utf8(monkeypatch):
     """AC①③：内容优先不等于放弃预算；产物必须严格 UTF-8 可解码。"""
-    from server.tender import runner
-
     monkeypatch.setenv("TENDER_CONTEXT_MAX_BYTES", "4000")
-    _use_inline_ocr(monkeypatch, runner, _draft_with_tail_review_chapter(filler_lines=200))
 
-    context = _run_evaluation(monkeypatch, runner, request_id="rid-budget-bound")["context"]
+    raw = _kept_body(_bounded(_draft_with_tail_review_chapter(filler_lines=200))).encode("utf-8")
 
-    raw = _kept_material(context).encode("utf-8")
     assert len(raw) <= 4000
     # 严格解码：出现半个字符会抛 UnicodeDecodeError
     raw.decode("utf-8")

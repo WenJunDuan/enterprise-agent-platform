@@ -158,9 +158,11 @@ async def run_tender_evaluation(
     # 无 project_id（legacy 散单）或开关关闭 → 直接回落。
     doc_layer_text: str | None = None
     ocr_warnings: list[dict[str, object]] = []
+    from_evidence_layer = False
     if _tender_read_doc_layer_enabled() and project_id:
         outcome = await _resolve_doc_layer(project_id, bid_id, tenant)
         doc_layer_text, ocr_warnings = outcome.text, outcome.warnings
+        from_evidence_layer = outcome.from_evidence_layer
         if outcome.force_manual_review:
             # F7 降级归宿：证据层不可用时**不回落 inline**（那条路径对 400 页投标产出的是
             # 带 warning 的错误评分），也不把注定无证据的 prompt 发出去，直接出人工复核结论。
@@ -199,7 +201,21 @@ async def run_tender_evaluation(
         )
     if truncation is not None:
         # KD4：截断此前只进运维日志与模型上下文，结论与前端零痕迹（2026-08-18 事故）。
-        ocr_warnings.append(truncation_warning(truncation, stops_scoring=False))
+        # F7 归宿扩面：**整份注入被腰斩即失去评分权威性**——被截内容对各评分项的影响不可知，
+        # 出的分只是"看起来完整"的错评分（08-18 那份 9/11 项 evidence_unresolved 的结论就是
+        # 它）。判据刻意是物理触发（original_bytes > limit），不含任何百分比阈值：百分比是对
+        # 某一份文档的标定，换标书即失准。证据层路径的注入量由 injection_budget 闭式账目保证，
+        # 不受此闸约束——它交付的是选出来的片段，不是被腰斩的整份底稿。
+        ocr_warnings.append(truncation_warning(truncation, stops_scoring=not from_evidence_layer))
+        if not from_evidence_layer:
+            return await asyncio.to_thread(
+                build_manual_review_result,
+                request_id=request_id,
+                tenant=tenant,
+                project_id=project_id,
+                bid_id=bid_id,
+                warnings=ocr_warnings,
+            )
 
     context = (
         f"=== OCR/直读底稿（确定性预处理，优先用此文本，无需再 Read 文件）===\n{ocr_block}"
