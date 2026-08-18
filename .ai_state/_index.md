@@ -64,21 +64,20 @@ pointers:
   latest_review: "sprints/2026-08-15-tender-context-pipeline/reviews/impl-pass2.md" # PASS: 两 P0 四 P1 全闭合, 建议先部署验证
   latest_cleanup: "sprints/2026-08-12-prompt-architecture/cleanup-pass.md"
   latest_brainstorm: ""
-  latest_decisions: ["compound/2026-08-17-decision-real-corpus-worktree-only-purge.md", "compound/2026-08-17-decision-bid-auditor-skill-absorption.md", "compound/2026-07-20-decision-ocr-as-standalone-service.md", "compound/2026-07-16-decision-schema-split-tender.md", "compound/2026-07-16-decision-carve-f6-schema-split-from-d2.md"]
+  latest_decisions: ["compound/2026-08-17-decision-real-corpus-worktree-only-purge.md", "compound/2026-08-17-decision-bid-auditor-skill-absorption.md", "compound/2026-07-20-decision-ocr-as-standalone-service.md", "compound/2026-07-16-decision-carve-f6-schema-split-from-d2.md", "compound/2026-07-16-decision-schema-split-tender.md"]
   latest_lessons: ["compound/2026-08-18-learning-the-investment-was-dark-in-production.md", "compound/2026-08-17-learning-schema-column-add-needs-caller-sweep.md", "compound/2026-08-17-learning-retrieval-quality-needs-the-chunk-body.md", "compound/2026-08-14-learning-prompt-budget-must-be-per-session.md", "compound/2026-08-13-learning-design-budget-must-account-own-mandates.md"]
-  latest_architecture_update: "2026-08-18T07:46:45.915Z"
+  latest_architecture_update: "2026-08-14T09:26:47.542Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "【2026-08-18 晚 · P0+Phase0 已合并推送 af31c99，部署冻结待用户在线审】
-已上线 main: P0 五项护栏(预算下界/effort白名单/抽取超时+锁面/criteria提交闸/总分汇总, 56 测试) + Phase 0 评标回归闸(匿名化金标准 case-zj-live + eval_tender_regression.py 四指标 + 守卫扩面 eval/+.yaml, 59+1 测试)。Fable review VERDICT=CONCERNS 无 P0 发现, F1(关键词反向假命中)已修 94bf81c; F2/F3 豁免已写 merge commit。回归: 17F/1767P 与基线逐名一致。
+next_action: "【2026-08-18 深夜 · 下会话唯一入口 = sprints/2026-08-15-tender-context-pipeline/handoff-2026-08-18-night.md】
 
-**施工依据切换**: .ai_state/claude/tender评标链路改造设计-施工文档.md (Phase 0-5, 未入库因含真实项目名)。当前 Phase 0 施工完成**未过闸**——附录B基线回填依赖部署。
+入口链: handoff-night → .ai_state/claude/Tender链路纠偏令 v2（效力最高）→ plan-2026-08-18-v2-execution.md（六步）。
 
-下一步(按序): ①用户在线 Fable 整体审 → ②放行后 build 0818b3 部署(rsync+docker, env 已回退 deepseek) → ③真环境 eval_tender_regression.py --repeat 3 回填附录B → Phase 0 过闸 → ④开 Phase 1(语料落盘+manifest, 白名单见施工文档三节)。
-待裁决: P0.6 冻结件(worktree agent-aceea5e2cd5e05986, criteria 回显抑制, Fable 建议 DEFER 到 Phase 2); output.py DRY 债归并落点; proposals.md 存量真名编号残留。
-教训在档: plan-2026-08-18-accuracy.md「被证伪的先前结论」节(awk字节计数错/命中≠命中证据)。
+已上线 main(723ab8e→): P0 五项护栏 + Phase 0 回归闸 + F1 修复 + v1/v2 落库。回归 17F/1767P 逐名干净。线上仍 0818b2+deepseek（部署冻结）。
 
-【部署】smardaten@100.91.100.13 目录 /opt/application/enterprise-agent-platform, 现役 0818b2+deepseek(已验证), qwen 配置存 .env.bak-qwen-config-*。全量回归须 --ignore=tests/test_tender_prewarm_oracle.py。"
+下会话从 Step 0 残项开工（design AC1 措辞/评测脚本拆分/fixture 合成化）; **Step 1 部署 0818b3 待用户放行**（基线回填的前提, 0818b2 无 total_score）; 然后 Step 2 基线×3 回填附录B → Phase 0 过闸 → Step 3 case-2/3（素材=knowledge/external/车辆管理系统/results-5ccbb361批-20260818.json 抢救件）→ Step 4 D1(vision-page 首选)/D2(仅四项机械缺陷) → Step 5 Phase A agency 薄实验 → Step 6 数字裁决。
+
+禁令: 词表/常数/阈值/查询串措辞未经诊断数据一律禁止; 回归闸期望值与命中判定禁改。P0.6 worktree 冻结勿 prune。"
 last_subagent: "codex-exec" # tender-report-dimensions D0-D5 headless (codex 0.142.1, gpt-5.5)；必须 env -u HTTP_PROXY -u HTTPS_PROXY 否则 streaming API 挂起，见 compound/2026-06-25-trick-codex-proxy-hangs-streaming.md
 last_subagent_at: "2026-06-25T00:00:00.000Z"
 active_worktrees: [] # 2026-08-17 两个返工 worktree 已合并 369c53e 并清理
