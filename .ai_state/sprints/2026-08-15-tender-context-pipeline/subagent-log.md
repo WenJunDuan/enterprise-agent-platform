@@ -178,3 +178,59 @@
 - Agent ID: a9db75be44e901e84
 - Last message: Both fixes are done, committed, and green. Working tree clean. ## Commits (branch `worktree-agent-a9db75be44e901e84`, not merged to main) | commit | 内容 | |---|---| | `c1fcb74` | fix(tender): criteria 
 
+## 2026-08-18T07:05:24.763Z · critic
+- Event: SubagentStart
+- Agent ID: aa00b04722dc1ad21
+
+## 2026-08-18T07:09:54.874Z · critic
+- Event: SubagentStart
+- Agent ID: aa00b04722dc1ad21
+
+## 2026-08-18T07:32:29.435Z · critic
+- Event: SubagentStop
+- Agent ID: aa00b04722dc1ad21
+- Last message: # 独立核验报告 · 评标 13% 准确率根因分析 核验方式：本地 repo 代码审读 + 部署机（100.91.100.13）只读 DB/日志/容器 + 容器内离线复跑检索 + 本地 pymupdf 实测原始 PDF。未修改任何文件。 ## 1. F1–F6 逐条结论 **F1 · OCR 摄取 — PARTIALLY-CONFIRMED，但核心触发机制被我的实测反驳** - 代码层全对：`se
+
+## 2026-08-18T07:46:46.113Z · generator
+- Event: SubagentStart
+- Agent ID: ac1156af2053f47c8
+
+## 2026-08-18T08:04:38.597Z · generator
+- Event: SubagentStart
+- Agent ID: aceea5e2cd5e05986
+
+## 2026-08-18T08:14:28.260Z · generator
+- Event: SubagentStart
+- Agent ID: ac1156af2053f47c8
+
+## 2026-08-18T08:52:58.298Z · generator
+- Event: SubagentStart
+- Agent ID: ac1156af2053f47c8
+
+## 2026-08-18T08:53:30.924Z · generator
+- Event: SubagentStart
+- Agent ID: acc11005cf027e330
+
+## 2026-08-18T08:57:21.612Z · generator
+- Event: SubagentStop
+- Agent ID: ac1156af2053f47c8
+- Last message: P0.1–P0.5 complete, six commits on `worktree-agent-ac1156af2053f47c8`, nothing merged. ## 逐项状态 | 项 | 状态 | commit | 落点 | |---|---|---|---| | P0.1 预算悬崖 | ✅ | `f4fe626` | `server/tender/injection_budget.
+
+## 2026-08-18T09:25:26.432Z · generator
+- Event: SubagentStart
+- Agent ID: acc11005cf027e330
+
+## 2026-08-18T09:36:46.281Z · generator
+- Event: SubagentStop
+- Agent ID: acc11005cf027e330
+- Last message: Delivery complete. All work is committed on `worktree-agent-acc11005cf027e330` (5 commits, **not** merged to main). ## 逐项完成状态 | 项 | 状态 | 证据 | |---|---|---| | `eval/golden/case-zj-live/expected.yaml` |
+
+## 2026-08-18T11:30:18.456Z · reviewer
+- Event: SubagentStart
+- Agent ID: ae35e2de9bac91605
+
+## 2026-08-18T11:45:12.385Z · reviewer
+- Event: SubagentStop
+- Agent ID: ae35e2de9bac91605
+- Last message: # Review — 合并前整体审查（分支 A + B）与 worktree C 裁决 核验手段：两分支 `diff main...HEAD` 全量过读；A 的新增/改动测试实跑 **111 passed**；B 的新增测试 + 守卫实跑 **60 passed**、`--dry-run` 实测 EXIT=3（缺席 SKIP 不假过）；两分支改动文件集合 `comm` 比对**无交集**；旧扫描面
+
