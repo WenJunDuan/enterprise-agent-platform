@@ -661,3 +661,108 @@ pass3_f1_f3:
     - "tests/test_prompt_budget.py: PASSED（39,192B ≤ 40,000B）"
   not_touched:
     - "server/tender/evidence_continuation.py（F2 由另一 worktree 修，本轮零改动）"
+
+# ── 2026-08-18 生产事故根因链后两环（(c) 降级不许静默 / (d) 截断即转人工）──────
+# 事故实测：用户评一份真实标书 11.5 分钟、11 项只判出 2 项。链路 = criteria 抽取失败 →
+# 证据层跳过 → **静默**退回整份注入 → 底稿 784,903 字节截到 178,641（砍 77%）→ 模型看不到
+# 证据 → 9 项 evidence_unresolved。用户拿到结论却完全看不到"底稿被砍了 77%"，反查一整天。
+fix_c_degradation_visible:
+  executor: "generator subagent (worktree agent-a75d786a52d19fc9f)"
+  baseline_commit: "830c9a7"
+  cycles:
+    - task: "(c) 降级不许静默 · 证据层跳过与底稿截断两条零信号分支产出用户可见 warning（KD4/AC2）"
+      commit: "50b20c2"
+      red_command: >-
+        uv run pytest tests/test_tender_degradation_visibility.py -q -p no:randomly
+      red_summary: >-
+        5 failed / 1 passed（新增守卫测试，在**未动实现**的基线码 830c9a7 上实测取得）。
+        两条分支各自的实测证据：①`build_evidence_context` 在 criteria 无可检索项时
+        `return EvidenceContext()`（evidence_context.py:94-96），结论 payload 里
+        `extracted_data` 只有 `{'scoring': [...]}`，`ocr_warnings` 键根本不存在 →
+        `KeyError: 'ocr_warnings'`（3 条：criteria=None / items 缺项名 / 文案内容）。
+        ②截断路径 caplog 实测到 `WARNING server.tender.runner:runner.py:113
+        tender_context_truncated` 确实触发、注入 context 里也确实带了 TRUNCATION_NOTICE
+        （fixture 回显可见「...[已省略…]... 标出」），但同一次运行的结论 payload 仍是
+        `{'verdict': 'approved', 'extracted_data': {'scoring': [{'item': '报价'}]}}`
+        —— 三个字节数一个都没落盘 → `KeyError: 'ocr_warnings'`（2 条：账目 / 可读表述）。
+        唯一 passed 的是对照组 `test_未超预算时不产生截断留痕`（未触发即无痕，符合预期）。
+      red_observed_at: "2026-08-18T10:58:25+0800"
+      green_command: >-
+        uv run pytest tests/test_tender_evidence_context.py tests/test_tender_evidence_wiring.py
+        tests/test_tender_evidence_provenance.py tests/test_tender_evidence_index.py
+        tests/test_tender_context_budget.py tests/test_tender_context_slim.py
+        tests/test_tender_context_slim_wiring.py tests/test_tender_read_layer.py
+        tests/test_tender_pipeline_s1_visibility.py tests/test_no_real_corpus.py
+        tests/test_tender_criteria_wait.py tests/test_tender_tool_lockdown.py
+        tests/test_tender_degradation_visibility.py -q -p no:randomly
+      green_summary: >-
+        163 passed（同口径基线 157 passed + 新增 6 条守卫），`uv run ruff check server tests`
+        EXIT=0。实现三处：①`evidence_context.build_evidence_context` 的"本路径不适用"分支
+        改为返回带 `evidence_layer_skipped` warning 的 EvidenceContext（并记
+        `tender_evidence_layer_skipped` 日志）——文案写明"未按评分项检索、改用整份底稿、
+        超预算会被整体截断"；②`draft_budget.truncation_warning()` 新增，把 TruncatedDraft
+        渲染成 `draft_truncated` warning，message 是带千分位的业务可读句子
+        （"原始底稿 N 字节，实际注入 N 字节，本次预算上限 N 字节"），同时保留
+        original_bytes/kept_bytes/limit_bytes 三个机器可读整数字段；
+        ③`runner._bound_ocr_block` 改为回传 `(text, TruncatedDraft | None)`，runner 把账目
+        append 进 ocr_warnings。两条 warning 均经既有 `_inject_ocr_warnings` 落
+        `extracted_data.ocr_warnings`，并经 `_ocr_warning_block` 同步进模型上下文。
+      # 取该轮 commit 50b20c2 的提交时刻作锚（green 在其前数十秒内实测，随即提交）。
+      green_observed_at: "2026-08-18T10:59:50+0800"
+
+fix_d_truncation_manual:
+  executor: "generator subagent (worktree agent-a75d786a52d19fc9f)"
+  baseline_commit: "50b20c2"
+  cycles:
+    - task: "(d) 整份注入路径截断 ⇒ F7 归宿（不发 prompt、不出分、转人工），不得误伤证据层路径"
+      commit: "ae82b5c"
+      red_command: >-
+        uv run pytest tests/test_tender_truncation_authority.py -q -p no:randomly
+      red_summary: >-
+        5 failed / 3 passed（新增测试，在只含 (c) 的 50b20c2 上实测取得）。实测事实：
+        整份注入被截断后 `run_tender_evaluation` 照常发 prompt 并出分——探针
+        `probes == {'model': 1, 'inline': 1}`、`payload['verdict'] == 'approved'`
+        （断言 `'approved' == 'manual_review'` 失败），caplog 同时可见
+        `WARNING server.tender.runner:runner.py:123 tender_context_truncated`，即"已知被截
+        仍照常出分"。5 条分别覆盖：doc 层整份注入被截仍出分、账目/解法指引缺位、
+        转人工结论未归档（`get_result_payload_by_request_id` 返回 None）、inline_ocr 回落
+        路径同样照常出分、只超 1 字节也照常出分（防拟合判据）。
+        3 条 passed 的是不该被改动的对照：未超预算照常出分、证据层路径不被误伤、
+        证据层路径的截断文案不谎称已停止评分。
+      red_observed_at: "2026-08-18T11:01:33+0800"
+      green_command: >-
+        uv run pytest tests/test_tender_evidence*.py tests/test_tender_context*.py
+        tests/test_tender_runner*.py tests/test_tender_read_layer.py
+        tests/test_tender_pipeline_s1_visibility.py tests/test_no_real_corpus.py
+        tests/test_tender_degradation_visibility.py tests/test_tender_truncation_authority.py
+        -q -p no:randomly
+      green_summary: >-
+        160 passed（派工指定的回归子集全绿）；另跑消费面 20 个文件
+        （test_tender_scenario / test_tender_eval / test_cli_tender_evaluate /
+        test_tender_criteria_flow / test_tender_criteria_ref / test_tender_criteria_wait /
+        test_tender_rules_injection / test_tender_tool_lockdown /
+        test_tender_retry_non_retryable / test_tender_worker_timeout / test_layering /
+        test_evidence_resolution / test_prompt_budget / test_tender_info_extraction /
+        test_codex_p2_rework_fixes / test_ocr_page_security / test_tender_doc_ocr_status /
+        test_tender_routes / test_tender_contract_repair / test_tender_eval_settings）
+        = 359 passed。`uv run ruff check server tests` EXIT=0。
+        实现：`DocLayerOutcome` 新增 `from_evidence_layer` 显式回传注入形态（不靠嗅探注入头
+        文本反推），runner 在 `bound_draft` 触发且**非**证据层路径时短路到既有
+        `build_manual_review_result`——不发 prompt、verdict=manual_review、
+        manual_review_reason=rule_gap、scoring 清空、结论经 archive_result_payload 归档，
+        warning 文案给出截断账目 + 解法指引（criteria 就绪后改走按评分项检索）。
+        判据是物理触发 `original_bytes > limit`，**无任何百分比阈值**（防按单份标书拟合）；
+        证据层路径注入量由 injection_budget 闭式账目保证，显式不受此闸约束。
+        回归修整：test_tender_context_budget.py 中 8 条经 runner 断言"截断产物注入给模型"
+        的用例，按其真正的被测对象重新落点——算法性质（关键节保留 / UTF-8 边界 / 省略标记 /
+        预算不越限 / 保留前 N 字节）改断言 `draft_budget.bound_draft` 这个 runner 实际调用的
+        同一纯计算；"哪几条路径受闸约束"（doc_layer_reuse / 默认预算）改断言新归宿
+        （verdict=manual_review + 账目字节数）；`evidence_source` 同源不变量保留在仍会注入的
+        那一档。该文件 20 passed，无净删除的性质断言。
+      green_observed_at: "2026-08-18T11:08:38+0800"
+  # 刻意未做（派工明令 + 铁律[反过度工程]）：`context_budget.bound_draft_by_content` 的
+  # 文件头保真问题（削块导致 `### 文件:` 头消失、页锚归属漂移）。(d) 上线后该路径已失去
+  # 评分权威性（截了就转人工），再给它镀金属过度工程。观察记录见交付报告。
+  not_touched:
+    - "server/stores/tender_doc_store.py / server/tender/worker.py / doc_pipeline.py / contract_repair.py（另一 agent 修 (a)(b)）"
+    - "server/tender/context_budget.py（截断算法本身，含文件头保真缺陷，按派工不修）"
