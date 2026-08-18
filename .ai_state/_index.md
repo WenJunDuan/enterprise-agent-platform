@@ -69,15 +69,16 @@ pointers:
   latest_architecture_update: "2026-08-18T07:46:45.915Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "【2026-08-18 · 下会话唯一入口 = sprints/2026-08-15-tender-context-pipeline/handoff-2026-08-18.md】sprint=2026-08-15-tender-context-pipeline path=Refactor stage=impl。
+next_action: "【2026-08-18 晚 · P0+Phase0 已合并推送 af31c99，部署冻结待用户在线审】
+已上线 main: P0 五项护栏(预算下界/effort白名单/抽取超时+锁面/criteria提交闸/总分汇总, 56 测试) + Phase 0 评标回归闸(匿名化金标准 case-zj-live + eval_tender_regression.py 四指标 + 守卫扩面 eval/+.yaml, 59+1 测试)。Fable review VERDICT=CONCERNS 无 P0 发现, F1(关键词反向假命中)已修 94bf81c; F2/F3 豁免已写 merge commit。回归: 17F/1767P 与基线逐名一致。
 
-生产事故管道层根因已修复并部署验证(agent-backend:0818b2)。四项修复 (a)状态诚实+回填质量门 (b)抽取契约修补轮 (c)降级不许静默 (d)整份注入截断即转人工, 全部合并; 干净全量 17F/1652P 与基线逐名一致 0 新增。生产实测: 证据层首次激活(29块/19076token)、底稿不再截断、11.5→7.6 分钟、criteria_source=extracted 状态诚实。
+**施工依据切换**: .ai_state/claude/tender评标链路改造设计-施工文档.md (Phase 0-5, 未入库因含真实项目名)。当前 Phase 0 施工完成**未过闸**——附录B基线回填依赖部署。
 
-**下会话主战场 = 检索召回**: 证据层正常工作下 12 项仍有 6 项 evidence_unresolved(投标供应商实力/项目业绩/团队人员/质保期/平台架构/培训计划——用户说'投标文件里其实有'的那类)。另 2 项 live_event + 1 项 cross_bid 属正确待人工。定位手段: 部署机直调 retrieve_evidence 逐项打印查询串与命中块; **禁止往任何词表加词**(本次事故成因之一, 用户明令禁止拟合)。
+下一步(按序): ①用户在线 Fable 整体审 → ②放行后 build 0818b3 部署(rsync+docker, env 已回退 deepseek) → ③真环境 eval_tender_regression.py --repeat 3 回填附录B → Phase 0 过闸 → ④开 Phase 1(语料落盘+manifest, 白名单见施工文档三节)。
+待裁决: P0.6 冻结件(worktree agent-aceea5e2cd5e05986, criteria 回显抑制, Fable 建议 DEFER 到 Phase 2); output.py DRY 债归并落点; proposals.md 存量真名编号残留。
+教训在档: plan-2026-08-18-accuracy.md「被证伪的先前结论」节(awk字节计数错/命中≠命中证据)。
 
-其余待办: pass4 复审四项修复(仅定向测试背书就上了生产) / prewarm_oracle 慢挂(_criteria_pending 等到上限, 生产是否同样白等待验) / polish(F4 F5 F6 F9 + contract_repair 架构档) / 文件长度债 / AC16 部署窗口测量。
-
-【部署】smardaten@100.91.100.13(spark-beb3, aarch64), 密钥 ~/.ssh/100.91.100.13, 目录 /opt/application/enterprise-agent-platform, UI :5173 后端 :9999, 回滚 0818b1。全量回归须 --ignore=tests/test_tender_prewarm_oracle.py, 勿用 TENDER_TIMEOUT_SEC 覆盖加速(会制造 6 条假失败)。"
+【部署】smardaten@100.91.100.13 目录 /opt/application/enterprise-agent-platform, 现役 0818b2+deepseek(已验证), qwen 配置存 .env.bak-qwen-config-*。全量回归须 --ignore=tests/test_tender_prewarm_oracle.py。"
 last_subagent: "codex-exec" # tender-report-dimensions D0-D5 headless (codex 0.142.1, gpt-5.5)；必须 env -u HTTP_PROXY -u HTTPS_PROXY 否则 streaming API 挂起，见 compound/2026-06-25-trick-codex-proxy-hangs-streaming.md
 last_subagent_at: "2026-06-25T00:00:00.000Z"
 active_worktrees: [] # 2026-08-17 两个返工 worktree 已合并 369c53e 并清理
