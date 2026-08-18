@@ -6,8 +6,12 @@
 一次结论"。
 
 一个变更理由：**怎么向模型描述这次契约失败**（提示词文案 + 从异常里取会话 id 的判据）。
-真正的调用由 ``runner`` 发起——它持有本次评标的全套 kwargs（schema / evidence_source /
-case_root / 工具面），把它们再传一遍只会制造第二份必须同步的参数表。
+真正的调用由各自的重试环发起（评标在 ``runner``、criteria 抽取在 ``doc_pipeline``）——
+它们各持一套调用 kwargs，把参数表搬进来只会制造第二份必须同步的副本。
+
+两处**文案**不同源不共用：评标会话里有"上一轮的评标结论"可保留，抽取会话里没有，照抄
+"不要重新评标"会让模型去找一个不存在的上一轮。故本模块给两条平行常量，而"错误原文怎么
+截断"这类共同规则只此一份。
 """
 
 from __future__ import annotations
@@ -30,8 +34,25 @@ _REPAIR_PROMPT = """上一轮回复未通过服务端 JSON 契约校验：
 """
 
 
+_EXTRACTION_REPAIR_PROMPT = """上一轮回复未通过服务端 JSON 契约校验：
+
+{error}
+
+**不要重新读取任何文件、不要重新抽取**——招标文件底稿你上一轮已经看完，本轮只修正输出格式：
+
+- 整个回复必须是**单个 JSON 对象**（首字符 `{{`、末字符 `}}`），顶层含 `criteria`（如已抽到再带 `tender_info`）；分析只能写在 `<think></think>` 内，`</think>` 之后不得有任何其它文字。
+- 字符串值内引用章节名 / 评分项名称时**一律用中文引号「」**，严禁半角双引号（会提前闭合字符串）。
+- 各字段内容与上一轮保持一致，只改上面指出的那处契约 / 语法问题。
+"""
+
+
+def _render(template: str, error: Exception) -> str:
+    """把失败事实填进修补模板；错误原文按 :data:`_ERROR_EXCERPT_CHARS` 截断。"""
+    return template.format(error=str(error)[:_ERROR_EXCERPT_CHARS])
+
+
 def build_repair_prompt(error: Exception) -> str:
-    """Compose the short "fix your JSON" turn sent into the resumed session.
+    """Compose the short "fix your JSON" turn sent into the resumed **evaluation** session.
 
     Args:
         error: 上一轮抛出的契约失败，其消息即向模型陈述的失败事实。
@@ -39,7 +60,22 @@ def build_repair_prompt(error: Exception) -> str:
     Returns:
         常数级大小的修补指令（含截断后的错误原文）。
     """
-    return _REPAIR_PROMPT.format(error=str(error)[:_ERROR_EXCERPT_CHARS])
+    return _render(_REPAIR_PROMPT, error)
+
+
+def build_extraction_repair_prompt(error: Exception) -> str:
+    """Compose the same repair turn for a resumed **criteria extraction** session.
+
+    与评标版的唯一差别是描述对象：这一轮要保留的是已抽出的 criteria / tender_info，
+    不是评标结论。
+
+    Args:
+        error: 上一轮抛出的契约失败。
+
+    Returns:
+        常数级大小的修补指令（含截断后的错误原文）。
+    """
+    return _render(_EXTRACTION_REPAIR_PROMPT, error)
 
 
 def repair_session_id(error: Exception) -> str | None:

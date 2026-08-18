@@ -16,8 +16,11 @@ import json
 import logging
 import math
 import os
+from typing import Any
 
 from server.common.command_adapter import run_command_json
+from server.common.contract import is_non_retryable
+from server.common.json_bridge import run_agent_json
 from server.ocr.pipeline import prewarm_and_report
 from server.ocr.prewarm_scheduler import run_prewarm_with_heartbeat, track_upload_ocr_task
 from server.stores.tender_doc_store import (
@@ -29,6 +32,7 @@ from server.stores.tender_doc_store import (
 )
 from server.stores.tender_project_store import update_project_fields_if_empty
 from server.tender.context_slim import build_preextract_tender_context
+from server.tender.contract_repair import build_extraction_repair_prompt, repair_session_id
 
 # re-export：server.routes.tender 从本模块 import TENDER_OCR_PURPOSE（既有引用点不变）。
 from server.tender.runner import TENDER_OCR_PURPOSE as TENDER_OCR_PURPOSE
@@ -40,6 +44,14 @@ def _tender_slim_context_enabled() -> bool:
     """Return True when the opt-in tender context slimming path is enabled."""
     return os.getenv("TENDER_SLIM_CONTEXT", "0").lower() in {"1", "true", "yes"}
 
+
+# criteria 抽取的契约失败重试次数。2026-08-17 生产事故：这里原本一发定生死——一次
+# ``JSONContractError`` 就落 criteria_status=failed，criteria 缺位让证据层整条跳过，评标退回
+# 全量注入并被截断（那次会话只看到 23% 的材料）。失败形态与评标侧同型（文本模式下模型没有
+# 只输出 JSON），处置也同型：拿得到 CLI 会话 id 就 resume 修一轮，拿不到才整跑。
+# 默认 1：修补轮是常数级短指令，一轮还不听话多半这次就是不听话，再加轮次只会把上传后的
+# criteria 等待期（评标入口要等它到终态）拖长。
+EXTRACT_CONTRACT_MAX_RETRY = 1
 
 _EXTRACTION_OUTPUT_GUARD = (
     "=== 服务端输出约束（最高优先级）===\n"
@@ -232,6 +244,72 @@ def sanitize_tender_info(obj: object) -> dict[str, str] | None:
     return cleaned or None
 
 
+def _extraction_call_kwargs(tenant: str) -> dict[str, Any]:
+    """整跑与修补轮共用的一套调用参数（分开写两份必然漂移，见 ``runner._call_kwargs`` 先例）。"""
+    return {
+        "schema_name": None,
+        "tenant": tenant,
+        # 文本模式（与评标对齐）：大底稿下 SDK 结构化输出会 error_max_structured_output_retries。
+        "structured": False,
+        # 抽取产物不是投标人结论，不进 results 表。
+        "archive_to_results": False,
+    }
+
+
+async def _run_extraction(case_path: str, context: str, tenant: str) -> Any:
+    """跑一次 criteria/tender_info 抽取，契约失败时优先 resume 修补而不是整跑。
+
+    与 ``server.tender.runner`` 的重试环同构：失败带回了 CLI 会话 id 就只发一条常数级短指令
+    让模型把 JSON 改对（底稿它已经看过），拿不到会话（失败发生在会话建立之前）才回落整跑。
+
+    Args:
+        case_path: 上传落盘目录，作命令参数。
+        context: 已装配好的底稿 + 输出约束（修补轮**不重发**它）。
+        tenant: 租户作用域。
+
+    Returns:
+        模型返回的 payload（结构合法性由调用方判定——那不是格式问题，修补轮救不了）。
+
+    Raises:
+        Exception: 最后一次 attempt 的失败原样上抛，由调用方落 criteria_status=failed。
+    """
+    last_error: Exception | None = None
+    session_to_repair: str | None = None
+    for attempt in range(EXTRACT_CONTRACT_MAX_RETRY + 1):
+        try:
+            if session_to_repair is not None:
+                payload, _meta = await run_agent_json(
+                    build_extraction_repair_prompt(last_error),
+                    resume_session_id=session_to_repair,
+                    **_extraction_call_kwargs(tenant),
+                )
+            else:
+                payload, _meta = await run_command_json(
+                    "tender-extract-info",
+                    case_path,
+                    context=context,
+                    **_extraction_call_kwargs(tenant),
+                )
+            return payload
+        except Exception as exc:
+            last_error = exc
+            # 确定性失败（爆窗）重发必然同样失败，立即上抛（判定与评标侧同源）。
+            if is_non_retryable(exc) or attempt >= EXTRACT_CONTRACT_MAX_RETRY:
+                raise
+            session_to_repair = repair_session_id(exc)
+            logger.warning(
+                "tender_extract_attempt_failed",
+                extra={
+                    "case_path": case_path,
+                    "attempt": attempt + 1,
+                    "retry_via": "contract_repair" if session_to_repair else "full_rerun",
+                    "reason": str(exc)[:200],
+                },
+            )
+    # 不可达：循环要么 return 要么在最后一次 attempt re-raise。
+    raise AssertionError("unreachable: extraction retry loop exited without returning")
+
+
 async def extract_project_doc_info(
     project_id: str,
     case_path: str,
@@ -240,10 +318,11 @@ async def extract_project_doc_info(
 ) -> None:
     """R1: Extract criteria + tender_info from OCR text after OCR completes.
 
-    Calls the tender-extract-info command with the OCR text as context.  On success
-    writes criteria_json, tender_info_json, and criteria_status=ready to
-    tender_project_docs, then back-fills empty fields in tender_projects from
-    tender_info (user-entered values are never overwritten).
+    Calls the tender-extract-info command with the OCR text as context (契约失败会走
+    :func:`_run_extraction` 的修补轮，不是一发定生死).  On success writes criteria_json,
+    tender_info_json, and criteria_status=ready to tender_project_docs, then back-fills
+    empty fields in tender_projects from tender_info (user-entered values are never
+    overwritten).
 
     On ANY exception writes criteria_status=failed and leaves ocr_status=ready —
     extraction failure is non-fatal and must not affect the OCR-ready signal.
@@ -266,15 +345,8 @@ async def extract_project_doc_info(
         + _EXTRACTION_OUTPUT_GUARD
     )
     try:
-        payload, _meta = await run_command_json(
-            "tender-extract-info",
-            case_path,
-            schema_name=None,
-            tenant=tenant,
-            context=context,
-            structured=False,
-            archive_to_results=False,
-        )
+        # 契约失败不再一发定生死：拿得到会话就 resume 修一轮（见 :func:`_run_extraction`）。
+        payload = await _run_extraction(case_path, context, tenant)
         # payload must be a dict with a 'criteria' key to be considered valid
         if not isinstance(payload, dict) or "criteria" not in payload:
             raise ValueError(f"tender-extract-info returned unexpected payload shape: {payload!r}")
