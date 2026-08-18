@@ -661,3 +661,110 @@ pass3_f1_f3:
     - "tests/test_prompt_budget.py: PASSED（39,192B ≤ 40,000B）"
   not_touched:
     - "server/tender/evidence_continuation.py（F2 由另一 worktree 修，本轮零改动）"
+
+fix_a_criteria_honesty:
+  executor: "generator subagent (worktree agent-a9db75be44e901e84)"
+  baseline_commit: "830c9a7"
+  cycles:
+    - task: "(a) criteria 状态诚实化 + 回填质量门 · 降级会话的自解析 criteria 不得成为项目永久权威"
+      commit: "c1fcb74"
+      red_command: >-
+        uv run pytest tests/test_tender_criteria_authority_gate.py -q -p no:randomly
+        ；行为红另跑 uv run python /tmp/red_evidence_a.py（直调 store，复现生产库内形态）
+      red_summary: >-
+        17 failed（新增测试，在**未动实现**的基线码 830c9a7 上实测取得）。更要紧的是行为红：
+        直调 store 复现生产现场——先 update_project_doc_criteria_extracted(status='failed',
+        criteria_error='…（extraction_failed）')，再 update_project_doc_criteria(...) 回填，
+        实测输出 `return value: None` / `criteria_status: ready` /
+        `criteria_error: 评分标准抽取未完成（抽取命令失败或返回结构异常）（extraction_failed）` /
+        `has criteria_source col: False`——**ready 与 error 并存**，与生产 DB 现状逐字同形。
+        同一脚本第二次回填 `criteria after 2nd write: {"items":[{"item":"覆盖","max":99}]}`
+        ——store 层没有任何"首个写入者赢"守卫，覆盖成功（旧实现只靠 worker 读-判-写两步，
+        MAX_CONCURRENT_TENDER=2 下双双判空即互相覆盖）。测试侧失败原文另含
+        `ImportError: cannot import name 'CRITERIA_SOURCE_BACKFILL'`、
+        `ModuleNotFoundError: No module named 'server.tender.eval_signals'`、
+        `AttributeError: module 'server.tender.worker' has no attribute '_authority_block_reason'`、
+        `TypeError: _backfill_criteria() got an unexpected keyword argument 'block_reason'`
+        ——即质量门、截断信号线、出处列三者当时一个都不存在。
+      red_observed_at: "2026-08-18T11:07:00+0800"
+      green_command: >-
+        uv run pytest tests/test_tender_criteria_authority_gate.py
+        tests/test_tender_doc_store.py tests/test_tender_worker_bidder_backfill.py
+        tests/test_tender_pipeline_s1_visibility.py tests/test_tender_evidence_context.py
+        tests/test_tender_evidence_index.py tests/test_tender_evidence_provenance.py
+        tests/test_tender_evidence_wiring.py tests/test_no_real_corpus.py
+        tests/test_tender_info_extraction.py tests/test_codex_p2_rework_fixes.py
+        tests/test_tender_p3_backend.py tests/test_tender_criteria_ref.py
+        tests/test_tender_criteria_flow.py tests/test_tender_criteria_wait.py
+        tests/test_tender_compare.py tests/test_tender_compare_input.py
+        tests/test_tender_context_slim.py tests/test_tender_context_budget.py
+        tests/test_layering.py -q -p no:randomly
+      green_summary: >-
+        17 新增测试全绿；连同上列消费面合计 514 passed（含 (b) 的 14 条），
+        `uv run ruff check server tests` EXIT=0。三处落地：①store 的条件 UPDATE
+        （`criteria IS NULL OR criteria=''`）原子保证首写者赢并回报 rowcount，写成功即清
+        criteria_error；②worker._authority_block_reason 只认链路信号（context_truncated /
+        verdict==manual_review），被挡住时一行不写且结论 criteria_ref 保持 self_parsed；
+        ③新增 criteria_source 列（extracted / backfill_self_parsed，幂等 PRAGMA+ALTER），
+        出处跟内容走、criteria 为空即清 NULL。截断信号由新模块 server/tender/eval_signals.py
+        承载（ContextVar 装可变记录），draft_budget.bound_draft 与
+        context_slim.bound_tender_context 各打一处标，worker 在 _run_evaluation 外层开作用域。
+        **调用面清扫**（依 compound/2026-08-17-learning-schema-column-add-needs-caller-sweep.md
+        的"谁构造这个结构"判据）：grep upsert_project_doc / update_project_doc_criteria /
+        tender_project_docs / _backfill_criteria / bound_draft / bound_tender_context 覆盖
+        server scripts tests —— scripts/ 无构造点；随实现同步改的既有测试 3 处：
+        test_tender_p3_backend.py（5 个 _backfill_criteria 调用补 block_reason=None，
+        异常注入点从 get_project_doc 移到 update_project_doc_criteria）、
+        test_tender_worker_bidder_backfill.py（get_project_doc 打桩改为 store 回 False）、
+        test_tender_criteria_ref.py（backfill-wins 用例的 verdict 由 manual_review 改
+        approved——新门下转人工会话不再有资格定权威，该用例本意与 verdict 无关）。
+      green_observed_at: "2026-08-18T11:40:00+0800"
+
+fix_b_extract_repair:
+  executor: "generator subagent (worktree agent-a9db75be44e901e84)"
+  baseline_commit: "830c9a7"
+  cycles:
+    - task: "(b) 抽取侧契约修补轮 · JSONContractError 不再一发定生死，复用 contract_repair 的 resume"
+      commit: "ef5a2a5"
+      red_command: >-
+        uv run pytest tests/test_tender_extract_contract_repair.py -q -p no:randomly
+      red_summary: >-
+        14 failed（新增测试，在**未动实现**的基线码 830c9a7 上实测取得）。关键失败原文：
+        `AttributeError: <module 'server.tender.doc_pipeline'> has no attribute 'run_agent_json'`
+        ——doc_pipeline 根本没有 resume 入口，抽取只有 run_command_json 一条整跑路径；
+        `AttributeError: … has no attribute 'EXTRACT_CONTRACT_MAX_RETRY'`——没有重试上限概念；
+        `ImportError: cannot import name 'build_extraction_repair_prompt' from
+        'server.tender.contract_repair'`——修补文案只有评标版（含"不要重新评标"，抽取会话里
+        指向一个不存在的上一轮）。即：伪造带 session_id 的 JSONContractError 时，旧码既不
+        resume 也不整跑，直接落 criteria_status=failed（正是生产那次的处置）。
+      red_observed_at: "2026-08-18T11:19:00+0800"
+      green_command: >-
+        uv run pytest tests/test_tender_extract_contract_repair.py
+        tests/test_tender_contract_repair.py tests/test_tender_info_extraction.py
+        tests/test_codex_p2_rework_fixes.py tests/test_tender_upload_routes.py
+        tests/test_tender_doc_ocr_status.py tests/test_tender_doc_rerun.py
+        tests/test_tender_routes.py tests/test_prompt_budget.py tests/test_layering.py
+        -q -p no:randomly
+      green_summary: >-
+        14 新增测试全绿；连同消费面合计 514 + 91 passed，`uv run ruff check server tests`
+        EXIT=0。doc_pipeline._run_extraction 与 runner 的重试环同构：带回 session_id →
+        run_agent_json(resume_session_id=…) 只发常数级修补指令（测试断言底稿不重发、
+        schema_name=None/structured=False/archive_to_results=False 四项调用形态一致）；
+        无 session_id → 回落整跑 EXTRACT_CONTRACT_MAX_RETRY+1 次；命中
+        is_non_retryable（Prompt is too long）→ 单次即上抛，不进修补轮。结构性失败
+        （criteria items_empty 等）刻意留在重试环**外**：那不是格式问题、异常也不带
+        session_id，进环只会白跑一整轮——测试 test_structural_criteria_problem_does_not_
+        trigger_a_repair_turn 钉住这条边界。修补仍失败 → criteria_status=failed +
+        criteria_error 含 extraction_failed + ocr_status 保持 ready + criteria_source 为
+        NULL（与 (a) 的诚实状态对接）。.claude/commands/tender-extract-info.md 零改动。
+      green_observed_at: "2026-08-18T11:45:00+0800"
+  not_touched:
+    - "server/tender/evidence_context.py / doc_context.py / runner.py（(c)(d) 由另一 agent 修，本轮零改动）"
+    - ".claude/commands/tender-extract-info.md（7,491B / 上界 7,700B，余量 209B；修补指令是 Python 常量）"
+  known_blocker_not_mine:
+    - "tests/test_tender_prewarm_oracle.py 4 条用例在**基线**即挂起约 1800s/条（不是本轮引入）：
+       doc_layer._criteria_pending（引入于 7731e16）把缺 criteria_status 键且 updated_at 新鲜的
+       伪造行判为「还在抽」，wait_doc_layer_ready 遂等到派生上限（TENDER_TIMEOUT_SEC=3600 的 50%）。
+       证据：TENDER_TIMEOUT_SEC=0.2 uv run pytest tests/test_tender_prewarm_oracle.py -q -p no:randomly
+       → 4 failed, 21 passed in 1.11s（挂起变快速失败，说明是等上限而非死锁）。
+       该文件属 (c)(d) 责任面，本轮未改 doc_layer.py，交主 agent 转派。"
