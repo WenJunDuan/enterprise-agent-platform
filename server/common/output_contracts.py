@@ -152,6 +152,62 @@ def _coerce_risk_dimensions(value: Any) -> list[dict[str, Any]] | None:
     return normalized or None
 
 
+def _is_real_score(value: Any) -> bool:
+    """数值判定：``True``/``False`` 是 ``int`` 的子类，必须挡在外面（模型偶尔给 bool）。"""
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def summarize_scoring(extracted: Any) -> dict[str, float] | None:
+    """按 ``extracted_data.scoring`` 汇总总分与**待定量**（服务端算，不指望模型产出）。
+
+    线上 4/4 条结论的 ``total_score``/``total_max`` 恒为 ``null``——``extracted_data`` 是
+    ``additionalProperties:true``，schema 不强制，模型也就不给，前端拿不到总分。
+
+    **待定量与总分是不可拆的一组**：评标里 ``score=null`` 是常态（等横比 / 需外部数据 /
+    需现场答辩 / 出处未核实）。一份 12 项里 10 项待定的结论只给"12/100"，会被读成"这家得了
+    12 分"，实际是"88 分还没判"。故四个字段一起给，或一个都不给。
+
+    ``score=null`` **绝不当 0 计**：那等于服务端替模型判了 0 分，正是判分仲裁决策表反复禁止
+    的动作。满分非数的项（仅 ``manual`` 且需外部输入的项合法）连量纲都没有，既不计满分也不
+    计待定分。
+
+    Args:
+        extracted: 结论的 ``extracted_data``；非 dict 或无 scoring 时返回 ``None``。
+
+    Returns:
+        ``{"total_score", "total_max", "pending_count", "pending_max"}``；不适用时 ``None``。
+    """
+    if not isinstance(extracted, dict):
+        return None
+    scoring = extracted.get("scoring")
+    if not isinstance(scoring, list) or not scoring:
+        return None
+    total_score = 0.0
+    total_max = 0.0
+    pending_count = 0
+    pending_max = 0.0
+    counted = 0
+    for item in scoring:
+        if not isinstance(item, dict) or not _is_real_score(item.get("max")):
+            continue
+        counted += 1
+        total_max += float(item["max"])
+        score = item.get("score")
+        if _is_real_score(score):
+            total_score += float(score)
+        else:
+            pending_count += 1
+            pending_max += float(item["max"])
+    if counted == 0:
+        return None
+    return {
+        "total_score": total_score,
+        "total_max": total_max,
+        "pending_count": pending_count,
+        "pending_max": pending_max,
+    }
+
+
 def enrich_audit_decision(structured_output: StructuredJSON) -> StructuredJSON:
     """Inject `result`/`conclusion` derived from `verdict`; normalize string-list fields."""
     if isinstance(structured_output, dict):
@@ -180,6 +236,12 @@ def enrich_audit_decision(structured_output: StructuredJSON) -> StructuredJSON:
             normalized_dims = _coerce_risk_dimensions(structured_output["risk_dimensions"])
             if normalized_dims is not None:
                 structured_output["risk_dimensions"] = normalized_dims
+        # P0.5：总分与待定量由服务端按 scoring 重算后盖进 extracted_data（无 scoring 的
+        # expense/audit 结论不受影响）。**覆盖**模型自报值而不是 setdefault——这是纯算术，
+        # 模型算错过；且 enrich 幂等，两个取结论端点各跑一次不会滚雪球。
+        totals = summarize_scoring(structured_output.get("extracted_data"))
+        if totals is not None:
+            structured_output["extracted_data"].update(totals)
     return structured_output
 
 
