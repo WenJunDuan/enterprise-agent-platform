@@ -1,0 +1,117 @@
+sprint_slug: "2026-08-18-tender-eval-regression-gate"
+baseline_commit: "5b9f9c7"
+executor: "generator subagent (worktree agent-acc11005cf027e330, 分支 worktree-agent-acc11005cf027e330)"
+recorded_at: "2026-08-18"
+
+# ── 全量回归（同环境 before/after）──────────────────────────────────────────────
+# 命令：uv run --no-sync pytest -q --ignore=tests/test_tender_prewarm_oracle.py
+# 开工基线（改动前，本 worktree 自有 .venv）：34 failed / 1,634 passed / 4 skipped
+#   = 1,672 collected —— collected 数与主会话给的 1,672 一致。
+# 收尾（改动后）：34 failed / 1,693 passed / 4 skipped = 1,731 collected（+59 = 本次新增测试数）。
+#
+# **失败条数 34 而非主会话给的 24**：本 worktree 的 .venv 是 uv 为本 worktree 单独建的，
+# 比主 checkout 少装更多 ocr extras。实测成因全是缺可选依赖：
+#   ModuleNotFoundError 'pymupdf' ×18、'PIL' ×5（其余为同批连带断言）。
+# 跨环境比绝对条数没有意义，故按**同环境 before/after 逐名比对**取证（下面 comm 两向皆空）。
+baseline_failures: 34
+final_failures: 34
+new_failures: 0
+fixed_failures: 0
+baseline_diff: "empty（comm -13 与 comm -23 双向均为空，34 条同名）"
+collected_before: 1672
+collected_after: 1731
+verify_commands:
+  - "uv run --no-sync pytest -q --ignore=tests/test_tender_prewarm_oracle.py  # 34 failed / 1693 passed / 4 skipped"
+  - "comm -13 /tmp/baseline_failed.txt /tmp/after_failed.txt  # 空（0 新增）"
+  - "comm -23 /tmp/baseline_failed.txt /tmp/after_failed.txt  # 空（0 消失）"
+  - "uv run ruff check scripts/eval_tender_regression.py tests/test_eval_tender_regression.py tests/test_no_real_corpus.py  # All checks passed!"
+  - "uv run --no-sync python scripts/eval_tender_regression.py --case case-zj-live --dry-run  # EXIT=3（语料缺席 SKIP）"
+  - "uv run --no-sync python scripts/eval_tender_regression.py --case case-zj-live --dry-run --corpus-root <真实语料根>  # EXIT=0（指纹全对上）"
+  - "uv run --no-sync python scripts/eval_tender_regression.py --case case-zj-live --dry-run --corpus-root <同字节数诱饵目录>  # EXIT=4（指纹不符）"
+
+# 仓库既有 lint 基线（非本次引入）：`uv run ruff check .` 19 errors，全部落在
+# .claude/hooks/、.claude/skills/ocr-page/、scripts/ 既有四个脚本与 .ai_state/ 下的 spike；
+# 本次新增/改动的三个文件 ruff check 全绿。`ruff format` 全仓 146 文件未格式化 →
+# 该工具本仓不作门禁，故未对新文件跑 format（避免制造与全仓不一致的格式改写）。
+
+records:
+  - task: "T1 · 金标准 case 落盘 + 真实语料守卫扫描面扩到 eval/ 与 .yaml"
+    commit: "4968f6a（守卫扩面）, 44c5252（两份金标准 yaml）"
+    red_command: "uv run pytest -q tests/test_eval_tender_regression.py tests/test_no_real_corpus.py"
+    red_summary: >-
+      1 failed / 2 passed。红的是 test_real_corpus_guard_scans_golden_case_yaml：
+      断言 eval/golden/case-zj-live/expected.yaml 出现在守卫 _scan_files() 的结果集里，
+      实测不在——_SCAN_DIRS 无 "eval" 且 _SCAN_SUFFIXES 无 ".yaml"，两处缺一守卫都不生效。
+      即：金标准 yaml 当时对匿名化纪律零机械保障。
+    red_observed_at: "2026-08-18"
+    green_command: "uv run pytest -q tests/test_eval_tender_regression.py tests/test_no_real_corpus.py"
+    green_summary: >-
+      3 passed。含守卫主用例 test_no_real_organization_names_in_code_or_prompts
+      在扩面后仍全绿——即两份金标准 yaml 确实不含真实机构名形态。
+    green_observed_at: "2026-08-18"
+
+  - task: "T2 · YAML 子集解析 + case 定义校验 + 语料指纹定位"
+    commit: "44c5252"
+    red_command: "uv run pytest -q tests/test_eval_tender_regression.py"
+    red_summary: >-
+      collection error：ImportError: cannot import name 'eval_tender_regression' from 'scripts'。
+      17 条新断言（YAML 子集的映射/缩进序列/流式列表/引号内 # /五类不支持语法报错、
+      load_case 对未知类别枚举/anchors 与 absence 自相矛盾/severity 越界/id 重复/
+      语料角色不全的拒绝、resolve_corpus 的命中—缺席—指纹不符三分支）全部无法执行。
+    red_observed_at: "2026-08-18"
+    green_command: "uv run pytest -q tests/test_eval_tender_regression.py"
+    green_summary: "20 passed"
+    green_observed_at: "2026-08-18"
+
+  - task: "T3 · 四指标判定逻辑（页锚双键命中 / 客观分关键词族 / 待定分列 / 墙钟聚合）"
+    commit: "44c5252"
+    red_command: "uv run pytest -q tests/test_eval_tender_regression.py"
+    red_summary: >-
+      collection error：AttributeError: module 'scripts.eval_tender_regression' has no
+      attribute 'Finding'。31 条断言无法执行，含本闸的核心防线：双键必须落在同一条
+      finding（页锚单中 / 类别单中 / 两键分散在两条 finding 三种蒙对形态各一条用例）、
+      巨区间页锚只取端点、converted 与 original 坐标系不得混算、客观分未匹配显式列出
+      而非静默算 0、cross_bid 与 live_event 不计入劣化。
+    red_observed_at: "2026-08-18"
+    green_command: "uv run pytest -q tests/test_eval_tender_regression.py"
+    green_summary: "51 passed"
+    green_observed_at: "2026-08-18"
+
+  - task: "T3b · 空关键词族即拒（缺陷永不可命中的静默失准）"
+    commit: "44c5252"
+    red_command: "uv run pytest -q tests/test_eval_tender_regression.py::test_load_case_rejects_empty_keyword_family"
+    red_summary: >-
+      1 failed：Failed: DID NOT RAISE CaseDefinitionError。load_case 当时接受
+      `defect_classes: {c1: []}`——该类下的缺陷此后永远命不中，且报告里看不出任何异常，
+      正是本闸要终结的那类"数字好看但量错了"。
+    red_observed_at: "2026-08-18"
+    green_command: "uv run pytest -q tests/test_eval_tender_regression.py"
+    green_summary: "52 passed"
+    green_observed_at: "2026-08-18"
+
+  - task: "T4 · CLI + HTTP 端到端驱动 + 干跑完整性报告 + 四指标单表"
+    commit: "44c5252"
+    red_command: "uv run pytest -q tests/test_eval_tender_regression.py"
+    red_summary: >-
+      7 failed / 52 passed。evaluate_result / check_case / main / wait_for / render_report
+      五个入口全部 AttributeError，即：单次结论→四指标的合成、缺席(3) 与指纹不符(4)
+      两个退出码的分野、真跑缺 --backend 当场拒绝、轮询超时不降级继续、报告表头带
+      case 与样本量 n，当时一条都不成立。
+    red_observed_at: "2026-08-18"
+    green_command: "uv run pytest -q tests/test_eval_tender_regression.py"
+    green_summary: "59 passed"
+    green_observed_at: "2026-08-18"
+
+  - task: "T5 · 收尾：lint + 报告渲染小步重构 + 全量回归"
+    commit: "44c5252"
+    red_command: "uv run ruff check scripts/eval_tender_regression.py tests/test_eval_tender_regression.py tests/test_no_real_corpus.py"
+    red_summary: >-
+      Found 4 errors：EXE001（有 shebang 但文件不可执行，与同目录 measure_*.py 不一致）、
+      FURB162（fromisoformat 前多余的 Z→+00:00 替换）、ISC004（列表内隐式字符串拼接，
+      少个逗号就会静默把两行合并成一行）、FURB105（print 空串）。
+    red_observed_at: "2026-08-18"
+    green_command: "uv run ruff check scripts/eval_tender_regression.py tests/test_eval_tender_regression.py tests/test_no_real_corpus.py && uv run --no-sync pytest -q --ignore=tests/test_tender_prewarm_oracle.py"
+    green_summary: >-
+      All checks passed！全量 34 failed / 1693 passed / 4 skipped，与基线 34 条逐名一致、
+      0 新增（comm 双向为空）。重构后 59 条新测试仍全绿。
+    green_observed_at: "2026-08-18"
