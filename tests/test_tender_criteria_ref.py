@@ -260,7 +260,11 @@ def test_worker_persists_criteria_ref_into_archived_result():
 
 
 def test_worker_upgrades_self_parsed_ref_when_backfill_wins():
-    """权威缺位时首写者赢 backfill → 本家即权威，ref 必须升为 project（否则自己排除自己）。"""
+    """权威缺位时首写者赢 backfill → 本家即权威，ref 必须升为 project（否则自己排除自己）。
+
+    verdict 在本文件其余用例里只是填充值，这里**必须**是非 manual_review：2026-08-17 事故后
+    回填有质量门（``worker._authority_block_reason``），转人工的会话不再有资格定项目权威。
+    """
     criteria = _criteria()
     project_id = _new_project_with_criteria(None)
     request_id = f"rid-{uuid.uuid4().hex[:8]}"
@@ -269,7 +273,7 @@ def test_worker_upgrades_self_parsed_ref_when_backfill_wins():
         project_id,
         request_id,
         {
-            "verdict": "manual_review",
+            "verdict": "approved",
             "claim_id": "B1",
             "extracted_data": {
                 "criteria": criteria,

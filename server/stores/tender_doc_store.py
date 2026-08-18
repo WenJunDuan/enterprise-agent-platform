@@ -27,6 +27,12 @@ ensure_local_layout()
 # 未知值一律 fail-fast：静默落库后读侧只能猜，最坏被当成 ready 直接拿去评标。
 OCR_STATUSES = {"pending", "running", "ready", "degraded", "partial", "failed"}
 
+# criteria 出处（``criteria_source`` 列）。描述的是**库里现存这一份**从哪来的，criteria 为空时
+# 一律为 NULL。生产事故 2026-08-17 之后加：两种来源的可信度天差地别，而此前库里只有一个
+# criteria_status=ready，排查时无从分辨该项目的规则是上传时抽出来的，还是某一家评标顺手写的。
+CRITERIA_SOURCE_EXTRACTED = "extracted"  # 上传后 tender-extract-info 直接抽取
+CRITERIA_SOURCE_BACKFILL = "backfill_self_parsed"  # 某次评标会话自解析后回填
+
 
 def _validate_ocr_status(status: str) -> str:
     """校验 ocr_status 取值；未知值抛错（绝不静默写入）。"""
@@ -139,6 +145,10 @@ def _initialize_schema() -> None:
         # 端点透传给界面。旧实现只有 criteria_status=failed，用户只看得到"识别失败"。
         if "criteria_error" not in existing_cols:
             conn.execute("ALTER TABLE tender_project_docs ADD COLUMN criteria_error TEXT")
+        # 2026-08-17 migration：criteria_source —— 现存 criteria 的出处（见 CRITERIA_SOURCE_*）。
+        # 沿用同一幂等 PRAGMA + ALTER 先例；存量行留 NULL（出处不明，不编造）。
+        if "criteria_source" not in existing_cols:
+            conn.execute("ALTER TABLE tender_project_docs ADD COLUMN criteria_source TEXT")
         # X2 migration: tender_bid_docs 加 bidder_name_source，区分手填(NULL)/
         # agent 回填(agent_extracted)，供只填空回填判优先级（手填任何情况下不被覆盖）。
         existing_bid_cols = {
@@ -325,20 +335,42 @@ def touch_project_doc_ocr(project_id: str, *, tenant: str) -> None:
         )
 
 
-def update_project_doc_criteria(project_id: str, tenant: str, criteria_json: str) -> None:
-    """Back-fill evaluation criteria after first evaluation parses them.
+def update_project_doc_criteria(project_id: str, tenant: str, criteria_json: str) -> bool:
+    """Back-fill evaluation criteria after an evaluation parses them; first writer wins.
+
+    两条守卫（2026-08-17 事故）：
+
+    1. **只填空**：``WHERE`` 带 ``criteria IS NULL OR criteria = ''``，"首个写入者赢"由 SQL
+       原子保证。旧实现把这个判断放在调用方的读-判-写两步里，``MAX_CONCURRENT_TENDER=2``
+       下两家同时完成就会双双判空、后写的覆盖先写的，且**双方都以为自己是权威**。
+    2. **不留自相矛盾的行**：写成功即 ``criteria_status='ready'`` 且清 ``criteria_error``。
+       旧实现无条件置 ready 却不清 error，生产库里因此留下 ``ready`` 与
+       ``'…extraction_failed'`` 并存的行——界面显示识别失败，评标却照常注入它。
+
+    **谁有资格来写**（会话有没有被截断、结论是不是 manual_review）由调用方的质量门判定，
+    见 ``server.tender.worker._authority_block_reason``：那是链路级判断，store 看不见也不该猜。
 
     Args:
         project_id: Tender project identifier.
         tenant: Tenant scope — WHERE clause includes tenant to prevent cross-tenant writes.
-        criteria_json: JSON-encoded list of scoring criteria items.
+        criteria_json: JSON-encoded criteria object parsed by this evaluation session.
+
+    Returns:
+        True 当且仅当本次写入真的落了行（该项目此前没有权威 criteria）。调用方据此定
+        结论里的 ``criteria_ref``：赢了记 ``project``，输了留 ``self_parsed``。
     """
     with connect_sqlite(PLATFORM_DB_FILE, immediate=True) as conn:
-        conn.execute(
-            "UPDATE tender_project_docs SET criteria = ?, criteria_status = 'ready', updated_at = ? "
-            "WHERE project_id = ? AND tenant = ?",
-            (criteria_json, utc_now(), project_id, tenant),
+        cursor = conn.execute(
+            """
+            UPDATE tender_project_docs
+            SET criteria = ?, criteria_status = 'ready', criteria_error = NULL,
+                criteria_source = ?, updated_at = ?
+            WHERE project_id = ? AND tenant = ?
+                AND (criteria IS NULL OR criteria = '')
+            """,
+            (criteria_json, CRITERIA_SOURCE_BACKFILL, utc_now(), project_id, tenant),
         )
+        return cursor.rowcount > 0
 
 
 def update_project_doc_criteria_extracted(
@@ -363,12 +395,15 @@ def update_project_doc_criteria_extracted(
         status: New criteria_status value (ready or failed).
         criteria_error: 失败原因（AC3 透传到任务状态与界面）；成功时传 None 顺带清掉旧原因。
     """
+    # 出处跟着**内容**走：写进 criteria 才是 extracted，写空（失败 / running 中间态）就清成
+    # NULL——否则一次失败之后行里会留着上一份 criteria 的出处，指向早已不在的内容。
+    criteria_source = CRITERIA_SOURCE_EXTRACTED if criteria_json else None
     with connect_sqlite(PLATFORM_DB_FILE, immediate=True) as conn:
         conn.execute(
             """
             UPDATE tender_project_docs
             SET criteria = ?, tender_info = ?, criteria_status = ?, criteria_error = ?,
-                updated_at = ?
+                criteria_source = ?, updated_at = ?
             WHERE project_id = ? AND tenant = ?
             """,
             (
@@ -376,6 +411,7 @@ def update_project_doc_criteria_extracted(
                 tender_info_json,
                 status,
                 criteria_error,
+                criteria_source,
                 utc_now(),
                 project_id,
                 tenant,
