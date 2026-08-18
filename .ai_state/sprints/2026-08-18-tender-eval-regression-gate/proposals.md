@@ -25,6 +25,24 @@ case 定义与校验、语料指纹定位、四指标判定、HTTP 驱动与报�
 `server/tender/output.py` 717）。建议由主会话裁决：放行，或授权补一个 `eval/regression.py`
 做纯搬运式拆分（有测试兜底，零行为变更）。
 
+## P1 · 存量真实语料残留：真实项目编号在测试 fixture 里（守卫抓不到的形态）
+
+`tests/test_legacy_doc_table_recovery.py:43` 有
+
+```python
+raw = "第一章 投标邀请\n项目编号：TENDER-NO-ZJ\n预算金额：133万元"
+```
+
+`TENDER-NO-ZJ` 与 `133万元` 都是本 case 真实标书的原始数据（见 2026-08-17 参照实跑报告的
+基本信息表）。来源 commit `1a52e92`（2026-08-17，非本 sprint 引入）。
+
+`test_no_real_corpus.py` 抓不到它——守卫只按「汉字 + 机构性后缀」的形态抓，项目编号与金额
+在形态上与合成数据不可分（守卫 docstring 已自陈这个边界）。发现方式是我按参照报告里的
+具体串反查，不是守卫。
+
+建议：改成合成编号与合成金额（保住"字母-数字段"的结构性质即可），并在 compound 里记一条
+「形态守卫抓不到编号类标识」的补充。**不在本轮白名单内，未改。**
+
 ## P2 · 仓内已有一套 golden-case 评测，design 的「已调研的现成方案」表未提及
 
 `server/tender/eval.py` + `tests/eval_fixtures/tender/golden_manifest.json` 是既有的评标
