@@ -75,11 +75,17 @@ class DocLayerOutcome:
 
     三个信号必须一起返回：pass1 的 REWORK 正是因为只回传了 ``text``，
     ``warnings`` 与 ``force_manual_review`` 落地即丢，降级归宿形同虚设。
+
+    ``from_evidence_layer`` 回答的是"``text`` 是**按评分项检出的片段**还是**整份底稿**"。
+    调用方据此裁定字节闸触发时的归宿：整份底稿被腰斩 = 评分失去权威性（转人工），而证据层
+    片段的体量由 ``injection_budget`` 闭式账目保证，不该被同一条闸判死。**不能靠嗅探文本
+    特征反推**——那等于把归宿判定挂在注入头的措辞上。
     """
 
     text: str | None = None
     warnings: list[dict[str, object]] = field(default_factory=list)
     force_manual_review: bool = False
+    from_evidence_layer: bool = False
 
 
 async def _resolve_doc_layer(
@@ -126,7 +132,9 @@ async def _resolve_doc_layer(
             warnings.extend(evidence.warnings)
             if evidence.context is not None:
                 warnings.extend(await _integrity_warnings_now(project_id, bid_id, tenant))
-                return DocLayerOutcome(text=evidence.context, warnings=warnings)
+                return DocLayerOutcome(
+                    text=evidence.context, warnings=warnings, from_evidence_layer=True
+                )
             if evidence.force_manual_review:
                 return DocLayerOutcome(warnings=warnings, force_manual_review=True)
 

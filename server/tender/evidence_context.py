@@ -93,7 +93,20 @@ def build_evidence_context(
     """
     if not _criteria_has_items(criteria):
         # 不是失败：没有 criteria 时评标会自行 S1 解析，交回既有路径。
-        return EvidenceContext()
+        # 但"不是失败"不等于"不必留痕"（KD4）：交回去意味着注入形态从**按项检索的片段**
+        # 变回**整份底稿**，重新暴露在截断风险下。2026-08-18 事故里这条分支零 warning 零
+        # 日志，用户拿到 9/11 项 evidence_unresolved 的结论却看不出链路换过路，反查一整天。
+        logger.warning("tender_evidence_layer_skipped", extra={"project_id": project_id})
+        return EvidenceContext(
+            warnings=[
+                _warning(
+                    "evidence_layer_skipped",
+                    "本次未按评分项检索证据（本项目评分标准尚未解析出可检索的评分项或资格规则），"
+                    "改用整份底稿注入。后果：注入内容不再按评分项裁剪，底稿超出注入预算时会被"
+                    "整体截断，被截材料对应的评分项将拿不到证据。",
+                )
+            ]
+        )
 
     conn = sqlite3.connect(":memory:")
     try:

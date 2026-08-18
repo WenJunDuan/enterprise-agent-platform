@@ -40,7 +40,13 @@ from server.tender.doc_context import (
 
 # re-export：两处测试按 ``runner._ocr_integrity_warnings`` 调用（拆分前的公开位置）。
 from server.tender.doc_context import _ocr_integrity_warnings as _ocr_integrity_warnings
-from server.tender.draft_budget import TRUNCATION_NOTICE, bound_draft, context_max_bytes
+from server.tender.draft_budget import (
+    TRUNCATION_NOTICE,
+    TruncatedDraft,
+    bound_draft,
+    context_max_bytes,
+    truncation_warning,
+)
 from server.tender.evidence_context import build_manual_review_result
 from server.tender.injection_budget import describe_context_rejection, estimate_tokens
 from server.tender.output import TENDER_OUTPUT_SCHEMA_NAME
@@ -93,7 +99,9 @@ _TENDER_EFFORT = os.getenv("TENDER_REASONING_EFFORT", "xhigh")
 DRAFT_INJECTED_TOOLS = ["Bash"]
 
 
-def _bound_ocr_block(ocr_block: str, *, request_id: str, model: str | None = None) -> str:
+def _bound_ocr_block(
+    ocr_block: str, *, request_id: str, model: str | None = None
+) -> tuple[str, TruncatedDraft | None]:
     """Fit the OCR draft into the byte budget and log the truncation for ops.
 
     截断本身是纯计算（``draft_budget``）；这条 ``tender_context_truncated`` 告警刻意留在
@@ -105,11 +113,13 @@ def _bound_ocr_block(ocr_block: str, *, request_id: str, model: str | None = Non
         model: 本次评标实际使用的模型名，用于按其窗口推导默认预算。
 
     Returns:
-        未超限时原样返回；超限时返回 ``内容优先截断后的底稿 + 截断标记``。
+        ``(注入用底稿, 截断账目)``。未超限时账目为 ``None``、底稿原样返回；超限时返回
+        ``内容优先截断后的底稿 + 截断标记`` 与字节账——账目**必须回传**，调用方据此产出
+        用户可见 warning 并裁定本次评分是否还有权威性（2026-08-18 事故：账目只进日志）。
     """
     truncated = bound_draft(ocr_block, model=model)
     if truncated is None:
-        return ocr_block
+        return ocr_block, None
     logger.warning(
         "tender_context_truncated",
         extra={
@@ -119,7 +129,7 @@ def _bound_ocr_block(ocr_block: str, *, request_id: str, model: str | None = Non
             "limit_bytes": truncated.limit_bytes,
         },
     )
-    return truncated.text
+    return truncated.text, truncated
 
 
 async def run_tender_evaluation(
@@ -148,9 +158,11 @@ async def run_tender_evaluation(
     # 无 project_id（legacy 散单）或开关关闭 → 直接回落。
     doc_layer_text: str | None = None
     ocr_warnings: list[dict[str, object]] = []
+    from_evidence_layer = False
     if _tender_read_doc_layer_enabled() and project_id:
         outcome = await _resolve_doc_layer(project_id, bid_id, tenant)
         doc_layer_text, ocr_warnings = outcome.text, outcome.warnings
+        from_evidence_layer = outcome.from_evidence_layer
         if outcome.force_manual_review:
             # F7 降级归宿：证据层不可用时**不回落 inline**（那条路径对 400 页投标产出的是
             # 带 warning 的错误评分），也不把注定无证据的 prompt 发出去，直接出人工复核结论。
@@ -182,10 +194,28 @@ async def run_tender_evaluation(
 
     # 预算闸：两条来源（doc_layer_reuse / inline_ocr 降级）都过闸——预热底稿理论上同样可能超大。
     # 闸放在 tender 调用侧而非 server/ocr/：OCR 产物本身该完整，只有"注入给模型"这一步有预算。
+    truncation: TruncatedDraft | None = None
     if ocr_block:
-        ocr_block = _bound_ocr_block(
+        ocr_block, truncation = _bound_ocr_block(
             ocr_block, request_id=request_id, model=resolved_model or None
         )
+    if truncation is not None:
+        # KD4：截断此前只进运维日志与模型上下文，结论与前端零痕迹（2026-08-18 事故）。
+        # F7 归宿扩面：**整份注入被腰斩即失去评分权威性**——被截内容对各评分项的影响不可知，
+        # 出的分只是"看起来完整"的错评分（08-18 那份 9/11 项 evidence_unresolved 的结论就是
+        # 它）。判据刻意是物理触发（original_bytes > limit），不含任何百分比阈值：百分比是对
+        # 某一份文档的标定，换标书即失准。证据层路径的注入量由 injection_budget 闭式账目保证，
+        # 不受此闸约束——它交付的是选出来的片段，不是被腰斩的整份底稿。
+        ocr_warnings.append(truncation_warning(truncation, stops_scoring=not from_evidence_layer))
+        if not from_evidence_layer:
+            return await asyncio.to_thread(
+                build_manual_review_result,
+                request_id=request_id,
+                tenant=tenant,
+                project_id=project_id,
+                bid_id=bid_id,
+                warnings=ocr_warnings,
+            )
 
     context = (
         f"=== OCR/直读底稿（确定性预处理，优先用此文本，无需再 Read 文件）===\n{ocr_block}"
