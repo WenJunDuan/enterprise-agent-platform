@@ -54,7 +54,7 @@ def doc_ocr_status(row: dict | None) -> str | None:
 CRITERIA_TERMINAL_STATUSES = frozenset({"ready", "failed"})
 
 
-def _criteria_pending(project_doc: dict | None, stale_sec: float) -> bool:
+def criteria_pending(project_doc: dict | None, stale_sec: float) -> bool:
     """招标层的 criteria 抽取是否仍在进行（值得再等一会）。
 
     证据层（S3）只在有 criteria 时接管；criteria 抽取与评标提交是并发的，评标可能抢跑。
@@ -236,7 +236,7 @@ async def wait_doc_layer_ready(project_id: str, bid_id: str, tenant: str) -> str
             # 01:40:54 才抽完（晚 36 秒），于是 build_evidence_context 走"无 criteria→交回
             # 既有路径"分支，整份 784KB 底稿退回全量注入 + 截断。故这里多等一档：招标层
             # criteria 仍在抽（未落库且预热在途）时继续等，抽完或确定不会有了再放行。
-            if _criteria_pending(proj, settings.prewarm_stale_sec):
+            if criteria_pending(proj, settings.prewarm_stale_sec):
                 now = time.monotonic()
                 if now >= deadline:
                     return "wait_cap_reached"
