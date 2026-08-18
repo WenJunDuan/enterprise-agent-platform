@@ -168,15 +168,22 @@ def test_final_prompt_token_count_stays_under_the_calibrated_ceiling(monkeypatch
     """AC5（F2 补）：对**最终 prompt** 计 token，加脚手架与循环余量后仍 ≤ 标定上限。
 
     只断言"预算函数返回值正确"不够——pass1 的两个预算函数各自都自洽，错在没扣脚手架，
-    而这条只有在真正走完组装、拿到发出去的那串文本时才暴露。这里走的是最危险的一条：
-    inline 回落 + 超大底稿（400KB 量级，正是 08-15 那单的形态）。
+    而这条只有在真正走完组装、拿到发出去的那串文本时才暴露。
+
+    2026-08-18 修订（(d) 截断即转人工上线后）：底稿**超预算**那一档已不再发 prompt
+    （`runner` 短路到 `build_manual_review_result`，由 `test_tender_truncation_authority.py`
+    守），故本条改用**贴近但不越上限**的底稿——它是"仍会发出去"的最大形态，也就是 AC5
+    这条不变量唯一还能被违反的地方。原来那份 400KB 底稿测的其实是截断闸，不是本不变量。
     """
     import asyncio
 
-    from server.tender import doc_layer, runner
+    from server.tender import doc_layer, draft_budget, runner
 
-    huge_draft = "投标文件正文段落，与评标办法无关的附件材料。" * 20_000
-    assert len(huge_draft.encode("utf-8")) > 400_000
+    # 贴着上限取 90%：既保证走完整条组装链，又保证 bound_draft 不触发（触发即不发 prompt）。
+    fill_bytes = int(draft_budget.context_max_bytes(None) * 0.9)
+    unit = "投标文件正文段落，与评标办法无关的附件材料。"
+    huge_draft = unit * (fill_bytes // len(unit.encode("utf-8")))
+    assert draft_budget.bound_draft(huge_draft) is None, "前置条件：本用例的底稿不得触发截断闸"
 
     monkeypatch.setattr(doc_layer, "load_doc_layer_context", lambda *_a, **_kw: None)
     monkeypatch.setattr(doc_layer, "load_doc_layer_context_slim", lambda *_a, **_kw: None)
