@@ -16,6 +16,7 @@ import json
 import logging
 import math
 import os
+from pathlib import Path
 from typing import Any
 
 from server.common.command_adapter import run_command_json
@@ -35,6 +36,9 @@ from server.tender.context_slim import build_preextract_tender_context
 from server.tender.contract_repair import build_extraction_repair_prompt, repair_session_id
 
 # re-export：server.routes.tender 从本模块 import TENDER_OCR_PURPOSE（既有引用点不变）。
+# ``DRAFT_INJECTED_TOOLS`` 是**复用**评标侧同一个常量对象（不是抄一份）：底稿在场时两条路径
+# 的工具面必须同进同退，各存一份必然漂移。
+from server.tender.runner import DRAFT_INJECTED_TOOLS
 from server.tender.runner import TENDER_OCR_PURPOSE as TENDER_OCR_PURPOSE
 
 logger = logging.getLogger(__name__)
@@ -52,6 +56,12 @@ def _tender_slim_context_enabled() -> bool:
 # 默认 1：修补轮是常数级短指令，一轮还不听话多半这次就是不听话，再加轮次只会把上传后的
 # criteria 等待期（评标入口要等它到终态）拖长。
 EXTRACT_CONTRACT_MAX_RETRY = 1
+
+# criteria 抽取的硬超时（秒），形态与评标侧 ``worker.TENDER_TIMEOUT_SEC`` 同款（模块级常量 +
+# env 覆盖 + ``asyncio.wait_for`` 包住整次调用）。抽取此前**根本没有超时**：线上实测一次抽取
+# 跑到 16 分钟仍未结束，而评标入口要等 criteria 到终态才放行——一次挂死把整条链路一起拖住。
+# 上限覆盖整个重试环（整跑 + 修补轮），因为要封的是"这次抽取一共能占多久"，不是单次往返。
+EXTRACT_TIMEOUT_SEC = float(os.getenv("TENDER_EXTRACT_TIMEOUT_SEC", "1200"))
 
 _EXTRACTION_OUTPUT_GUARD = (
     "=== 服务端输出约束（最高优先级）===\n"
@@ -244,9 +254,18 @@ def sanitize_tender_info(obj: object) -> dict[str, str] | None:
     return cleaned or None
 
 
-def _extraction_call_kwargs(tenant: str) -> dict[str, Any]:
-    """整跑与修补轮共用的一套调用参数（分开写两份必然漂移，见 ``runner._call_kwargs`` 先例）。"""
-    return {
+def _extraction_call_kwargs(tenant: str, *, case_path: str, draft_present: bool) -> dict[str, Any]:
+    """整跑与修补轮共用的一套调用参数（分开写两份必然漂移，见 ``runner._call_kwargs`` 先例）。
+
+    Args:
+        tenant: 租户作用域。
+        case_path: 上传落盘目录；底稿在场时兼作 ``case_root``，见下。
+        draft_present: 底稿是否已由 ``context`` 注入。
+
+    Returns:
+        传给 ``run_command_json`` / ``run_agent_json`` 的 kwargs。
+    """
+    kwargs: dict[str, Any] = {
         "schema_name": None,
         "tenant": tenant,
         # 文本模式（与评标对齐）：大底稿下 SDK 结构化输出会 error_max_structured_output_retries。
@@ -254,9 +273,20 @@ def _extraction_call_kwargs(tenant: str) -> dict[str, Any]:
         # 抽取产物不是投标人结论，不进 results 表。
         "archive_to_results": False,
     }
+    if draft_present:
+        # 底稿在场 → 锁工具面（评标侧 2026-08-17 已这么做，抽取侧当时漏了）：提示词写着"禁止
+        # 调用任何工具"，模型照样 Glob + 逐个 Read，每一次都是一整轮重新预填充整份底稿。
+        # ``case_root`` 必须一起传：锁面里唯一的 Bash 靠 build_options 的 ocr-page PreToolUse
+        # 白名单闸约束，不绑 case_root 就等于给一个处理**攻击者可控 PDF** 的子进程配了裸 Bash。
+        kwargs["tools"] = DRAFT_INJECTED_TOOLS
+        kwargs["allowed_tools"] = DRAFT_INJECTED_TOOLS
+        kwargs["case_root"] = Path(case_path)
+    return kwargs
 
 
-async def _run_extraction(case_path: str, context: str, tenant: str) -> Any:
+async def _run_extraction(
+    case_path: str, context: str, tenant: str, *, draft_present: bool = True
+) -> Any:
     """跑一次 criteria/tender_info 抽取，契约失败时优先 resume 修补而不是整跑。
 
     与 ``server.tender.runner`` 的重试环同构：失败带回了 CLI 会话 id 就只发一条常数级短指令
@@ -266,6 +296,8 @@ async def _run_extraction(case_path: str, context: str, tenant: str) -> Any:
         case_path: 上传落盘目录，作命令参数。
         context: 已装配好的底稿 + 输出约束（修补轮**不重发**它）。
         tenant: 租户作用域。
+        draft_present: 底稿是否真的在 ``context`` 里。为假时**不锁工具面**——那条降级路径下
+            模型必须还能自己读文件。
 
     Returns:
         模型返回的 payload（结构合法性由调用方判定——那不是格式问题，修补轮救不了）。
@@ -275,20 +307,23 @@ async def _run_extraction(case_path: str, context: str, tenant: str) -> Any:
     """
     last_error: Exception | None = None
     session_to_repair: str | None = None
+    call_kwargs = _extraction_call_kwargs(
+        tenant, case_path=case_path, draft_present=bool(draft_present)
+    )
     for attempt in range(EXTRACT_CONTRACT_MAX_RETRY + 1):
         try:
             if session_to_repair is not None:
                 payload, _meta = await run_agent_json(
                     build_extraction_repair_prompt(last_error),
                     resume_session_id=session_to_repair,
-                    **_extraction_call_kwargs(tenant),
+                    **call_kwargs,
                 )
             else:
                 payload, _meta = await run_command_json(
                     "tender-extract-info",
                     case_path,
                     context=context,
-                    **_extraction_call_kwargs(tenant),
+                    **call_kwargs,
                 )
             return payload
         except Exception as exc:
@@ -308,6 +343,29 @@ async def _run_extraction(case_path: str, context: str, tenant: str) -> Any:
             )
     # 不可达：循环要么 return 要么在最后一次 attempt re-raise。
     raise AssertionError("unreachable: extraction retry loop exited without returning")
+
+
+def _criteria_failure_message(exc: BaseException) -> str:
+    """把一次抽取失败渲染成**带可执行动作**的界面说明（机器码留在括号里供 grep）。
+
+    三档各有各的下一步，故不能归一成一句"识别失败"：结构不可用要用户换/补文件；超时要
+    用户重传或运维放宽上限；其余（命令失败/返回结构异常）只能重试。
+
+    Args:
+        exc: 抽取路径上抛出的异常。
+
+    Returns:
+        落库到 ``criteria_error`` 的中文说明。
+    """
+    if isinstance(exc, CriteriaUnusableError):
+        return criteria_usability_problem_message(exc.problem)
+    if isinstance(exc, TimeoutError):
+        return (
+            f"评分标准解析超时（超过 {int(EXTRACT_TIMEOUT_SEC)}s 未返回）。"
+            "请重新上传招标文件重试；若该文件确实很大或本机模型很慢，"
+            "由运维调高 TENDER_EXTRACT_TIMEOUT_SEC 后再传。（extraction_timeout）"
+        )
+    return "评分标准抽取未完成（抽取命令失败或返回结构异常）（extraction_failed）"
 
 
 async def extract_project_doc_info(
@@ -346,7 +404,12 @@ async def extract_project_doc_info(
     )
     try:
         # 契约失败不再一发定生死：拿得到会话就 resume 修一轮（见 :func:`_run_extraction`）。
-        payload = await _run_extraction(case_path, context, tenant)
+        # 硬超时包住整个重试环（形态同评标侧 ``worker._execute_inner`` 的 ``asyncio.wait_for``）：
+        # 要封的是"这次抽取一共能占多久"，不是单次往返——评标入口在等它到终态。
+        payload = await asyncio.wait_for(
+            _run_extraction(case_path, context, tenant, draft_present=bool(extraction_text)),
+            timeout=EXTRACT_TIMEOUT_SEC,
+        )
         # payload must be a dict with a 'criteria' key to be considered valid
         if not isinstance(payload, dict) or "criteria" not in payload:
             raise ValueError(f"tender-extract-info returned unexpected payload shape: {payload!r}")
@@ -399,12 +462,9 @@ async def extract_project_doc_info(
         )
     except Exception as exc:
         # AC3：结构不合格有具名原因，其余异常（命令失败/payload 形状不对）归一到一条可读说明——
-        # 两者都必须落库，界面才不会只剩一个"识别失败"。
-        criteria_error = (
-            criteria_usability_problem_message(exc.problem)
-            if isinstance(exc, CriteriaUnusableError)
-            else "评分标准抽取未完成（抽取命令失败或返回结构异常）（extraction_failed）"
-        )
+        # 两者都必须落库，界面才不会只剩一个"识别失败"。超时另立一档：它的处置动作与"抽取
+        # 失败"完全不同（一个是重试/放宽上限，一个是换文件），混成一条等于没说。
+        criteria_error = _criteria_failure_message(exc)
         logger.warning(
             "tender_doc_info_extraction_failed",
             extra={
