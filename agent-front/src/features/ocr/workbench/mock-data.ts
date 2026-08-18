@@ -30,7 +30,7 @@ export const MOCK_EXTRACT_ITEMS: OcrExtractItem[] = [
     blocks: [
       [
         '项目名称： 南通高新数字科技智能算力中心',
-        '项目法人单位： 南通高新数字科技发展有限公司',
+        '项目法人单位： 示例数字科技有限公司',
         '项目代码： 2503-320658-89-04-869947',
         '项目总投资： 7500万元',
         '建设性质： 新建    计划开工时间： 2025',
@@ -69,7 +69,7 @@ export const MOCK_FORM_FILL: FormFillResult = {
   form_id: 'project_filing',
   fields: [
     { key: '项目名称', component: 'single_line', value: '南通高新数字科技智能算力中心', confidence: 0.98, source: '备案证.pdf' },
-    { key: '项目法人单位', component: 'single_line', value: '南通高新数字科技发展有限公司', confidence: 0.96, source: '备案证.pdf' },
+    { key: '项目法人单位', component: 'single_line', value: '示例数字科技有限公司', confidence: 0.96, source: '备案证.pdf' },
     { key: '项目代码', component: 'single_line', value: '2503-320658-89-04-869947', confidence: 0.92, source: '备案证.pdf' },
     { key: '项目总投资(万元)', component: 'number', value: 7500, confidence: 0.95, source: '备案证.pdf / 项目库.xlsx' },
     { key: '建设性质', component: 'select', value: '新建', confidence: 0.99, source: '备案证.pdf' },

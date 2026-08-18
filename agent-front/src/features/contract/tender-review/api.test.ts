@@ -246,7 +246,7 @@ describe('contract tender review api', () => {
         project_id: 'project-2',
         tender_no: 'SH-2026-002',
         title: '上海地铁项目',
-        tenderee: '上海地铁集团',
+        tenderee: '示例轨道交通集团',
         method: '最低投标价法',
         control_price: '50000000',
         funding_type: 'state_funded',
@@ -259,7 +259,7 @@ describe('contract tender review api', () => {
     const project = await createTenderProject({
       tender_no: 'SH-2026-002',
       title: '上海地铁项目',
-      tenderee: '上海地铁集团',
+      tenderee: '示例轨道交通集团',
       method: '最低投标价法',
       control_price: '50000000',
       funding_type: 'state_funded',
@@ -269,7 +269,7 @@ describe('contract tender review api', () => {
     const sentBody = JSON.parse(String(calls[0]?.init?.body))
     expect(sentBody.tender_no).toBe('SH-2026-002')
     expect(sentBody.title).toBe('上海地铁项目')
-    expect(sentBody.tenderee).toBe('上海地铁集团')
+    expect(sentBody.tenderee).toBe('示例轨道交通集团')
     expect(sentBody.method).toBe('最低投标价法')
     expect(sentBody.control_price).toBe('50000000')
     expect(sentBody.funding_type).toBe('state_funded')

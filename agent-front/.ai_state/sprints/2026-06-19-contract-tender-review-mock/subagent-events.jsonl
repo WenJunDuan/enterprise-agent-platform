@@ -1,0 +1,5 @@
+{"schema_version":1,"event":"SubagentStart","agent_id":"a6b2f7d5cb199053a","agent_type":"reviewer","sprint_slug":"2026-06-19-contract-tender-review-mock","timestamp":"2026-08-18T00:57:25.913Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"a94c4188911aec3f8","agent_type":"spec-compliance","sprint_slug":"2026-06-19-contract-tender-review-mock","timestamp":"2026-08-18T00:57:43.591Z"}
+{"schema_version":1,"event":"SubagentStop","agent_id":"a94c4188911aec3f8","agent_type":"spec-compliance","sprint_slug":"2026-06-19-contract-tender-review-mock","timestamp":"2026-08-18T01:08:46.965Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"a6b2f7d5cb199053a","agent_type":"reviewer","sprint_slug":"2026-06-19-contract-tender-review-mock","timestamp":"2026-08-18T01:12:10.624Z"}
+{"schema_version":1,"event":"SubagentStop","agent_id":"a6b2f7d5cb199053a","agent_type":"reviewer","sprint_slug":"2026-06-19-contract-tender-review-mock","timestamp":"2026-08-18T01:14:14.175Z"}

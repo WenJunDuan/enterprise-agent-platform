@@ -51,7 +51,7 @@ export function createDefaultForm(): SubmitFormData {
     invoice_code: '031002300111',
     invoice_number: '24567890',
     invoice_issue_date: today(),
-    invoice_seller_name: '上海差旅服务有限公司',
+    invoice_seller_name: '示例差旅服务有限公司',
     invoice_seller_tax_id: '91310000MA1K000000',
     invoice_buyer_title: '示例科技有限公司',
     invoice_validation_status: '已验真',

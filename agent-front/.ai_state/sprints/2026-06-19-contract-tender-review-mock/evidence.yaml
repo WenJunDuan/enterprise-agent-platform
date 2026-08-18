@@ -359,3 +359,18 @@ collected_evidence:
     result: pass
     command: "cd agent-front && bun test 2>&1 | tail -6"
     timestamp: "2026-08-17T13:21:08.066Z"
+  - tool_use_id: "toolu_01LveSrtto72CdaPJ4gqrmhv"
+    tool: "Bash"
+    result: pass
+    command: "cd agent-front && bun run build 2>&1 | tail -6"
+    timestamp: "2026-08-18T00:56:54.542Z"
+  - tool_use_id: "toolu_017FziKKHuJaspi9HX3nRq5S"
+    tool: "Bash"
+    result: pass
+    command: "uv run pytest tests/test_no_real_corpus.py -q -p no:randomly 2>&1 | tail -4 && cd agent-front && bun test 2>&1 | tail -4 && bunx tsc -b 2>&1 | tail -3 && echo \"TSC-OK\" && bun run lint 2>&1 | tail -3"
+    timestamp: "2026-08-18T01:16:06.167Z"
+  - tool_use_id: "toolu_012Sur6c6mmx15546Ph8goCV"
+    tool: "Bash"
+    result: pass
+    command: "uv run pytest tests/test_no_real_corpus.py -q -p no:randomly 2>&1 | tail -3; echo \"=== 前端三件套 ===\"; cd agent-front && bun test 2>&1 | grep -E \"^ (203|[0-9]+) (pass|fail)\" ; bunx tsc -b 2>&1 | tail -2 && echo \"tsc EXIT=0\"; bun run lint 2>&1 | tail -2"
+    timestamp: "2026-08-18T01:16:47.968Z"

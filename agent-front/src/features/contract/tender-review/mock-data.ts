@@ -22,7 +22,7 @@ export const tenderReviewMockData: TenderReviewMockData = {
       stage: '评分完成 · 待复核',
       progress: 100,
       riskCount: 2,
-      recommendedBidder: '中建华东建设集团有限公司',
+      recommendedBidder: '丙建设集团有限公司',
     },
     {
       id: 'bj-2026-zb-014',
@@ -64,7 +64,7 @@ export const tenderReviewMockData: TenderReviewMockData = {
       stage: '已完成',
       progress: 100,
       riskCount: 0,
-      recommendedBidder: '中铁十二局集团有限公司',
+      recommendedBidder: '丁工程集团有限公司',
     },
     {
       id: 'bj-2026-zb-006',
@@ -102,7 +102,7 @@ export const tenderReviewMockData: TenderReviewMockData = {
   uploadBidders: [
     {
       id: 1,
-      name: '中建华东建设集团有限公司',
+      name: '丙建设集团有限公司',
       files: [
         { name: '投标文件_正本.pdf', size: 15728640 },
         { name: '商务标_报价文件.pdf', size: 4194304 },
@@ -112,7 +112,7 @@ export const tenderReviewMockData: TenderReviewMockData = {
     },
     {
       id: 2,
-      name: '中铁十二局集团有限公司',
+      name: '丁工程集团有限公司',
       files: [
         { name: '投标文件_正本.pdf', size: 14680064 },
         { name: '商务标_报价文件.pdf', size: 3984588 },
@@ -137,16 +137,16 @@ export const tenderReviewMockData: TenderReviewMockData = {
     {
       id: 'A',
       tag: '甲',
-      name: '中建华东建设集团有限公司',
-      short: '中建华东',
+      name: '丙建设集团有限公司',
+      short: '丙建集团',
       total: 94.5,
       rank: 1,
     },
     {
       id: 'B',
       tag: '乙',
-      name: '中铁十二局集团有限公司',
-      short: '中铁十二局',
+      name: '丁工程集团有限公司',
+      short: '丁工集团',
       total: 91.5,
       rank: 2,
     },

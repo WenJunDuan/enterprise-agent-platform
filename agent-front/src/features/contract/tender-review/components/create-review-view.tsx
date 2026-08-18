@@ -279,7 +279,7 @@ function ProjectInfoFormCard({
             id='project-tenderee'
             value={form.tenderee ?? ''}
             onChange={(event) => onUpdate('tenderee', event.target.value)}
-            placeholder='如：无锡城投集团'
+            placeholder='如：示例城投集团'
             disabled={disabled}
           />
         </div>
