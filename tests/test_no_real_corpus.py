@@ -36,8 +36,12 @@ _SCAN_DIRS = (
     ".claude/commands",
     ".claude/agents",
     ".claude/skills",
+    # 评标回归闸金标准（Phase 0）：`eval/golden/*/expected.yaml` 逐条描述真实标书的缺陷，
+    # 是最容易把真名写回来的地方。扫描面不含它 = 对新目录的匿名化纪律不设防。
+    # 连带把 `.yaml` 纳入后缀：金标准是 yaml，只加目录不加后缀等于加了个不生效的守卫。
+    "eval",
 )
-_SCAN_SUFFIXES = {".py", ".md", ".ts", ".tsx"}
+_SCAN_SUFFIXES = {".py", ".md", ".ts", ".tsx", ".yaml"}
 
 # 中文组织 / 项目名形态：2-8 个汉字 + 机构性后缀。真实语料几乎必然落进这个形态。
 _ORG_SHAPE = re.compile(r"[一-龥]{2,8}(?:有限公司|股份公司|集团|学院|大学|研究院|设计院)")
