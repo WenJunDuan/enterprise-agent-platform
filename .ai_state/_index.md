@@ -54,7 +54,7 @@ counts:
   reviews_count: 81
   cleanup_count: 7
   compound:
-    learning: 18
+    learning: 19
     trick: 4
     decision: 10
     explore: 3
@@ -65,21 +65,19 @@ pointers:
   latest_cleanup: "sprints/2026-08-12-prompt-architecture/cleanup-pass.md"
   latest_brainstorm: ""
   latest_decisions: ["compound/2026-08-17-decision-real-corpus-worktree-only-purge.md", "compound/2026-08-17-decision-bid-auditor-skill-absorption.md", "compound/2026-07-20-decision-ocr-as-standalone-service.md", "compound/2026-07-16-decision-carve-f6-schema-split-from-d2.md", "compound/2026-07-16-decision-schema-split-tender.md"]
-  latest_lessons: ["compound/2026-08-17-learning-schema-column-add-needs-caller-sweep.md", "compound/2026-08-17-learning-retrieval-quality-needs-the-chunk-body.md", "compound/2026-08-14-learning-prompt-budget-must-be-per-session.md", "compound/2026-08-13-learning-design-budget-must-account-own-mandates.md", "compound/2026-08-12-learning-review-chain-catches-fix-induced-p0.md"]
+  latest_lessons: ["compound/2026-08-18-learning-the-investment-was-dark-in-production.md", "compound/2026-08-17-learning-schema-column-add-needs-caller-sweep.md", "compound/2026-08-17-learning-retrieval-quality-needs-the-chunk-body.md", "compound/2026-08-14-learning-prompt-budget-must-be-per-session.md", "compound/2026-08-13-learning-design-budget-must-account-own-mandates.md"]
   latest_architecture_update: "2026-08-14T09:26:47.542Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "【2026-08-17 会话末复盘 · 下会话唯一入口 = sprints/2026-08-15-tender-context-pipeline/handoff-2026-08-17.md】sprint=2026-08-15-tender-context-pipeline path=Refactor stage=impl。
+next_action: "【2026-08-18 · 下会话唯一入口 = sprints/2026-08-15-tender-context-pipeline/handoff-2026-08-18.md】sprint=2026-08-15-tender-context-pipeline path=Refactor stage=impl。
 
-本日概况: S5 三缺陷修复已推送(4802fee, 全量 17F/1614P 与基线同名); S6 部分重合回退作 WIP 提交(证据层 138 测试绿+ruff 净, **全量回归未跑**——下会话第一件事补跑)。用户四次纠偏(样本只验证不当规格 / 项目数据不进仓库 / 判断放 .claude 侧 Python 只做物理层+有界原语 / 不推翻能跑的), 详见 handoff 第三节。
+生产事故管道层根因已修复并部署验证(agent-backend:0818b2)。四项修复 (a)状态诚实+回填质量门 (b)抽取契约修补轮 (c)降级不许静默 (d)整份注入截断即转人工, 全部合并; 干净全量 17F/1652P 与基线逐名一致 0 新增。生产实测: 证据层首次激活(29块/19076token)、底稿不再截断、11.5→7.6 分钟、criteria_source=extracted 状态诚实。
 
-下会话按 handoff 第四节顺序执行: ①补全量回归 ②修招标抢位(投标层优先, 先造真红, evidence 第六轮有数据) ③开放决策·续接边界去排版化(小设计增量) ④开放决策·KD8 search-bid 有界工具(推翻 KD3b 须 critic 评审) ⑤athena-review 整体 review aa08c4e..HEAD(用户点名 Fable 5 执行并实跑) ⑥golden-case eval+度量脚本实跑, 部署机 E2E 计时(10 分钟目标未验) ⑦全部收口再部署。
+**下会话主战场 = 检索召回**: 证据层正常工作下 12 项仍有 6 项 evidence_unresolved(投标供应商实力/项目业绩/团队人员/质保期/平台架构/培训计划——用户说'投标文件里其实有'的那类)。另 2 项 live_event + 1 项 cross_bid 属正确待人工。定位手段: 部署机直调 retrieve_evidence 逐项打印查询串与命中块; **禁止往任何词表加词**(本次事故成因之一, 用户明令禁止拟合)。
 
-遗留风险: 招标抢位未修(首块=招标规定而非投标应答, 影响评分依据); 续接边界对未知编号风格静默变薄; 10 分钟耗时未实测。
+其余待办: pass4 复审四项修复(仅定向测试背书就上了生产) / prewarm_oracle 慢挂(_criteria_pending 等到上限, 生产是否同样白等待验) / polish(F4 F5 F6 F9 + contract_repair 架构档) / 文件长度债 / AC16 部署窗口测量。
 
-【部署】生产现役 agent-backend:0817b1 + agent-front:0815b3(仅第一波)。部署形态: 后端 docker build --build-arg WITH_OCR=1, 前端先本地 bun run build; env 改动须 docker rm -f 重建(restart 不重读 --env-file); SSH 用长连接 ControlMaster+ControlPersist=60m。
-
-【用户口径】评标 10 分钟内出结论, 超 20 分钟=架构问题; 提示词只删重复不删规则; 本机缺 paddleocr/LibreOffice, 云 OCR 与 .doc 转换只能部署机验; 勿并发多个 pytest。"
+【部署】smardaten@100.91.100.13(spark-beb3, aarch64), 密钥 ~/.ssh/100.91.100.13, 目录 /opt/application/enterprise-agent-platform, UI :5173 后端 :9999, 回滚 0818b1。全量回归须 --ignore=tests/test_tender_prewarm_oracle.py, 勿用 TENDER_TIMEOUT_SEC 覆盖加速(会制造 6 条假失败)。"
 last_subagent: "codex-exec" # tender-report-dimensions D0-D5 headless (codex 0.142.1, gpt-5.5)；必须 env -u HTTP_PROXY -u HTTPS_PROXY 否则 streaming API 挂起，见 compound/2026-06-25-trick-codex-proxy-hangs-streaming.md
 last_subagent_at: "2026-06-25T00:00:00.000Z"
 active_worktrees: [] # 2026-08-17 两个返工 worktree 已合并 369c53e 并清理
