@@ -1,0 +1,26 @@
+# case-zj-live 语料指针 —— 只记指纹，不记路径。
+#
+# **对 design「相对 knowledge/external/ 的路径 + sha256 + 页数」的一处实测偏离**：
+# 该语料的目录名与文件名本身就是真实机构名，写进仓库即违反匿名化纪律，且过不了
+# tests/test_no_real_corpus.py 的形态守卫（`[一-龥]{2,8}学院` 直接命中）——design 的
+# AC1（路径入库）与 AC2（守卫通过）互斥，这里取 AC2。
+#
+# 替代定位方式：在 --corpus-root（默认 knowledge/external）下递归，先按 bytes 预筛，
+# 再对候选算 sha256 匹配。它比路径更强：文件改名/挪目录仍能定位，语料被换掉则显式报错。
+#
+# 语料缺席 → 脚本显式 SKIP 并打印原因（退出码 3）；bytes 撞上但 sha256 不符 → 显式
+# 报错（退出码 4）。两条路都不产出假通过。
+
+case: case-zj-live
+corpus_root: knowledge/external
+files:
+  - role: tender
+    sha256: f10b8db1d0350222efbc0f0ad7508f24b6cc5e033656b8d75c08269f8e9cc702
+    bytes: 546816
+    pages: null
+    note: 招标文件，Office 原生 .doc；无稳定分页，页数不适用。pages 仅作元数据，脚本不校验
+  - role: bid
+    sha256: 17380fcbc9b6704ba6fb7a1a56caf34c759b2bd850fab6d7d6800794edbc9173
+    bytes: 45262812
+    pages: 400
+    note: 投标文件 PDF，xref 损坏（未修复时页数工具报 5 页），qpdf 修复后 400 页
