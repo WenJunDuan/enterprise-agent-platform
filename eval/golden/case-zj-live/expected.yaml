@@ -20,7 +20,10 @@ note: 货物类公开招标，综合评分法（商务技术 70 + 价格 30）�
 # 测试当产品配置（沿用 scripts/measure_tender_evidence.py 立下的规矩）。
 defect_classes:
   cross_doc_contradiction: ["矛盾", "不一致", "打架", "冲突", "雷同", "完全相同", "覆盖不全", "未列入"]
-  required_document_missing: ["未见", "缺失", "未提供", "未找到", "查无", "未包含"]
+  # 关键词须为**定向否定**形态（"未提供""缺失"指向文档不存在）。裸 "未见" 已删：
+  # 「投标函：未见异常」这类反向结论会同时含 must_include 的 "投标函" 与 "未见"，
+  # 被假命中成召回——回归闸头号弱键上不许有反向假命中（Fable review F1）。
+  required_document_missing: ["缺失", "未提供", "未找到", "查无", "未包含", "未见投标函", "未见有效期"]
   spec_basis_mismatch: ["依据", "错配", "证明不了", "不能证明", "非目标参数", "不对应"]
   zero_positive_deviation: ["无偏离", "正偏离", "未加分", "弃分", "不得分"]
   illegible_seal_evidence: ["模糊", "难辨", "看不清", "不清晰", "无法辨认"]
