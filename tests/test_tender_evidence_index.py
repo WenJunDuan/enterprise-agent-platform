@@ -256,27 +256,41 @@ def test_注入量与投标体量脱钩(monkeypatch):
 # ── F5：预算耗尽不得逐项静默饿死 ────────────────────────────────────────────
 
 
-def test_额度耗尽的项被记为truncated而不是静默消失(indexed_conn, monkeypatch):
+def test_额度耗尽的项被记为truncated而不是静默消失(monkeypatch):
     """F5：额度用尽后有命中的项其块被丢，此前既不进 unresolved 也无 warning。
 
     排序靠前的项有证据、靠后的既无证据也无痕迹——用户看到的是一份"证据齐全"的注入块，
     实际上后半截项全是空的。这违反 AC2「无静默路径」。
+
+    本条自建索引而不用 ``indexed_conn``：P0.1 给证据额度加了下界（不得低于 criteria 实测
+    额度），故"饿死排序靠后的项"必须靠**把 chunk 做大**来构造，而不能靠把额度压到近零——
+    后者现在是 ``InjectionBudgetExhausted``，是另一条路径。
     """
     from server.tender import injection_budget as budget
 
-    # 把证据额度压到只装得下最大的那一个 chunk：排序靠后的项必然拿不到块。
-    # 用构造而不是拍一个魔数——魔数会随 fixture 底稿变动而失效。
     criteria = _criteria()
     total = 200_000
-    largest = max(
-        len(row[0]) for row in indexed_conn.execute("SELECT chunk_text FROM rag_chunk_scan")
-    )
     margin = total // 4
-    scaffold = total - margin - budget.criteria_tokens(criteria) - (largest + 1)
+    # 下界 = criteria 实测额度；每块做成下界的 2/3，于是一块装得下、两块装不下。
+    floor = budget.criteria_tokens(criteria)
+    body = "本项应答正文。" * (floor * 2 // 3 // len("本项应答正文。"))
+    conn = sqlite3.connect(":memory:")
+    ev.build_evidence_index(
+        conn,
+        tender_text=f"# 第三章 技术参数\n技术参数偏差表：额定功率不小于 50kW。{body}",
+        bid_text=(
+            f"# 商务标\n投标报价：壹佰贰拾万元整。{body}\n"
+            f"# 技术标\n施工组织设计详见本章。{body}\n"
+            f"# 资格证明\n营业执照副本附后。{body}"
+        ),
+        project_id="tp-1",
+    )
+    scaffold = total - margin - floor - floor
     monkeypatch.setenv("TENDER_EFFECTIVE_CONTEXT_TOKENS", str(total))
     monkeypatch.setenv("TENDER_SCAFFOLD_RESERVE_TOKENS", str(scaffold))
 
-    result = er.retrieve_evidence(criteria, conn=indexed_conn)
+    result = er.retrieve_evidence(criteria, conn=conn)
+    conn.close()
 
     all_items = {name for name, _ in er._item_queries(criteria)}
     starved = set(result.truncated)

@@ -55,10 +55,22 @@ _AGENT_LOOP_MARGIN_DIVISOR = 4
 
 
 class InjectionBudgetExhausted(RuntimeError):
-    """规则层（脚手架 + criteria + 循环余量）已吃满有效上限，没有额度留给证据。
+    """规则层（脚手架 + criteria + 循环余量）挤掉了证据额度，本次注入不可达。
 
     这是**不可达的账**，不是可降级的状态：继续下去只会重演 08-15 那次"把招标文件整份挤掉"。
+
+    Attributes:
+        cause: 机器码，两取一（上层据此分流，不必 grep 中文消息）：
+
+            - ``"reserve_too_large"``——窗口本身放得下，是 ``TENDER_SCAFFOLD_RESERVE_TOKENS``
+              留额压过头。**可配置解锁**。
+            - ``"window_too_small"``——即便脚手架留额归零也放不下 criteria + 证据下界。
+              调 env 无用，只能换更大窗口的端点，或承认本部署评不了这个项目。
     """
+
+    def __init__(self, message: str, *, cause: str) -> None:
+        super().__init__(message)
+        self.cause = cause
 
 
 def _positive_int_env(name: str, default: int) -> int:
@@ -152,6 +164,71 @@ class InjectionPlan:
         return max(1, self.per_item_tokens // MAX_CHUNK_CHARS)
 
 
+def evidence_floor_tokens(*, criteria_cost: int, query_count: int) -> int:
+    """证据额度的**可论证下界**：不得低于它要回答的那一层规则本身的额度。
+
+    等价的按项说法是 ``per_item_tokens >= criteria_tokens / query_count``——某一项分到的
+    证据额度，至少要能装下描述这一项规则的那么多字。低于它的注入必然是**规则占多数**的，
+    模型只能照着招标文件的评分表给投标打分；critic 离线复跑 ``53f94fd0`` 观测到的正是这个
+    形态（投标报价 82 分项拿到的 301 token 是招标层废标条款）。
+
+    刻意**不**取计划档原文提的 ``query_count × MAX_CHUNK_CHARS``：那个门槛在本系统跑过的
+    每一种标定下都不可达（默认 200K 标定下规则层与循环余量吃掉 70%，20 项需要 80,000 而
+    可用只有 60,000），落笔即不可达的门槛只会被下一个人整条注释掉。
+
+    下界同时保底 ``query_count``（每项至少 1 token），使无 criteria 的回落路径也仍有闸。
+
+    Args:
+        criteria_cost: 本次 criteria 注入块的实测 token 数。
+        query_count: 本次要检索的项数。
+
+    Returns:
+        证据额度的下界（token）。
+    """
+    return max(query_count, criteria_cost)
+
+
+def _budget_exhausted(
+    *, total: int, scaffold: int, criteria_cost: int, margin: int, evidence: int, floor: int
+) -> InjectionBudgetExhausted:
+    """构造带实测数字与可执行解锁动作的容量不足异常，并判定两种原因中的哪一种。
+
+    判据是算术而非阈值：脚手架留额是唯一可调的那一项（循环余量按有效上限定比派生），
+    故"把 scaffold 调到 0 之后还够不够"就把两种原因分干净了——够 → ``reserve_too_large``
+    （改 env 即可解锁）；不够 → ``window_too_small``（调任何 env 都没用，只能换更大窗口的
+    端点，或如实承认本部署评不了这个项目）。参数均为 :func:`plan_injection` 现场算出的
+    实测量，逐个进消息，让运维不必回查代码就能核对这笔账。
+    """
+    floor_note = (
+        "下界 = criteria 实测额度，证据不得少于它要回答的规则"
+        if floor == criteria_cost
+        else "下界 = 检索项数，每项至少 1 token"
+    )
+    account = (
+        f"注入预算不足以承载本次评标：有效上限 {total} token（TENDER_EFFECTIVE_CONTEXT_TOKENS）"
+        f"− 脚手架 {scaffold}（TENDER_SCAFFOLD_RESERVE_TOKENS）− criteria 实测 {criteria_cost}"
+        f" − 循环余量 {margin} = 证据额度 {evidence}，低于下界 {floor}（{floor_note}）。"
+    )
+    if criteria_cost + floor <= total - margin:
+        return InjectionBudgetExhausted(
+            account
+            + "原因：**脚手架留额压过头**——窗口本身放得下，是 TENDER_SCAFFOLD_RESERVE_TOKENS 占了"
+            f"本该留给证据的空间。解锁：把 TENDER_SCAFFOLD_RESERVE_TOKENS 调到不超过 "
+            f"{max(0, total - margin - criteria_cost - floor)}，或按标定档 {CALIBRATION_DOC_PATH} "
+            "复测 CLI 实际上限后上调 TENDER_EFFECTIVE_CONTEXT_TOKENS。"
+            "不要靠缩小证据额度掩盖——那正是 2026-08-15 把招标文件整份挤掉的做法。",
+            cause="reserve_too_large",
+        )
+    return InjectionBudgetExhausted(
+        account
+        + "原因：**窗口装不下**——即便脚手架留额归零，criteria 加证据下界仍超出本部署的有效"
+        f"上限（需要 {criteria_cost + floor + margin}，只有 {total}）。改配置无用："
+        f"请按标定档 {CALIBRATION_DOC_PATH} 复测后改用更大窗口的端点，或如实承认本项目在当前"
+        "部署下不可自动评标并转人工——绝不能让它静默出一份烂分。",
+        cause="window_too_small",
+    )
+
+
 def plan_injection(*, criteria: dict[str, Any] | None, query_count: int) -> InjectionPlan:
     """按闭式账目分配本次注入额度。
 
@@ -164,7 +241,7 @@ def plan_injection(*, criteria: dict[str, Any] | None, query_count: int) -> Inje
 
     Raises:
         ValueError: ``query_count <= 0``——无查询项就不该走检索组装，内部不变量破坏即抛。
-        InjectionBudgetExhausted: 规则层已吃满上限，没有额度留给证据。
+        InjectionBudgetExhausted: 证据额度跌破 :func:`evidence_floor_tokens` 的下界。
     """
     if query_count <= 0:
         raise ValueError(f"query_count must be positive, got {query_count}")
@@ -173,13 +250,15 @@ def plan_injection(*, criteria: dict[str, Any] | None, query_count: int) -> Inje
     criteria_cost = criteria_tokens(criteria)
     margin = total // _AGENT_LOOP_MARGIN_DIVISOR
     evidence = total - scaffold - criteria_cost - margin
-    if evidence < query_count:
-        raise InjectionBudgetExhausted(
-            f"规则层已占满注入预算：脚手架 {scaffold} + criteria {criteria_cost} + "
-            f"循环余量 {margin} ≥ 有效上限 {total} token（剩余 {evidence}，需至少 {query_count}）。"
-            f"请按标定档 {CALIBRATION_DOC_PATH} 复测 CLI 实际上限并调整 "
-            f"TENDER_EFFECTIVE_CONTEXT_TOKENS；不要靠缩小证据额度掩盖——"
-            "那正是 2026-08-15 把招标文件整份挤掉的做法。"
+    floor = evidence_floor_tokens(criteria_cost=criteria_cost, query_count=query_count)
+    if evidence < floor:
+        raise _budget_exhausted(
+            total=total,
+            scaffold=scaffold,
+            criteria_cost=criteria_cost,
+            margin=margin,
+            evidence=evidence,
+            floor=floor,
         )
     per_item = evidence // query_count
     return InjectionPlan(

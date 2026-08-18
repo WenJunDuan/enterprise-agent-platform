@@ -209,15 +209,19 @@ def test_额度饿死的项产出evidence_truncated警告(monkeypatch):
             {"item": "营业执照", "max": 10},
         ]
     }
+    # 证据额度压到 P0.1 的下界（= criteria 实测额度，再低即 InjectionBudgetExhausted），
+    # 并把每段应答做成"一块装得下、两块装不下"的体量——这样饿死的是排序靠后的项，
+    # 而不是整批（整批饿死属预算不可达，归 InjectionBudgetExhausted 管，不是本条要测的）。
+    floor = budget.criteria_tokens(criteria)
+    body = "本项应答正文。" * (floor * 2 // 3 // len("本项应答正文。"))
     bid = (
-        "# 商务标\n投标报价：壹佰贰拾万元整。\n"
-        "# 技术标\n施工组织设计详见本章。\n"
-        "# 资格证明\n营业执照副本附后。"
+        f"# 商务标\n投标报价：壹佰贰拾万元整。{body}\n"
+        f"# 技术标\n施工组织设计详见本章。{body}\n"
+        f"# 资格证明\n营业执照副本附后。{body}"
     )
     total = 200_000
     margin = total // 4
-    # 只留 30 token 给证据：装得下第一块，装不下三块。
-    scaffold = total - margin - budget.criteria_tokens(criteria) - 30
+    scaffold = total - margin - floor - floor
     monkeypatch.setenv("TENDER_EFFECTIVE_CONTEXT_TOKENS", str(total))
     monkeypatch.setenv("TENDER_SCAFFOLD_RESERVE_TOKENS", str(scaffold))
 

@@ -894,3 +894,224 @@ fixes_abcd_full_regression:
   # 中途一次 TENDER_TIMEOUT_SEC=5 的加速跑出现 24 failed，拆解后 6 条是该 env 覆盖的产物
   # （prewarm_oracle 4 + tender_routes 2，后者不设 env 时 43 项全过），
   # 真问题仅 1 条（AC5 用例，已修）——记此以免后人把 24 当成回归基线。
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# P0.1–P0.5（plan-2026-08-18-accuracy.md 的 P0 五项）· generator subagent
+# worktree: .claude/worktrees/agent-ac1156af2053f47c8 / 分支 worktree-agent-ac1156af2053f47c8
+#
+# ⚠ 基线口径修正：本 worktree 的 .venv 是 uv 新建的，初始比主 checkout 少 4 个可选依赖，
+# 首跑 34 failed。按主 checkout 实际安装的版本补齐（openpyxl==3.1.5 / pymupdf==1.27.2.3 /
+# pypdf==6.14.2 / python-docx==1.2.0）后，在**同一 venv**上于 5b9f9c7 实测基线为
+# 1,672 collected / 1,645 passed / 24 failed / 3 skipped。collected 与计划档的 1,672 一致；
+# failed 是 24 而非 17，差额 7 条全部是本 venv 仍缺 Pillow / python-pptx 所致（主 checkout
+# 也没装这两个，故 17 这个数字应来自更早的另一套环境）。逐名比对以同环境的 24 条为准。
+# ═══════════════════════════════════════════════════════════════════════════════
+p0_accuracy_2026_08_18:
+  rounds:
+    - id: "P0.1"
+      title: "预算悬崖：证据额度跌破可论证下界时显式失败，且两种原因可区分"
+      files:
+        - "server/tender/injection_budget.py"
+        - "tests/test_tender_injection_budget_floor.py (新增, 11 用例)"
+        - "tests/test_tender_evidence_context.py (1 既有用例改构造)"
+        - "tests/test_tender_evidence_index.py (1 既有用例改构造)"
+      red_command: "uv run pytest tests/test_tender_injection_budget_floor.py -q"
+      red_summary: >
+        5 failed / 6 passed。逐条失败原因：
+        test_per_item_budget_below_the_rule_layer_fails_instead_of_being_planned 与
+        test_the_two_causes_are_machine_readable_and_disjoint 报
+        "Failed: DID NOT RAISE InjectionBudgetExhausted"——95K/50K + criteria=15,000 tok
+        当时静默返回 per_item=520 的计划；
+        test_over_reserved_config_is_reported_as_a_fixable_configuration 与
+        test_window_that_cannot_fit_is_reported_as_such 报
+        "AttributeError: 'InjectionBudgetExhausted' object has no attribute 'cause'"；
+        test_starved_budget_never_returns_a_plan_with_a_sub_token_per_item 返回了
+        per_item=2 的计划（该用例随后按可达下界重写为 60 项富规则场景）。
+      red_observed_at: "2026-08-18T15:58:00+0800"
+      green_command: "uv run pytest tests/test_tender_injection_budget_floor.py tests/test_tender_injection_budget.py tests/test_tender_evidence_index.py tests/test_tender_evidence_context.py -q"
+      green_summary: >
+        89 passed。下界 = max(query_count, criteria_tokens)，即「证据额度不得低于它要回答的
+        那一层规则本身的额度」，等价的按项说法是 per_item >= criteria_tokens/query_count。
+        链路级判据、无自由参数、不绑任何一份标书。异常带 cause 机器码，判据是算术而非阈值
+        （脚手架调到 0 还够不够）：reserve_too_large 给出 scaffold 可调上界；window_too_small
+        明说改配置无用。计划档原提的 query_count × MAX_CHUNK_CHARS 下界经实测在本系统跑过的
+        每一种标定下都不可达（默认 200K 标定下 20 项需 80,000 而可用只有 60,000），未采用，
+        并以 test_the_ideal_one_full_chunk_floor_is_documented_as_unreachable 把该算术钉住。
+        两处既有 truncated 用例改为「把 chunk 做大」而非「把额度压到近零」来构造饿死——
+        后者现在归 InjectionBudgetExhausted，是另一条路径。
+        injection_budget.py 221 → 299 行，仍在 300 行拆分线以内。
+      green_observed_at: "2026-08-18T16:06:00+0800"
+      commit: "f4fe626"
+
+    - id: "P0.2"
+      title: "_VALID_EFFORTS 可按部署声明；非白名单值剔除时留 WARNING"
+      files:
+        - "server/common/agent_bridge.py"
+        - "tests/test_agent_bridge_effort_whitelist.py (新增, 13 用例)"
+      red_command: "uv run pytest tests/test_agent_bridge_effort_whitelist.py -q"
+      red_summary: >
+        5 failed / 8 passed。test_declared_whitelist_drops_out_of_range_effort_and_warns、
+        test_declaration_tolerates_spacing_and_case、
+        test_env_level_effort_is_filtered_by_the_declaration、
+        test_the_whitelist_never_branches_on_a_model_name 均报 "assert 'high' is None"
+        （声明白名单无效，agent_bridge.py:57 写死的五档照收）；
+        test_unknown_value_is_still_dropped_when_nothing_is_declared 报剔除后无 WARNING 记录
+        （agent_bridge.py:338-341 是静默 pop）。
+      red_observed_at: "2026-08-18T16:12:00+0800"
+      green_command: "uv run pytest tests/test_agent_bridge_effort_whitelist.py tests/test_agent_bridge_options.py -q"
+      green_summary: >
+        25 passed（含既有 12 条 build_options 用例全绿 = 零行为变更）。新增
+        CLAUDE_VALID_REASONING_EFFORTS（逗号分隔、大小写与空白不敏感），未设或全空白时回落
+        内置五档全集；_resolve_effort 对非白名单**非空**值剔除并 WARNING（点名被剔的值与当前
+        生效白名单 + 该 env 名），空值保持安静（那只是没设，不是被剔除）。env 与 per-call
+        两条来源同一把闸。不硬编码任何模型名，由
+        test_the_whitelist_never_branches_on_a_model_name 用两个不同 model 值钉住。
+      green_observed_at: "2026-08-18T16:15:00+0800"
+      commit: "958e4aa"
+
+    - id: "P0.3"
+      title: "抽取路径补齐评标侧已有的硬超时与底稿在场时的工具面锁"
+      files:
+        - "server/tender/doc_pipeline.py"
+        - "tests/test_tender_extraction_guardrails.py (新增, 11 用例)"
+      red_command: "uv run pytest tests/test_tender_extraction_guardrails.py -q"
+      red_summary: >
+        8 failed / 3 passed。超时侧 4 条（test_extraction_is_bounded_by_a_hard_timeout /
+        test_timeout_error_carries_an_executable_unlock_action /
+        test_timeout_does_not_taint_the_ocr_ready_signal /
+        test_timeout_default_is_configurable_and_positive）全部因 doc_pipeline 无
+        EXTRACT_TIMEOUT_SEC 而失败（monkeypatch 报属性不存在 / 用例被 30s sleep 拖住）。
+        工具面侧 4 条（test_draft_present_locks_the_tool_surface /
+        test_the_lock_reuses_the_evaluation_side_constant /
+        test_locked_bash_stays_behind_the_ocr_page_hook /
+        test_repair_turn_inherits_the_same_locked_surface）报 "KeyError: 'tools'"——
+        _extraction_call_kwargs 当时只给 schema_name/tenant/structured/archive_to_results。
+      red_observed_at: "2026-08-18T16:28:00+0800"
+      green_command: "uv run pytest tests/test_tender_extraction_guardrails.py tests/test_tender_extract_contract_repair.py -q"
+      green_summary: >
+        25 passed（含既有 14 条抽取修补轮用例全绿）。超时按 worker._execute_inner 的形态用
+        asyncio.wait_for 包住**整个重试环**（要封的是「这次抽取一共能占多久」，不是单次往返），
+        上限 TENDER_EXTRACT_TIMEOUT_SEC 可配；超时落 criteria_status=failed，criteria_error
+        单立 extraction_timeout 一档并含两侧可执行动作（用户重传 / 运维调高该 env），
+        ocr_status 保持 ready 不受牵连。底稿在场时 tools/allowed_tools 复用评标侧**同一个**
+        DRAFT_INJECTED_TOOLS 对象（用 `is` 断言钉住，杜绝抄一份后漂移），并一起传
+        case_root——锁面里唯一的 Bash 必须绑 ocr-page PreToolUse 闸，否则等于给一个处理攻击者
+        可控 PDF 的子进程配裸 Bash；该点由 test_locked_bash_stays_behind_the_ocr_page_hook
+        实测 build_options 产出的 tools 与 hooks 确认。底稿缺失时不锁，降级路径仍能自己读文件。
+      green_observed_at: "2026-08-18T16:36:00+0800"
+      commit: "3441486"
+
+    - id: "P0.4"
+      title: "criteria 未就绪时提交口拒绝评标（不建任务、不烧 token）"
+      files:
+        - "server/tender/criteria_gate.py (新增, 72 行)"
+        - "server/routes/tender/tasks.py"
+        - "server/tender/doc_layer.py (_criteria_pending → criteria_pending，第二个消费者)"
+        - "tests/test_tender_criteria_submit_gate.py (新增, 9 用例)"
+        - "tests/test_tender_criteria_wait.py (跟随重命名)"
+      red_command: "uv run pytest tests/test_tender_criteria_submit_gate.py -q"
+      red_summary: >
+        6 failed / 3 passed。criteria_status ∈ {pending, running, failed} 与「非终态 + 心跳
+        陈旧」四种未就绪状态下，POST /tender/projects/{id}/evaluate 全部返回 200 并排程了评标
+        （日志实录 "POST .../evaluate HTTP/1.1 200 OK"，schedule 探针非空），即当时服务端照收
+        注定作废的单；test_rejection_happens_before_any_upload_is_materialized 同样 200 且已
+        落上传文件。3 条通过的是「ready / 无预热记录 / legacy 散单必须原样放行」的反向守卫。
+      red_observed_at: "2026-08-18T16:44:00+0800"
+      green_command: "uv run pytest tests/test_tender_criteria_submit_gate.py tests/test_tender_criteria_wait.py -q"
+      green_summary: >
+        13 passed。闸落在 _submit_bid_evaluation 的准入闸之后、解析请求体之前：不建任务、
+        不落上传文件、不排程，回 409。两种处方分开——pending/running 且心跳新鲜 = 稍后再提交
+        （消息刻意不含「重新上传」，由测试断言）；failed 或非终态但心跳陈旧（僵尸任务，等到
+        上限也不会有结果，正是 doc_layer.py:239 那条 wait_cap_reached 此前放行降级的场景）
+        = 重新上传，并把抽取侧写下的 criteria_error 原样带给用户。闸只在项目确实有预热底稿
+        记录时生效：ready / 无 tender_project_docs 行 / legacy /tender/evaluate 三条路径行为
+        逐字不变。逻辑单独成家 criteria_gate.py（doc_layer 277 行、tasks.py 320 行都已顶到或
+        越过 300 行拆分线，且「提交口该不该收这一单」本身就是独立的变更理由）。
+      green_observed_at: "2026-08-18T16:52:00+0800"
+      commit: "21f81c8"
+
+    - id: "P0.5"
+      title: "服务端按 scoring[] 汇总 total_score/total_max，并同时给 pending_count/pending_max"
+      files:
+        - "server/common/output_contracts.py"
+        - "tests/test_tender_score_totals.py (新增, 12 用例)"
+      red_command: "uv run pytest tests/test_tender_score_totals.py -q"
+      red_summary: >
+        8 failed / 3 passed。所有断言四个字段的用例报 "KeyError: 'total_score'"——
+        enrich_audit_decision 当时不产这四个字段；test_totals_reach_the_task_result_endpoint
+        确认 GET /tender/tasks/{id}/result 的 extracted_data 里同样没有（与线上 4/4 条结论
+        该两字段恒 null 一致）。3 条通过的是「无 scoring / 空 scoring 不得凭空长出字段」的
+        反向守卫。
+      red_observed_at: "2026-08-18T17:04:00+0800"
+      green_command: "uv run pytest tests/test_tender_score_totals.py -q"
+      green_summary: >
+        12 passed。新增纯函数 summarize_scoring，由 enrich_audit_decision 盖进 extracted_data
+        （该 enrich 已在 /tasks/{id}/result 与 /projects/{id}/results/{rid} 两个出口调用）。
+        **覆盖**模型自报值而非 setdefault——这是纯算术，模型算错过；enrich 幂等，两个端点
+        各跑一次不滚雪球（test_enrich_stays_idempotent 钉住）。score=null 绝不当 0：只累加
+        实数 score，待定项进 pending_count/pending_max，由
+        test_a_real_zero_is_distinguishable_from_an_undecided_item 钉住「同样 total_score=0，
+        判了 0 分与还没判必须能分辨」。满分非数的项连量纲都没有，既不计满分也不计待定分。
+        端到端由 test_totals_reach_the_task_result_endpoint 实测 HTTP 出口。
+        另加 test_structured_totals_agree_with_the_explanation_summary 漂移守卫：
+        server/tender/output.py::_score_summary 在算同一笔账（渲染成得分小结文本），本批不得
+        改那个文件（并行写者责任面），故先把两处数字钉在一起。
+      green_observed_at: "2026-08-18T17:08:00+0800"
+      commit: "1b649ec"
+
+  p0_full_regression:
+    executor: "generator subagent (worktree agent-ac1156af2053f47c8)"
+    covered_code_commit: "1b649ec"
+    baseline_command: >
+      git worktree add -f --detach /tmp/eap-baseline-wt 5b9f9c7 &&
+      cd /tmp/eap-baseline-wt &&
+      <agent-worktree>/.venv/bin/python -m pytest -q --ignore=tests/test_tender_prewarm_oracle.py
+    baseline_result: "24 failed / 1645 passed / 3 skipped（collected 1672，与计划档基线数一致）"
+    full_suite_command: "uv run --no-sync pytest -q --ignore=tests/test_tender_prewarm_oracle.py  # 13.2s"
+    result: "24 failed / 1701 passed / 3 skipped（collected 1728 = 1672 + 56 新增）"
+    new_failures: 0
+    baseline_diff: >
+      两份 FAILED 清单排序后 comm 比对：comm -23（仅基线有／已修复）= 空；
+      comm -13（仅现在有／新增失败）= 空；comm -12（逐名一致）= 24 条。
+    new_tests: 56
+    new_tests_breakdown: "P0.1 11 / P0.2 13 / P0.3 11 / P0.4 9 / P0.5 12"
+    baseline_failure_names: >
+      test_audit_direct.py 6 条（TestRunDirectAuditSuccess::test_archives_to_results_table_and_reads_back;
+      TestRunDirectAuditContractRetry::test_retries_once_then_succeeds /
+      ::test_raises_directcontracterror_after_retries_exhausted;
+      TestRunDirectAuditTransport::test_connection_error_wrapped_as_directtransporterror /
+      ::test_gateway_5xx_wrapped_as_directtransporterror /
+      ::test_client_4xx_propagates_without_wrapping_or_fallback）+
+      test_audit_direct_metrics.py::test_run_direct_audit_populates_non_default_metrics
+      —— 7 条同因："AUDIT_DIRECT_CONNECT 未配置有效输出预算"（缺 MODEL_PROFILES_JSON /
+      CLAUDE_CODE_MAX_OUTPUT_TOKENS）;
+      test_ocr_engine.py::test_openai_compatible_image_keeps_image_mime_type 1 条 +
+      test_ocr_engine_fallback.py 11 条 + test_ocr_native_formats.py 2 条 +
+      test_ocr_pipeline.py 2 条（test_ocr_purpose_injected_into_openai_prompt /
+      test_audit_ocr_path_has_no_tender_purpose）—— 16 条同因：缺 Pillow / python-pptx
+      （ocr extra 未装全，ModuleNotFoundError: No module named 'PIL'）;
+      test_supported_document_formats.py::test_demo_runbook_syncs_scripts_and_fails_closed_on_smoke_pipeline 1 条。
+      合计 24 条，全部与本批改动面（injection_budget / agent_bridge effort / doc_pipeline /
+      criteria_gate / output_contracts）无交集。
+    known_slow_excluded: "tests/test_tender_prewarm_oracle.py（既有慢/挂，沿用既定 --ignore）"
+    no_speedup_override: "全程未设 TENDER_TIMEOUT_SEC（该覆盖会制造 6 条假失败）"
+
+  not_touched:
+    - ".claude/commands/tender-evaluate.md / server/tender/criteria_context.py /
+       server/tender/runner.py / server/tender/worker.py / server/tender/output.py
+       —— 主 agent 指定的并行写者责任面，本批零改动（P0.3 只 import runner.DRAFT_INJECTED_TOOLS，
+       P0.5 只在测试里读 output._score_summary 与 _format_score 做漂移守卫）。"
+    - "P0.6 / P1 / P2 / P2.5 / P3 / P4 —— 不在本批范围。"
+
+  file_length_exemptions:
+    - "server/common/agent_bridge.py 495 → 545 行（基线已越 300 线；拆分属 Refactor 级，
+       不在 P0 止血范围）。"
+    - "server/tender/doc_pipeline.py 611 → 671 行（基线已越线，计划档基线表亦记录 611）。"
+    - "server/routes/tender/tasks.py 320 → 327 行（基线已越线；新增逻辑已外移到
+       server/tender/criteria_gate.py，未把长度债做大）。"
+    - "server/tender/injection_budget.py 221 → 299 行（**仍在 300 以内**）。"
+
+  known_debt_handed_back:
+    - "DRY：server/tender/output.py::_score_summary 与 common.output_contracts.summarize_scoring
+       各算一遍同一笔评分账。本批不得改 output.py，已加 test_structured_totals_agree_with_the_
+       explanation_summary 作漂移守卫；合并动作交 output.py 的写者或后续 polish。"

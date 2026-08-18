@@ -37,6 +37,7 @@ from server.stores.tender_task_store import (
     upsert_tender_task,
 )
 from server.tender.bid_resolve import resolve_prewarm_bid_id
+from server.tender.criteria_gate import criteria_submission_block
 from server.tender.worker import admission_available, schedule_tender_evaluation_task
 
 logger = logging.getLogger(__name__)
@@ -97,6 +98,12 @@ async def _submit_bid_evaluation(
     # round4 F5：准入闸——在途任务满则早拒（在写上传文件/建任务记录之前），不再无界接单。
     if not admission_available():
         raise HTTPException(status_code=503, detail="评标队列已满，请稍后重试")
+    # P0.4：criteria 未就绪就别收这一单。位置必须在**解析请求体之前**——晚一步就会落上传
+    # 文件、建任务记录，用户拿到的是一个注定作废却在界面上"进行中"的 request_id。
+    if project_id:
+        blocked = await asyncio.to_thread(criteria_submission_block, project_id, tenant)
+        if blocked:
+            raise HTTPException(status_code=409, detail=blocked)
     request_id = new_request_id()
     # R6-R2：前端传 prewarm bid_id（上传即 OCR 时 uploadBid 返回的）→ 评标据此复用已预热的 OCR 底稿
     # （doc_layer.load_doc_layer_context 按 bid_id 读 doc 层），免重 OCR（实测省一遍 ~5min）。缺省 None
