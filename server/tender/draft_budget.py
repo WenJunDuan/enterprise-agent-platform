@@ -66,3 +66,43 @@ def bound_draft(ocr_block: str, *, model: str | None = None) -> TruncatedDraft |
         original_bytes=original_bytes,
         limit_bytes=limit,
     )
+
+
+def truncation_warning(truncated: TruncatedDraft, *, stops_scoring: bool) -> dict[str, object]:
+    """把截断账目渲染成**结论级**可见信号（KD4：降级不许静默）。
+
+    ``TRUNCATION_NOTICE`` 只进模型上下文、``tender_context_truncated`` 只进运维日志——
+    2026-08-18 生产事故里用户拿到的结论与界面上，"底稿 784,903 字节截到 178,641（砍 77%）"
+    这件事一个字都没有，反查根因花掉一整天。三个字节数必须随结论落盘。
+
+    Args:
+        truncated: 本次截断的字节账。
+        stops_scoring: 本次截断是否已导致停止自动评分（整份注入路径的 F7 归宿）。
+            决定文案给出的是"按证据缺失处理"还是"已转人工复核 + 解法指引"。
+
+    Returns:
+        ``{"scope", "status", "files", "message", "original_bytes", "kept_bytes",
+        "limit_bytes"}``——与其余 ocr_warnings 同形，落 ``extracted_data.ocr_warnings``。
+    """
+    account = (
+        f"原始底稿 {truncated.original_bytes:,} 字节，"
+        f"实际注入 {truncated.kept_bytes:,} 字节，"
+        f"本次预算上限 {truncated.limit_bytes:,} 字节"
+    )
+    consequence = (
+        "被截掉的内容不在模型视野内，其涉及的评分项是否达标无从判断，"
+        "因此本次**不出分**、直接转人工复核。"
+        "解法：本项目评分标准（criteria）解析就绪后，评标改走按评分项检索证据，"
+        "不再整份注入，也就不会再有整体截断。"
+        if stops_scoring
+        else "被截材料对应的评分项按证据缺失处理（manual_review / 不得凭空判 0）。"
+    )
+    return {
+        "scope": "底稿注入",
+        "status": "draft_truncated",
+        "files": [],
+        "message": f"注入底稿超出上下文预算并已被截断：{account}。{consequence}",
+        "original_bytes": truncated.original_bytes,
+        "kept_bytes": truncated.kept_bytes,
+        "limit_bytes": truncated.limit_bytes,
+    }
