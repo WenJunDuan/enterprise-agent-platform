@@ -27,14 +27,12 @@ case 定义与校验、语料指纹定位、四指标判定、HTTP 驱动与报�
 
 ## P1 · 存量真实语料残留：真实项目编号在测试 fixture 里（守卫抓不到的形态）
 
-`tests/test_legacy_doc_table_recovery.py:43` 有
+`tests/test_legacy_doc_table_recovery.py:43` 的 fixture 字符串里，**项目编号与预算金额
+两项都是本 case 真实标书的原始值**（与 2026-08-17 参照实跑报告基本信息表逐字符相同）。
+来源 commit `1a52e92`（2026-08-17，非本 sprint 引入）。
 
-```python
-raw = "第一章 投标邀请\n项目编号：TENDER-NO-ZJ\n预算金额：133万元"
-```
-
-`TENDER-NO-ZJ` 与 `133万元` 都是本 case 真实标书的原始数据（见 2026-08-17 参照实跑报告的
-基本信息表）。来源 commit `1a52e92`（2026-08-17，非本 sprint 引入）。
+此处刻意不复制那两个串——把要清除的东西抄进状态档等于又写回一份（`.ai_state/` 同样入库）。
+复核方式：拿参照报告基本信息表里的「项目编号」值去 grep `tests/`。
 
 `test_no_real_corpus.py` 抓不到它——守卫只按「汉字 + 机构性后缀」的形态抓，项目编号与金额
 在形态上与合成数据不可分（守卫 docstring 已自陈这个边界）。发现方式是我按参照报告里的
