@@ -115,3 +115,51 @@ records:
       All checks passed！全量 34 failed / 1693 passed / 4 skipped，与基线 34 条逐名一致、
       0 新增（comm 双向为空）。重构后 59 条新测试仍全绿。
     green_observed_at: "2026-08-18"
+
+  # ── 以下两条为 2026-08-18 晚 Step 0 残项（纠偏令 v2 二节裁决执行）────────────────
+  # T6 执行者：generator subagent（worktree agent-aaae2a4d35e31495e，commit b3f3bb8，
+  #            ff-merge 进 main）；T7 执行者：主 agent 绿区直做（≤3 文件 ≤150 行）。
+
+  - task: "T6 · 纯搬运拆分：判定纯逻辑下沉 eval/regression.py，脚本剩 CLI+HTTP 驱动"
+    commit: "b3f3bb8"
+    red_command: >-
+      refactor 声明: 纯搬运零行为变更, 无独立 red 阶段; 拆分缺口证据见 red_summary
+      （类比 doc-style 的 backfill 记法, 不编造 red）
+    red_summary: >-
+      真实缺口（改动前实测）：wc -l scripts/eval_tender_regression.py = 1,080 行，
+      超 coding-standards P0「文件 > 300 行必须拆分」；缺口最早由 worktree
+      agent-acc11005cf027e330 记录于本 sprint proposals P1#2，纠偏令 v2 二节#2 授权拆分。
+    red_observed_at: "2026-08-18"
+    green_command: >-
+      uv run pytest tests/test_eval_tender_regression.py tests/test_no_real_corpus.py -q
+      && uv run pytest -q --ignore=tests/test_tender_prewarm_oracle.py
+      && uv run python scripts/eval_tender_regression.py --case case-zj-live --dry-run
+      --corpus-root knowledge/external && uv run ruff check scripts/eval_tender_regression.py eval/regression.py
+    green_summary: >-
+      零行为变更四重证据：①60 targeted 测试全绿且 tests/ 零修改；②纯搬运机械证明——
+      generator 逐行断言常量块 18 行 + 主体 779 行在新模块逐行等值、尾部 224 行在脚本
+      逐行等值、原文件 55 行后无一行失去归宿；③主 checkout 全量回归 17 failed / 1,767
+      passed / 3 skipped，失败清单与改动前基线（/tmp/step0-baseline-pytest.txt）diff
+      逐名一致；④dry-run EXIT=0 指纹全对上，ruff 净。拆分后 381 + 822 行；
+      822 行仍超 300 线，残留已记 proposals P1#2 追记。
+    green_observed_at: "2026-08-18"
+
+  - task: "T7 · 编号形态守卫（[A-Z]{2,6}-?\\d{5,} + 加白清单）+ fixture 真实编号金额改合成"
+    commit: "31f43ed"
+    red_command: "uv run pytest tests/test_no_real_corpus.py -q"
+    red_summary: >-
+      1 failed / 1 passed。红的是新增 test_no_real_project_numbers_in_code_or_prompts：
+      编号形态正则在守卫扫描面上命中 tests/test_legacy_doc_table_recovery.py 的真实
+      项目编号一处（值不转述——抄进状态档等于写回一份，proposals P1#3 同一纪律；
+      复核：git show b3f3bb8:tests/test_legacy_doc_table_recovery.py 第 43 行），
+      且全仓无其他误报（test_credit_api 的合成信用代码段已按纪律加白）。
+      正则选形依据实测：5 位以上数字段全仓仅 2 命中；4 位数字段形态 19 串
+      全为合成值或标准号，判别力为零，刻意不进网。
+    red_observed_at: "2026-08-18T21:26:12+0800"
+    green_command: "uv run pytest tests/test_no_real_corpus.py tests/test_legacy_doc_table_recovery.py tests/test_eval_tender_regression.py -q && uv run ruff check tests/test_no_real_corpus.py tests/test_legacy_doc_table_recovery.py"
+    green_summary: >-
+      65 passed（59 评测判定 + 2 守卫 + 4 fixture），ruff 净。fixture 改合成值
+      DEMO-100001 / 888万元：保住「字母段-6位数字段」结构，且合成编号故意落在
+      守卫网内并加白——验证守卫对该形态真实生效。金额类纯数字守卫覆盖不到，
+      已按纠偏令 v2 二节#3 在守卫文件头部补人工纪律注释。
+    green_observed_at: "2026-08-18"

@@ -2,7 +2,8 @@
 
 > 施工依据：`.ai_state/claude/tender评标链路改造设计-施工文档.md` 第二节（Phase 0）。
 > 本 sprint 只做 Phase 0；纪律见施工文档第九节，逐条抄进 plan.md 头部。
-> 改动范围白名单：**新增 `eval/`、新增 `scripts/eval_tender_regression.py`**；
+> 改动范围白名单：**新增 `eval/`、新增 `scripts/eval_tender_regression.py`、
+> 新增 `eval/regression.py`（纠偏令 v2 二节授权：纯搬运拆分，脚本剩 CLI+HTTP 驱动）**；
 > 白名单外唯一例外见「守卫扩面」节，需用户点头。**不触碰 `server/tender/` 任何文件。**
 
 ## 背景
@@ -27,7 +28,8 @@ Phase 0 交付四指标评测闸，此后每一刀由数字裁决。
 ```
 eval/golden/case-zj-live/          # ZJ直播间标（匿名代号，不含真名）
   ├── expected.yaml                # 匿名化期望（见下）
-  └── corpus.pointer.yaml          # 语料指针：相对 knowledge/external/ 的路径 + sha256 + 页数
+  └── corpus.pointer.yaml          # 语料指针：sha256 + bytes + pages 指纹定位（不记路径——
+                                   #   路径即真名，与守卫互斥；纠偏令 v2 二节裁决 2026-08-18）
 ```
 
 **匿名化方案（与 `tests/test_no_real_corpus.py` 机械守卫共存的唯一办法）**：
