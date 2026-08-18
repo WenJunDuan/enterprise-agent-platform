@@ -139,3 +139,42 @@
 - Agent ID: a3203247d14f3f999
 - Last message: 我的 worktree 目录在等待全量测试时被移除了（工具已拒绝继续在共享 checkout 上执行），因此后续无法再跑命令。**所有改动已提交在分支 `worktree-agent-a3203247d14f3f999` 上**，基线 `3dc390b`： - `1ea2954` fix(tender): 证据块携带真实来源文件名，修回查闸跨文件误归属（代码 + 测试） - `87698f6` d
 
+## 2026-08-18T02:26:55.712Z · architect
+- Event: SubagentStart
+- Agent ID: a99a625eae1690cdd
+
+## 2026-08-18T02:35:36.035Z · architect
+- Event: SubagentStart
+- Agent ID: a99a625eae1690cdd
+
+## 2026-08-18T02:40:16.121Z · architect
+- Event: SubagentStop
+- Agent ID: a99a625eae1690cdd
+- Last message: # 评标管线修复方案（architect 只读审议 · 2026-08-18） **审议基础**：已读 `_index.md`、`design.md`（含 S5–S8 增量）、`reviews/pass3.md`（F1–F10），以及 `server/tender/`（doc_pipeline / runner / doc_context / doc_layer / evidence_contex
+
+## 2026-08-18T02:51:15.808Z · generator
+- Event: SubagentStart
+- Agent ID: a9db75be44e901e84
+
+## 2026-08-18T02:51:43.558Z · generator
+- Event: SubagentStart
+- Agent ID: a75d786a52d19fc9f
+
+## 2026-08-18T03:12:11.323Z · generator
+- Event: SubagentStart
+- Agent ID: a75d786a52d19fc9f
+
+## 2026-08-18T03:16:00.583Z · generator
+- Event: SubagentStop
+- Agent ID: a75d786a52d19fc9f
+- Last message: Done. Final report. ## 改动摘要 **分支** `worktree-agent-a75d786a52d19fc9f`，3 个 commit，未合并 main： | commit | 内容 | |---|---| | `50b20c2` | (c) 降级不许静默 | | `ae82b5c` | (d) 整份注入截断 ⇒ 转人工 | | `0e95c34` | `docs(ten
+
+## 2026-08-18T03:31:53.757Z · generator
+- Event: SubagentStart
+- Agent ID: a9db75be44e901e84
+
+## 2026-08-18T03:48:37.780Z · generator
+- Event: SubagentStop
+- Agent ID: a9db75be44e901e84
+- Last message: Both fixes are done, committed, and green. Working tree clean. ## Commits (branch `worktree-agent-a9db75be44e901e84`, not merged to main) | commit | 内容 | |---|---| | `c1fcb74` | fix(tender): criteria 
+
