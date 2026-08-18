@@ -53,8 +53,15 @@ configure_claude_runtime_env()
 
 logger = logging.getLogger(__name__)
 
-# 合法推理强度档位（extended thinking effort）。env/per-call 传非法值一律剔除，不传给 CLI。
+# 合法推理强度档位（extended thinking effort）的**内置默认全集**。env/per-call 传非白名单值
+# 一律剔除，不传给 CLI。
 _VALID_EFFORTS = frozenset({"low", "medium", "high", "xhigh", "max"})
+
+# 部署可声明本端点**实际**接受哪几档（逗号分隔）。端点的合法档位由它自己的 chat template
+# 决定：某些端点自校验 reasoning_effort、收到不认识的档位直接 400，而 SDK 这一侧无从探测。
+# 未声明 → 用内置全集，行为与声明前逐字一致；刻意不按模型名分支——那等于把"换端点要重踩"
+# 固化进源码，而端点能力是部署事实、不是代码该知道的模型知识。
+_VALID_EFFORTS_ENV = "CLAUDE_VALID_REASONING_EFFORTS"
 
 # 上下文截断预警（S7）：把注入 prompt 的字符数粗估成 token 数，与声明窗口比对。
 # CJK 标书底稿密集，deepseek 分词约 1.5 char/token；env MODEL_CHARS_PER_TOKEN 可调。
@@ -91,6 +98,50 @@ def _positive_float_env(name: str, default: float) -> float:
     except ValueError:
         return default
     return value if value > 0 else default
+
+
+def valid_efforts() -> frozenset[str]:
+    """本次部署接受的推理强度档位。
+
+    读 ``CLAUDE_VALID_REASONING_EFFORTS``（逗号分隔，大小写与空白不敏感）；未设或全空白时
+    回落内置全集 :data:`_VALID_EFFORTS`，保证零行为变更。
+
+    Returns:
+        小写档位集合。
+    """
+    raw = (os.getenv(_VALID_EFFORTS_ENV) or "").strip()
+    if not raw:
+        return _VALID_EFFORTS
+    declared = frozenset(part.strip().lower() for part in raw.split(",") if part.strip())
+    return declared or _VALID_EFFORTS
+
+
+def _resolve_effort(effort: str) -> str | None:
+    """校验一个已归一化的 effort；非白名单值剔除并留 WARNING。
+
+    剔除本身是既有行为（非法档位传给 CLI 会报错），此前是**静默** pop——调用方以为自己设了
+    ``xhigh``，实际发出去的是端点默认，两者的判断质量差得远却没有任何痕迹。空值不算"被剔除
+    的值"（那只是没设），保持安静，否则这条信号会被日常噪音淹没。
+
+    Args:
+        effort: 已 strip + lower 的档位字符串；空串表示未设置。
+
+    Returns:
+        保留下来的档位，或 ``None`` 表示不传给 CLI。
+    """
+    if not effort:
+        return None
+    allowed = valid_efforts()
+    if effort in allowed:
+        return effort
+    logger.warning(
+        "reasoning_effort %r 不在本部署声明的白名单 %s 内，已剔除（本次调用走端点默认强度）。"
+        "端点若自校验该字段，传非白名单值会直接 400；如需启用请按端点实际能力设置 %s。",
+        effort,
+        sorted(allowed),
+        _VALID_EFFORTS_ENV,
+    )
+    return None
 
 
 def _reserved_output_tokens(model: str | None = None) -> int | None:
@@ -334,12 +385,12 @@ def build_options(*, case_root: Path | None = None, **overrides: Any) -> ClaudeA
                 HookMatcher(matcher="Bash", hooks=[_make_ocr_page_hook(Path(case_root))])
             ]
         }
-    # env 或 per-call override 的 effort 统一校验：仅合法档位保留，非法/空一律剔除不致 CLI 报错。
-    effort = str(defaults.get("effort") or "").strip().lower()
-    if effort in _VALID_EFFORTS:
-        defaults["effort"] = effort
-    else:
+    # env 或 per-call override 的 effort 统一校验：仅白名单档位保留，其余剔除（并出声）。
+    resolved_effort = _resolve_effort(str(defaults.get("effort") or "").strip().lower())
+    if resolved_effort is None:
         defaults.pop("effort", None)
+    else:
+        defaults["effort"] = resolved_effort
     return ClaudeAgentOptions(**defaults)
 
 
