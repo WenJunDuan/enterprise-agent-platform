@@ -69,13 +69,13 @@ pointers:
   latest_architecture_update: "2026-08-14T09:26:47.542Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "【2026-08-18 晚 · Step 0 已完成; Step 1 部署 0818b3 = 唯一待用户放行项】
+next_action: "【2026-08-18 晚 · Step 0+1 已完成; 0818b3 已上线, 用户实操中; 下一步 Step 2 基线回填】
 
 入口链: sprints/2026-08-15-tender-context-pipeline/handoff-2026-08-18-night.md → .ai_state/claude/Tender链路纠偏令 v2（效力最高）→ plan-2026-08-18-v2-execution.md（六步）。
 
 Step 0 三残项已完成: ①Phase 0 design AC1 措辞回改(sha256+bytes+pages 指纹) ②评测脚本纯搬运拆分 eval/regression.py(b3f3bb8, 脚本 1080→381 行, 全量 17F/1767P 与基线逐名一致) ③fixture 真实编号金额改合成 + 守卫新增编号形态正则 [A-Z]{2,6}-?\\d{5,}(真红→绿, 证据 tdd-evidence T6/T7)。残留: eval/regression.py 822 行超 300 线, 记 gate sprint proposals P1#2 追记, 下刀线=YAML 子集解析器分家。
 
-下一步: **Step 1 部署 0818b3**（rsync+build+重建, smoke 验提交闸与 total_score; 基线回填前提, 0818b2 无 total_score）; 放行后 Step 2 case-zj-live single×3 回填附录B → Phase 0 过闸 → Step 3 case-2/3（素材=knowledge/external/车辆管理系统/results-5ccbb361批-20260818.json 抢救件）→ Step 4 D1(vision-page 首选)/D2(仅四项机械缺陷) → Step 5 Phase A agency 薄实验 → Step 6 数字裁决。
+Step 1 已完成: 0818b3 上线（镜像 7ac3610f, smoke=health ok+代码面/接线核verified, 闸行为由 60 单测兜底; 执行记录见 plan-2026-08-18-v2-execution Step 1 追记; 回滚位 0818b2）。下一步: 用户实操验证后 **Step 2 case-zj-live single×3 回填附录B** → Phase 0 过闸 → Step 3 case-2/3（素材=knowledge/external/车辆管理系统/results-5ccbb361批-20260818.json 抢救件）→ Step 4 D1(vision-page 首选)/D2(仅四项机械缺陷) → Step 5 Phase A agency 薄实验 → Step 6 数字裁决。
 
 禁令: 词表/常数/阈值/查询串措辞未经诊断数据一律禁止; 回归闸期望值与命中判定禁改。P0.6 worktree 冻结勿 prune。线上仍 0818b2+deepseek。"
 last_subagent: "codex-exec" # tender-report-dimensions D0-D5 headless (codex 0.142.1, gpt-5.5)；必须 env -u HTTP_PROXY -u HTTPS_PROXY 否则 streaming API 挂起，见 compound/2026-06-25-trick-codex-proxy-hangs-streaming.md

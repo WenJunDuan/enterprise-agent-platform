@@ -31,12 +31,23 @@ proposals 四项按 v2 二节裁决：
 收尾：`_index.md` next_action 更新；`plan-2026-08-18-accuracy.md` 头部加
 "D1/D2/P2.5 之外部分已被 v2 取代"指针。commit + push。
 
-### Step 1 · 部署 0818b3【唯一待放行项】
+### Step 1 · 部署 0818b3【已完成 2026-08-18 晚】
 
 rsync main → 部署机 → `docker build --build-arg WITH_OCR=1 -t agent-backend:0818b3`
 → `docker rm -f` 重建（env 已回退 deepseek 并验证）。
 Smoke：`/health`、提交闸（criteria 未就绪 4xx）、一单评标确认 `total_score`/`pending_max` 出数。
 回滚位：`0818b2`。
+
+**执行记录**：main `d4dc271` rsync（47 文件增量）→ 构建缓存全中，镜像
+`sha256:7ac3610f…` → 复刻原参数重建（9999 端口 / data·logs·knowledge 三挂载 /
+enterprise-agent-net / unless-stopped / --env-file .env=deepseek 已核）。
+Smoke 实测：①`/health` ok；②镜像代码面——`criteria_gate` 模块在、
+`routes/tender/tasks` 接线在、`output_contracts` 含 `total_score`+`pending_max`；
+③空项目评标探针 422（体校验）+ 建/删项目 API 正常——**闸的 4xx 行为未端到端触发**：
+闸刻意只对有预热底稿的项目生效（模块 docstring），端到端需上传+抢跑竞态，成本与
+僵尸任务风险不值，行为面由合并前 60 单测兜底；`total_score` 出数确认留给用户实操
+/ Step 2 首跑。启动日志无 error。回滚：`docker rm -f agent-backend` 后按同参数起
+`agent-backend:0818b2`。
 
 ### Step 2 · Phase 0 收尾 = v2 令三②（$4-5，~1h）
 
