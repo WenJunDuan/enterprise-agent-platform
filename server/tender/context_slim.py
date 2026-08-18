@@ -20,6 +20,7 @@ from server.common.corpus import (
 from server.ocr.docstructure import build_doc_structure
 from server.ocr.rag import index_document, search
 from server.tender.context_budget import first_heading_index, select_review_spans
+from server.tender.eval_signals import mark_context_truncated
 from server.tender.injection_budget import chunks_per_query_budget, fallback_injection_tokens
 
 _ELIGIBILITY_TAG = "qualification_review"
@@ -137,6 +138,9 @@ def bound_tender_context(context: str, *, model: str | None = None) -> str | Non
     if budget is None or len(context) <= budget:
         return context
 
+    # 下面每一条路径都会削掉材料（招标段 / 投标段 / 整体硬切）。与 ``draft_budget.bound_draft``
+    # 同一理由记账：回填质量门要知道这次会话是不是只看了残卷（见 ``eval_signals``）。
+    mark_context_truncated()
     tender_marker = "=== 招标文件底稿 ===\n"
     bid_marker_start = "\n=== 投标文件（"
     criteria_marker = "\n\n=== 已解析评分标准 criteria"

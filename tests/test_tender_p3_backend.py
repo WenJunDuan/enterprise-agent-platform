@@ -57,7 +57,7 @@ def test_criteria_backfill_writes_when_none(monkeypatch):
     upsert_project_doc(project_id=pid, tenant=tenant, tender_files="[]")
     assert get_project_doc(pid, tenant)["criteria"] is None
 
-    _backfill_criteria(pid, tenant, SAMPLE_CRITERIA)
+    _backfill_criteria(pid, tenant, SAMPLE_CRITERIA, block_reason=None)
 
     row = get_project_doc(pid, tenant)
     assert row is not None
@@ -85,7 +85,7 @@ def test_criteria_backfill_first_writer_wins(monkeypatch):
 
     # 尝试用新 criteria 覆盖 → 应不覆盖
     new_criteria = {"source_ref": "new", "method": "new_method", "total_max": 100, "items": []}
-    _backfill_criteria(pid, tenant, new_criteria)
+    _backfill_criteria(pid, tenant, new_criteria, block_reason=None)
 
     row = get_project_doc(pid, tenant)
     stored = json.loads(row["criteria"])
@@ -98,7 +98,7 @@ def test_criteria_backfill_skips_none_project_id():
     from server.tender.worker import _backfill_criteria
 
     # 不应抛任何异常
-    _backfill_criteria(None, "any-tenant", SAMPLE_CRITERIA)
+    _backfill_criteria(None, "any-tenant", SAMPLE_CRITERIA, block_reason=None)
 
 
 def test_criteria_backfill_skips_empty_criteria():
@@ -110,7 +110,7 @@ def test_criteria_backfill_skips_empty_criteria():
     tenant = "t-crit-c"
     upsert_project_doc(project_id=pid, tenant=tenant, tender_files="[]")
 
-    _backfill_criteria(pid, tenant, None)
+    _backfill_criteria(pid, tenant, None, block_reason=None)
 
     row = get_project_doc(pid, tenant)
     assert row["criteria"] is None  # 没写入任何东西
@@ -123,16 +123,17 @@ def test_criteria_backfill_does_not_crash_on_exception(monkeypatch):
 
     call_count = {"n": 0}
 
-    def _boom(project_id, tenant):
+    def _boom(project_id, tenant, criteria_json):
         call_count["n"] += 1
         raise RuntimeError("simulated DB error")
 
-    # patch the name as imported in the worker module
-    monkeypatch.setattr(worker_mod, "get_project_doc", _boom)
+    # patch the name as imported in the worker module（"已存不覆盖"下沉 store 的条件 UPDATE
+    # 之后，回填只剩这一次写调用，故异常也从这里注入）
+    monkeypatch.setattr(worker_mod, "update_project_doc_criteria", _boom)
 
     # 不应 raise, 主流程继续
-    _backfill_criteria("fake-pid", "fake-tenant", SAMPLE_CRITERIA)
-    assert call_count["n"] == 1  # 确实调到了 get_project_doc
+    _backfill_criteria("fake-pid", "fake-tenant", SAMPLE_CRITERIA, block_reason=None)
+    assert call_count["n"] == 1  # 确实调到了写入函数
 
 
 def test_criteria_backfill_skips_project_not_in_db():
@@ -140,7 +141,7 @@ def test_criteria_backfill_skips_project_not_in_db():
     from server.tender.worker import _backfill_criteria
 
     # 没有预先创建 project doc → 应安全跳过
-    _backfill_criteria(_pid(), "no-such-tenant", SAMPLE_CRITERIA)
+    _backfill_criteria(_pid(), "no-such-tenant", SAMPLE_CRITERIA, block_reason=None)
 
 
 # ── B. delete 级联清两新表 ──────────────────────────────────────────────────────

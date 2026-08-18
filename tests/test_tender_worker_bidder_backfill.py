@@ -69,8 +69,8 @@ def test_execute_inner_completed_triggers_bidder_name_backfill(monkeypatch):
     captured: dict = {}
     monkeypatch.setattr(tw, "upsert_tender_task", lambda payload: None)
     monkeypatch.setattr(tw, "update_tender_progress", lambda *a, **k: None)
-    monkeypatch.setattr(tw, "get_project_doc", lambda *_a, **_kw: {"criteria": "x"})
-    monkeypatch.setattr(tw, "update_project_doc_criteria", lambda *a, **k: None)
+    # criteria 已有权威 → store 的条件 UPDATE 写 0 行、回报 False（本用例只关心投标人名回填）
+    monkeypatch.setattr(tw, "update_project_doc_criteria", lambda *a, **k: False)
     monkeypatch.setattr(
         tw,
         "_backfill_bidder_name",

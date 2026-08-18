@@ -20,11 +20,11 @@ from server.stores.request_store import utc_now
 from server.stores.result_store import update_result_criteria_ref
 from server.stores.tender_doc_store import (
     backfill_bid_doc_bidder_name,
-    get_project_doc,
     update_project_doc_criteria,
 )
 from server.stores.tender_task_store import update_tender_progress, upsert_tender_task
 from server.tender.compare_worker import maybe_schedule_compare
+from server.tender.eval_signals import evaluation_signals
 from server.tender.runner import run_tender_evaluation as _run_evaluation
 
 logger = logging.getLogger(__name__)
@@ -155,23 +155,32 @@ async def _execute_inner(
 
         flusher = asyncio.create_task(_flush_progress())
         try:
-            payload, meta = await asyncio.wait_for(
-                _run_evaluation(
-                    request_id=request_id,
-                    tenant=tenant,
-                    directory_path=directory_path,
-                    project_id=project_id,
-                    bid_id=bid_id,
-                    on_progress=on_progress,
-                ),
-                timeout=TENDER_TIMEOUT_SEC,
-            )
+            # 信号作用域：预算闸在深处削底稿时把事实记在这份记录上，回填质量门据它判断
+            # 本次会话看没看全材料（见 ``eval_signals``）。记录对象在作用域退出后仍可读。
+            with evaluation_signals() as signals:
+                payload, meta = await asyncio.wait_for(
+                    _run_evaluation(
+                        request_id=request_id,
+                        tenant=tenant,
+                        directory_path=directory_path,
+                        project_id=project_id,
+                        bid_id=bid_id,
+                        on_progress=on_progress,
+                    ),
+                    timeout=TENDER_TIMEOUT_SEC,
+                )
             # criteria 项目级回填（P3 A1）：评标 completed 后，首次把会话解析的 criteria
             # 写到招标层 → 同项目后续家评标 S1 读层命中复用，不再重复解析。异常不崩主流程。
             if project_id and isinstance(payload, dict):
                 criteria = (payload.get("extracted_data") or {}).get("criteria")
                 became_authority = await asyncio.to_thread(
-                    _backfill_criteria, project_id, tenant, criteria
+                    _backfill_criteria,
+                    project_id,
+                    tenant,
+                    criteria,
+                    block_reason=_authority_block_reason(
+                        payload, context_truncated=signals.context_truncated
+                    ),
                 )
                 # KD1：ref 补写进已归档结论（归档早于 runner 打标），并消解 backfill 竞态。
                 await asyncio.to_thread(
@@ -292,43 +301,77 @@ async def _execute_inner(
                     )
 
 
+def _authority_block_reason(payload: object, *, context_truncated: bool) -> str | None:
+    """本次评标会话有没有资格让它自解析的 criteria 成为**项目永久权威规则**。
+
+    2026-08-17 事故：一个只看到 23% 底稿的会话，其自解析 criteria 被回填成项目权威，
+    之后每一家投标都继承这份从残卷里解析出来的规则。回填本身没错，错在不问来路。
+
+    判据只看**链路信号**，绝不看文档内容：截断是物理事实（预算闸削没削），结论档位是链路
+    自己的产物。任何"从文本里找关键词判好坏"的判据都会绑死在某一份标书上，换一份即失效。
+
+    Args:
+        payload: 本次评标结论。
+        context_truncated: 本次会话的注入被预算闸削过（见 ``eval_signals``）。
+
+    Returns:
+        ``None`` 表示放行；否则返回拦截原因的机器码（进日志，供排查）。
+    """
+    if context_truncated:
+        return "context_truncated"
+    verdict = payload.get("verdict") if isinstance(payload, dict) else None
+    if verdict == "manual_review":
+        return "manual_review"
+    return None
+
+
 def _backfill_criteria(
     project_id: str | None,
     tenant: str,
     criteria: object,
+    *,
+    block_reason: str | None,
 ) -> bool:
-    """回填评标 criteria 到招标层（首个写入者赢，已存不覆盖，散单/异常静默跳过）。
+    """回填评标 criteria 到招标层（质量门放行 + 首个写入者赢，散单/异常静默跳过）。
 
-    评标 completed 后，若 payload.extracted_data.criteria 存在，调本函数把评分标准
-    持久化到 tender_project_docs.criteria（项目级复用，后续家评标 S1 可读层命中秒过）。
+    评标 completed 后，若 payload.extracted_data.criteria 存在**且本次会话有资格定权威**
+    （``block_reason is None``，判据见 :func:`_authority_block_reason`），把评分标准持久化到
+    tender_project_docs.criteria（项目级复用，后续家评标 S1 读层命中秒过）。
+    "已存不覆盖"由 store 的条件 UPDATE 原子保证，不在此处读-判-写。
 
     Args:
         project_id: 招标项目 ID；为 None（散单）时直接返回。
         tenant: 租户作用域。
         criteria: 已解析的 criteria 对象（dict）；为 None/空时跳过。
+        block_reason: 质量门的拦截原因；非 None 时一行都不写（不是写完再回滚）。
 
     Returns:
         True 当且仅当**本次**写入使该家 criteria 成为项目权威（KD1 据此把 ref 升为 project）。
     """
     if not project_id or not criteria:
         return False
+    if block_reason is not None:
+        logger.warning(
+            "tender_criteria_backfill_blocked",
+            extra={
+                "project_id": project_id,
+                "tenant": tenant or "default",
+                "block_reason": block_reason,
+            },
+        )
+        return False
     try:
         import json as _json
 
-        existing = get_project_doc(project_id, tenant)
-        if existing is None:
-            # 招标层记录不存在（旧散单迁移等），安全跳过。
-            return False
-        if existing.get("criteria"):
-            # 已存非空 → 首个写入者赢，不覆盖。
-            return False
-        criteria_json = _json.dumps(criteria, ensure_ascii=False)
-        update_project_doc_criteria(project_id, tenant, criteria_json)
-        logger.info(
-            "tender_criteria_backfilled",
-            extra={"project_id": project_id, "tenant": tenant or "default"},
+        became_authority = update_project_doc_criteria(
+            project_id, tenant, _json.dumps(criteria, ensure_ascii=False)
         )
-        return True
+        if became_authority:
+            logger.info(
+                "tender_criteria_backfilled",
+                extra={"project_id": project_id, "tenant": tenant or "default"},
+            )
+        return became_authority
     except Exception:
         logger.warning(
             "tender_criteria_backfill_failed",

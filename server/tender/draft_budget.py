@@ -15,6 +15,7 @@ import os
 from dataclasses import dataclass
 
 from server.tender.context_budget import bound_draft_by_content, derive_default_max_bytes
+from server.tender.eval_signals import mark_context_truncated
 
 # 让模型**看见**底稿被截，从而对被截材料走证据缺失规则，而不是当成"材料未提供"判 0。
 # 标记本身（~160 B）附加在上限之外，故意保证"被截了"这件事一定进上下文。
@@ -58,6 +59,10 @@ def bound_draft(ocr_block: str, *, model: str | None = None) -> TruncatedDraft |
     original_bytes = len(ocr_block.encode("utf-8"))
     if original_bytes <= limit:
         return None
+    # 削之前先记账：截断这件事只有这里知道，而回填质量门要据它判"这次会话看全了没有"
+    # （见 ``eval_signals``）。调用方那条 ``tender_context_truncated`` 日志是给运维的，
+    # 进不了判断；两者同源同时机，不是重复。
+    mark_context_truncated()
     kept = bound_draft_by_content(ocr_block, limit_bytes=limit)
     kept_bytes = len(kept.encode("utf-8"))
     return TruncatedDraft(
