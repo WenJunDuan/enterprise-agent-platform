@@ -1,9 +1,16 @@
 """真实语料守卫：代码、测试与提示词里不得出现真实**机构 / 公司名**。
 
-**能抓什么、不能抓什么（别扩大声称范围）**：本守卫只按「汉字 + 机构性后缀」的形态抓，
-因此抓得到 `某某科技有限公司` / `某某学院`，**抓不到**无后缀的项目名（`青岛诺德中心…建设项目`）
-与真人姓名（触发本次治理的 A7 那处）——后两类在形态上与正常业务文本不可分。
-声称范围必须与实际能力一致，否则下一个人会误以为项目名也有守卫
+**能抓什么、不能抓什么（别扩大声称范围）**：本守卫按两种形态抓——「汉字 + 机构性后缀」
+（`某某科技有限公司` / `某某学院`）与「大写字母 + 5 位以上数字段」的编号类标识
+（真实政采/招标编号几乎必带行政区划码或长流水号；2026-08-18 实测该形态全仓仅 2 处命中，
+判别力足够——起因是真实项目编号在 fixture 里靠人工拿参照报告反查才发现，见
+`.ai_state/sprints/2026-08-18-tender-eval-regression-gate/proposals.md` P1#3）。**仍然抓不到**（人工纪律区：给 fixture 写任何来自真实材料的值之前，
+先拿源材料反查）：
+- 纯数字金额——与合成数据形态不可分，本次治理的真实预算金额即靠人工反查发现；
+- 年份+流水号型编号（`XX-2026-001`）——实测 9 文件约 20 串全是本仓合成 mock 惯用形态，
+  纳入只添加白扰动、无判别力；
+- 无后缀的项目名（`青岛诺德中心…建设项目`）与真人姓名（触发本次治理的 A7 那处）。
+声称范围必须与实际能力一致，否则下一个人会误以为金额与项目名也有守卫
 （依据 coding-standards P1「可达性论证的检索式必须能抓住它要防的失败」）。
 
 **为什么要机械化**：用户纪律「样本只用于验证，不得当规格；任何具体项目的数据不得进仓库」
@@ -81,6 +88,23 @@ _SYNTHETIC_ALLOWED = frozenset(
     }
 )
 
+# 编号类标识形态：2-6 个大写字母 + 可选连字符 + ≥5 位连续数字段。真实政采/招标编号
+# 几乎必带行政区划码（6 位）或长流水号；4 位数字段（年份 / ISO9001 类标准号 /
+# `XX-2026-001` 合成惯用形态）刻意不进网——2026-08-18 实测 4 位形态命中 19 串
+# 全为合成值或标准号，判别力为零，纳入只会逼每个新 mock 编号加白。
+_CODE_SHAPE = re.compile(r"[A-Z]{2,6}-?\d{5,}")
+
+# 编号类合成允许清单：与 _SYNTHETIC_ALLOWED 同一纪律——加白前先确认不是真实标识。
+_SYNTHETIC_ALLOWED_CODES = frozenset(
+    {
+        # test_credit_api 信用代码段（挂合成「甲方建设有限公司」名下，顺序数字明示虚构）
+        "MA1234567",
+        # test_legacy_doc_table_recovery 合成项目编号（DEMO 前缀明示虚构；
+        # 故意保留 6 位数字段落在网内，验证本守卫真在工作）
+        "DEMO-100001",
+    }
+)
+
 # 本守卫自身与状态档会引用形态样例，排除以免自指翻红。
 _EXEMPT_FILES = {"tests/test_no_real_corpus.py"}
 
@@ -95,8 +119,8 @@ def _scan_files() -> list[Path]:
     return files
 
 
-def test_no_real_organization_names_in_code_or_prompts() -> None:
-    """组织名形态命中且不在合成允许清单 → 判红。"""
+def _shape_hits(shape: re.Pattern[str], allowed: frozenset[str]) -> dict[str, set[str]]:
+    """扫描面内命中形态且不在允许清单的串，按文件归集。"""
     hits: dict[str, set[str]] = {}
     for path in _scan_files():
         rel = str(path.relative_to(PROJECT_ROOT))
@@ -104,14 +128,34 @@ def test_no_real_organization_names_in_code_or_prompts() -> None:
             continue
         found = {
             m.group(0)
-            for m in _ORG_SHAPE.finditer(path.read_text(encoding="utf-8", errors="ignore"))
-            if m.group(0) not in _SYNTHETIC_ALLOWED
+            for m in shape.finditer(path.read_text(encoding="utf-8", errors="ignore"))
+            if m.group(0) not in allowed
         }
         if found:
             hits[rel] = found
+    return hits
+
+
+def test_no_real_organization_names_in_code_or_prompts() -> None:
+    """组织名形态命中且不在合成允许清单 → 判红。"""
+    hits = _shape_hits(_ORG_SHAPE, _SYNTHETIC_ALLOWED)
     assert not hits, (
         f"疑似真实机构/公司名进入代码或提示词：{hits}。\n"
         "真实语料只用于验证、不得进仓库（用户纪律）。改成合成名并保住其结构性质"
         "（如 OCR 易混需保留形近字对、字面错位需保留连续重合字数）；"
         "确认是合成名则加进 _SYNTHETIC_ALLOWED。"
+    )
+
+
+def test_no_real_project_numbers_in_code_or_prompts() -> None:
+    """编号形态命中且不在合成允许清单 → 判红。
+
+    起因：真实项目编号在 fixture 里趴了一天，机构名守卫抓不到该形态，
+    靠人工拿参照报告反查才发现（2026-08-18-tender-eval-regression-gate proposals P1#3）。
+    """
+    hits = _shape_hits(_CODE_SHAPE, _SYNTHETIC_ALLOWED_CODES)
+    assert not hits, (
+        f"疑似真实项目/标识编号进入代码或提示词：{hits}。\n"
+        "真实语料只用于验证、不得进仓库（用户纪律）。改成合成编号并保住结构性质"
+        "（字母段-数字段）；确认是合成值则加进 _SYNTHETIC_ALLOWED_CODES。"
     )

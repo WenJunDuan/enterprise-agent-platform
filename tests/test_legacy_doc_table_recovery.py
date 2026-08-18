@@ -40,7 +40,9 @@ def test_text_without_bel_is_left_alone():
     """无表格的纯文本原样返回——兜底档不能因为这次改动改变既有行为。"""
     from server.ocr.native import recover_bel_tables
 
-    raw = "第一章 投标邀请\n项目编号：TENDER-NO-ZJ\n预算金额：133万元"
+    # 编号与金额为合成值（真实值 2026-08-18 已清除）：DEMO 前缀明示虚构，保住
+    # 「字母段-6位数字段」结构且故意落在 test_no_real_corpus 编号守卫网内（已加白）。
+    raw = "第一章 投标邀请\n项目编号：DEMO-100001\n预算金额：888万元"
     blocks, tables = recover_bel_tables(raw)
 
     assert tables == []
