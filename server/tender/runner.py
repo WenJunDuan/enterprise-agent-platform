@@ -31,6 +31,7 @@ from server.stores.session_store import new_conversation_id
 from server.tender.compare_input import resolve_project_criteria
 from server.tender.context_slim import bound_tender_context
 from server.tender.contract_repair import build_repair_prompt, repair_session_id
+from server.tender.corpus_materialize import agency_context_block, corpus_dir
 from server.tender.criteria_context import _criteria_context_block, _stamp_criteria_ref
 from server.tender.doc_context import (
     _inject_ocr_warnings,
@@ -97,6 +98,16 @@ _TENDER_EFFORT = os.getenv("TENDER_REASONING_EFFORT", "xhigh")
 # hook 约束，只放行按页重识别。**必须非空**：build_options 里 `defaults.get("tools") or
 # _AGENT_TOOLS` 会把空清单悄悄还原成全量工具。
 DRAFT_INJECTED_TOOLS = ["Bash"]
+
+# Phase A.2（agency 薄实验）：``TENDER_AGENCY=1`` 时评标会话在锁面之上加 Grep/Read，两者由
+# ``build_options`` 的 corpus PreToolUse 闸钉死在本案 ``corpus/``（落盘见 corpus_materialize）。
+# 默认 0 → 工具面与注入逐字不变（它是本实验的对照组，不能被顺手改动）。max_turns 不动。
+AGENCY_INJECTED_TOOLS = ["Bash", "Grep", "Read"]
+
+
+def _tender_agency_enabled() -> bool:
+    """Return True when the opt-in corpus follow-up tool surface is active (reads env live)."""
+    return os.getenv("TENDER_AGENCY", "0").lower() in {"1", "true", "yes"}
 
 
 def _bound_ocr_block(
@@ -251,6 +262,17 @@ async def run_tender_evaluation(
     if context and ocr_warnings:
         context = context + _ocr_warning_block(ocr_warnings)
 
+    # 有意的安全设计（D11 TA4）：case_root 恒绑定本案目录，因此受 ocr-page
+    # PreToolUse hook 约束的 Bash 对每次评标都可用——任一评标都可能需要低清页重识别。
+    # hook 是唯一闸；这是显式设计，不是 case_root 默认回填带来的副作用。
+    evaluation_case_root = case_root if case_root is not None else Path(directory_path)
+    # A.2：补证指引追加在**末尾**（初始注入不变），与工具面同一个开关同进同退。
+    agency_corpus_root = (
+        corpus_dir(evaluation_case_root) if context and _tender_agency_enabled() else None
+    )
+    if agency_corpus_root is not None:
+        context = context + agency_context_block(agency_corpus_root)
+
     bounded_context = bound_tender_context(context, model=resolved_model or None) if context else None
     if bounded_context is not None:
         context = bounded_context
@@ -260,14 +282,13 @@ async def run_tender_evaluation(
     # 故这条兜底路径只在 eval CLI / 部署机手动调参场景生效。
     model_kwargs: dict[str, str] = {"model": resolved_model} if resolved_model else {}
     # B：底稿在场 → 锁掉自由 Glob/Read（见 DRAFT_INJECTED_TOOLS）。底稿缺失时**不锁**，
-    # 那条降级路径下模型必须还能自己读文件。
-    tool_kwargs: dict[str, list[str]] = (
-        {"tools": DRAFT_INJECTED_TOOLS, "allowed_tools": DRAFT_INJECTED_TOOLS} if context else {}
+    # 那条降级路径下模型必须还能自己读文件。A.2 开关只在锁面这一侧加 Grep/Read。
+    draft_tools = AGENCY_INJECTED_TOOLS if agency_corpus_root is not None else DRAFT_INJECTED_TOOLS
+    tool_kwargs: dict[str, Any] = (
+        {"tools": draft_tools, "allowed_tools": draft_tools} if context else {}
     )
-    # 有意的安全设计（D11 TA4）：case_root 恒绑定本案目录，因此受 ocr-page
-    # PreToolUse hook 约束的 Bash 对每次评标都可用——任一评标都可能需要低清页重识别。
-    # hook 是唯一闸；这是显式设计，不是 case_root 默认回填带来的副作用。
-    evaluation_case_root = case_root if case_root is not None else Path(directory_path)
+    if agency_corpus_root is not None:
+        tool_kwargs["corpus_root"] = agency_corpus_root
 
     # 两条调用路径共用的 kwargs（整单跑 / resume 修补轮），逐字同一套，避免两份参数表漂移。
     def _call_kwargs() -> dict[str, Any]:

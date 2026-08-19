@@ -76,6 +76,9 @@ _OCR_PAGE_FILE_TOKEN = (
     r"""|[^"'\\\s;&|$()\{\}<>\x60*?\[\]!\r\n]+)"""
 )
 _OCR_PAGE_SPEC = r"[0-9]+(?:-[0-9]+)?"
+# 单次 Read 的行数上限（Phase A.2 受控补证工具面）。定义在闸这一侧：``corpus_materialize``
+# 的补证指引 import 它来告诉模型同一个数字，两处各写一份必然漂移。
+CORPUS_READ_MAX_LINES = 200
 _OCR_PAGE_COMMAND_RE = re.compile(
     rf"{re.escape(_OCR_PAGE_PREFIX)}[ \t]+(?P<file>{_OCR_PAGE_FILE_TOKEN})"
     rf"(?:[ \t]+(?:--pages[ \t]+(?P<pages_before>{_OCR_PAGE_SPEC})"
@@ -293,6 +296,79 @@ def _make_ocr_page_hook(case_root: Path) -> HookCallback:
     return check_ocr_page
 
 
+def _validate_corpus_path(raw_path: object, corpus_root: Path, *, must_be_file: bool) -> str | None:
+    """Require an absolute path that really resolves inside the bound corpus directory."""
+    if not isinstance(raw_path, str) or not raw_path:
+        return "corpus path is missing or not a string"
+    if "\x00" in raw_path:
+        return "corpus path contains a NUL byte"
+    target = Path(raw_path)
+    if not target.is_absolute():
+        return "corpus path must be absolute"
+    try:
+        resolved = Path(os.path.realpath(target))
+    except (OSError, ValueError):
+        return "corpus path cannot be resolved"
+    if not resolved.is_relative_to(corpus_root):
+        return "corpus path resolves outside the case corpus directory"
+    if must_be_file and not resolved.is_file():
+        return "corpus path is not an existing regular file"
+    return None
+
+
+def _validate_corpus_read(tool_input: dict[str, Any], corpus_root: Path) -> str | None:
+    """Bound one Read to a corpus file and to a line window.
+
+    行窗上限是延时治理的一部分：不带 ``limit`` 的 Read 会拉回上千行，等于把整份底稿再
+    预填充一遍——那正是 ``error_max_turns`` 的成因。补证要的是"按行区间取原文"。
+    """
+    reason = _validate_corpus_path(tool_input.get("file_path"), corpus_root, must_be_file=True)
+    if reason is not None:
+        return reason
+    limit = tool_input.get("limit")
+    if (
+        not isinstance(limit, int)
+        or isinstance(limit, bool)
+        or not 0 < limit <= CORPUS_READ_MAX_LINES
+    ):
+        return f"Read must pass an explicit limit of 1..{CORPUS_READ_MAX_LINES} lines"
+    return None
+
+
+def _make_corpus_hook(corpus_root: Path) -> HookCallback:
+    """Create a fail-closed Read/Grep PreToolUse hook bound to one case corpus directory.
+
+    与 ocr-page hook 同型、同理由：评标子进程处理的是**攻击者可控**的投标 PDF，给它
+    Read/Grep 就是开了一个任意文件读面。故路径闸是 hook（工具层强制），不是提示词里的
+    一句"请只读 corpus"。未落盘 / 路径越界 / 无行窗一律拒绝，绝不"放行看看"。
+    """
+    normalized_root = Path(os.path.realpath(corpus_root))
+
+    async def check_corpus_access(
+        input_data: dict[str, Any], _tool_use_id: str | None, _context: Any
+    ) -> dict[str, Any]:
+        """Allow only Read/Grep that stay inside the bound corpus directory."""
+        tool_name = input_data.get("tool_name")
+        tool_input = input_data.get("tool_input")
+        if not isinstance(tool_input, dict):
+            return _ocr_hook_result("deny", "tool input is missing or not an object")
+        if tool_name == "Read":
+            reason = _validate_corpus_read(tool_input, normalized_root)
+        elif tool_name == "Grep":
+            reason = _validate_corpus_path(
+                tool_input.get("path"), normalized_root, must_be_file=False
+            )
+        else:
+            return _ocr_hook_result("deny", f"{tool_name} is not allowed on the case corpus")
+        return (
+            _ocr_hook_result("allow", "validated corpus access")
+            if reason is None
+            else _ocr_hook_result("deny", reason)
+        )
+
+    return check_corpus_access
+
+
 @dataclass(slots=True)
 class AgentRunMeta:
     request_id: str
@@ -321,8 +397,15 @@ class AgentRunMeta:
     output_tokens: int = 0
 
 
-def build_options(*, case_root: Path | None = None, **overrides: Any) -> ClaudeAgentOptions:
-    """Create SDK options, optionally exposing Bash behind the ocr-page trust boundary."""
+def build_options(
+    *, case_root: Path | None = None, corpus_root: Path | None = None, **overrides: Any
+) -> ClaudeAgentOptions:
+    """Create SDK options, optionally exposing Bash behind the ocr-page trust boundary.
+
+    ``corpus_root``（Phase A.2，opt-in）：给定时为 Read/Grep 各挂一个 PreToolUse 闸，把两者
+    钉死在本案语料目录内。**必须由调用方显式传**，不能一见 ``case_root`` 就挂——底稿缺失
+    的降级路径同样带 ``case_root``，那条路径下模型必须还能自由读原件（见 ``tender.runner``）。
+    """
     # 兜底进 env：这两项原本靠 setting_sources=["project"] 从 .claude/settings.json 加载；
     # 内联审核会改用 setting_sources=[] 精简系统提示，放进 env 才不会丢掉长超时与降噪。
     os.environ.setdefault("API_TIMEOUT_MS", "3000000")
@@ -371,6 +454,7 @@ def build_options(*, case_root: Path | None = None, **overrides: Any) -> ClaudeA
         child_env["CLAUDE_CODE_MAX_OUTPUT_TOKENS"] = str(configured_output)
     if child_env:
         defaults["env"] = child_env
+    matchers: list[HookMatcher] = []
     if case_root is not None:
         tools = list(defaults.get("tools") or _AGENT_TOOLS)
         if "Bash" not in tools:
@@ -380,11 +464,14 @@ def build_options(*, case_root: Path | None = None, **overrides: Any) -> ClaudeA
             allowed_tools.append("Bash")
         defaults["tools"] = tools
         defaults["allowed_tools"] = allowed_tools
-        defaults["hooks"] = {
-            "PreToolUse": [
-                HookMatcher(matcher="Bash", hooks=[_make_ocr_page_hook(Path(case_root))])
-            ]
-        }
+        matchers.append(HookMatcher(matcher="Bash", hooks=[_make_ocr_page_hook(Path(case_root))]))
+    if corpus_root is not None:
+        corpus_hook = _make_corpus_hook(Path(corpus_root))
+        matchers.extend(
+            HookMatcher(matcher=tool, hooks=[corpus_hook]) for tool in ("Read", "Grep")
+        )
+    if matchers:
+        defaults["hooks"] = {"PreToolUse": matchers}
     # env 或 per-call override 的 effort 统一校验：仅白名单档位保留，其余剔除（并出声）。
     resolved_effort = _resolve_effort(str(defaults.get("effort") or "").strip().lower())
     if resolved_effort is None:
