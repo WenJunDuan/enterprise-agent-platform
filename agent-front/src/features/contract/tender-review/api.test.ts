@@ -371,6 +371,23 @@ describe('contract tender review api', () => {
     expect(thrownError).toBeInstanceOf(Error)
   })
 
+  // 2026-08-19 收单等就绪：criteria 解析失败 / 僵尸任务仍在提交口 409 拒，detail 是一段
+  // 自带可执行动作的中文。它必须原样抵达调用方——前端此前把它 catch 掉只报单位名（实测缺陷）。
+  test('evaluateTenderProjectUpload rejects with the backend detail text on 409', async () => {
+    const detail =
+      '本项目的评分标准解析未成功，暂时无法评标：请重新上传招标文件触发重新解析，' +
+      '或改用可检索的电子版招标文件（扫描件缺文字层时解析常失败）。'
+    globalThis.fetch = (async () => jsonResponse({ detail }, 409)) as typeof fetch
+
+    await expect(
+      evaluateTenderProjectUpload('project-1', {
+        bidderName: '投标单位 1',
+        tenderFiles: [new File(['t'], '招标文件.pdf')],
+        bidderFiles: [new File(['b'], '投标文件.pdf')],
+      })
+    ).rejects.toThrow(detail)
+  })
+
   // B⑥: evaluateTenderProjectUpload for append-bidder to existing project
   test('evaluateTenderProjectUpload for appending a new bidder sends mode=upload with bidder files', async () => {
     globalThis.fetch = (async (input, init) => {

@@ -74,6 +74,19 @@ test('criteria 抽取失败时，提示要说清缺什么而不是只说"识别�
   expect(notice).toContain('评分项为空')
 })
 
+// 2026-08-19 收单等就绪：criteria=failed 在提交口仍是 409 硬拒（criteria_gate.
+// criteria_submission_block）。旧文案「分析仍可开始，评标会自行解析招标文件」已与后端相反，
+// 照它做只会撞一次 409。
+test('criteria 解析失败的提示必须给出重新上传动作，不得再说分析仍可开始', () => {
+  const notice = criteriaProblemNotice({
+    tender_doc: { ocr_status: 'ready', criteria_status: 'failed' },
+    bids: [],
+  })
+
+  expect(notice).toContain('重新上传招标文件')
+  expect(notice).not.toContain('分析仍可开始')
+})
+
 test('criteria 失败但后端没给原因时仍要提示，不能静默', () => {
   const notice = criteriaProblemNotice({
     tender_doc: { ocr_status: 'ready', criteria_status: 'failed' },

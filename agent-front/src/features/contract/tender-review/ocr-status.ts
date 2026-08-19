@@ -89,8 +89,11 @@ export function ocrImpairedNotice(docs: DocsStatusResponse | null | undefined): 
  * criteria 抽取失败时的提示（AC3）；正常或未抽取则返回 null。
  *
  * 后端把**具体缺陷**（中文说明 + 机器码，如「评分标准的 items 评分项为空（items_empty）」）
- * 放在 `criteria_error`。旧后端不返回该字段时回落通用文案——宁可笼统也不静默，因为
- * criteria 失败意味着评标要自行解析规则，用户有权在开始分析前知道。
+ * 放在 `criteria_error`。旧后端不返回该字段时回落通用文案——宁可笼统也不静默。
+ *
+ * 动作口径对齐后端 `criteria_gate.criteria_submission_block`（2026-08-19 收单等就绪）：
+ * `criteria_status=failed` 在提交口是 **409 硬拒**，此时"先点开始分析、让评标自行解析"不再成立
+ * （旧文案如此说过，照做只会撞一次 409）。唯一出路是重新上传招标文件触发重新解析。
  *
  * @param docs - docs-status 轮询结果。
  * @returns 提示文案，或 null。
@@ -100,7 +103,23 @@ export function criteriaProblemNotice(
 ): string | null {
   if (docs?.tender_doc?.criteria_status !== 'failed') return null
   const detail = docs.tender_doc.criteria_error?.trim()
-  return `招标文件的评分标准未能自动解析${detail ? `：${detail}` : ''}。分析仍可开始，评标会自行解析招标文件；若结论缺评分项，请核对招标文件是否包含完整评标办法。`
+  return `招标文件的评分标准未能自动解析${detail ? `：${detail}` : ''}。此时提交评标会被拒绝：请重新上传招标文件触发重新解析，或改用可检索的电子版招标文件（扫描件缺文字层时解析常失败）。`
+}
+
+/**
+ * 评分标准仍在解析（`criteria_status` 非终态）时的进度说明。
+ *
+ * 2026-08-19「收单等就绪」后，提交时 criteria 还在解析**不再被拒**：任务已受理，会在开跑判分前
+ * 自己等就绪。分析中页必须把这句说出来——否则用户看到「识别中」会以为自己点早了、要退回重来。
+ *
+ * @param tenderOcrStatus - 招标文件底稿的 OCR 状态（决定当前卡在哪一步）。
+ * @returns 面向用户的中文进度说明。
+ */
+export function criteriaWaitingHint(tenderOcrStatus: string | undefined): string {
+  const stage = isOcrUsable(tenderOcrStatus ?? 'pending')
+    ? '正在从招标文件抽取评分项、扣分点与废标条款…'
+    : '等待招标文件 OCR 完成后自动抽取评分标准…'
+  return `${stage}评标已受理，评分标准就绪后自动开始评分，无需重新提交。`
 }
 
 /** 供类型收窄使用：断言字符串是已知 OcrStatus（未知值按非终态处理，不冒充 ready）。 */

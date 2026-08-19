@@ -10,7 +10,7 @@ import type {
   TenderInfo,
 } from '../api'
 import type { ProjectFormData } from './create-review-view'
-import { isOcrUsable, ocrDotClass, ocrStatusLabel } from '../ocr-status'
+import { criteriaWaitingHint, ocrDotClass, ocrStatusLabel } from '../ocr-status'
 import { MarkdownView } from './markdown-view'
 
 /**
@@ -331,14 +331,17 @@ function Zone2TenderInfo({
             {criteriaStatus === 'ready' && criteria ? (
               <CriteriaSummary criteria={criteria} />
             ) : criteriaStatus === 'failed' ? (
-              <p className='rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground'>
-                招标信息自动识别失败，将以评标过程的解析结果为准。
+              // 收单等就绪（2026-08-19）：criteria 解析失败**不会**由评标自行兜底，任务会明确
+              // 失败，唯一出路是重新上传招标文件（对齐 criteria_gate 的两段文案语义）。
+              <p className='rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700'>
+                评分标准解析失败，本次评标无法开始判分。请重新上传招标文件触发重新解析。
               </p>
             ) : (
-              <p className='rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground'>
-                {isOcrUsable(docsStatus?.tender_doc?.ocr_status ?? 'pending')
-                  ? '正在从招标文件抽取评分项、扣分点与废标条款…'
-                  : '等待招标文件 OCR 完成后自动抽取评分标准…'}
+              <p
+                role='status'
+                className='rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground'
+              >
+                {criteriaWaitingHint(docsStatus?.tender_doc?.ocr_status)}
               </p>
             )}
           </div>

@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test'
 import {
+  criteriaWaitingHint,
   isOcrImpaired,
   isOcrTerminal,
   isOcrUsable,
@@ -53,6 +54,19 @@ test('degraded 状态点不得显示"进行中"的蓝色脉冲', () => {
   expect(ocrDotClass('partial')).toContain('amber')
   expect(ocrDotClass('ready')).toContain('emerald')
   expect(ocrDotClass('failed')).toContain('red')
+})
+
+// 2026-08-19 收单等就绪：提交时 criteria 仍在解析不再 409，任务自己等就绪再判分。
+// 分析中页必须把这件事说出来，否则用户看到「识别中」会以为自己点早了、要重来。
+test('评分标准仍在解析时，提示必须说清就绪后自动开始评分', () => {
+  expect(criteriaWaitingHint('ready')).toContain('自动开始评分')
+  expect(criteriaWaitingHint('pending')).toContain('自动开始评分')
+})
+
+test('招标底稿尚不可用与已可用给不同的进度说明', () => {
+  expect(criteriaWaitingHint('ready')).toContain('抽取')
+  expect(criteriaWaitingHint('running')).toContain('OCR')
+  expect(criteriaWaitingHint('degraded')).toContain('抽取')
 })
 
 test('底稿受损时给出告警文案，全 ready 时不给', () => {

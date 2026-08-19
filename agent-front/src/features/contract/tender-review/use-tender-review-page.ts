@@ -41,6 +41,11 @@ import {
   filterReviewHistory,
   mapTenderProject,
 } from './model'
+import {
+  describeSubmitFailures,
+  describeTaskFailures,
+  type BidderSubmitFailure,
+} from './submit-feedback'
 import type {
   HistoryTimeRange,
   ReviewCategory,
@@ -53,6 +58,10 @@ import type {
 
 const TENDER_PROJECTS_QUERY_KEY = ['tender-projects'] as const
 const SELECTED_PROJECT_KEY = 'tender-selected-project'
+
+// 评标失败原因是后端写的整段可执行说明（「…招标文件详情页的解析状态转为「已就绪」后重新提交即可」），
+// 全局 toast 的 5s 读不完一句就消失，等于没提示。
+const TASK_FAILURE_TOAST_MS = 20_000
 
 // 长任务解耦（第5轮）：进行中评标持久化，可离开/回来恢复，不阻塞 mutation、不超时掉回。
 const ACTIVE_EVAL_KEY = 'tender-active-eval'
@@ -585,13 +594,13 @@ export function useTenderReviewPage(
     if (allTerminal) {
       const { projectId, hasCompare } = activeEval
       // 失败可见（P1-4）：有 failed / 任务丢失 → 提示，不被结果列表静默掩盖。
-      const failedCount = statuses.filter(
-        (s) => !s || s.status === 'failed'
-      ).length
-      if (failedCount > 0) {
-        setSubmitError(
-          `${failedCount} 家评标未成功（失败或任务丢失），可在结果页查看或重试。`
-        )
+      // 文案取后端 error_detail 原文（含「评分标准未就绪 / 解析失败」一类的可执行说明）。
+      const failureNotice = describeTaskFailures(statuses)
+      if (failureNotice) {
+        setSubmitError(failureNotice)
+        // 终态那一刻本页就会跳到分析中心，而 submitError 只渲染在创建页——不发 toast 的话
+        // 这段原因在主流程里根本没有露面的机会（原实现即如此）。
+        toast.error(failureNotice, { duration: TASK_FAILURE_TOAST_MS })
       }
       setActiveEval(null)
       setProgress(100)
@@ -969,7 +978,7 @@ export function useTenderReviewPage(
 
     // partial 容错（codex r5 P1）：逐家提交，单家受理失败不丢已受理的其余家；全失败才 throw 回 create。
     const acceptedTasks = []
-    const submitFailures: string[] = []
+    const submitFailures: BidderSubmitFailure[] = []
     for (const [index, bidder] of bidders.entries()) {
       try {
         const accepted = await evaluateTenderProjectUpload(projectId, {
@@ -981,18 +990,23 @@ export function useTenderReviewPage(
           bidId: prewarmBidIdsRef.current[bidder.id], // R6-R2：透传预热 bid_id → worker 复用 OCR
         })
         acceptedTasks.push(accepted)
-      } catch {
-        submitFailures.push(bidder.name)
+      } catch (error) {
+        // 后端 detail（如 criteria 解析失败的 409）已经是带可执行动作的中文，整段留住；
+        // 此前这里是空 catch，只把单位名塞进泛化文案，用户看不到原因（2026-08-18 实测缺陷）。
+        submitFailures.push({
+          bidderName: bidder.name,
+          reason: error instanceof Error ? error.message : '',
+        })
       }
       setProgress(10 + Math.round(((index + 1) / bidders.length) * 20))
     }
-    if (acceptedTasks.length === 0) {
-      throw new Error(`全部投标提交失败：${submitFailures.join('、')}`)
-    }
     if (submitFailures.length > 0) {
-      setSubmitError(
-        `部分投标提交失败：${submitFailures.join('、')}（其余已在后台分析）。`
+      const notice = describeSubmitFailures(
+        submitFailures,
+        acceptedTasks.length
       )
+      if (acceptedTasks.length === 0) throw new Error(notice)
+      setSubmitError(notice)
     }
 
     // 解耦（第5轮）：提交即返回，**不再 await 评标完成**——评标交 analyzing 独立轮询，
