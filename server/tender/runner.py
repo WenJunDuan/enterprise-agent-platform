@@ -28,10 +28,11 @@ from server.common.json_bridge import run_agent_json
 from server.ocr.pipeline import ocr_preprocess_block
 from server.platform.config import get_tender_eval_settings
 from server.stores.session_store import new_conversation_id
+from server.tender.agency_corpus import agency_layout_block, prepare_agency_corpus
 from server.tender.compare_input import resolve_project_criteria
 from server.tender.context_slim import bound_tender_context
 from server.tender.contract_repair import build_repair_prompt, repair_session_id
-from server.tender.corpus_materialize import agency_context_block, corpus_dir
+from server.tender.corpus_materialize import agency_context_block, clear_corpus, corpus_dir
 from server.tender.criteria_context import _criteria_context_block, _stamp_criteria_ref
 from server.tender.doc_context import (
     _inject_ocr_warnings,
@@ -49,6 +50,7 @@ from server.tender.draft_budget import (
     truncation_warning,
 )
 from server.tender.evidence_context import build_manual_review_result
+from server.tender.facts_precheck import build_facts_precheck_block
 from server.tender.injection_budget import describe_context_rejection, estimate_tokens
 from server.tender.output import TENDER_OUTPUT_SCHEMA_NAME
 from server.tender.rules_context import tender_rules_block
@@ -199,6 +201,10 @@ async def run_tender_evaluation(
             "tender_ocr_source",
             extra={"request_id": request_id, "source": "inline_ocr", "bid_id": bid_id},
         )
+        # 补证语料是 case 目录内的派生物，而 inline OCR 递归扫本目录：不先清，上一轮汇集的
+        # .txt 会被当成本轮待识别源文件（底稿自我复制、文件清单失真，见
+        # ``corpus_materialize`` 模块 docstring 的同一条教训）。同 request_id 重试即触发。
+        await asyncio.to_thread(clear_corpus, directory_path)
         ocr_block = await asyncio.to_thread(
             ocr_preprocess_block, directory_path, purpose=TENDER_OCR_PURPOSE
         )
@@ -233,6 +239,12 @@ async def run_tender_evaluation(
         if ocr_block
         else None
     )
+
+    # v2.1 三节：裁决④「应标一致性校验」的代码侧一半。确定性抽取双侧项目名/编号并比对，
+    # 与模型侧判定互为校验——单发弱模型漏此项的代价是废标级。刻意拼在**证据块之前**：
+    # 几十 KB 底稿之后的一小段核对结论等于没注入。空串（抽不到/读不到）则逐字零变更。
+    if context:
+        context = await build_facts_precheck_block(project_id, bid_id, tenant) + context
 
     # R1 criteria 注入（治②）：若招标层已有权威 criteria（上传时预抽 / 首家评标 backfill），
     # 连同 KD1 的 criteria_version 一并追加到 context，指示模型 S1 直接采用、无需重解析。
@@ -271,7 +283,13 @@ async def run_tender_evaluation(
         corpus_dir(evaluation_case_root) if context and _tender_agency_enabled() else None
     )
     if agency_corpus_root is not None:
+        # 生产可见性（sprint proposals P1 首条）：Phase A 的语料落在**上传目录**，而这里绑的
+        # 是**评标提交目录**——不汇集，模型 grep 的就是空目录、开关等于空转。汇集只取当前
+        # bid_id 那一家，跨投标人零可见（见 ``agency_corpus`` 模块 docstring）。
+        assembled = await prepare_agency_corpus(project_id, bid_id, tenant, evaluation_case_root)
         context = context + agency_context_block(agency_corpus_root)
+        if assembled is not None:
+            context = context + agency_layout_block(assembled)
 
     bounded_context = bound_tender_context(context, model=resolved_model or None) if context else None
     if bounded_context is not None:
