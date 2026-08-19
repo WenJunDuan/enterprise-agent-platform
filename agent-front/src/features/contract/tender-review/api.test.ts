@@ -59,7 +59,7 @@ describe('contract tender review api', () => {
         project_id: 'project-1',
         scenario: 'expert_assist',
         tender_no: 'WX-2026-001',
-        title: '无锡项目',
+        title: '示例项目',
         status: 'doing',
         created_at: '2026-06-20T00:00:00+00:00',
         updated_at: '2026-06-20T00:00:00+00:00',
@@ -68,7 +68,7 @@ describe('contract tender review api', () => {
 
     const project = await createTenderProject({
       tender_no: 'WX-2026-001',
-      title: '无锡项目',
+      title: '示例项目',
       method: '综合评估法',
       funding_type: 'unknown',
     })
@@ -83,7 +83,7 @@ describe('contract tender review api', () => {
     expect(calls[0]?.init?.body).toBe(
       JSON.stringify({
         tender_no: 'WX-2026-001',
-        title: '无锡项目',
+        title: '示例项目',
         method: '综合评估法',
         funding_type: 'unknown',
       })

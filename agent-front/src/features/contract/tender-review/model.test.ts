@@ -248,8 +248,8 @@ describe('contract tender review model', () => {
       {
         project_id: 'project-1',
         tender_no: 'WX-2026-001',
-        title: '无锡市政管廊施工项目',
-        tenderee: '无锡城投',
+        title: '示例管廊施工项目',
+        tenderee: '示例城投集团',
         method: '综合评估法',
         control_price: '120000000',
         funding_type: 'state_funded',
@@ -302,7 +302,7 @@ describe('contract tender review model', () => {
 
     expect(project).toEqual({
       id: 'project-1',
-      name: '无锡市政管廊施工项目',
+      name: '示例管廊施工项目',
       code: 'WX-2026-001',
       method: '综合评估法',
       bidderCount: 2,
@@ -321,7 +321,7 @@ describe('contract tender review model', () => {
       project: {
         project_id: 'project-1',
         tender_no: 'WX-2026-001',
-        title: '无锡市政管廊施工项目',
+        title: '示例管廊施工项目',
         tenderee: null,
         method: '综合评估法',
         control_price: '120000000',
@@ -539,7 +539,7 @@ describe('contract tender review model', () => {
     })
 
     expect(data.projectInfo).toMatchObject({
-      name: '无锡市政管廊施工项目',
+      name: '示例管廊施工项目',
       code: 'WX-2026-001',
       method: '综合评估法',
       controlPrice: '120000000',

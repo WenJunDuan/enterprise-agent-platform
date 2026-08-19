@@ -249,7 +249,7 @@ function ProjectInfoFormCard({
             id='project-title'
             value={form.title ?? ''}
             onChange={(event) => onUpdate('title', event.target.value)}
-            placeholder='如：无锡市政管廊施工项目'
+            placeholder='如：示例管廊施工项目'
             disabled={disabled}
           />
         </div>
