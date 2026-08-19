@@ -84,6 +84,7 @@ RUN apt-get update \
       libreoffice-impress \
       libreoffice-writer \
       procps \
+      qpdf \
       tesseract-ocr \
       tesseract-ocr-chi-sim \
       tesseract-ocr-eng; fi \
