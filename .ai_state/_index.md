@@ -77,9 +77,9 @@ Step 2 已过闸(782e7d4): case-zj-live n=3 基线回填附录B——墙钟 299s
 
 Step 3 已合并(merge 58bf547): case-2/3 金标准落 eval/golden/, 页锚双路互证(pdftotext 空页数与生产 _blank_page_count 逐数相符); 9 条待人工确认清单在 generator 报告(见 subagent-log); 素材两处证伪——5ccbb361 抢救件从未存在、53f94fd0 属另一项目(D2 实证改挂), 订正已落 handoff-night 三节 + compound/2026-08-19-learning-handoff-claims-need-artifact-proof.md。
 
-在飞: 提交闸改收单等就绪(用户产品裁决 08-19: criteria 解析中收单+等就绪自动开跑, 失败/超时明确报错不降级), generator worktree 施工中; 落地需打 0818b4 部署。前端 0815b3 待重建(mock 隐私清理 + 409 文案渲染)。
+08-19 下午两刀已合并推送(679c312): ①提交闸改收单等就绪(b7f66cf, 13红→20绿, 顺带根治 prewarm_oracle 挂死—25 用例回归大部队, 回归命令不再 --ignore 它) ②Phase A(5ef7d18, +64 测试: 语料落盘 corpus_materialize/TENDER_AGENCY 工具面+corpus hook 钉死/结论义务四裁决全折入提示词—净增 771B 预算剩 37B, 仲裁表零改动机械复核)。全量 17F 逐名不变/1,868P。用户裁决④已加: basic_info 基本信息块+应标一致性校验。
 
-下一步: Step 4 D1(部署机证书页实验, vision-page 首选)/D2(本地重建索引, 仅四项机械缺陷) → Step 5 agency(case 齐了) → Step 6 数字裁决。禁令: 词表/常数/阈值/查询串未经诊断数据禁改; 回归闸期望值与命中判定禁改。P0.6 worktree 勿 prune。"
+下一步(见 sprint proposals.md): ①P1 agency 生产可见性缺口(corpus 落上传目录 vs 评标 case_root 不同路径, doc_layer/doc_context/worker 已解禁, Step 5 前必修) ②打 0818b4(顺带 Dockerfile 加 qpdf) ③Step 4 D1(vision-page)/D2(四项机械缺陷) → Step 5 agency 对照(勾稽 0/3→3/3, manual 6→≤2) → Step 6。前端 0815b3 待重建。禁令照旧; P0.6 worktree 勿 prune。"
 last_subagent: "codex-exec" # tender-report-dimensions D0-D5 headless (codex 0.142.1, gpt-5.5)；必须 env -u HTTP_PROXY -u HTTPS_PROXY 否则 streaming API 挂起，见 compound/2026-06-25-trick-codex-proxy-hangs-streaming.md
 last_subagent_at: "2026-06-25T00:00:00.000Z"
 active_worktrees: [] # 2026-08-17 两个返工 worktree 已合并 369c53e 并清理
