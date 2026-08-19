@@ -34,6 +34,7 @@ from server.stores.tender_doc_store import (
 from server.stores.tender_project_store import update_project_fields_if_empty
 from server.tender.context_slim import build_preextract_tender_context
 from server.tender.contract_repair import build_extraction_repair_prompt, repair_session_id
+from server.tender.corpus_materialize import clear_corpus, materialize_corpus, repair_damaged_pdfs
 
 # re-export：server.routes.tender 从本模块 import TENDER_OCR_PURPOSE（既有引用点不变）。
 # ``DRAFT_INJECTED_TOOLS`` 是**复用**评标侧同一个常量对象（不是抄一份）：底稿在场时两条路径
@@ -488,6 +489,38 @@ async def extract_project_doc_info(
             logger.debug("failed to write criteria_status=failed", exc_info=True)
 
 
+async def _prepare_case_before_ocr(case_path: str) -> None:
+    """A.1 前置：qpdf 修复损坏 PDF + 清掉上一轮 corpus。两件事都必须早于目录扫描。
+
+    - **损坏 PDF 先修**：不修则整条链路都在读一份页数失真的文档（参照实跑第一发现：
+      损坏文件页数报 5 实为 400）。qpdf 缺席时只记 warning（见 ``repair_damaged_pdfs``）。
+    - **旧 corpus 先清**：corpus 落在 case 目录内，而 ``pipeline._iter_files`` 递归扫该目录
+      ——不清，上一轮的 .txt 就会被当成本轮待识别源文件（底稿自我复制、文件清单失真）。
+
+    前置增强失败不该让一次正常 OCR 失败，故整段只记日志（外部工具 + 文件系统边界）。
+    """
+    try:
+        await asyncio.to_thread(repair_damaged_pdfs, case_path)
+        await asyncio.to_thread(clear_corpus, case_path)
+    except Exception:
+        logger.warning(
+            "tender_case_precheck_failed", extra={"case_path": case_path}, exc_info=True
+        )
+
+
+async def _materialize_case_corpus(case_path: str, ocr_text: str) -> None:
+    """A.1 后置：把底稿按源文件切片落到 ``<case>/corpus/``（A.2 补证工具面的唯一语料源）。
+
+    best-effort：底稿本身已落库可用，补证语料是增量能力，落盘失败不得改 ``ocr_status``。
+    """
+    try:
+        await asyncio.to_thread(materialize_corpus, case_path, ocr_text)
+    except Exception:
+        logger.warning(
+            "tender_corpus_materialize_failed", extra={"case_path": case_path}, exc_info=True
+        )
+
+
 async def run_project_doc_ocr(
     project_id: str,
     case_path: str,
@@ -521,6 +554,7 @@ async def run_project_doc_ocr(
     # （~30-60s 模型往返）会占住一个 OCR 名额，拖慢同项目投标文件的 OCR → 拖慢 isOcrReady →
     # 拖慢「开始分析」（违背 R1「不阻塞开始分析」）。状态写库同理不占名额。
     ocr_text: str | None = None
+    await _prepare_case_before_ocr(case_path)
     try:
         text, report = await run_prewarm_with_heartbeat(
             prewarm_and_report,
@@ -575,6 +609,10 @@ async def run_project_doc_ocr(
         except Exception:
             logger.debug("failed to set criteria_status=failed on ocr failure", exc_info=True)
 
+    # A.1：底稿落盘成 corpus。与抽取同侧（闸外）：纯文件写，不占 OCR 名额。
+    if ocr_text is not None:
+        await _materialize_case_corpus(case_path, ocr_text)
+
     # 闸外：抽取（模型调用）不占 OCR 名额。OCR 成功且调用方要抽取才抽。
     if ocr_text is not None and run_info_extraction:
         # OCR ready 即解锁开始分析；置 criteria_status=running（独立 try，F1：失败只记日志，绝不
@@ -614,6 +652,7 @@ async def run_bid_doc_ocr(
         tenant: Tenant scope forwarded to update_bid_doc_ocr.
         purpose: OCR engine purpose hint.
     """
+    await _prepare_case_before_ocr(case_path)
     try:
         text, report = await run_prewarm_with_heartbeat(
             prewarm_and_report,
@@ -632,6 +671,8 @@ async def run_bid_doc_ocr(
             status=report.status,
             failed_files=list(report.problem_files),  # 失败 + 降级合并落库（F6）
         )
+        # A.1：底稿落盘成 corpus（自带 best-effort 兜底，不会把本 try 拖进 failed 分支）。
+        await _materialize_case_corpus(case_path, text)
     except Exception:
         logger.warning(
             "tender_bid_doc_ocr_failed",
