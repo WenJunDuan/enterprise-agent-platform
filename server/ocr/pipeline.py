@@ -309,10 +309,26 @@ def _augment_mixed_pdf_blocks(
     # ocr_pages 按提交顺序对应 blank_indices，回填到**真实页位** blocks[blank_indices[offset]]。
     # 注意：ocr_pages[*]["page_number"] 是**子集相对序号**(1..M)，非原始页号——真实页号由 blocks
     # 下标经 render_body 的 enumerate 给出，故此处只取 markdown，切勿用其 page_number 打锚点。
+    filled_pages = 0
     for offset, true_idx in enumerate(blank_indices):
         markdown = ocr_pages[offset].get("markdown") or ""
         if markdown.strip():  # 空 OCR 文本不覆盖，保留原空白页跳过逻辑
             blocks[true_idx] = markdown
+            filled_pages += 1
+    empty_pages = len(blank_indices) - filled_pages
+    # D1 可观测量：上面的回填是**静默**的——云 OCR 对盖章证书页返回空文本时这里什么都不做，
+    # 底稿就此缺证据、检索必然召回不到，而日志里看不出丢在哪一步。返回空的页数 > 0 = 证据缺口
+    # （该页要走 vision-page 判定时刻问答），故升 WARNING；全部回填成功仍记一条供算回填率。
+    logger.log(
+        logging.WARNING if empty_pages else logging.INFO,
+        "mixed_pdf_subset_ocr_backfill",
+        extra={
+            "ocr_file": path.name,
+            "submitted_pages": len(blank_indices),
+            "filled_pages": filled_pages,
+            "empty_pages": empty_pages,
+        },
+    )
     result = {
         **route,
         **native,

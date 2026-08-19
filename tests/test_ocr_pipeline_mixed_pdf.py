@@ -180,6 +180,65 @@ def test_mixed_pdf_subset_cloud_failure_falls_back_to_whole_doc(monkeypatch, tmp
     assert not fake_subset.exists()  # 临时子集已删（finally）
 
 
+def test_backfill_reports_how_many_returned_pages_were_empty(monkeypatch, tmp_path, caplog):
+    """回填是**静默**的：云对盖章证书页返回空文本时原样保留空白页，日志里看不出证据丢在哪。
+
+    D1 诊断需要的量就是这一条——「提交 N 页、回填 M 页、其中 K 页返回空」。只加观测，不改行为：
+    空文本仍不覆盖原空白页（否则会把"识别不出"写成"这一页没内容"）。
+    """
+    digital = "数字页正文内容很多" * 3  # 27 字符 ≥ MAX_BLANK_CHARS，不计入空白页
+    native = {"kind": "pdf_text", "blocks": ["", "", digital], "tables": []}
+    route = {"container": "pdf", "route": "native", "handler": "pdf_text", "mixed_pdf": True}
+    fake_subset = tmp_path / "s.pdf"
+    fake_subset.write_bytes(b"%PDF")
+    monkeypatch.setattr(pipeline_mod, "extract_pdf_subset", lambda p, idx: fake_subset)
+    monkeypatch.setattr(
+        pipeline_mod,
+        "recognize",
+        lambda p, *, purpose=None: {
+            "kind": "ocr",
+            "pages": [{"markdown": "证书正文"}, {"markdown": "   "}],
+        },
+    )
+
+    with caplog.at_level("INFO", logger="server.ocr.pipeline"):
+        result = pipeline_mod._augment_mixed_pdf_blocks(
+            tmp_path / "bid.pdf", route, native, purpose=None
+        )
+
+    assert result["blocks"] == ["证书正文", "", digital]  # 行为不变：空文本不覆盖空白页
+    records = [r for r in caplog.records if r.message == "mixed_pdf_subset_ocr_backfill"]
+    assert len(records) == 1, "回填必须留下一条结构化记录"
+    assert records[0].levelname == "WARNING", "有页返回空 = 证据缺口，须是可告警级别"
+    assert (records[0].submitted_pages, records[0].filled_pages, records[0].empty_pages) == (2, 1, 1)
+
+
+def test_backfill_without_empty_pages_stays_at_info_level(monkeypatch, tmp_path, caplog):
+    """全部回填成功时同样留一条记录（用于算回填率），但不是告警——别把正常路径变成噪音。"""
+    digital = "数字页正文内容很多" * 3
+    native = {"kind": "pdf_text", "blocks": ["", "", digital], "tables": []}
+    route = {"container": "pdf", "route": "native", "handler": "pdf_text", "mixed_pdf": True}
+    fake_subset = tmp_path / "s.pdf"
+    fake_subset.write_bytes(b"%PDF")
+    monkeypatch.setattr(pipeline_mod, "extract_pdf_subset", lambda p, idx: fake_subset)
+    monkeypatch.setattr(
+        pipeline_mod,
+        "recognize",
+        lambda p, *, purpose=None: {
+            "kind": "ocr",
+            "pages": [{"markdown": "证书正文"}, {"markdown": "业绩合同"}],
+        },
+    )
+
+    with caplog.at_level("INFO", logger="server.ocr.pipeline"):
+        pipeline_mod._augment_mixed_pdf_blocks(tmp_path / "bid.pdf", route, native, purpose=None)
+
+    records = [r for r in caplog.records if r.message == "mixed_pdf_subset_ocr_backfill"]
+    assert len(records) == 1
+    assert records[0].levelname == "INFO"
+    assert (records[0].submitted_pages, records[0].filled_pages, records[0].empty_pages) == (2, 2, 0)
+
+
 def test_augment_returns_none_on_page_count_mismatch(monkeypatch, tmp_path):
     """云返回页数 ≠ 提交扫描页数 → 放弃按 offset 回填（会错位），返回 None 让调用方回退整份云。"""
     digital = "数字页正文内容很多很多很多很多很多"  # ≥20 字符，不计入空白页
