@@ -49,6 +49,10 @@ def _new_project_with_criteria(criteria: dict | None) -> str:
         tenant=TENANT,
         tender_files=json.dumps([f"{project_id}.pdf"], ensure_ascii=False),
         criteria=json.dumps(criteria, ensure_ascii=False) if criteria else None,
+        # 抽取已到终态 ready（criteria 为空只代表那次抽取没产出评分项，权威留给评标回填）。
+        # 补这一列的理由：收单等就绪后（用户产品裁决 2026-08-19）评标任务会等 criteria 到终态，
+        # 而默认的 criteria_status='pending' + 新鲜心跳在生产里意味着"抽取还在跑"，任务会一直等。
+        criteria_status="ready",
     )
     return project_id
 

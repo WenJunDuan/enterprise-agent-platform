@@ -24,6 +24,7 @@ from server.stores.tender_doc_store import (
 )
 from server.stores.tender_task_store import update_tender_progress, upsert_tender_task
 from server.tender.compare_worker import maybe_schedule_compare
+from server.tender.criteria_gate import criteria_start_failure
 from server.tender.eval_signals import evaluation_signals
 from server.tender.runner import run_tender_evaluation as _run_evaluation
 
@@ -76,7 +77,24 @@ async def execute_tender_evaluation_task(
     project_id: str | None = None,
     bid_id: str | None = None,
 ) -> None:
-    """Gate on the concurrency semaphore, then run the evaluation task."""
+    """等评分标准就绪 → 过并发闸 → 跑评标；等不到就让任务明确失败。"""
+    # 收单等就绪（2026-08-19 用户裁决）：提交时 criteria 还在解析的单已被收下，那一档等待
+    # 落在这里。放在**信号量之前**——等待期一个 token 都不烧，占着并发名额只会让别的项目的
+    # 评标排在一次纯等待后面。等不到 = 任务 failed，绝不无 criteria 开跑（P0.4 底线）。
+    if project_id:
+        failure = await criteria_start_failure(project_id, tenant)
+        if failure is not None:
+            await _mark_task_failed(
+                request_id=request_id,
+                tenant=tenant,
+                source_mode=source_mode,
+                directory_path=directory_path,
+                error_detail=failure,
+                progress_message="评分标准未就绪",
+            )
+            # 不复查横比（``maybe_schedule_compare``）：这一单从未进入评标，与改造前"提交口
+            # 409 拒收、连任务都不建"是同一类输入，行为对齐。
+            return
     # 并发闸：拿不到名额就在此 await 排队，排队期间任务保持 accepted（不计入评标超时）。
     async with _TENDER_SEMAPHORE:
         await _execute_inner(
@@ -225,51 +243,29 @@ async def _execute_inner(
                     "timeout_sec": TENDER_TIMEOUT_SEC,
                 },
             )
-            finished_at = utc_now()
-            await asyncio.to_thread(
-                upsert_tender_task,
-                {
-                    "request_id": request_id,
-                    "tenant": tenant,
-                    "status": "failed",
-                    "mode": source_mode,
-                    "source_mode": source_mode,
-                    "case_path": directory_path,
-                    "claim_id": None,
-                    "result_file": None,
-                    "session_id": None,
-                    "error_detail": (
-                        f"评标超时：超过 {int(TENDER_TIMEOUT_SEC)}s 未返回结果"
-                        "（可能模型网关拥塞或标书过大），请稍后重试"
-                    ),
-                    "progress_message": "评标超时",
-                    "finished_at": finished_at,
-                    "updated_at": finished_at,
-                },
+            await _mark_task_failed(
+                request_id=request_id,
+                tenant=tenant,
+                source_mode=source_mode,
+                directory_path=directory_path,
+                error_detail=(
+                    f"评标超时：超过 {int(TENDER_TIMEOUT_SEC)}s 未返回结果"
+                    "（可能模型网关拥塞或标书过大），请稍后重试"
+                ),
+                progress_message="评标超时",
             )
         except Exception as exc:
             logger.exception(
                 "tender_evaluation_failed",
                 extra={"request_id": request_id, "tenant": tenant, "route": "/tender/evaluate"},
             )
-            finished_at = utc_now()
-            await asyncio.to_thread(
-                upsert_tender_task,
-                {
-                    "request_id": request_id,
-                    "tenant": tenant,
-                    "status": "failed",
-                    "mode": source_mode,
-                    "source_mode": source_mode,
-                    "case_path": directory_path,
-                    "claim_id": None,
-                    "result_file": None,
-                    "session_id": None,
-                    "error_detail": str(exc),
-                    "progress_message": "评标失败",
-                    "finished_at": finished_at,
-                    "updated_at": finished_at,
-                },
+            await _mark_task_failed(
+                request_id=request_id,
+                tenant=tenant,
+                source_mode=source_mode,
+                directory_path=directory_path,
+                error_detail=str(exc),
+                progress_message="评标失败",
             )
         finally:
             flusher.cancel()
@@ -299,6 +295,47 @@ async def _execute_inner(
                         extra={"project_id": project_id, "tenant": tenant or "default"},
                         exc_info=True,
                     )
+
+
+async def _mark_task_failed(
+    *,
+    request_id: str,
+    tenant: str,
+    source_mode: str,
+    directory_path: str,
+    error_detail: str,
+    progress_message: str,
+) -> None:
+    """把任务落终态 ``failed``（评分标准等不到 / 评标超时 / 评标异常三条路同一个写法）。
+
+    Args:
+        request_id: 任务 ID。
+        tenant: 租户作用域。
+        source_mode: 提交形态（directory / upload），原样回写不改。
+        directory_path: 本案目录，retry 据此重跑。
+        error_detail: 用户可执行的失败说明（前端直接显示）。
+        progress_message: 进度区的一句话状态。
+    """
+    finished_at = utc_now()
+    # round4 F4：同步 SQLite 写经 to_thread 移出事件循环。
+    await asyncio.to_thread(
+        upsert_tender_task,
+        {
+            "request_id": request_id,
+            "tenant": tenant,
+            "status": "failed",
+            "mode": source_mode,
+            "source_mode": source_mode,
+            "case_path": directory_path,
+            "claim_id": None,
+            "result_file": None,
+            "session_id": None,
+            "error_detail": error_detail,
+            "progress_message": progress_message,
+            "finished_at": finished_at,
+            "updated_at": finished_at,
+        },
+    )
 
 
 def _authority_block_reason(payload: object, *, context_truncated: bool) -> str | None:

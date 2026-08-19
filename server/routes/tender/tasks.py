@@ -98,8 +98,10 @@ async def _submit_bid_evaluation(
     # round4 F5：准入闸——在途任务满则早拒（在写上传文件/建任务记录之前），不再无界接单。
     if not admission_available():
         raise HTTPException(status_code=503, detail="评标队列已满，请稍后重试")
-    # P0.4：criteria 未就绪就别收这一单。位置必须在**解析请求体之前**——晚一步就会落上传
-    # 文件、建任务记录，用户拿到的是一个注定作废却在界面上"进行中"的 request_id。
+    # P0.4：**等不来结果**的单别收（criteria 解析已失败 / 僵尸任务）。位置必须在**解析请求体
+    # 之前**——晚一步就会落上传文件、建任务记录，用户拿到的是一个注定作废却在界面上"进行中"
+    # 的 request_id。还在解析的收下即可（2026-08-19 收单等就绪），由 worker 在开跑判分前等
+    # criteria 就绪，等不到则任务明确失败（见 ``criteria_gate.criteria_start_failure``）。
     if project_id:
         blocked = await asyncio.to_thread(criteria_submission_block, project_id, tenant)
         if blocked:
