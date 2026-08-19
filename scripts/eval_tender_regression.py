@@ -28,6 +28,26 @@ manual_review 项数  ``scoring[]`` 中 ``score is None`` 的计数，按 ``pend
                     未匹配**，不静默算 0
 ==================  ==========================================================
 
+纠偏令 v2.1 五节的度量修正（报告新增列，判定逻辑与期望值一字未改）：
+
+==========================  ==================================================
+客观分·真漏                 结论里没有同满分值的项，或有该项却 ``score=null``。
+                            这是**链路债**
+客观分·匹配器未匹配         关键词族没命中、但结论里有同满分值的项 = 项名漂移。
+                            这是**度量债**，先扩 item_class 同义词族再读数，否则
+                            会把度量债当链路债去修（v2.1 五节点名的坑）
+补证工具调用数              任务记录的 ``tool_call_count``。**服务端今天不发这个
+                            信号**，故恒显示 ``n/a``——n/a ≠ 0，把"没接信号"读成
+                            "没调用"会直接把实验判成模型空转
+结论字节数                  结论体规范化序列化后的 UTF-8 字节数。连续两轮越过
+                            ``CONCLUSION_SIZE_REVIEW_THRESHOLD`` 触发 P0.6 复议
+                            （v2.1 三节；原文以「字」计，报告脚注写明单位差异）
+归因二分表                  每条缺陷 / 每个客观分项标注 v2.1 二节的列A（文本可达）
+                            或列B（像素必需），来自 ``expected.yaml`` 的可选字段
+                            ``attribution: text|pixel``。列B 在 vision-page 上线
+                            前不变不计失败——跨列记账会把结论读反
+==========================  ==================================================
+
 退出码：0 通过 / 1 运行期失败 / 2 case 定义错误 / 3 语料缺席（SKIP）/ 4 语料指纹不符。
 
 **本脚本不内置任何项目的评分项与缺陷**：它们随标书而异，写死等于把一次测试当产品配置
@@ -61,6 +81,9 @@ if str(REPO_ROOT) not in sys.path:
 from eval.regression import (  # noqa: E402
     ARTIFACT_CONVERTED,
     ARTIFACT_ORIGINAL,
+    ATTRIBUTION_PIXEL,
+    ATTRIBUTION_TEXT,
+    CONCLUSION_SIZE_REVIEW_THRESHOLD,
     CORRECT_PENDING_REASONS,
     DEFAULT_CORPUS_ROOT,
     EXIT_CASE_INVALID,
@@ -69,8 +92,10 @@ from eval.regression import (  # noqa: E402
     EXIT_OK,
     EXIT_RUN_FAILED,
     MAX_ANCHOR_RANGE_PAGES,
+    TOOL_CALL_FIELD,
     Aggregate,
     CaseDefinitionError,
+    ConclusionSize,
     CorpusFile,
     CorpusResolution,
     Defect,
@@ -87,6 +112,8 @@ from eval.regression import (  # noqa: E402
     aggregate,
     check_case,
     check_price,
+    conclusion_size,
+    count_evidence_tool_calls,
     count_pending,
     evaluate_result,
     extract_page_refs,
@@ -115,6 +142,9 @@ __all__ = [
     # 判定逻辑（定义在 eval/regression.py）
     "ARTIFACT_CONVERTED",
     "ARTIFACT_ORIGINAL",
+    "ATTRIBUTION_PIXEL",
+    "ATTRIBUTION_TEXT",
+    "CONCLUSION_SIZE_REVIEW_THRESHOLD",
     "CORRECT_PENDING_REASONS",
     "DEFAULT_CORPUS_ROOT",
     "EXIT_CASE_INVALID",
@@ -123,8 +153,10 @@ __all__ = [
     "EXIT_OK",
     "EXIT_RUN_FAILED",
     "MAX_ANCHOR_RANGE_PAGES",
+    "TOOL_CALL_FIELD",
     "Aggregate",
     "CaseDefinitionError",
+    "ConclusionSize",
     "CorpusFile",
     "CorpusResolution",
     "Defect",
@@ -141,6 +173,8 @@ __all__ = [
     "aggregate",
     "check_case",
     "check_price",
+    "conclusion_size",
+    "count_evidence_tool_calls",
     "count_pending",
     "evaluate_result",
     "extract_page_refs",
