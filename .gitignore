@@ -39,3 +39,7 @@ tool-trace.jsonl
 AGENTS.md
 # Athena PACE 并行 worktree（codex/generator 隔离写区，临时，用完 git worktree remove）
 .claude/worktrees/
+
+# 含全量真名的本地档, v2 令明确不入库 (2026-08-19 止血, 见 compound)
+.ai_state/claude/投标文件审核报告-*.md
+.ai_state/claude/SKILL-bid-document-auditor-*.md
