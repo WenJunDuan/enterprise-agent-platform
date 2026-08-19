@@ -69,7 +69,7 @@ pointers:
   latest_architecture_update: "2026-08-14T09:26:47.542Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "【2026-08-19 晚 · 0818b4+前端 0819b1 已上线(qpdf/facts_precheck/agency_corpus 在镜像已核); 回滚位 0818b3/0815b3; 待用户: 历史重写裁决/VISION_PAGE_URL/40K口径; 下一步=vision 冒烟→Step 4 D1D2→Step 5】
+next_action: "【2026-08-19 收口 · 下会话唯一入口 = sprints/2026-08-15-tender-context-pipeline/handoff-2026-08-19.md】双镜像 0818b4/0819b1 在线, 收单等就绪全链路实跑验证绿; 下会话第一件事=核任务 d82aca89 结论(结论义务首次生产检验), 然后按 handoff 三节队列: 抽取重试刀→tool_call 计数→Step 4 D1D2→vision 冒烟(卡 VISION_PAGE_URL)→Step 5 对照→Step 6。待用户三裁决: 历史重写/VISION_PAGE_URL/40K口径】
 
 入口链: sprints/2026-08-15-tender-context-pipeline/handoff-2026-08-18-night.md（含 08-19 订正）→ 纠偏令 v2（效力最高）→ plan-2026-08-18-v2-execution.md。
 
