@@ -195,13 +195,17 @@ def load_doc_layer_context_slim(project_id: str, bid_id: str | None, tenant: str
     return _build_doc_context(project_id, bid_id, tenant, slim=True)
 
 
-
 async def wait_doc_layer_ready(project_id: str, bid_id: str, tenant: str) -> str:
     """等招标层 + 当前家投标层预热 OCR 到终态，并回报"为什么不等了"（H3 KD5）。
 
     用户「上传即 OCR」后可能在 OCR 未完就点开始分析 → 评标提交时预热还在跑。此前到点即无条件
     回落 inline 全量重 OCR，而预热并不取消 → 同批文件双份流水线、负载翻倍正反馈。现在只在
     **预热确实在途**（``is_prewarm_in_flight`` oracle）时继续等；不在途才放行回落，此时无双跑。
+
+    本函数**只等 OCR 两层**。此前挂在这里的"多等一档 criteria"已收编进
+    ``criteria_gate.wait_criteria_ready``，由任务启动闸在开跑判分前统一等（2026-08-19 收单
+    等就绪）：那一档的正确归宿是"等不到就任务失败"，而这里所有出口都通向 inline 回落降级——
+    放在这里只能把它降级掉，也让每次评标都重复等一遍。
 
     Returns:
         - ``terminal``：两层都到终态，可判复用/回落。
@@ -227,21 +231,7 @@ async def wait_doc_layer_ready(project_id: str, bid_id: str, tenant: str) -> str
         bid_status = doc_ocr_status(bid)
         if proj is None or bid is None:
             return "absent"
-        if (
-            proj_status in DOC_LAYER_TERMINAL_STATUSES
-            and bid_status in DOC_LAYER_TERMINAL_STATUSES
-        ):
-            # 两层 OCR 到终态还不够：证据层（S3）要 criteria 才启用，而 criteria 抽取与评标
-            # 是并发的。2026-08-17 实测——评标 01:40:18 取底稿时 criteria 尚未落库，直到
-            # 01:40:54 才抽完（晚 36 秒），于是 build_evidence_context 走"无 criteria→交回
-            # 既有路径"分支，整份 784KB 底稿退回全量注入 + 截断。故这里多等一档：招标层
-            # criteria 仍在抽（未落库且预热在途）时继续等，抽完或确定不会有了再放行。
-            if criteria_pending(proj, settings.prewarm_stale_sec):
-                now = time.monotonic()
-                if now >= deadline:
-                    return "wait_cap_reached"
-                await asyncio.sleep(DOC_LAYER_POLL_SEC)
-                continue
+        if proj_status in DOC_LAYER_TERMINAL_STATUSES and bid_status in DOC_LAYER_TERMINAL_STATUSES:
             return "terminal"
         in_flight = is_prewarm_in_flight(
             proj, stale_sec=settings.prewarm_stale_sec
@@ -273,5 +263,3 @@ async def read_doc_rows(
     project_doc = await asyncio.to_thread(get_project_doc, project_id, tenant)
     bid_doc = await asyncio.to_thread(get_bid_doc, project_id, bid_id, tenant)
     return project_doc, bid_doc
-
-

@@ -59,13 +59,19 @@ def _criteria(price_max: int | None = 40) -> dict:
 
 
 def _seed_project_criteria(project_id: str, criteria: dict | None = None) -> dict:
-    """给项目写权威 criteria（KD1：结论必须引用该版本才可比）。"""
+    """给项目写权威 criteria（KD1：结论必须引用该版本才可比）。
+
+    ``criteria_status='ready'`` 与 criteria 内容同写：生产里两者只会一起落库（见
+    ``update_project_doc_criteria``），且收单等就绪后（用户产品裁决 2026-08-19）评标任务
+    会等 criteria 到终态——留着默认的 ``pending`` 等于让 worker 用例一直等一个永不到来的抽取。
+    """
     criteria = criteria if criteria is not None else _criteria()
     upsert_project_doc(
         project_id=project_id,
         tenant="acme",
         tender_files=json.dumps([f"{project_id}.pdf"], ensure_ascii=False),
         criteria=json.dumps(criteria, ensure_ascii=False),
+        criteria_status="ready",
     )
     return criteria
 

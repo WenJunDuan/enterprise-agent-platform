@@ -1,15 +1,17 @@
-"""P0.4 · criteria 未就绪时服务端拒绝评标，而不是收下一个注定作废的任务。
+"""P0.4 提交闸 · **只拒等不来结果的单**，还在解析的收下（2026-08-19 用户产品裁决改语义）。
 
-线上实测：评标可在 criteria 抽取仍 ``running`` 时启动（相差 24 秒）。后果链条是确定的——
-证据层（S3）只在有 criteria 时接管 → 跳过 → 整份底稿退回全量注入 → 超预算被截断 →
-截断即转人工。**整单作废，而用户已经等完了全程**。
+原立法理由（不变）：评标可在 criteria 抽取仍 ``running`` 时启动（线上实测相差 24 秒），
+后果链条是确定的——证据层（S3）只在有 criteria 时接管 → 跳过 → 整份底稿退回全量注入 →
+超预算被截断 → 截断即转人工。**整单作废，而用户已经等完了全程**。
 
-``doc_layer.wait_doc_layer_ready`` 早就多等了一档 criteria，但等待上限到点后仍**放行降级**，
-于是那条注定作废的路照走不误。本项把归宿从"放行"改成"提交时就拒"：
+变的是"未就绪"的归宿。用户裁决（2026-08-19，原话「传完招标文件就可以直接传投标文件，
+然后就可以点开始分析，不要等」）把这条闸拆成两半：
 
-- 拒在 ``_submit_bid_evaluation`` 的最前面 → **不建任务、不落上传文件、不烧一个 token**；
-- 消息必须可执行，且"还在解析"（稍后重试）与"解析不会有结果了"（重新上传）要分开说——
-  这两种情况用户要做的事完全不同。
+- ``pending`` / ``running`` 且心跳新鲜 → **收单**：同步返回 request_id，任务在开跑判分前
+  等 criteria 就绪（等待与失败归宿见 ``test_tender_criteria_admit_and_wait.py``）。
+  底线没松——等不到仍是**任务明确失败**，绝不无 criteria 判分。
+- ``failed`` / 心跳陈旧的僵尸任务 → **维持 409 立即拒**：等不来结果的单不收，且必须拒在
+  ``_submit_bid_evaluation`` 最前面（不建任务、不落上传文件、不烧一个 token）。
 
 ``criteria_status=ready`` 时**行为逐字不变**：本闸只在项目确实有预热底稿记录时生效，
 散单 / directory 模式 / 未上传招标文件的项目一律照旧放行（它们本来就不走证据层）。
@@ -85,12 +87,16 @@ def _submit(client: TestClient, project_id: str, case: Path):
     )
 
 
-# ── 未就绪 → 4xx，且什么都没发生 ────────────────────────────────────────────
+# ── 还在解析 → 收单（2026-08-19 用户裁决；等就绪的那一半在 admit_and_wait 测试）──────
 
 
 @pytest.mark.parametrize("status", ["pending", "running"])
-def test_submit_is_rejected_while_criteria_is_still_being_parsed(gate_client, status):
-    """AC：criteria ∈ {pending, running} → 4xx，不建任务、不烧 token。"""
+def test_submit_is_admitted_while_criteria_is_still_being_parsed(gate_client, status):
+    """AC1：criteria ∈ {pending, running} → 收单（不再 409），任务照常排程。
+
+    期望更新自"4xx 拒收"（用户产品裁决 2026-08-19：「传完招标文件就可以直接传投标文件，
+    然后就可以点开始分析，不要等」）。不判分的底线由任务侧的等待闸守住，不在提交口守。
+    """
     client, scheduled = gate_client
     pid = _project(client)
     _prewarmed(pid, status)
@@ -98,33 +104,37 @@ def test_submit_is_rejected_while_criteria_is_still_being_parsed(gate_client, st
     try:
         resp = _submit(client, pid, case)
 
-        assert 400 <= resp.status_code < 500, resp.text
-        assert scheduled == [], "不得排程——那一单注定作废，烧的 token 全是白烧"
-        assert list_tender_tasks("acme", limit=100) == [] or all(
-            task.get("group_id") != pid for task in list_tender_tasks("acme", limit=100)
-        ), "不得建任务：任务一旦落库，前端就会去轮询一个永远不会有结论的 request_id"
+        assert resp.status_code == 200, resp.text
+        assert len(scheduled) == 1, "收单即排程：等 criteria 就绪是任务自己的事"
+        assert scheduled[0]["project_id"] == pid
     finally:
         shutil.rmtree(case, ignore_errors=True)
 
 
-def test_still_parsing_message_tells_the_user_to_retry_shortly(gate_client):
-    """还在解析 → 用户该做的是稍等再提交，不是重新上传。"""
+def test_admitted_submission_returns_a_pollable_task(gate_client):
+    """AC1：前端立刻拿到 request_id 与可轮询的任务行（"交互上看起来舒服"的那一半）。"""
     client, _ = gate_client
     pid = _project(client)
     _prewarmed(pid, "running")
-    case = _case_dir("gate-running-msg", pid)
+    case = _case_dir("gate-running-accepted", pid)
     try:
-        detail = _submit(client, pid, case).json()["detail"]
+        body = _submit(client, pid, case).json()
 
-        assert "评分标准" in detail
-        assert "稍后" in detail or "稍候" in detail
-        assert "重新上传" not in detail, "还在解析时叫人重传是把人往回赶"
+        assert body["status"] == "accepted"
+        assert body["task_status_url"] == f"/tender/tasks/{body['request_id']}"
+        task = next(
+            t for t in list_tender_tasks("acme", limit=100) if t["request_id"] == body["request_id"]
+        )
+        assert task["status"] == "accepted"
     finally:
         shutil.rmtree(case, ignore_errors=True)
 
 
+# ── 等不来结果 → 维持 409 立即拒 ──────────────────────────────────────────────
+
+
 def test_failed_criteria_is_rejected_with_reupload_guidance(gate_client):
-    """AC：criteria_status=failed → 4xx 且消息含重新上传指引（等下去不会变好）。"""
+    """AC2：criteria_status=failed → 4xx 且消息含重新上传指引（等下去不会变好）。"""
     client, scheduled = gate_client
     pid = _project(client)
     _prewarmed(pid, "failed")
@@ -133,17 +143,17 @@ def test_failed_criteria_is_rejected_with_reupload_guidance(gate_client):
         resp = _submit(client, pid, case)
 
         assert 400 <= resp.status_code < 500, resp.text
-        assert scheduled == []
+        assert scheduled == [], "不得排程——那一单注定作废，烧的 token 全是白烧"
+        assert all(
+            task.get("group_id") != pid for task in list_tender_tasks("acme", limit=100)
+        ), "不得建任务：任务一旦落库，前端就会去轮询一个永远不会有结论的 request_id"
         assert "重新上传" in resp.json()["detail"]
     finally:
         shutil.rmtree(case, ignore_errors=True)
 
 
 def test_stalled_extraction_is_rejected_with_reupload_guidance(gate_client, monkeypatch):
-    """等待上限到点也不会有结果（心跳陈旧的僵尸 running）→ 与 failed 同一处置。
-
-    这正是 ``doc_layer`` 那条 ``wait_cap_reached`` 分支此前放行降级的场景。
-    """
+    """AC2：等下去也不会有结果（心跳陈旧的僵尸 running）→ 与 failed 同一处置，不收单。"""
     client, scheduled = gate_client
     monkeypatch.setenv("OCR_PREWARM_STALE_SEC", "0.001")  # 刚写的行也算陈旧
     pid = _project(client)
@@ -160,12 +170,16 @@ def test_stalled_extraction_is_rejected_with_reupload_guidance(gate_client, monk
 
 
 def test_rejection_happens_before_any_upload_is_materialized(gate_client):
-    """multipart 提交同样在落盘之前就拒——否则拒了还是留下一坨没人清理的上传文件。"""
+    """multipart 提交同样在落盘之前就拒——否则拒了还是留下一坨没人清理的上传文件。
+
+    夹具从 ``running`` 改成 ``failed``（用户产品裁决 2026-08-19）：还在解析的单现在会被收下
+    并落盘，"拒之前不落盘"这条性质只对**仍然拒收**的那一类（failed / 僵尸）成立。
+    """
     import json as _json
 
     client, scheduled = gate_client
     pid = _project(client)
-    _prewarmed(pid, "running")
+    _prewarmed(pid, "failed")
     before = {p.name for p in (_CASE_ROOT / "tender" / pid).glob("*")} if (
         _CASE_ROOT / "tender" / pid
     ).is_dir() else set()
