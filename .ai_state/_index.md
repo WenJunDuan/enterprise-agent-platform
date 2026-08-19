@@ -69,7 +69,7 @@ pointers:
   latest_architecture_update: "2026-08-14T09:26:47.542Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "【2026-08-19 晚 · v2.1 第一批四刀全合并; 下一步=双镜像部署(0818b4+前端)→vision 冒烟→Step 5】
+next_action: "【2026-08-19 晚 · 0818b4+前端 0819b1 已上线(qpdf/facts_precheck/agency_corpus 在镜像已核); 回滚位 0818b3/0815b3; 待用户: 历史重写裁决/VISION_PAGE_URL/40K口径; 下一步=vision 冒烟→Step 4 D1D2→Step 5】
 
 入口链: sprints/2026-08-15-tender-context-pipeline/handoff-2026-08-18-night.md（含 08-19 订正）→ 纠偏令 v2（效力最高）→ plan-2026-08-18-v2-execution.md。
 
