@@ -35,3 +35,68 @@ collected_evidence:
     result: pass
     command: "cd agent-front && bun run build 2>&1 | tail -3 && cd .. && rsync -az --delete -e \"ssh -o ControlPath=/tmp/ssh-ea\" agent-front/dist/ smardaten@100.91.100.13:/opt/application/enterprise-agent-platform/agent-front/dist/ && ssh -o ControlPath=/tmp/ssh-ea smardaten@100.91.100.13 'cd /opt/application/enterprise-agent-platform && docker build -f agent-front/deploy/Containerfile.agent-front -t agent-front:0815b3 . >/dev/null 2>&1 && docker rm -f agent-front >/dev/null && docker run -d --name agent-front"
     timestamp: "2026-08-17T01:33:41.597Z"
+  - tool_use_id: "toolu_01PLutn6owaDHviPBXDQr2m6"
+    tool: "Bash"
+    result: pass
+    command: "python -m pytest -q -p no:randomly --timeout=600 -x --collect-only 2>&1 | tail -5"
+    timestamp: "2026-08-19T04:30:53.190Z"
+  - tool_use_id: "toolu_01VqkyqzwhjuQ86Mdns3GBpT"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-aaa65dcd57353785e/agent-front && bun test 2>&1 | tail -25"
+    timestamp: "2026-08-19T04:31:44.742Z"
+  - tool_use_id: "toolu_01MTUKBsMSCKT6Ss4qavY4xR"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-aaa65dcd57353785e/agent-front && bun test 2>&1 | tail -12"
+    timestamp: "2026-08-19T04:31:55.233Z"
+  - tool_use_id: "toolu_01C3x2tD7SBGZ5mbpovZgVHG"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-aaa65dcd57353785e/agent-front && bun run build 2>&1 | tail -20"
+    timestamp: "2026-08-19T04:32:11.319Z"
+  - tool_use_id: "toolu_01B8M6xpvctkZsWhRnrpsFRH"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-aaa65dcd57353785e/agent-front && bun test 2>&1 | tail -40"
+    timestamp: "2026-08-19T04:35:19.658Z"
+  - tool_use_id: "toolu_01TibgVPhSasdWWDwRfFR7e2"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-aaa65dcd57353785e/agent-front && bun test 2>&1 | tail -25"
+    timestamp: "2026-08-19T04:36:18.729Z"
+  - tool_use_id: "toolu_01C2imotfmqiLyq2B8e8wBCX"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-aaa65dcd57353785e/agent-front && bun test src/features/contract/tender-review/components/analyzing-criteria-notice.test.ts 2>&1 | tail -30"
+    timestamp: "2026-08-19T04:38:25.745Z"
+  - tool_use_id: "toolu_01D7x1afFwACKBexFZwSxfm5"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-aaa65dcd57353785e/agent-front && bun test 2>&1 | tail -20"
+    timestamp: "2026-08-19T04:38:46.482Z"
+  - tool_use_id: "toolu_01MvpmTCbgY1fA5qidTCKt2V"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-aaa65dcd57353785e/agent-front && bun run build 2>&1 | tail -12"
+    timestamp: "2026-08-19T04:38:58.069Z"
+  - tool_use_id: "toolu_016ovHiqqjYQuBZueNvzvdq6"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-aaa65dcd57353785e/agent-front && bun run lint 2>&1 | tail -25"
+    timestamp: "2026-08-19T04:39:02.286Z"
+  - tool_use_id: "toolu_01XU42D1HfEuL2buN11bjMYT"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-aaa65dcd57353785e/agent-front && bun test 2>&1 | tail -8 && echo \"=== BUILD ===\" && bun run build 2>&1 | tail -4 && echo \"=== LINT ===\" && bun run lint 2>&1 | tail -4"
+    timestamp: "2026-08-19T04:40:25.584Z"
+  - tool_use_id: "toolu_01K6A9o4CE5rixQ6xGYoM4Py"
+    tool: "Bash"
+    result: pass
+    command: "cd /Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-aaa65dcd57353785e/agent-front && bun test 2>&1 | tail -8 && echo \"=== BUILD ===\" && bun run build 2>&1 | tail -3 && echo \"=== LINT ===\" && bun run lint 2>&1 | tail -3 && echo \"=== FORMAT COUNT (baseline 100) ===\" && bun run format:check 2>&1 | grep -cE \"^\\[warn\\] src\""
+    timestamp: "2026-08-19T04:42:12.804Z"
+  - tool_use_id: "toolu_018rYDCwgtnJbuc38GNvaGUa"
+    tool: "Bash"
+    result: pass
+    command: "git merge --no-edit worktree-agent-aaa65dcd57353785e && git log --oneline -1 && (cd agent-front && bun test 2>&1 | tail -3 && bun run build 2>&1 | tail -2)"
+    timestamp: "2026-08-19T04:44:53.670Z"

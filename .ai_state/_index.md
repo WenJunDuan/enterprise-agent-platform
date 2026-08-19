@@ -69,7 +69,7 @@ pointers:
   latest_architecture_update: "2026-08-14T09:26:47.542Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "【2026-08-19 · v2 六步已完成 0/1/2/3; 0818b3 在线; 提交闸改收单等就绪施工中; 下一步 Step 4 D1/D2】
+next_action: "【2026-08-19 晚 · v2.1 第一批四刀全合并; 下一步=双镜像部署(0818b4+前端)→vision 冒烟→Step 5】
 
 入口链: sprints/2026-08-15-tender-context-pipeline/handoff-2026-08-18-night.md（含 08-19 订正）→ 纠偏令 v2（效力最高）→ plan-2026-08-18-v2-execution.md。
 
@@ -77,9 +77,9 @@ Step 2 已过闸(782e7d4): case-zj-live n=3 基线回填附录B——墙钟 299s
 
 Step 3 已合并(merge 58bf547): case-2/3 金标准落 eval/golden/, 页锚双路互证(pdftotext 空页数与生产 _blank_page_count 逐数相符); 9 条待人工确认清单在 generator 报告(见 subagent-log); 素材两处证伪——5ccbb361 抢救件从未存在、53f94fd0 属另一项目(D2 实证改挂), 订正已落 handoff-night 三节 + compound/2026-08-19-learning-handoff-claims-need-artifact-proof.md。
 
-08-19 下午两刀已合并推送(679c312): ①提交闸改收单等就绪(b7f66cf, 13红→20绿, 顺带根治 prewarm_oracle 挂死—25 用例回归大部队, 回归命令不再 --ignore 它) ②Phase A(5ef7d18, +64 测试: 语料落盘 corpus_materialize/TENDER_AGENCY 工具面+corpus hook 钉死/结论义务四裁决全折入提示词—净增 771B 预算剩 37B, 仲裁表零改动机械复核)。全量 17F 逐名不变/1,868P。用户裁决④已加: basic_info 基本信息块+应标一致性校验。
+08-19 全天合并推送九笔, 最新 08e6186。下午: 提交闸改收单等就绪(b7f66cf, 顺带根治 prewarm_oracle 挂死) + Phase A(5ef7d18, 结论义务四裁决入提示词)。晚间 v2.1 第一批四刀: 前端文案透传(1df7407) / agency 可见性打通+facts_precheck(de54b4b, 复制式汇集+跨投标人隔离五专测) / vision-page(ea1e5e7, 提示词净+3B) / 度量修正(d9286d8, 归因23条+同义词带出处+两新列)。全量 1,965P/17F 逐名不变。
 
-下一步(见 sprint proposals.md): ①P1 agency 生产可见性缺口(corpus 落上传目录 vs 评标 case_root 不同路径, doc_layer/doc_context/worker 已解禁, Step 5 前必修) ②打 0818b4(顺带 Dockerfile 加 qpdf) ③Step 4 D1(vision-page)/D2(四项机械缺陷) → Step 5 agency 对照(勾稽 0/3→3/3, manual 6→≤2) → Step 6。前端 0815b3 待重建。禁令照旧; P0.6 worktree 勿 prune。"
+下一步: ①双镜像部署 0818b4(Dockerfile 已加 qpdf)+前端——**vision 冒烟前必须配 VISION_PAGE_URL/MODEL(chat 端点, 现役 OCR_VL 是 job API 不能复用)** ②Step 5 前小刀: 服务端 tool_call 计数进任务记录(proposals P1) ③Step 4 D1/D2 ④Step 5 对照(列A验收: 召回≥4/7, 勾稽3/3, manual≤3) ⑤Step 6。待用户裁决: 40K 字 vs 字节口径(proposals)。禁令照旧; P0.6 worktree 勿 prune。"
 last_subagent: "codex-exec" # tender-report-dimensions D0-D5 headless (codex 0.142.1, gpt-5.5)；必须 env -u HTTP_PROXY -u HTTPS_PROXY 否则 streaming API 挂起，见 compound/2026-06-25-trick-codex-proxy-hangs-streaming.md
 last_subagent_at: "2026-06-25T00:00:00.000Z"
 active_worktrees: [] # 2026-08-17 两个返工 worktree 已合并 369c53e 并清理

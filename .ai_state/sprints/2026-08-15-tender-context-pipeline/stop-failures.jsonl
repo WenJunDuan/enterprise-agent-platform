@@ -1,2 +1,5 @@
 {"schema_version":1,"event":"StopFailure","error":"server_error","is_interrupt":false,"duration_ms":null,"timestamp":"2026-08-18T02:18:38.397Z"}
 {"schema_version":1,"event":"StopFailure","error":"server_error","is_interrupt":false,"duration_ms":null,"timestamp":"2026-08-18T02:35:21.075Z"}
+{"schema_version":1,"event":"StopFailure","error":"rate_limit","is_interrupt":false,"duration_ms":null,"timestamp":"2026-08-19T04:49:33.234Z"}
+{"schema_version":1,"event":"StopFailure","error":"rate_limit","is_interrupt":false,"duration_ms":null,"timestamp":"2026-08-19T04:49:39.734Z"}
+{"schema_version":1,"event":"StopFailure","error":"rate_limit","is_interrupt":false,"duration_ms":null,"timestamp":"2026-08-19T04:49:40.762Z"}

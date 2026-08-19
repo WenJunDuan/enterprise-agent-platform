@@ -286,3 +286,51 @@
 - Agent ID: aface5f3dce618d16
 - Last message: Phase A is committed. Full report below. ## 交付位置 - **worktree**: `/Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-aface5f3dce618d16` - **分支**: `worktree-agent-aface5f3dce6
 
+## 2026-08-19T04:25:47.815Z · generator
+- Event: SubagentStart
+- Agent ID: a998e527b468a670d
+
+## 2026-08-19T04:26:10.393Z · generator
+- Event: SubagentStart
+- Agent ID: af43c534209d439a1
+
+## 2026-08-19T04:26:33.642Z · generator
+- Event: SubagentStart
+- Agent ID: a82d5a720e745b939
+
+## 2026-08-19T04:26:55.262Z · generator
+- Event: SubagentStart
+- Agent ID: aaa65dcd57353785e
+
+## 2026-08-19T04:43:54.232Z · generator
+- Event: SubagentStop
+- Agent ID: aaa65dcd57353785e
+- Last message: Done. Commit `1df7407` on branch `worktree-agent-aaa65dcd57353785e`, tree clean, changes confined to `agent-front/**`. ## 改动清单 | 文件 | 类型 | 行 | |---|---|---| | `/Users/mi_manchi/workspace/enterprise-ag
+
+## 2026-08-19T08:05:54.932Z · generator
+- Event: SubagentStart
+- Agent ID: a998e527b468a670d
+
+## 2026-08-19T08:05:57.683Z · generator
+- Event: SubagentStart
+- Agent ID: af43c534209d439a1
+
+## 2026-08-19T08:06:00.917Z · generator
+- Event: SubagentStart
+- Agent ID: a82d5a720e745b939
+
+## 2026-08-19T08:13:19.530Z · generator
+- Event: SubagentStop
+- Agent ID: af43c534209d439a1
+- Last message: 两件活都已落地并提交（`de54b4b`，worktree `agent-af43c534209d439a1`）。 ## 红绿证据 **RED**（实现前，两个测试文件在 HEAD `0eb3917` 上整体不可导入）： ``` ImportError: cannot import name 'facts_precheck' from 'server.tender' ERROR tests/tes
+
+## 2026-08-19T08:14:01.108Z · generator
+- Event: SubagentStop
+- Agent ID: a998e527b468a670d
+- Last message: Done. Commit `ea1e5e7` on `worktree-agent-a998e527b468a670d`. ## 交付 | 项 | 文件 | |---|---| | ① 新 skill | `/Users/mi_manchi/workspace/enterprise-agent-platform/.claude/worktrees/agent-a998e527b468a670d/.
+
+## 2026-08-19T08:24:14.249Z · generator
+- Event: SubagentStop
+- Agent ID: a82d5a720e745b939
+- Last message: 交付完成，已 commit `d9286d8`。 ## 红绿证据 RED（实现前跑 `tests/test_eval_tender_regression.py`）：`24 failed, 60 passed`。24 条红分布在四个交付面——`attribution` 枚举校验 5 条、三个 golden case 登记完整性 5 条、同义词族命中 1 条、拆列 2 条、`count_evidenc
+
