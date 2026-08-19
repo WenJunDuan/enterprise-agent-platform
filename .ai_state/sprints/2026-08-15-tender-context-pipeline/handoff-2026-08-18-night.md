@@ -37,6 +37,13 @@ P0 五项护栏 + Phase 0 回归闸已合并推送 `origin/main`，线上仍是 
 - v2 令三③（case-2/3）素材：YD/BL已删库，唯一副本抢救于
   `knowledge/external/车辆管理系统/results-5ccbb361批-20260818.json`（含 criteria 回显 18,921 字，
   兼作 D2 本地重建索引的输入）
+  - **订正（2026-08-19 实查证伪）**：该抢救件**从未存在于盘上**（全盘搜索无踪，服务器
+    task 表也无 5ccbb361），"已抢救"是记档时的未验证断言。已用服务器直拉补齐素材
+    （`materials-server-pull-20260819.json`：4 条历史结论 + 现役 criteria 12 项），
+    case-2/3 已据此沉淀完成。连带证伪：`53f94fd0` 并非BL结论，属另一项目
+    （房建/市政类），accuracy 计划里挂它名下的 D2 错位实证出处随之改挂该项目——
+    现象仍真（昨晚 6e67cbd2 BL实跑另证了记账错位），但素材归属曾记错。
+    教训见 `compound/2026-08-19-learning-handoff-claims-need-artifact-proof.md`。
 
 ## 四、下会话执行序列（细节见 plan-2026-08-18-v2-execution.md）
 

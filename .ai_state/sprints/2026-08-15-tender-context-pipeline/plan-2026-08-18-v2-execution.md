@@ -10,7 +10,7 @@
 |---|---|---|
 | 令三① "P0.1+P0.4 止血" 及 "P0.2/0.3/0.5 随行" | **五项全部完成**，经 Fable review（CONCERNS，无 P0，F1 已修 `94bf81c`）已合并推送 `origin/main`（merge `682afd5`/`744ed63`）；回归 17F/1,767P 与基线逐名一致 | 步骤①**销项**，直接从②起 |
 | 令三② 基线回填 | 评测脚本读 `total_score`（P0.5 产出），现役镜像 `0818b2` **没有它** | ②前必须先部署 `0818b3`（Step 1） |
-| 令三③ case-2/3 素材 | YD/BL项目已删库，结论 DB 行不存在 | 唯一副本已抢救至 `knowledge/external/车辆管理系统/results-5ccbb361批-20260818.json`（含 criteria 回显 18,921 字，兼作 D2 重建索引输入） |
+| 令三③ case-2/3 素材 | YD/BL项目已删库，结论 DB 行不存在 | ~~唯一副本已抢救至 `results-5ccbb361批-20260818.json`~~ **订正 2026-08-19：抢救件从未存在（未验证断言），已用服务器直拉补齐**（`materials-server-pull-20260819.json` + 昨晚 6e67cbd2 实跑结论 + 现役 criteria 12 项）；case-2/3 已沉淀（merge `58bf547`）。D2 重建索引输入改用现役 criteria |
 
 另：P0.6 冻结件维持 DEFER（两轮 Fable 结论一致，v2 未提出异议）。
 

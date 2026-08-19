@@ -54,7 +54,7 @@ counts:
   reviews_count: 81
   cleanup_count: 7
   compound:
-    learning: 19
+    learning: 20
     trick: 4
     decision: 10
     explore: 3
@@ -65,19 +65,21 @@ pointers:
   latest_cleanup: "sprints/2026-08-12-prompt-architecture/cleanup-pass.md"
   latest_brainstorm: ""
   latest_decisions: ["compound/2026-08-17-decision-real-corpus-worktree-only-purge.md", "compound/2026-08-17-decision-bid-auditor-skill-absorption.md", "compound/2026-07-20-decision-ocr-as-standalone-service.md", "compound/2026-07-16-decision-carve-f6-schema-split-from-d2.md", "compound/2026-07-16-decision-schema-split-tender.md"]
-  latest_lessons: ["compound/2026-08-18-learning-the-investment-was-dark-in-production.md", "compound/2026-08-17-learning-schema-column-add-needs-caller-sweep.md", "compound/2026-08-17-learning-retrieval-quality-needs-the-chunk-body.md", "compound/2026-08-14-learning-prompt-budget-must-be-per-session.md", "compound/2026-08-13-learning-design-budget-must-account-own-mandates.md"]
+  latest_lessons: ["compound/2026-08-19-learning-handoff-claims-need-artifact-proof.md", "compound/2026-08-18-learning-the-investment-was-dark-in-production.md", "compound/2026-08-17-learning-schema-column-add-needs-caller-sweep.md", "compound/2026-08-17-learning-retrieval-quality-needs-the-chunk-body.md", "compound/2026-08-14-learning-prompt-budget-must-be-per-session.md"]
   latest_architecture_update: "2026-08-14T09:26:47.542Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "【2026-08-18 晚 · Step 0+1 已完成; 0818b3 已上线, 用户实操中; 下一步 Step 2 基线回填】
+next_action: "【2026-08-19 · v2 六步已完成 0/1/2/3; 0818b3 在线; 提交闸改收单等就绪施工中; 下一步 Step 4 D1/D2】
 
-入口链: sprints/2026-08-15-tender-context-pipeline/handoff-2026-08-18-night.md → .ai_state/claude/Tender链路纠偏令 v2（效力最高）→ plan-2026-08-18-v2-execution.md（六步）。
+入口链: sprints/2026-08-15-tender-context-pipeline/handoff-2026-08-18-night.md（含 08-19 订正）→ 纠偏令 v2（效力最高）→ plan-2026-08-18-v2-execution.md。
 
-Step 0 三残项已完成: ①Phase 0 design AC1 措辞回改(sha256+bytes+pages 指纹) ②评测脚本纯搬运拆分 eval/regression.py(b3f3bb8, 脚本 1080→381 行, 全量 17F/1767P 与基线逐名一致) ③fixture 真实编号金额改合成 + 守卫新增编号形态正则 [A-Z]{2,6}-?\\d{5,}(真红→绿, 证据 tdd-evidence T6/T7)。残留: eval/regression.py 822 行超 300 线, 记 gate sprint proposals P1#2 追记, 下刀线=YAML 子集解析器分家。
+Step 2 已过闸(782e7d4): case-zj-live n=3 基线回填附录B——墙钟 299s ✅ / manual 6(目标≤2) / 召回 2/7(D1 三跑全中, v2 '按项检索必漏 D1' 预判被证伪) / 客观分 0/3 / 报价勾稽 0/3; 三跑逐条一致=漏检结构性, 靶子=D1 证书扫描页空 + D2 检索错位。
 
-Step 1 已完成: 0818b3 上线（镜像 7ac3610f, smoke=health ok+代码面/接线核verified, 闸行为由 60 单测兜底; 执行记录见 plan-2026-08-18-v2-execution Step 1 追记; 回滚位 0818b2）。下一步: 用户实操验证后 **Step 2 case-zj-live single×3 回填附录B** → Phase 0 过闸 → Step 3 case-2/3（素材=knowledge/external/车辆管理系统/results-5ccbb361批-20260818.json 抢救件）→ Step 4 D1(vision-page 首选)/D2(仅四项机械缺陷) → Step 5 Phase A agency 薄实验 → Step 6 数字裁决。
+Step 3 已合并(merge 58bf547): case-2/3 金标准落 eval/golden/, 页锚双路互证(pdftotext 空页数与生产 _blank_page_count 逐数相符); 9 条待人工确认清单在 generator 报告(见 subagent-log); 素材两处证伪——5ccbb361 抢救件从未存在、53f94fd0 属另一项目(D2 实证改挂), 订正已落 handoff-night 三节 + compound/2026-08-19-learning-handoff-claims-need-artifact-proof.md。
 
-禁令: 词表/常数/阈值/查询串措辞未经诊断数据一律禁止; 回归闸期望值与命中判定禁改。P0.6 worktree 冻结勿 prune。线上仍 0818b2+deepseek。"
+在飞: 提交闸改收单等就绪(用户产品裁决 08-19: criteria 解析中收单+等就绪自动开跑, 失败/超时明确报错不降级), generator worktree 施工中; 落地需打 0818b4 部署。前端 0815b3 待重建(mock 隐私清理 + 409 文案渲染)。
+
+下一步: Step 4 D1(部署机证书页实验, vision-page 首选)/D2(本地重建索引, 仅四项机械缺陷) → Step 5 agency(case 齐了) → Step 6 数字裁决。禁令: 词表/常数/阈值/查询串未经诊断数据禁改; 回归闸期望值与命中判定禁改。P0.6 worktree 勿 prune。"
 last_subagent: "codex-exec" # tender-report-dimensions D0-D5 headless (codex 0.142.1, gpt-5.5)；必须 env -u HTTP_PROXY -u HTTPS_PROXY 否则 streaming API 挂起，见 compound/2026-06-25-trick-codex-proxy-hangs-streaming.md
 last_subagent_at: "2026-06-25T00:00:00.000Z"
 active_worktrees: [] # 2026-08-17 两个返工 worktree 已合并 369c53e 并清理
