@@ -210,6 +210,86 @@ def test_load_case_rejects_pointer_without_both_roles(tmp_path: Path) -> None:
         ev.load_case(_write_case(tmp_path, _MINIMAL_EXPECTED, pointer=pointer))
 
 
+# ── 归因二分表登记（纠偏令 v2.1 二节）──────────────────────────────────────────
+#
+# 列A=文本可达（agency 应治）/ 列B=像素必需（vision-page 上线前结构性不可达）。
+# 登记进 expected.yaml 的可选字段 `attribution: text|pixel`，**只登记归因，不改期望值、
+# 不改命中判定**——它决定 Step 5 的数字往哪一列记账，跨列记账等于把结论读反。
+
+
+def test_load_case_reads_optional_attribution_on_defects_and_objective_items(
+    tmp_path: Path,
+) -> None:
+    text = _MINIMAL_EXPECTED.replace(
+        'anchors: ["【第1页】"]', 'anchors: ["【第1页】"]\n    attribution: text'
+    ).replace("    max: 9", "    max: 9\n    attribution: pixel")
+    case = ev.load_case(_write_case(tmp_path, text))
+    assert case.defects[0].attribution == ev.ATTRIBUTION_TEXT
+    assert case.objective_scores[0].attribution == ev.ATTRIBUTION_PIXEL
+
+
+def test_load_case_treats_attribution_as_optional(tmp_path: Path) -> None:
+    """字段是可选的：没登记就是 None，而不是默认塞一个列，默认值等于替人做归因。"""
+    case = ev.load_case(_write_case(tmp_path, _MINIMAL_EXPECTED))
+    assert case.defects[0].attribution is None
+    assert case.objective_scores[0].attribution is None
+
+
+@pytest.mark.parametrize(
+    ("mutation", "replacement"),
+    [
+        pytest.param(
+            'anchors: ["【第1页】"]',
+            'anchors: ["【第1页】"]\n    attribution: 列A',
+            id="缺陷侧写了枚举外的值",
+        ),
+        pytest.param("    max: 9", "    max: 9\n    attribution: image", id="客观分侧写了近义词"),
+    ],
+)
+def test_load_case_rejects_attribution_outside_the_enum(
+    tmp_path: Path, mutation: str, replacement: str
+) -> None:
+    """枚举外的写法一律报错。猜一个 = 静默替人做归因，正是 v2.1 二节禁的跨列记账。"""
+    with pytest.raises(ev.CaseDefinitionError, match="attribution"):
+        ev.load_case(_write_case(tmp_path, _MINIMAL_EXPECTED.replace(mutation, replacement)))
+
+
+@pytest.mark.parametrize("case_name", ["case-zj-live", "case-2", "case-3"])
+def test_every_shipped_golden_item_is_registered_in_the_attribution_table(case_name: str) -> None:
+    """三个金标准 case 的每条缺陷 / 每个客观分项都必须有归因列，漏一条 Step 5 就无法记账。"""
+    case = ev.load_case(PROJECT_ROOT / "eval" / "golden" / case_name)
+    unregistered = [d.id for d in case.defects if d.attribution is None]
+    unregistered += [o.item_class for o in case.objective_scores if o.attribution is None]
+    assert not unregistered, f"{case_name} 未登记归因列的条目：{unregistered}"
+
+
+def test_case_zj_live_attribution_transcribes_the_v21_section_two_table() -> None:
+    """逐项对齐 v2.1 二节表：D1/D2/D4/D7 与客观分三项的归因是那张表原文，不是本档自拟。"""
+    case = ev.load_case(CASE_DIR)
+    assert {d.id: d.attribution for d in case.defects} == {
+        "D1": "text",
+        "D2": "text",
+        "D3": "pixel",
+        "D4": "text",
+        "D5": "pixel",
+        "D6": "pixel",
+        "D7": "text",
+    }
+    assert {o.item_class: o.attribution for o in case.objective_scores} == {
+        "企业实力": "pixel",
+        "类似业绩": "pixel",
+        "项目负责人": "pixel",
+    }
+
+
+def test_credential_triplet_of_case_2_and_3_is_registered_as_pixel_required() -> None:
+    """v2.1 二节列B 收录「case-2/3 证书类三项判出率（59 页纯扫描）」——三项须逐条落 pixel。"""
+    for case_name, triplet in (("case-2", ("A1", "A2", "A3")), ("case-3", ("B1", "B2", "B3"))):
+        case = ev.load_case(PROJECT_ROOT / "eval" / "golden" / case_name)
+        by_id = {d.id: d.attribution for d in case.defects}
+        assert [by_id[i] for i in triplet] == ["pixel"] * 3, f"{case_name} 证书类三项归因不符"
+
+
 # ── 语料指纹定位 ────────────────────────────────────────────────────────────────
 
 
@@ -468,6 +548,83 @@ def test_match_objective_scores_flags_真ambiguity_rather_than_guessing() -> Non
     assert outcome.correct == () and outcome.wrong == ()
 
 
+# ── 度量侧 item_class 同义词族（纠偏令 v2.1 五节）────────────────────────────────
+#
+# 附录B 基线 0/3 里业绩 / 负责人是**匹配器没匹配上**，不是链路真漏。先修尺子再读数，
+# 否则会把度量债当链路债去修。同义词只准来自实跑里真出现过的项名形态，不许臆造。
+
+
+def test_match_objective_scores_expands_item_class_synonyms_for_real_name_drift() -> None:
+    """0818b3 实跑的项名与 case 声明的 keywords 对不上，度量侧同义词族必须接住。
+
+    漂移样本出处：`knowledge/external/车辆管理系统/results-6e67cbd2-0818b3实跑-20260818.json`
+    的 `extracted_data.scoring[].item`（投标供应商实力 / 项目业绩 / 团队人员）。
+    """
+    outcome = ev.match_objective_scores(
+        [
+            _objective("企业实力", ("企业综合实力", "综合实力", "企业实力"), 6, 10),
+            _objective("类似业绩", ("类似业绩",), 9, 10),
+            _objective("项目负责人", ("拟派项目负责人", "项目负责人"), 3, 5),
+        ],
+        [
+            {"item": "投标供应商实力", "max": 10, "score": 6},
+            {"item": "项目业绩", "max": 10, "score": 9},
+            {"item": "团队人员", "max": 5, "score": 3},
+        ],
+    )
+    assert outcome.correct == ("企业实力", "类似业绩", "项目负责人")
+    assert outcome.unmatched == ()
+
+
+def test_match_objective_scores_synonyms_do_not_leak_across_item_classes() -> None:
+    """同义词族按 item_class 分族。跨族串味会把「负责人」判到「业绩」头上，比漏匹配更坏。"""
+    outcome = ev.match_objective_scores(
+        [_objective("项目负责人", ("拟派项目负责人",), 3, 5)],
+        [{"item": "项目业绩", "max": 5, "score": 3}],
+    )
+    assert outcome.correct == ()
+    assert outcome.unmatched == ("项目负责人",)
+
+
+# ── 客观分列拆二：真漏 vs 匹配器未匹配（纠偏令 v2.1 五节）────────────────────────
+
+
+def test_match_objective_scores_splits_true_miss_from_matcher_miss() -> None:
+    """真漏（结论无该项/无证据）与匹配器未匹配（项名漂移）必须分列，不能混成一个 0/3。
+
+    判别式沿用本函数**已有**的消歧信号——满分值：结论里有同满分值的项 = 该项大概率在场、
+    只是名字对不上（度量债）；连同满分值的项都没有 = 结论里真没有这一项（链路债）。
+    """
+    outcome = ev.match_objective_scores(
+        [
+            # 匹配上了但没出分 → 「无证据」型真漏
+            _objective("企业实力", ("企业综合实力",), 6, 6),
+            # 项名对不上、但满分 9 的项在场 → 匹配器未匹配
+            _objective("信用评价", ("投标人市场信用评价",), 9, 9),
+            # 连满分 3 的项都没有 → 「结论无该项」型真漏
+            _objective("演示环节", ("主要功能演示",), 3, 3),
+        ],
+        [
+            {"item": "1 企业综合实力", "max": 6, "score": None, "pending_reason": "evidence_unresolved"},
+            {"item": "市场信用", "max": 9, "score": 9},
+        ],
+    )
+    assert outcome.unmatched == ("信用评价", "演示环节")
+    assert outcome.true_miss == ("企业实力", "演示环节")
+    # 漂移的项名要原样带出来，否则下一轮扩同义词还得靠人翻结论。
+    assert outcome.matcher_miss == {"信用评价": ("市场信用",)}
+
+
+def test_match_objective_scores_keeps_a_wrong_but_scored_item_out_of_both_miss_columns() -> None:
+    """给了分只是给错了，既不是真漏也不是度量债——混进去会把两列都读虚。"""
+    outcome = ev.match_objective_scores(
+        [_objective("类似业绩", ("类似业绩",), 9, 9)],
+        [{"item": "类似业绩", "max": 9, "score": 6}],
+    )
+    assert outcome.wrong == (("类似业绩", 9.0, 6.0),)
+    assert outcome.true_miss == () and outcome.matcher_miss == {}
+
+
 # ── manual_review 分列 ──────────────────────────────────────────────────────────
 
 
@@ -557,6 +714,39 @@ def _conclusion_hitting_d1() -> dict:
     }
 
 
+# ── 补证工具调用数 / 结论体量（纠偏令 v2.1 三节 + 五节）────────────────────────
+
+
+def test_count_evidence_tool_calls_returns_none_when_the_server_never_sent_the_signal() -> None:
+    """缺信号必须是 None（渲染成 n/a），**不得回退成 0**。
+
+    0 的语义是"跑了但一次没调"，n/a 的语义是"这条信号还没接出来"。v2.1 二节把「工具调用
+    日志显示空转」当成援引"失败也是产出"的前提——把 n/a 读成 0 会直接把没接信号的实验
+    判成模型空转。
+    """
+    assert ev.count_evidence_tool_calls({"submitted_at": "x", "finished_at": "y"}) is None
+
+
+def test_count_evidence_tool_calls_reads_the_task_record_field() -> None:
+    assert ev.count_evidence_tool_calls({ev.TOOL_CALL_FIELD: 0}) == 0
+    assert ev.count_evidence_tool_calls({ev.TOOL_CALL_FIELD: 17}) == 17
+
+
+@pytest.mark.parametrize("value", ["17", -1, 3.5, True])
+def test_count_evidence_tool_calls_refuses_a_malformed_signal(value: object) -> None:
+    """任务记录来自 HTTP，是信任边界：形态不对就当场炸，不猜也不静默降级。"""
+    with pytest.raises(ValueError, match=ev.TOOL_CALL_FIELD):
+        ev.count_evidence_tool_calls({ev.TOOL_CALL_FIELD: value})
+
+
+def test_conclusion_size_counts_utf8_bytes_and_characters_of_the_whole_body() -> None:
+    """两个数都要：阈值在 v2.1 里以「字」计，列名却是字节数，只留一个必被读错。"""
+    size = ev.conclusion_size({"explanation": "中文"})
+    # 规范化序列化后是 `{"explanation": "中文"}`：21 字符，其中 2 个汉字各占 3 字节 → 25 字节。
+    assert size.characters == 21
+    assert size.bytes == 25
+
+
 def test_evaluate_result_composes_all_four_metrics_from_one_conclusion() -> None:
     case = ev.load_case(CASE_DIR)
     task = {"submitted_at": "2026-08-18T04:16:52Z", "finished_at": "2026-08-18T04:26:52Z"}
@@ -632,3 +822,69 @@ def test_render_report_puts_four_metrics_and_the_sample_size_in_one_table() -> N
     assert "OCR 状态 degraded" in text
     # 单 case 过拟合风险：表头永久标注样本量（design 风险表要求）。
     assert "case-zj-live" in text
+
+
+def _report(task: dict, *, runs: int = 2) -> str:
+    case = ev.load_case(CASE_DIR)
+    metrics = [
+        ev.evaluate_result(case, task, _conclusion_hitting_d1(), request_id=f"r-{i}")
+        for i in range(runs)
+    ]
+    return ev.render_report(case, mode="single", runs=metrics, notes=[])
+
+
+_TASK = {"submitted_at": "2026-08-18T04:16:52Z", "finished_at": "2026-08-18T04:26:52Z"}
+
+
+def test_render_report_splits_the_objective_metric_into_true_miss_and_matcher_miss() -> None:
+    """v2.1 五节：单一「客观分准确率」读不出 0/3 里哪几项该修链路、哪几项该修尺子。"""
+    text = _report(_TASK)
+    assert "真漏" in text and "结论无该项/无证据" in text
+    assert "匹配器未匹配" in text and "项名漂移" in text
+    # 合成结论里三项全部匹配上了（两对一错），两个 miss 列都应是 0/3。
+    assert text.count("| 0/3 = 0% |") == 2
+
+
+def _tool_call_cell(text: str) -> str:
+    """补证工具调用数那一行的**中位列**。计算式列本身写着 n/a 的语义说明，不能连它一起断言。"""
+    row = next(line for line in text.splitlines() if line.startswith("| 补证工具调用数"))
+    return row.split("|")[2].strip()
+
+
+def test_render_report_shows_na_not_zero_when_the_tool_call_signal_is_absent() -> None:
+    text = _report(_TASK)
+    assert "补证工具调用数" in text
+    assert _tool_call_cell(text) == "n/a"
+
+
+def test_render_report_reports_the_tool_call_count_when_the_task_carries_it() -> None:
+    text = _report({**_TASK, ev.TOOL_CALL_FIELD: 17})
+    assert _tool_call_cell(text) == "17"
+
+
+def test_render_report_carries_the_conclusion_size_row_and_its_p06_threshold_footnote() -> None:
+    """v2.1 三节：连续两轮 >40K 触发 P0.6 复议——阈值不写进报告，读数字的人无从判定。"""
+    text = _report(_TASK)
+    assert "结论字节数" in text
+    assert str(ev.CONCLUSION_SIZE_REVIEW_THRESHOLD // 1000) + "K" in text
+    assert "P0.6" in text
+    # 单位陷阱必须写明：阈值以「字」计，本列以 UTF-8 字节计，两者不可直接比。
+    assert "字节" in text and "字数" in text
+
+
+def test_render_report_registers_every_item_in_the_v21_attribution_table() -> None:
+    """归因二分表是 Step 5 的唯一解读框架（v2.1 二节），报告里必须逐项登记且分列合计。"""
+    text = _report(_TASK)
+    assert "归因二分表" in text
+    assert "列A" in text and "文本可达" in text
+    assert "列B" in text and "像素必需" in text
+    rows = {
+        line.split("|")[1].strip(): line
+        for line in text.splitlines()
+        if line.startswith("| ") and line.count("|") == 5
+    }
+    assert "列A" in rows["D1"] and "列B" in rows["D3"]
+    assert "列B" in rows["企业实力"]
+    # 合成结论 D1 双跑全中、D3 全漏：命中列要能反映出来。
+    assert "2/2" in rows["D1"] and "0/2" in rows["D3"]
+    assert "列B 在 vision-page 上线前" in text

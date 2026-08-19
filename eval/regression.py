@@ -36,6 +36,26 @@ MAX_ANCHOR_RANGE_PAGES = 40
 _SEVERITIES = frozenset({"P0", "P1"})
 _CORPUS_ROLES = ("tender", "bid")
 
+# 归因二分（纠偏令 v2.1 二节）。Step 5 结果的**唯一解读框架**：
+#   列A `text`  —— 文本可达，agency 应治，达不达标直接算 agency 的账；
+#   列B `pixel` —— 像素必需，vision-page 上线前结构性不可达，不变不计失败、变好另行归因。
+# 两列禁止跨列记账：把列B 的漏检记到 agency 头上，等于用一个做不到的目标去否掉一条有效路径。
+# 归因逐项登记在 ``expected.yaml`` 的可选字段 ``attribution``，缺省 = 未登记（报告显式标出）。
+ATTRIBUTION_TEXT = "text"
+ATTRIBUTION_PIXEL = "pixel"
+_ATTRIBUTIONS = frozenset({ATTRIBUTION_TEXT, ATTRIBUTION_PIXEL})
+_ATTRIBUTION_LABELS = {ATTRIBUTION_TEXT: "列A 文本可达", ATTRIBUTION_PIXEL: "列B 像素必需"}
+
+# 任务记录里的补证工具调用数字段。**服务端今天不写它**：补证工具（``TENDER_AGENCY=1``
+# 时开放的 Grep/Read，见 server/tender/corpus_materialize.py）的调用只落 session 事件
+# JSONL（server/common/session_logging.py 写 ``event="tool_call"``），任务表
+# ``TenderTaskStatusResponse`` 与结论体都没有该字段，故本列今天恒为 n/a。
+# 读任务记录而不读结论体：结论体是模型自述，任务记录是服务端记账，只有后者可作证据。
+TOOL_CALL_FIELD = "tool_call_count"
+
+# 结论体量的 P0.6 复议阈值（纠偏令 v2.1 三节：该列数字连续两轮越线即触发复议）。
+CONCLUSION_SIZE_REVIEW_THRESHOLD = 40_000
+
 # 正确的待人工，不是链路退化：需要全部报价横比 / 需要现场答辩，本来就出不了分。
 # 把它们计进 manual_review 劣化数，等于逼后续 Phase 去消灭本该待人工的项。
 CORRECT_PENDING_REASONS = ("cross_bid", "live_event")
@@ -232,7 +252,11 @@ def extract_page_refs(text: str, *, default_kind: str = ARTIFACT_ORIGINAL) -> fr
 
 @dataclass(frozen=True)
 class Defect:
-    """一条必须被召回的缺陷（匿名：角色代号 + 页锚 + 类别枚举）。"""
+    """一条必须被召回的缺陷（匿名：角色代号 + 页锚 + 类别枚举）。
+
+    ``attribution`` 是 v2.1 二节的归因列（``text`` / ``pixel`` / 未登记 None），只影响
+    报告怎么记账，不参与命中判定。
+    """
 
     id: str
     defect_class: str
@@ -242,16 +266,21 @@ class Defect:
     keywords: tuple[str, ...]
     must_include: tuple[str, ...]
     absence: bool
+    attribution: str | None = None
 
 
 @dataclass(frozen=True)
 class ObjectiveScore:
-    """一项客观分基线：项名用关键词族匹配，分值精确比对。"""
+    """一项客观分基线：项名用关键词族匹配，分值精确比对。
+
+    ``attribution`` 同 :class:`Defect`：v2.1 二节的归因列，只用于报告记账。
+    """
 
     item_class: str
     keywords: tuple[str, ...]
     expected: float
     max: float
+    attribution: str | None = None
 
 
 @dataclass(frozen=True)
@@ -302,6 +331,24 @@ def _str_tuple(value: Any, field: str) -> tuple[str, ...]:
     return tuple(value)
 
 
+def _attribution(raw: dict[str, Any], label: str) -> str | None:
+    """可选的 v2.1 二节归因列。
+
+    枚举外的写法一律报错而不是当未登记处理——静默吞掉一个写错的归因，等于替人做了
+    跨列记账，而跨列记账正是二节明令禁止的那件事。
+    """
+    value = raw.get("attribution")
+    if value is None:
+        return None
+    text = str(value).strip()
+    _require(
+        text in _ATTRIBUTIONS,
+        f"{label} 的 attribution={value!r} 不在枚举内，只能是 text（列A 文本可达）"
+        f" 或 pixel（列B 像素必需）",
+    )
+    return text
+
+
 def _build_defect(raw: dict[str, Any], classes: dict[str, Any]) -> Defect:
     defect_id = str(raw.get("id") or "").strip()
     _require(bool(defect_id), f"缺陷缺 id：{raw!r}")
@@ -335,6 +382,7 @@ def _build_defect(raw: dict[str, Any], classes: dict[str, Any]) -> Defect:
         keywords=keywords,
         must_include=_str_tuple(raw.get("must_include") or [], f"缺陷 {defect_id} 的 must_include"),
         absence=absence,
+        attribution=_attribution(raw, f"缺陷 {defect_id}"),
     )
 
 
@@ -351,6 +399,7 @@ def _build_objective(raw: dict[str, Any]) -> ObjectiveScore:
         keywords=_str_tuple(raw.get("keywords") or [], f"客观分项 {item_class} 的 keywords"),
         expected=float(expected),
         max=float(maximum),
+        attribution=_attribution(raw, f"客观分项 {item_class}"),
     )
 
 
@@ -546,10 +595,20 @@ def match_defects(defects: list[Defect] | tuple[Defect, ...], findings: list[Fin
 
 @dataclass(frozen=True)
 class ObjectiveOutcome:
+    """客观分逐项比对结果。
+
+    ``true_miss`` / ``matcher_miss`` 是 v2.1 五节要的**拆列**：前者是链路债（结论里没有
+    这一项，或有这一项却没出分＝没证据），后者是度量债（项在结论里、只是项名漂移到关键词
+    族之外）。混成一个 0/3 会把度量债当链路债去修。``matcher_miss`` 直接带出漂移的项名，
+    下一轮扩同义词有据可依。
+    """
+
     correct: tuple[str, ...]
     wrong: tuple[tuple[str, float, float | None], ...]
     unmatched: tuple[str, ...]
     ambiguous: dict[str, tuple[str, ...]]
+    true_miss: tuple[str, ...]
+    matcher_miss: dict[str, tuple[str, ...]]
     total: int
 
     @property
@@ -568,6 +627,57 @@ def _as_float(value: Any) -> float | None:
         return None
 
 
+# item_class → **度量侧**同义词族，在 case 自带 ``keywords`` 之外追加匹配（纠偏令 v2.1
+# 五节明示：这是尺子不是链路，不受链路侧检索词表禁令约束）。附录B 基线 0/3 里业绩与负责人
+# 是匹配器没匹配上、不是链路真漏，先修尺子再读数。
+#
+# **每条都必须是实跑里真出现过的项名形态或它们的最大公共子串，不许臆造**。逐条出处：
+#   企业实力  ——「企业综合实力」（case-zj-live 参照报告评分表第 1 项）/「投标供应商实力」
+#             （`knowledge/external/车辆管理系统/results-6e67cbd2-0818b3实跑-20260818.json`
+#             的 `extracted_data.scoring[1].item`，满分 10）。两者与 case 已声明的
+#             「综合实力 / 企业实力」的最大公共子串是「实力」，取它一条即覆盖四种形态。
+#   类似业绩  ——「项目业绩」（同上 JSON `scoring[2].item`，满分 10）/「业绩」（同目录
+#             `materials-server-pull-20260819.json` 的 `result_53f94fd0` 评分项）。公共
+#             子串「业绩」。
+#   项目负责人——「项目负责人陈述及答辩（暗标）」（同上 `result_53f94fd0`）与 case 声明的
+#             「拟派项目负责人」的公共子串是「负责人」；「团队人员」（0818b3 JSON
+#             `scoring[3].item`，满分 5）是同一评分类目（人员名单/职称/社保）在另一份标书
+#             里的项名，与「负责人」无公共子串，故单列一条。
+#
+# 质保期**刻意不列**：0818b3 实跑的项名就是「质保期」，与 case 声明的 keywords 一致，
+# 没有观测到漂移。没见过的形态不写进来，写了就是臆造。
+_ITEM_CLASS_SYNONYMS: dict[str, tuple[str, ...]] = {
+    "企业实力": ("实力",),
+    "类似业绩": ("业绩",),
+    "项目负责人": ("负责人", "团队人员"),
+}
+
+
+def _same_max_items(spec: ObjectiveScore, scoring: list[dict[str, Any]]) -> tuple[str, ...]:
+    """结论里满分值与该项相同的项名。空 = 结论里根本没有这一项。
+
+    用满分值判「项名漂移 vs 真的没这一项」，是因为本函数**已经**用它做多命中消歧——
+    同一把尺子用两次，不引入新判据。满分值相同只是候选证据，故项名原样带出来给人复核。
+    """
+    return tuple(
+        str(row.get("item") or "") for row in scoring if _as_float(row.get("max")) == spec.max
+    )
+
+
+def _matching_rows(spec: ObjectiveScore, scoring: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """项名命中该项关键词族的评分行。族 = case 声明的 keywords + 度量侧同义词。"""
+    keywords = spec.keywords + _ITEM_CLASS_SYNONYMS.get(spec.item_class, ())
+    return [row for row in scoring if any(kw in str(row.get("item") or "") for kw in keywords)]
+
+
+def _pick_match(spec: ObjectiveScore, matches: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """多行都命中时按满分值收窄。仍不唯一 → ``None``，由调用方记 ambiguous，不猜一个。"""
+    if len(matches) == 1:
+        return matches[0]
+    narrowed = [row for row in matches if _as_float(row.get("max")) == spec.max]
+    return narrowed[0] if len(narrowed) == 1 else None
+
+
 def match_objective_scores(
     expected: list[ObjectiveScore] | tuple[ObjectiveScore, ...],
     scoring: list[dict[str, Any]],
@@ -575,29 +685,35 @@ def match_objective_scores(
     """客观分逐项比对。项名走关键词族（模型输出项名有措辞漂移，全名精确匹配必错）。
 
     匹配不上 → 进 ``unmatched`` 显式列出，**不静默算 0 分**；多项撞上且满分值也无法
-    区分 → 进 ``ambiguous``，宁可报"分不清"也不猜一个。
+    区分 → 进 ``ambiguous``，宁可报"分不清"也不猜一个。``unmatched`` 与"匹配上却没出分"
+    再按 v2.1 五节拆成 ``true_miss``（链路债）与 ``matcher_miss``（度量债）。
     """
     correct: list[str] = []
     wrong: list[tuple[str, float, float | None]] = []
     unmatched: list[str] = []
     ambiguous: dict[str, tuple[str, ...]] = {}
+    true_miss: list[str] = []
+    matcher_miss: dict[str, tuple[str, ...]] = {}
     for spec in expected:
-        matches = [
-            row
-            for row in scoring
-            if any(keyword in str(row.get("item") or "") for keyword in spec.keywords)
-        ]
+        matches = _matching_rows(spec, scoring)
         if not matches:
             unmatched.append(spec.item_class)
+            drifted = _same_max_items(spec, scoring)
+            if drifted:
+                matcher_miss[spec.item_class] = drifted
+            else:
+                true_miss.append(spec.item_class)
             continue
-        if len(matches) > 1:
-            narrowed = [row for row in matches if _as_float(row.get("max")) == spec.max]
-            if len(narrowed) != 1:
-                ambiguous[spec.item_class] = tuple(str(row.get("item") or "") for row in matches)
-                continue
-            matches = narrowed
-        actual = _as_float(matches[0].get("score"))
-        if actual is not None and abs(actual - spec.expected) < 1e-6:
+        row = _pick_match(spec, matches)
+        if row is None:
+            ambiguous[spec.item_class] = tuple(str(m.get("item") or "") for m in matches)
+            continue
+        actual = _as_float(row.get("score"))
+        if actual is None:
+            # 项在结论里、却没给出分值 = 没证据。这是链路债，与项名漂移完全两回事。
+            true_miss.append(spec.item_class)
+            wrong.append((spec.item_class, spec.expected, None))
+        elif abs(actual - spec.expected) < 1e-6:
             correct.append(spec.item_class)
         else:
             wrong.append((spec.item_class, spec.expected, actual))
@@ -606,6 +722,8 @@ def match_objective_scores(
         wrong=tuple(wrong),
         unmatched=tuple(unmatched),
         ambiguous=ambiguous,
+        true_miss=tuple(true_miss),
+        matcher_miss=matcher_miss,
         total=len(expected),
     )
 
@@ -680,9 +798,51 @@ def check_price(price: PriceCheck, findings: list[Finding]) -> bool:
     return any(keyword in finding.text for finding in findings for keyword in price.keywords)
 
 
+def count_evidence_tool_calls(task: dict[str, Any]) -> int | None:
+    """任务记录里的补证工具调用数；服务端没发这个信号时返回 ``None``（报告渲染成 n/a）。
+
+    **绝不回退成 0**：0 的语义是"跑了但一次没调"，``None`` 的语义是"这条信号还没接出来"。
+    v2.1 二节把「工具调用日志显示空转」当作援引"失败也是产出"条款的前提——把 n/a 读成 0，
+    一次根本没接信号的实验就会被判成模型空转，裁决据此走偏。
+
+    Args:
+        task: ``GET /tender/tasks/{request_id}`` 的响应体。
+
+    Raises:
+        ValueError: 字段在场但不是非负整数。任务记录来自 HTTP，是信任边界，形态不对当场
+            炸而不是猜——猜出来的调用数会直接变成裁决依据。
+    """
+    value = task.get(TOOL_CALL_FIELD)
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(f"任务记录的 {TOOL_CALL_FIELD} 必须是非负整数，实际 {value!r}")
+    return value
+
+
+@dataclass(frozen=True)
+class ConclusionSize:
+    """结论体量。字节与字数都留着：v2.1 三节的 P0.6 阈值以「字」计，报告列名却是「字节数」，
+    只留一个必被读错（2026-08-18 实跑实测 27,716 字 / 53,310 字节，已越字节 40K 而未越
+    字数 40K——同一份结论按两种单位读会得出相反结论）。"""
+
+    bytes: int
+    characters: int
+
+
+def conclusion_size(result: dict[str, Any]) -> ConclusionSize:
+    """结论体量。规范化序列化（不转义非 ASCII、键排序）后计 UTF-8 字节与字符数。
+
+    序列化口径固定死是为了可复跑：键序或转义方式一变，同一份结论就会给出不同的数字，
+    而这个数字要用来做"连续两轮 >40K"的趋势判定。
+    """
+    text = json.dumps(result, ensure_ascii=False, sort_keys=True)
+    return ConclusionSize(bytes=len(text.encode("utf-8")), characters=len(text))
+
+
 @dataclass(frozen=True)
 class RunMetrics:
-    """单次评标的四指标快照。"""
+    """单次评标的指标快照：原四指标 + v2.1 五节新增的补证工具调用数与结论体量。"""
 
     request_id: str
     wall_clock: float
@@ -690,12 +850,14 @@ class RunMetrics:
     objective: ObjectiveOutcome
     pending: PendingOutcome
     price_ok: bool
+    tool_calls: int | None
+    conclusion: ConclusionSize
 
 
 def evaluate_result(
     case: GoldenCase, task: dict[str, Any], result: dict[str, Any], *, request_id: str
 ) -> RunMetrics:
-    """一份结论 + 它的任务记录 → 四指标。纯函数，可脱离服务端单测。"""
+    """一份结论 + 它的任务记录 → 全部指标。纯函数，可脱离服务端单测。"""
     findings = iter_findings(result)
     scoring = (result.get("extracted_data") or {}).get("scoring") or []
     return RunMetrics(
@@ -705,6 +867,8 @@ def evaluate_result(
         objective=match_objective_scores(case.objective_scores, scoring),
         pending=count_pending(scoring),
         price_ok=check_price(case.price_check, findings),
+        tool_calls=count_evidence_tool_calls(task),
+        conclusion=conclusion_size(result),
     )
 
 
@@ -723,13 +887,26 @@ def _row(
     return f"| {label} | {middle} | {spread} | {formula} |"
 
 
-def render_report(case: GoldenCase, *, mode: str, runs: list[RunMetrics], notes: list[str]) -> str:
-    """四指标单表（markdown）。表头永久标注 case 与样本量 n——单 case 过拟合是已知风险。"""
-    lines = [
-        f"## 评标回归闸 · {case.name} · mode={mode} · n={len(runs)}",
-        "",
-        "| 指标 | 中位 | 极差 | 计算式 |",
-        "|---|---|---|---|",
+def _optional_row(label: str, values: list[int | None], formula: str, *, unit: str = "") -> str:
+    """一行**可缺席**的指标。全缺渲染成 ``n/a``，绝不渲染成 0。
+
+    0 与 n/a 在这张表上是两个结论：0 = 跑了但一次没触发，n/a = 这条信号还没接出来。
+    部分缺席时按在场样本取中位，并把缺席数标在中位列旁——否则 n=3 里只有 1 个样本
+    出数字，读起来和 n=3 全有一模一样。
+    """
+    present = [float(value) for value in values if value is not None]
+    if not present:
+        return f"| {label} | n/a | — | {formula} |"
+    agg = aggregate(present)
+    missing = len(values) - len(present)
+    middle = f"{agg.median:,.0f}{unit}" + (f"（另 {missing} 跑 n/a）" if missing else "")
+    spread = "—" if agg.low == agg.high else f"{agg.low:,.0f}–{agg.high:,.0f}{unit}"
+    return f"| {label} | {middle} | {spread} | {formula} |"
+
+
+def _core_metric_rows(case: GoldenCase, runs: list[RunMetrics]) -> list[str]:
+    """原四指标 + 报价勾稽。计算式一字不改——尺子变了就分不清是链路变了还是尺子变了。"""
+    return [
         _row("墙钟", [r.wall_clock for r in runs], "finished_at − submitted_at", unit="s"),
         _row(
             "manual_review 项数（计入劣化）",
@@ -758,17 +935,123 @@ def render_report(case: GoldenCase, *, mode: str, runs: list[RunMetrics], notes:
             [float(r.price_ok) for r in runs],
             f"合计 {case.price_check.total:,.2f} 是否出现在结论里",
         ),
-        "",
     ]
+
+
+def _v21_metric_rows(runs: list[RunMetrics]) -> list[str]:
+    """纠偏令 v2.1 五节新增列：客观分拆二 + 补证工具调用数 + 结论字节数。"""
+    return [
+        _row(
+            "客观分·真漏（结论无该项/无证据）",
+            [float(len(r.objective.true_miss)) for r in runs],
+            "结论里没有同满分值的项，或有该项却 score=null —— 链路债",
+            total=runs[0].objective.total,
+        ),
+        _row(
+            "客观分·匹配器未匹配（项名漂移）",
+            [float(len(r.objective.matcher_miss)) for r in runs],
+            "关键词族没命中，但结论里有同满分值的项 —— 度量债，先扩同义词再读数",
+            total=runs[0].objective.total,
+        ),
+        _optional_row(
+            "补证工具调用数",
+            [r.tool_calls for r in runs],
+            f"任务记录的 `{TOOL_CALL_FIELD}`；服务端未发该信号时显示 n/a（**不是 0**）",
+        ),
+        _row(
+            "结论字节数",
+            [float(r.conclusion.bytes) for r in runs],
+            "结论体 JSON 规范化序列化（ensure_ascii=False, sort_keys=True）后的 UTF-8 字节数",
+            unit="B",
+        ),
+    ]
+
+
+@dataclass(frozen=True)
+class _AttributionRow:
+    """归因二分表的一行：一条缺陷或一个客观分项 + 它的归因列 + 本批命中跑数。"""
+
+    name: str
+    kind: str
+    attribution: str | None
+    hits: int
+
+
+def _attribution_rows(case: GoldenCase, runs: list[RunMetrics]) -> list[_AttributionRow]:
+    rows = [
+        _AttributionRow(
+            name=defect.id,
+            kind="缺陷",
+            attribution=defect.attribution,
+            hits=sum(1 for run in runs if defect.id in run.recall.hits),
+        )
+        for defect in case.defects
+    ]
+    rows += [
+        _AttributionRow(
+            name=item.item_class,
+            kind="客观分",
+            attribution=item.attribution,
+            hits=sum(1 for run in runs if item.item_class in run.objective.correct),
+        )
+        for item in case.objective_scores
+    ]
+    return rows
+
+
+def _attribution_table(case: GoldenCase, runs: list[RunMetrics]) -> list[str]:
+    """归因二分表（v2.1 二节）：Step 5 结果的唯一解读框架，逐项标列A/列B 并分列合计。"""
+    rows = _attribution_rows(case, runs)
+    total_runs = len(runs)
+    lines = [
+        "",
+        "**归因二分表（纠偏令 v2.1 二节 · Step 5 结果的唯一解读框架，禁跨列记账）**",
+        "",
+        "| 项 | 类型 | 归因列 | 命中 |",
+        "|---|---|---|---|",
+    ]
+    lines += [
+        f"| {row.name} | {row.kind} | {_ATTRIBUTION_LABELS.get(row.attribution, '未登记')} |"
+        f" {row.hits}/{total_runs} |"
+        for row in rows
+    ]
+    tallies = []
+    for key in (ATTRIBUTION_TEXT, ATTRIBUTION_PIXEL, None):
+        group = [row for row in rows if row.attribution == key]
+        if group:
+            all_runs_hit = sum(1 for row in group if row.hits == total_runs)
+            label = _ATTRIBUTION_LABELS.get(key, "未登记")
+            tallies.append(f"{label} 全跑命中 {all_runs_hit}/{len(group)} 项")
+    lines.append("")
+    lines.append(
+        "、".join(tallies)
+        + "。列B 在 vision-page 上线前不变不计失败、变好另行归因（v2.1 二节）。"
+    )
+    return lines
+
+
+def _run_details(runs: list[RunMetrics]) -> list[str]:
+    """逐跑明细：数字降了要能一眼看出降在哪一条上。"""
+    lines: list[str] = []
     for index, run in enumerate(runs, start=1):
-        lines.append(f"- run{index} `{run.request_id}`：墙钟 {run.wall_clock:.0f}s")
+        tool_calls = "n/a" if run.tool_calls is None else str(run.tool_calls)
+        lines.append(
+            f"- run{index} `{run.request_id}`：墙钟 {run.wall_clock:.0f}s"
+            f" · 补证工具调用 {tool_calls}"
+            f" · 结论 {run.conclusion.bytes:,} 字节 / {run.conclusion.characters:,} 字"
+        )
         lines.append(f"  - 缺陷命中 {sorted(run.recall.hits)}；未命中 {list(run.recall.missed)}")
         if run.recall.weak_key:
             lines.append(f"  - 弱键判定（缺失类无页锚，仅关键词 + must_include）：{list(run.recall.weak_key)}")
         if run.objective.wrong:
             lines.append(f"  - 客观分不符 {[(c, e, a) for c, e, a in run.objective.wrong]}")
-        if run.objective.unmatched:
-            lines.append(f"  - 客观分**未匹配**（不算 0 分，需人看项名漂移）：{list(run.objective.unmatched)}")
+        if run.objective.true_miss:
+            lines.append(f"  - 客观分**真漏**（结论无该项/无证据，属链路债）：{list(run.objective.true_miss)}")
+        if run.objective.matcher_miss:
+            lines.append(
+                f"  - 客观分**匹配器未匹配**（项名漂移，属度量债；括号内为同满分值的实际项名）："
+                f"{run.objective.matcher_miss}"
+            )
         if run.objective.ambiguous:
             lines.append(f"  - 客观分项名有歧义，未采信：{run.objective.ambiguous}")
         if run.pending.degrading or run.pending.unknown_reason:
@@ -776,6 +1059,35 @@ def render_report(case: GoldenCase, *, mode: str, runs: list[RunMetrics], notes:
                 f"  - 待定分列 {run.pending.degrading}"
                 f"（无 pending_reason 的 null：{run.pending.unknown_reason}）"
             )
+    return lines
+
+
+def render_report(case: GoldenCase, *, mode: str, runs: list[RunMetrics], notes: list[str]) -> str:
+    """指标单表 + 归因二分表 + 逐跑明细（markdown）。
+
+    表头永久标注 case 与样本量 n——单 case 过拟合是已知风险。
+    """
+    threshold = f"{CONCLUSION_SIZE_REVIEW_THRESHOLD // 1000}K"
+    # 阈值与单位一起写进报告：不写阈值，读数字的人无从判定该不该复议；不写单位差异，
+    # 一份 27,716 字 / 53,310 字节的结论会被同一张表读出相反结论。
+    footnote = (
+        f"> **结论体量阈值（v2.1 三节）**：该列连续两轮 >{threshold} 即触发 P0.6 复议。"
+        "v2.1 原文以「字」计而本列按 UTF-8 字节计（中文 1 字 = 3 字节），两者不可直接比"
+        "——判 P0.6 时以逐跑明细里的字数为准，本列只作体量对照。"
+    )
+    lines = [
+        f"## 评标回归闸 · {case.name} · mode={mode} · n={len(runs)}",
+        "",
+        "| 指标 | 中位 | 极差 | 计算式 |",
+        "|---|---|---|---|",
+        *_core_metric_rows(case, runs),
+        *_v21_metric_rows(runs),
+        "",
+        footnote,
+        *_attribution_table(case, runs),
+        "",
+        *_run_details(runs),
+    ]
     if notes:
         lines.extend(["", "**运行说明**"])
         lines.extend(f"- {note}" for note in notes)
