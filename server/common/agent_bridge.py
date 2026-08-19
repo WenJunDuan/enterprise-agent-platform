@@ -70,7 +70,9 @@ _DEFAULT_CHARS_PER_TOKEN = 1.5
 _OCR_PAGE_PREFIX = "uv run python .claude/skills/ocr-page/ocr.py"
 _OCR_PAGE_SHELL_META = frozenset(";&|$(){}<>\r\n" + chr(96))
 _OCR_PAGE_MAX_NUMBER = sys.maxsize
-_OCR_PAGE_FILE_TOKEN = (
+# 一个"安全的 shell 词"：可选一对引号，内部禁引号/反斜杠/元字符/通配与历史展开字符。
+# 文件路径与（下方 vision-page 的）问句共用同一套字符白名单——两处各写一份必然漂移。
+_SAFE_SHELL_WORD = (
     r"""(?:["][^"'\\;&|$()\{\}<>\x60*?\[\]!\r\n]+["]"""
     r"""|['][^"'\\;&|$()\{\}<>\x60*?\[\]!\r\n]+[']"""
     r"""|[^"'\\\s;&|$()\{\}<>\x60*?\[\]!\r\n]+)"""
@@ -80,10 +82,30 @@ _OCR_PAGE_SPEC = r"[0-9]+(?:-[0-9]+)?"
 # 的补证指引 import 它来告诉模型同一个数字，两处各写一份必然漂移。
 CORPUS_READ_MAX_LINES = 200
 _OCR_PAGE_COMMAND_RE = re.compile(
-    rf"{re.escape(_OCR_PAGE_PREFIX)}[ \t]+(?P<file>{_OCR_PAGE_FILE_TOKEN})"
+    rf"{re.escape(_OCR_PAGE_PREFIX)}[ \t]+(?P<file>{_SAFE_SHELL_WORD})"
     rf"(?:[ \t]+(?:--pages[ \t]+(?P<pages_before>{_OCR_PAGE_SPEC})"
     rf"(?:[ \t]+--seal)?|--seal(?:[ \t]+--pages[ \t]+"
     rf"(?P<pages_after>{_OCR_PAGE_SPEC}))?))?"
+)
+
+# vision-page（判定时刻带图问答）的调用面。与 ocr-page 同闸同型、同一个 case_root 边界：
+# 评标子进程处理的是**攻击者可控**的投标 PDF，多开一个脚本就是多一条命令注入面。
+_VISION_PAGE_PREFIX = "uv run python .claude/skills/vision-page/vision.py"
+# 问句字符上界。判定时刻的问答是"一问一个判定点"，不是把整段提示词塞进命令行；
+# 上界同时把命令行长度钉住（问句是唯一的自由文本入参）。
+VISION_PAGE_MAX_QUESTION_CHARS = 200
+# 问句**必须带引号**（裸问句会被 shell 按空格分词，只有第一个词进得了 argv）。字符集比
+# ``_SAFE_SHELL_WORD`` 多放行 ``*?[]!`` —— 问句里出现 `?` 是常态，而它们在引号内对 shell
+# 无意义（命令整体另有元字符扫描兜底，见 ``_validate_shell_meta``）。
+_VISION_QUESTION_TOKEN = (
+    rf"""(?:["][^"'\\;&|$()\{{\}}<>\x60\r\n]{{1,{VISION_PAGE_MAX_QUESTION_CHARS}}}["]"""
+    rf"""|['][^"'\\;&|$()\{{\}}<>\x60\r\n]{{1,{VISION_PAGE_MAX_QUESTION_CHARS}}}['])"""
+)
+_VISION_PAGE_COMMAND_RE = re.compile(
+    rf"{re.escape(_VISION_PAGE_PREFIX)}[ \t]+(?P<file>{_SAFE_SHELL_WORD})[ \t]+"
+    rf"(?:--page[ \t]+(?P<page>[0-9]+)[ \t]+--question[ \t]+(?P<question>{_VISION_QUESTION_TOKEN})"
+    rf"|--question[ \t]+(?P<question_first>{_VISION_QUESTION_TOKEN})"
+    rf"[ \t]+--page[ \t]+(?P<page_after>[0-9]+))"
 )
 
 
@@ -257,11 +279,14 @@ def _validate_ocr_file(file_token: str, case_root: Path) -> str | None:
     return None
 
 
+def _validate_shell_meta(command: str) -> str | None:
+    """Reject any shell metacharacter anywhere in the command (both skill grammars)."""
+    shell_meta = next((char for char in command if char in _OCR_PAGE_SHELL_META), None)
+    return None if shell_meta is None else f"shell metacharacter {shell_meta!r} is not allowed"
+
+
 def _validate_ocr_command(command: str, case_root: Path) -> str | None:
     """Validate one complete Bash command against the ocr-page grammar and boundary."""
-    shell_meta = next((char for char in command if char in _OCR_PAGE_SHELL_META), None)
-    if shell_meta is not None:
-        return f"shell metacharacter {shell_meta!r} is not allowed"
     match = re.fullmatch(_OCR_PAGE_COMMAND_RE, command)
     if match is None:
         return "command is not an exact ocr-page invocation"
@@ -272,23 +297,56 @@ def _validate_ocr_command(command: str, case_root: Path) -> str | None:
     return _validate_ocr_pages(page_spec)
 
 
+def _validate_vision_command(command: str, case_root: Path) -> str | None:
+    """Validate one complete Bash command against the vision-page grammar and boundary.
+
+    页号复用 ``_validate_ocr_pages``（同一套"有界正整数"判据），问句的字符集与长度由
+    ``_VISION_QUESTION_TOKEN`` 在文法层钉死——文法之外的任何形态一律拒，不做"清洗后放行"。
+    """
+    match = re.fullmatch(_VISION_PAGE_COMMAND_RE, command)
+    if match is None:
+        return "command is not an exact vision-page invocation"
+    file_reason = _validate_ocr_file(match.group("file"), case_root)
+    if file_reason is not None:
+        return file_reason
+    return _validate_ocr_pages(match.group("page") or match.group("page_after"))
+
+
+def _validate_case_tool_command(command: str, case_root: Path) -> str | None:
+    """Dispatch one Bash command to the grammar of the skill it claims to invoke.
+
+    白名单是**逐脚本**的：不在这两条文法内的命令一律拒（fail-closed），不存在"看起来像
+    取证就放行"的兜底分支。
+    """
+    meta_reason = _validate_shell_meta(command)
+    if meta_reason is not None:
+        return meta_reason
+    if command.startswith(_VISION_PAGE_PREFIX):
+        return _validate_vision_command(command, case_root)
+    return _validate_ocr_command(command, case_root)
+
+
 def _make_ocr_page_hook(case_root: Path) -> HookCallback:
-    """Create a fail-closed Bash PreToolUse hook bound to one canonical case root."""
+    """Create a fail-closed Bash PreToolUse hook bound to one canonical case root.
+
+    单个 hook 承载两条受控命令（ocr-page 转写 / vision-page 带图问答）：SDK 对同一工具的多个
+    matcher 是"任一拒即拒"，拆两个 hook 会让它们互相否决。
+    """
     normalized_root = Path(os.path.realpath(case_root))
 
     async def check_ocr_page(
         input_data: dict[str, Any], _tool_use_id: str | None, _context: Any
     ) -> dict[str, Any]:
-        """Allow only a validated ocr-page command from the bound case."""
+        """Allow only a validated ocr-page / vision-page command from the bound case."""
         if input_data.get("tool_name") != "Bash":
             return _ocr_hook_result("deny", "only Bash is supported by this hook")
         tool_input = input_data.get("tool_input")
         command = tool_input.get("command") if isinstance(tool_input, dict) else None
         if not isinstance(command, str):
             return _ocr_hook_result("deny", "Bash command is missing or not a string")
-        reason = _validate_ocr_command(command, normalized_root)
+        reason = _validate_case_tool_command(command, normalized_root)
         return (
-            _ocr_hook_result("allow", "validated ocr-page command")
+            _ocr_hook_result("allow", "validated case tool command")
             if reason is None
             else (_ocr_hook_result("deny", reason))
         )
