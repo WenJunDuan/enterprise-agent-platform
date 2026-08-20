@@ -28,6 +28,7 @@
 from __future__ import annotations
 
 import re
+import subprocess
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -47,6 +48,11 @@ _SCAN_DIRS = (
     # 是最容易把真名写回来的地方。扫描面不含它 = 对新目录的匿名化纪律不设防。
     # 连带把 `.yaml` 纳入后缀：金标准是 yaml，只加目录不加后缀等于加了个不生效的守卫。
     "eval",
+    # 2026-08-20 扩面：`.ai_state/` 是本守卫两次失守的同一个洞——真实机构名自 2026-06-23
+    # 起渗进 15 份状态档共 24 个提交（含一份带真人姓名 + 完整身份证号的令档被推上远端），
+    # 全程无告警，最终靠一次全历史 filter-repo 重写才清掉。设计档/交接档同样会被 clone，
+    # 不设防等于把"最爱写真实案例"的目录排除在外。
+    ".ai_state",
 )
 _SCAN_SUFFIXES = {".py", ".md", ".ts", ".tsx", ".yaml"}
 
@@ -85,6 +91,8 @@ _SYNTHETIC_ALLOWED = frozenset(
         "市政集团",
         "市水务集团",
         "临港产投集团",
+        # 2026-08-20 全历史匿名化时替入的合成名（原值为真实公司，已 filter-repo 抹除）
+        "示例云平台有限公司",
     }
 )
 
@@ -102,11 +110,37 @@ _SYNTHETIC_ALLOWED_CODES = frozenset(
         # test_legacy_doc_table_recovery 合成项目编号（DEMO 前缀明示虚构；
         # 故意保留 6 位数字段落在网内，验证本守卫真在工作）
         "DEMO-100001",
+        # 本仓自造的内部标签，非外部标识：TR-=评标报告流水（TR-<日期>）、
+        # EXP-=报销 demo 用例号。2026-08-20 .ai_state 扩面时逐条核实。
+        "TR-20260819",
+        "EXP-20260620",
     }
 )
 
 # 本守卫自身与状态档会引用形态样例，排除以免自指翻红。
 _EXEMPT_FILES = {"tests/test_no_real_corpus.py"}
+
+
+def _ignored_paths(candidates: list[Path]) -> set[Path]:
+    """`git check-ignore` 判定为忽略的文件。
+
+    守卫要防的是「真实语料**进仓库**」，而按 v2 令**有意留本地**的真名档（已在
+    `.gitignore`）不进仓库、也不会被 clone。把它们算作违规会让守卫恒红，红到最后
+    被人加白或关掉——那才是真的失守。未被忽略的未跟踪文件仍在扫描面内（提交前拦截）。
+    """
+    if not candidates:
+        return set()
+    proc = subprocess.run(
+        ["git", "check-ignore", "--stdin", "-z"],
+        input="\0".join(str(p) for p in candidates),
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    # 退出码 0=有命中 / 1=无命中，均属正常；其余（128 等）说明 git 不可用，此时不静默放行。
+    if proc.returncode not in (0, 1):
+        raise RuntimeError(f"git check-ignore 失败（exit={proc.returncode}）：{proc.stderr.strip()}")
+    return {Path(line) for line in proc.stdout.split("\0") if line}
 
 
 def _scan_files() -> list[Path]:
@@ -116,7 +150,19 @@ def _scan_files() -> list[Path]:
         if not root.exists():
             continue
         files.extend(p for p in root.rglob("*") if p.is_file() and p.suffix in _SCAN_SUFFIXES)
-    return files
+    ignored = _ignored_paths(files)
+    return [p for p in files if p not in ignored]
+
+
+def _embedded_in_token(text: str, match: re.Match[str]) -> bool:
+    """命中串是否只是更长字母数字 token 的一截（如 ``toolu_01J5SA33257r8uy4Pgv5zYYk``）。
+
+    真实编号在文本里是独立 token；被前后字母数字夹住的命中是形态巧合。不排除它，
+    守卫会被自家 evidence.yaml 的 tool_use_id 刷成恒红。
+    """
+    before = text[match.start() - 1] if match.start() > 0 else ""
+    after = text[match.end()] if match.end() < len(text) else ""
+    return before.isalnum() or after.isalnum()
 
 
 def _shape_hits(shape: re.Pattern[str], allowed: frozenset[str]) -> dict[str, set[str]]:
@@ -126,10 +172,11 @@ def _shape_hits(shape: re.Pattern[str], allowed: frozenset[str]) -> dict[str, se
         rel = str(path.relative_to(PROJECT_ROOT))
         if rel in _EXEMPT_FILES:
             continue
+        text = path.read_text(encoding="utf-8", errors="ignore")
         found = {
             m.group(0)
-            for m in shape.finditer(path.read_text(encoding="utf-8", errors="ignore"))
-            if m.group(0) not in allowed
+            for m in shape.finditer(text)
+            if m.group(0) not in allowed and not _embedded_in_token(text, m)
         }
         if found:
             hits[rel] = found
