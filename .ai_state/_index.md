@@ -69,7 +69,7 @@ pointers:
   latest_architecture_update: "2026-08-14T09:26:47.542Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "【2026-08-19 收口 · 下会话唯一入口 = sprints/2026-08-15-tender-context-pipeline/handoff-2026-08-19.md】双镜像 0818b4/0819b1 在线, 收单等就绪全链路实跑验证绿; 下会话第一件事=核任务 d82aca89 结论(结论义务首次生产检验), 然后按 handoff 三节队列: 抽取重试刀→tool_call 计数→Step 4 D1D2→vision 冒烟(卡 VISION_PAGE_URL)→Step 5 对照→Step 6。待用户三裁决: 历史重写/VISION_PAGE_URL/40K口径】
+next_action: "【2026-08-20 · v2.2 批次详细设计已落盘: sprints/2026-08-15-tender-context-pipeline/design-2026-08-20-v22-transplant.md (K0-K11, 待 critic 评审后开工)】⚠新发现: v2.2 移植令 tracked 且已推 origin/main(7753d22), 正文含真名+身份证号 → K0 历史抹净已扩围(--replace-text+两真名档路径, 一次重写)。执行序照设计任务表: T1 K0 抹净(最先)→T2 case-4→T3/T4 office native+混合页(先复现实验/校准)→T5-T9 Step5 前置件→T10 D2→Step 5 对照(不等 vision)→Step 6(40K 按字)。开工前义务: ①核 d82aca89 结论 ②critic 评设计增补档。另: 前端对接文档已重写为 tender 三接口+iframe 版(.ai_state/docs/)。vision 支线卡 qwen VL 端点】
 
 入口链: sprints/2026-08-15-tender-context-pipeline/handoff-2026-08-18-night.md（含 08-19 订正）→ 纠偏令 v2（效力最高）→ plan-2026-08-18-v2-execution.md。
 

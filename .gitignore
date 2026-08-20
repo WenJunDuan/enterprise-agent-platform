@@ -43,3 +43,5 @@ AGENTS.md
 # 含全量真名的本地档, v2 令明确不入库 (2026-08-19 止血, 见 compound)
 .ai_state/claude/投标文件审核报告-*.md
 .ai_state/claude/SKILL-bid-document-auditor-*.md
+# 本地备份区: 冻结 worktree patch / 匿名化映射表 / filter-repo expressions, 均属敏感或派生物
+.ai_state/backups/

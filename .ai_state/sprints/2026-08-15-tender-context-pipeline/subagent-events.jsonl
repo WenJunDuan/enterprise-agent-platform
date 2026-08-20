@@ -75,3 +75,13 @@
 {"schema_version":1,"event":"SubagentStop","agent_id":"af43c534209d439a1","agent_type":"generator","sprint_slug":"2026-08-15-tender-context-pipeline","timestamp":"2026-08-19T08:13:19.529Z"}
 {"schema_version":1,"event":"SubagentStop","agent_id":"a998e527b468a670d","agent_type":"generator","sprint_slug":"2026-08-15-tender-context-pipeline","timestamp":"2026-08-19T08:14:01.107Z"}
 {"schema_version":1,"event":"SubagentStop","agent_id":"a82d5a720e745b939","agent_type":"generator","sprint_slug":"2026-08-15-tender-context-pipeline","timestamp":"2026-08-19T08:24:14.248Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"a3d13dfe67f32a54b","agent_type":"Explore","sprint_slug":"2026-08-15-tender-context-pipeline","timestamp":"2026-08-19T12:43:54.946Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"ac78b708ec8830551","agent_type":"Explore","sprint_slug":"2026-08-15-tender-context-pipeline","timestamp":"2026-08-19T12:44:05.584Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"ac724d196f4a98229","agent_type":"Explore","sprint_slug":"2026-08-15-tender-context-pipeline","timestamp":"2026-08-19T12:44:15.288Z"}
+{"schema_version":1,"event":"SubagentStop","agent_id":"a3d13dfe67f32a54b","agent_type":"Explore","sprint_slug":"2026-08-15-tender-context-pipeline","timestamp":"2026-08-19T12:46:45.108Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"a69fdf28afcfea6d3","agent_type":"Explore","sprint_slug":"2026-08-15-tender-context-pipeline","timestamp":"2026-08-20T01:57:44.244Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"a4a361914a6892c2a","agent_type":"Explore","sprint_slug":"2026-08-15-tender-context-pipeline","timestamp":"2026-08-20T01:57:54.209Z"}
+{"schema_version":1,"event":"SubagentStop","agent_id":"a4a361914a6892c2a","agent_type":"Explore","sprint_slug":"2026-08-15-tender-context-pipeline","timestamp":"2026-08-20T02:00:47.575Z"}
+{"schema_version":1,"event":"SubagentStop","agent_id":"a69fdf28afcfea6d3","agent_type":"Explore","sprint_slug":"2026-08-15-tender-context-pipeline","timestamp":"2026-08-20T02:02:15.947Z"}
+{"schema_version":1,"event":"SubagentStart","agent_id":"ac03e9a88d9c967be","agent_type":"critic","sprint_slug":"2026-08-15-tender-context-pipeline","timestamp":"2026-08-20T14:57:41.895Z"}
+{"schema_version":1,"event":"SubagentStop","agent_id":"ac03e9a88d9c967be","agent_type":"critic","sprint_slug":"2026-08-15-tender-context-pipeline","timestamp":"2026-08-20T15:06:46.176Z"}

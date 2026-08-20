@@ -334,3 +334,47 @@
 - Agent ID: a82d5a720e745b939
 - Last message: 交付完成，已 commit `d9286d8`。 ## 红绿证据 RED（实现前跑 `tests/test_eval_tender_regression.py`）：`24 failed, 60 passed`。24 条红分布在四个交付面——`attribution` 枚举校验 5 条、三个 golden case 登记完整性 5 条、同义词族命中 1 条、拆列 2 条、`count_evidenc
 
+## 2026-08-19T12:43:54.947Z · Explore
+- Event: SubagentStart
+- Agent ID: a3d13dfe67f32a54b
+
+## 2026-08-19T12:44:05.584Z · Explore
+- Event: SubagentStart
+- Agent ID: ac78b708ec8830551
+
+## 2026-08-19T12:44:15.289Z · Explore
+- Event: SubagentStart
+- Agent ID: ac724d196f4a98229
+
+## 2026-08-19T12:46:45.109Z · Explore
+- Event: SubagentStop
+- Agent ID: a3d13dfe67f32a54b
+- Last message: # 侦察结果（只读，事实清单） ## 1. Office 文件（.doc/.docx/.xlsx）摄取路径 **路由决策单点**：`server/ocr/classify.py:89` `def classify(path: Path) -> dict` 后缀分组来源：`shared/supported-document-formats.json:1-15`（`word_native=[".doc
+
+## 2026-08-20T01:57:44.245Z · Explore
+- Event: SubagentStart
+- Agent ID: a69fdf28afcfea6d3
+
+## 2026-08-20T01:57:54.210Z · Explore
+- Event: SubagentStart
+- Agent ID: a4a361914a6892c2a
+
+## 2026-08-20T02:00:47.576Z · Explore
+- Event: SubagentStop
+- Agent ID: a4a361914a6892c2a
+- Last message: 侦察完成。以下是四点事实清单。 --- ## 1. eval/golden/ 目录结构 **三个 case，每个 case 恰好 2 个文件**（无其它文件）： | case | 文件 | 行数 | |---|---|---| | `case-zj-live` | `expected.yaml` / `corpus.pointer.yaml` | 132 / 26 | | `case-2` | `
+
+## 2026-08-20T02:02:15.947Z · Explore
+- Event: SubagentStop
+- Agent ID: a69fdf28afcfea6d3
+- Last message: Reconnaissance complete. Facts below, all paths absolute. --- ## 1. facts_precheck 实现 **文件**: `/Users/mi_manchi/workspace/enterprise-agent-platform/server/tender/facts_precheck.py`（262 行） **现有核对项**（只有
+
+## 2026-08-20T14:57:41.896Z · critic
+- Event: SubagentStart
+- Agent ID: ac03e9a88d9c967be
+
+## 2026-08-20T15:06:46.178Z · critic
+- Event: SubagentStop
+- Agent ID: ac03e9a88d9c967be
+- Last message: 评审完成。三路核对了设计中全部关键 file:line 锚点（主 checkout + 冻结 worktree），以下为返回主 agent 的评估段。 --- ## Round 1 · Critic Findings (critic, 2026-08-20T23:10+08:00) ### VERDICT: NEEDS_REVISION 评审对象：`.ai_state/sprints/2026-0
+

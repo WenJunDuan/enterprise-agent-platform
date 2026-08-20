@@ -3,3 +3,8 @@
 {"schema_version":1,"event":"StopFailure","error":"rate_limit","is_interrupt":false,"duration_ms":null,"timestamp":"2026-08-19T04:49:33.234Z"}
 {"schema_version":1,"event":"StopFailure","error":"rate_limit","is_interrupt":false,"duration_ms":null,"timestamp":"2026-08-19T04:49:39.734Z"}
 {"schema_version":1,"event":"StopFailure","error":"rate_limit","is_interrupt":false,"duration_ms":null,"timestamp":"2026-08-19T04:49:40.762Z"}
+{"schema_version":1,"event":"StopFailure","error":"rate_limit","is_interrupt":false,"duration_ms":null,"timestamp":"2026-08-19T12:45:32.831Z"}
+{"schema_version":1,"event":"StopFailure","error":"rate_limit","is_interrupt":false,"duration_ms":null,"timestamp":"2026-08-19T12:45:33.695Z"}
+{"schema_version":1,"event":"StopFailure","error":"rate_limit","is_interrupt":false,"duration_ms":null,"timestamp":"2026-08-19T12:45:34.103Z"}
+{"schema_version":1,"event":"StopFailure","error":"rate_limit","is_interrupt":false,"duration_ms":null,"timestamp":"2026-08-19T12:45:35.123Z"}
+{"schema_version":1,"event":"StopFailure","error":"rate_limit","is_interrupt":false,"duration_ms":null,"timestamp":"2026-08-19T12:46:46.716Z"}

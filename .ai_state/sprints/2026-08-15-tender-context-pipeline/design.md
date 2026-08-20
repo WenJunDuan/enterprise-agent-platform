@@ -582,3 +582,11 @@ tests/                               零命中回退命中真证据 / 噪音不�
 属跨 sprint 稳定的架构约束，**随 polish stage 落 `.ai_state/architecture/`**（Refactor 路径
 polish 本就强制触发 architecture/ 更新，非额外工作）。记录须含：为何不整单重跑（耗时实测）、
 resume 的会话前提、以及"简化回重跑"会复现什么问题——防后来者无据回退。
+
+## 增补设计指针（2026-08-20）
+
+v2.2 行为移植批次（K0 历史抹净扩围 / K1 case-4 / K2 office native / K3 混合页 /
+K4 抽取重试+心跳 / K5 tool_call 计数 / K6 attempted 契约 / K7 D2 四修 / K8 度量列 /
+K9 precheck 三扩 / K10 示教 / K11 vision 支线）的详细设计另立
+**`design-2026-08-20-v22-transplant.md`**（同目录）。本档既有内容不动；
+ship 前 review 三件套须覆盖两档。
