@@ -69,7 +69,7 @@ pointers:
   latest_architecture_update: "2026-08-14T09:26:47.542Z"
 
 # === PACE 联动字段 (hook 自动维护) ===
-next_action: "【2026-08-20 · v2.2 批次详细设计已落盘: sprints/2026-08-15-tender-context-pipeline/design-2026-08-20-v22-transplant.md (K0-K11, 待 critic 评审后开工)】⚠新发现: v2.2 移植令 tracked 且已推 origin/main(7753d22), 正文含真名+身份证号 → K0 历史抹净已扩围(--replace-text+两真名档路径, 一次重写)。执行序照设计任务表: T1 K0 抹净(最先)→T2 case-4→T3/T4 office native+混合页(先复现实验/校准)→T5-T9 Step5 前置件→T10 D2→Step 5 对照(不等 vision)→Step 6(40K 按字)。开工前义务: ①核 d82aca89 结论 ②critic 评设计增补档。另: 前端对接文档已重写为 tender 三接口+iframe 版(.ai_state/docs/)。vision 支线卡 qwen VL 端点】
+next_action: "【2026-08-20 · T1(K0 历史抹净)已完成并强推 6de6a7a; 开工前两义务均已闭】① 生产检验: handoff 点名的 d82aca89 在部署机不存在(同一未核验形态第二次), 实核同案另一单 → basic_info 与禁裸 manual 达标, 报价勾稽未兑现但根因在底稿/工具面不在提示词 ⇒ **提示词不改**; 详见 prod-check-2026-08-20-conclusion-duty.md ② critic R1 NEEDS_REVISION 四条 P1 已全响应(设计档 status 字段记). T1 实况: 跑 4 遍 filter-repo(逐轮复扫抓漏网变体), 守卫扫描面扩到 .ai_state 并当场再抓出两家真实公司; 全部备份(bundle/映射表/P0.6 patch)按用户令已删除, P0.6 冻结件未提交改动就此放弃。回归 17F/1,965P 与基线逐名一致。**下一步 = T2 case-4 金标准落盘**(先于一切代码改动), 然后 T3/T4(office native + 混合页, 各自先跑复现实验/阈值校准)→T5-T9→T13 对照臂基线 post-Phase-A 重测(旧 299s 已失效, 实测 486s)→T10→Step 5→Step 6。vision 支线卡 qwen VL 端点】
 
 入口链: sprints/2026-08-15-tender-context-pipeline/handoff-2026-08-18-night.md（含 08-19 订正）→ 纠偏令 v2（效力最高）→ plan-2026-08-18-v2-execution.md。
 

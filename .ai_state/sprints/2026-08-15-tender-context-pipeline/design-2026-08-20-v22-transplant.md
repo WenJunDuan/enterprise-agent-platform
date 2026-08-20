@@ -40,11 +40,13 @@ K8 度量列 / K9 facts_precheck 三扩 / K10 示教 references / K11 vision 支
 | 行数（本批触碰文件） | facts_precheck 262 / corpus_materialize 298 / draft_render 166 / native 424 / classify 133 / office_convert 193 / **evidence_retrieval 275** / **evidence_continuation 125** / **SKILL.md 22** | `wc -l <逐文件>`（2026-08-20 主 checkout 复测，R1-F1 订正）。**均未越 300 硬线**（298 与 275 贴线，改动落其上若越线随刀拆） |
 | 行数（既有越线债，本批只挂靠不扩张） | doc_pipeline 712 / output 717 / evidence 478 / **regression 1,134** / worker 510 / pipeline 884 / agent_bridge 690 | 同上；**豁免声明**：基线已越线对象，本批各刀增量 ≤40 行/文件且不新增越线文件（K9 例外见其节） |
 
+| ZJ 语料 | 400 页；图页+混合页 ≈24%（81+16/400） | v2.2 §三.6 实测 |
+| 抽取随机性诊断 | 同文件 11:38 `item_max_invalid` / 11:41 通过 | proposals P1（2026-08-19 实测）——K4 结构重试的数据支撑 |
+| 墙钟（post-Phase-A 单发） | **486 s**（等待 111 + 实跑 375） | `prod-check-2026-08-20-conclusion-duty.md` 四节①；旧基线 299 s 测于 Phase A 之前，见 T13 |
+
 > **R1-F1 订正记录**：本表初稿有 4 行系从旧档转述而非实测（evidence_retrieval 误作 332、
 > evidence_continuation 误作 103、regression 误作 1,135、SKILL.md 误作 23）。已全行复测改正。
 > 教训同 coding-standards「引用他处数字须注出处或复测」——**K7 的落点理由据此重述**（见 K7）。
-| ZJ语料 | 400 页；图页+混合页 ≈24%（81+16/400） | v2.2 §三.6 实测 |
-| 抽取随机性诊断 | 同文件 11:38 `item_max_invalid` / 11:41 通过 | proposals P1（2026-08-19 实测）——K4 重试上限=2 的数据支撑 |
 
 ---
 
@@ -72,7 +74,30 @@ K8 度量列 / K9 facts_precheck 三扩 / K10 示教 references / K11 vision 支
 **代号映射**：沿用 `eval/golden/` 既有约定（case-zj-live 已用 zj 代号），一表通用于
 K0 / K1 / K10；映射表存 ignored 备份区（`.ai_state/backups/`，已加 gitignore），不入库。
 
-**执行序（一次重写覆盖全部，避免二次 force push）**：
+### ✅ K0 已执行（2026-08-20，`6de6a7a` 强推完成）
+
+实际执行与本节初稿计划的三点差异，**逐条如实记档**（初稿"一次重写"的假设未成立）：
+
+1. **跑了 4 遍 filter-repo 而非 1 遍**。每遍后全历史复扫，逐轮抓出漏网变体：
+   ①短形态漏配（`TENDER-NO-ZJ` 无后缀形、`投标人TZ` 简称形）；
+   ②报销域另有真实公司名 + 真实发票号（`dzfp_…`，此前从无人扫过 `.ai_state`）；
+   ③守卫扩面后当场再抓出**两家此前完全不知道的真实公司**（云桥、通州四建）。
+   **教训**：抹除类操作的"清单"不可能靠一次人工枚举穷尽，**必须"重写→机械复扫→再重写"成环**，
+   环的终止条件是复扫零命中，不是"我以为列全了"。
+2. **守卫扩面与抹除必须同批**：扩面（`.ai_state` 进扫描面）是唯一发现①②③的手段；
+   若按初稿把它留作"记 proposals 事后做"，这三类残留会带着 force push 一起固化。
+3. **两类误判同批修掉**（否则扩面即恒红→必被加白或关掉）：gitignore 命中的文件不算违规
+   （有意留本地的真名档不进仓库）；编号形态被更长字母数字 token 夹住时是巧合
+   （自家 `evidence.yaml` 的 `tool_use_id`）。
+
+**残留风险（诚实声明）**：GitHub 侧被重写掉的旧 commit 对象在服务端 GC 前仍可能按 SHA 直取。
+私有仓 + 单人协作下风险低；要彻底清需联系 GitHub Support 清缓存。**本地与远端引用链已全清**。
+
+**备份处置**：按用户 2026-08-20 指令，全史 bundle、真名映射表、P0.6 patch **已全部删除**
+（bundle 与映射表含 PII 属必删；P0.6 patch 经逐串验证不含真名，用户裁决一并删——
+即该冻结件的未提交改动就此放弃，Phase 2 若重启需从新 main 重做）。
+
+**执行序（初稿计划，保留供对照）**：
 1. 导出 P0.6 冻结 worktree `agent-aceea5e2cd5e05986` 改动为 patch，存 ignored 备份位
    （兼作 Phase 2 对新 main 重对齐底稿；force push 后该 worktree 基提交失效）
 2. 工作副本匿名化：v2.2（及 `git grep` 复扫全部 tracked 文件）中人名/证号/公司名 →
