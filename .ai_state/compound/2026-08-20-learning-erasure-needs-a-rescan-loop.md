@@ -56,6 +56,22 @@ slug: erasure-needs-a-rescan-loop
 - **元教训**：这条守卫拦住的是**刚写完该守卫的人**。人对"我这次是特例"的自信没有下限，
   所以门禁不能只挡别人——`commit` 前跑一次守卫，比任何自觉都便宜
 
+## 第五条（最危险的一条）：不要把 stash 带过 filter-repo，且改完必须跑全量
+
+第 2、4 轮重写时工作区有未提交改动，用了 `git stash -u` → `filter-repo` → `git stash pop`。
+filter-repo 会打印 `Rewrote the stash`——它确实重写了 stash ref，但**弹回来的树不等于存进去的树**：
+`eval/` 整个目录（`regression.py` 1,134 行 + 三份金标准 case 共 1,607 行）从工作区消失了。
+下一条命令是 `git add -A && git commit`，于是**这次删除被当成正常改动提交并推上远端**，
+无人察觉——直到跑全量回归时 `ModuleNotFoundError: No module named 'eval'` 才暴露。
+
+- **规则一**：filter-repo 前把工作区**提交或丢弃**，不要用 stash 跨越它
+  （官方也建议在 fresh clone 上跑，stash / worktree 均非其正确处理面）
+- **规则二**：`git add -A` 在这类操作后是**危险命令**——它把"文件消失"和"我改了文件"
+  等同看待。重写后提交前先看一眼 `git status` 的 `D` 行
+- **规则三（真正的兜底）**：**改完跑全量回归再推**。守卫、复扫、diff 都没抓到这次删除，
+  抓到它的是 `pytest`——因为删掉的是一个被 import 的包。
+  本次恢复靠 `git checkout <删除提交>~1 -- eval/`，行数与基线逐数吻合（1134/120/135/132）。
+
 ## 出处
 
 `.ai_state/sprints/2026-08-15-tender-context-pipeline/design-2026-08-20-v22-transplant.md` K0 节；

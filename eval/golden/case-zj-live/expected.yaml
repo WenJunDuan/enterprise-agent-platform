@@ -1,0 +1,132 @@
+# case-zj-live — 评标回归闸金标准期望（匿名）
+#
+# 数据来源：2026-08-17 参照实跑的人工审核报告（P0×3 + P1×4，全部结论带页锚；
+# 客观分基线 企业实力 6/6、类似业绩 9/9、项目负责人 3/3、报价合计勾稽通过）。
+#
+# 匿名化是硬约束：真实语料不入库（只留 corpus.pointer.yaml 的指纹），本文件一律用
+# **角色代号 + 页锚 + 类别枚举**表述，不出现任何真实机构 / 人名。机械保障见
+# tests/test_no_real_corpus.py（扫描面已含 eval/ 与 .yaml）。
+#
+# 语法：由 scripts/eval_tender_regression.py 的 YAML 子集解析器读取——支持映射、
+# 缩进序列、流式列表、标量与注释；不支持锚点/别名、多行标量、流式映射（遇到即报错）。
+
+case: case-zj-live
+project_title: 评测用例 case-zj-live
+scenario: expert_assist
+note: 货物类公开招标，综合评分法（商务技术 70 + 价格 30），专门面向中小企业，不接受联合体
+
+# 缺陷类别枚举 → 关键词族。**命中判定的第二把钥匙**（第一把是页锚交集，双键都中才算命中，
+# 防蒙对）。关键词随标书措辞而异，故声明在 case 里而不是脚本里——脚本内置等于把一次
+# 测试当产品配置（沿用 scripts/measure_tender_evidence.py 立下的规矩）。
+defect_classes:
+  cross_doc_contradiction: ["矛盾", "不一致", "打架", "冲突", "雷同", "完全相同", "覆盖不全", "未列入"]
+  # 关键词须为**定向否定**形态（"未提供""缺失"指向文档不存在）。裸 "未见" 已删：
+  # 「投标函：未见异常」这类反向结论会同时含 must_include 的 "投标函" 与 "未见"，
+  # 被假命中成召回——回归闸头号弱键上不许有反向假命中（Fable review F1）。
+  required_document_missing: ["缺失", "未提供", "未找到", "查无", "未包含", "未见投标函", "未见有效期"]
+  spec_basis_mismatch: ["依据", "错配", "证明不了", "不能证明", "非目标参数", "不对应"]
+  zero_positive_deviation: ["无偏离", "正偏离", "未加分", "弃分", "不得分"]
+  illegible_seal_evidence: ["模糊", "难辨", "看不清", "不清晰", "无法辨认"]
+  model_number_mismatch: ["型号", "样品", "不一致", "对不上"]
+  price_headroom_exposure: ["限价", "贴近", "余量", "98.95", "失衡"]
+
+# 必须召回的缺陷。命中 = 结论中**同一条** finding 的页锚 ∩ anchors ≠ ∅ 且类别关键词命中
+# （absence=true 的缺失类无页可锚，退化为单键，用 must_include 补强，报告里显式标注弱键）。
+#
+# `attribution` 是纠偏令 v2.1 二节的缺口归因二分列，**逐条抄自那张表，不是本档自拟**：
+#   text  = 列A 文本可达（agency 应治，达标线按列A 读）
+#   pixel = 列B 像素必需（vision-page 上线前结构性不可达，不变不计失败）
+# 它只决定 Step 5 的数字往哪一列记账，**不参与命中判定，也不改任何期望值**。
+defects:
+  - id: D1
+    class: cross_doc_contradiction
+    severity: P0
+    role: 中小企业声明函（投标人 / 制造商甲 / 制造商乙）vs 分项报价表
+    detail: 两家无关联制造商的营业收入与资产总额逐位相同；声明函所列制造商与报价明细品牌互相打架且覆盖不全
+    anchors: ["【第12页】", "【第13页】", "【第6页】", "【第7页】"]
+    # v2.1 二节列A 首行原文：「D1 声明函↔报价矛盾（声明函、报价明细均文本页）」
+    attribution: text
+  - id: D2
+    class: required_document_missing
+    severity: P0
+    role: 投标函 + 投标有效期承诺
+    detail: 全文检索未见投标函与有效期承诺；缺失类缺陷本身无页可锚，故单键 + must_include 定向
+    absence: true
+    anchors: []
+    must_include: ["投标函"]
+    # v2.1 二节列A：「D2 投标函缺失（全文 grep 缺席判定）」
+    attribution: text
+  - id: D3
+    class: spec_basis_mismatch
+    severity: P0
+    role: 第三方检测报告 vs 被证的性能参数
+    detail: 报告所依标准是设备安全类，被证参数却是功能/光学性能；且封面未见法定检验检测资质标识
+    anchors: ["【第364-399页】"]
+    # v2.1 二节列B：「D3 检测依据错配（报告页为图）」
+    attribution: pixel
+  - id: D4
+    class: zero_positive_deviation
+    severity: P1
+    role: 常规参数偏离表
+    detail: 全表填“无偏离”，正偏离加分项 0/4，属策略性弃分
+    anchors: ["【第349-360页】"]
+    # v2.1 二节列A：「D4 偏离表 0 正偏离（文本页）」
+    attribution: text
+  - id: D5
+    class: illegible_seal_evidence
+    severity: P1
+    role: 功能截图页的原厂公章
+    detail: 该页公章模糊难辨，同类另两页双章清晰，形成对照
+    anchors: ["【第374页】"]
+    # v2.1 二节列B：「D5 章模糊 / D6 型号对不上（章与型号在图上）」
+    attribution: pixel
+  - id: D6
+    class: model_number_mismatch
+    severity: P1
+    role: 检测报告样品型号 vs 报价明细型号
+    detail: 报告样品型号与报价型号疑非同一型号；报价侧证据在第 6 页，此处只锚检测报告页，逼评标真的翻到该页
+    anchors: ["【第376页】"]
+    # v2.1 二节列B：同 D5 那一行（型号在图上）
+    attribution: pixel
+  - id: D7
+    class: price_headroom_exposure
+    severity: P1
+    role: 投标报价 vs 最高限价 + 分项报价内部结构
+    detail: 报价为限价的 98.95%，价格维度无防御余量；分项内另有单价明显失衡项
+    anchors: ["【第5页】", "【第6页】", "【第7页】"]
+    # v2.1 二节列A：「D7 报价贴限价（文本）」
+    attribution: text
+
+# 客观分基线：与结论 scoring[] 逐项比对。item 匹配用 keywords 关键词族（模型输出的项名
+# 有措辞漂移，全名精确匹配必错）；匹配不上的项**显式列为「未匹配」**，不静默算 0 分。
+#
+# 三项的 attribution 同为 pixel，出处是 v2.1 二节列B 首行原文：
+# 「客观分三项：企业实力/业绩/负责人（证书、合同、社保全为扫描页）」。
+# 附录B 基线 0/3 里企业实力是真漏（期望 6.0 实际 null）、业绩与负责人是匹配器未匹配，
+# 两者归因同为列B——先扩同义词族修尺子，再按列B 口径读数（vision 上线前不计失败）。
+objective_scores:
+  - item_class: 企业实力
+    keywords: ["企业综合实力", "综合实力", "企业实力"]
+    expected: 6
+    max: 6
+    basis: 承包资质 + 安全生产许可 + 服务能力二级证书齐备，应给满分
+    attribution: pixel
+  - item_class: 类似业绩
+    keywords: ["类似业绩", "业绩"]
+    expected: 9
+    max: 9
+    basis: 3 份合同均落在招标要求的时间窗口内，应给满分
+    attribution: pixel
+  - item_class: 项目负责人
+    keywords: ["拟派项目负责人", "项目负责人", "负责人"]
+    expected: 3
+    max: 3
+    basis: 注册建造师 + 职称 + 社保记录齐备，应给满分
+    attribution: pixel
+
+# 报价勾稽：分项逐行复算合计 = 开标一览表小写 = 大写，且低于最高限价。
+# 只查该数字是否出现在结论里（勾稽做没做过），不进客观分准确率的分母。
+price_check:
+  total: 1316033.66
+  keywords: ["1,316,033.66", "1316033.66"]
+  note: 分项报价逐行复算合计与开标一览表分毫不差，且低于最高限价
